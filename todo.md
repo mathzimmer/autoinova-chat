@@ -202,3 +202,15 @@
 - [x] Melhorar prompt para manter foco no veículo atual da conversa - CORRIGIDO: seção REGRAS DE FOCO NA CONVERSA
 - [x] Reduzir keywords que ativam forceSearch desnecessariamente - CORRIGIDO: separado em model keywords e search keywords
 - [x] 52 testes passando (15 novos testes para IA)
+
+## Bugs - Rodada 9 (Comportamento da IA - Persistente)
+- [x] IA menciona Fusca mesmo depois do cliente dizer que vendeu - CORRIGIDO: prompt agora diz "CONFIE na mensagem recente"
+- [x] IA volta a falar de Sprinter quando cliente quer Hilux - CORRIGIDO: REGRA 2 prioridade da conversa recente
+- [x] IA interpreta "2" como Sprinter ao invés de opção 2 - CORRIGIDO: REGRA 3 respostas numéricas + forceSearch ignora msgs curtas
+- [x] IA usa formatação markdown - CORRIGIDO: REGRA 1 proibe explícitamente + strip de markdown na resposta
+- [x] Mensagem duplicada quando cliente envia mesmo áudio - CORRIGIDO: dedup por externalId no webhook
+- [x] Contexto do lead antigo dominando - CORRIGIDO: lead data marcado como "podem estar desatualizados"
+- [x] Reforçar prioridade de mensagens recentes - CORRIGIDO: REGRA 2 com exemplos concretos
+- [x] Dedup de mensagens WhatsApp por externalId - CORRIGIDO: getMessageByExternalId + check no webhook
+- [x] forceSearch não dispara para msgs de troca ("vendi meu fusca, tenho um gol") - CORRIGIDO
+- [x] 56 testes passando (19 testes de IA)

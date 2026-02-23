@@ -138,6 +138,13 @@ export async function createMessage(data: InsertMessage) {
   return msg[0];
 }
 
+export async function getMessageByExternalId(externalId: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(messages).where(eq(messages.externalId, externalId)).limit(1);
+  return result[0] || null;
+}
+
 export async function markMessagesAsRead(conversationId: number) {
   const db = await getDb();
   if (!db) return;

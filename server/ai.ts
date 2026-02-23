@@ -5,78 +5,62 @@ import type { Message, Conversation } from "../drizzle/schema";
 
 export const DEFAULT_SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
 
-Seu papel é fazer atendimento de pré-venda, ajudando clientes a encontrar o veículo ideal e qualificando-os como leads.
+Seu papel é fazer atendimento de pré-venda pelo WhatsApp, ajudando clientes a encontrar o veículo ideal.
 
-DIRETRIZES DE COMUNICAÇÃO:
-- Seja cordial, profissional e objetivo
-- Use linguagem natural e amigável, como se estivesse conversando pelo WhatsApp
-- Responda sempre em português brasileiro
-- Não use formatação markdown (sem asteriscos, sem listas com bullet points)
-- Use emojis com moderação (1-2 por mensagem no máximo)
-- Mantenha respostas curtas e diretas (máximo 3 parágrafos)
-- NUNCA repita informações que já foram ditas na conversa
+REGRA NÚMERO 1 - FORMATO DAS MENSAGENS:
+- Escreva como uma mensagem de WhatsApp normal, em texto corrido
+- PROIBIDO usar asteriscos (*), underlines (_), listas com traços (-) ou bullets
+- PROIBIDO usar formatação markdown de qualquer tipo
+- Separe informações com quebras de linha simples
+- Use emojis com moderação (máximo 1-2 por mensagem)
+- Mantenha respostas curtas (máximo 3 parágrafos curtos)
 
-FLUXO DE ATENDIMENTO:
-1. Cumprimente o cliente e pergunte como pode ajudar
-2. Entenda o que o cliente procura (tipo de veículo, faixa de preço, preferências)
-3. Use a ferramenta buscar_veiculos para encontrar veículos disponíveis no estoque REAL
-4. Apresente as opções de forma clara e atrativa, incluindo o link do veículo quando disponível
-5. Colete informações para qualificação: nome, interesse, se tem veículo para troca, forma de pagamento
-6. Se o cliente demonstrar interesse real, sugira agendar uma visita ou test drive
+REGRA NÚMERO 2 - PRIORIDADE DA CONVERSA RECENTE:
+- A mensagem mais recente do cliente é o que importa. Responda a ELA.
+- Se o cliente disse algo nas últimas mensagens que contradiz dados antigos, CONFIE na mensagem recente
+- Exemplo: se o lead diz "Fusca" como troca mas o cliente acabou de dizer "vendi o Fusca, agora tenho um Gol", o correto é Gol
+- Exemplo: se o lead diz "Sprinter" como interesse mas o cliente acabou de pedir "Hilux", o correto é Hilux
+- SEMPRE atualize o lead (via atualizar_lead) quando o cliente corrigir ou mudar qualquer informação
 
-INFORMAÇÕES A COLETAR (quando natural na conversa):
-- Veículo de interesse
-- Faixa de preço
-- Se tem veículo para troca (modelo, ano, km)
-- Forma de pagamento preferida (financiamento, à vista, consórcio)
-- Valor de entrada (se financiamento)
+REGRA NÚMERO 3 - RESPOSTAS NUMÉRICAS:
+- Quando você apresentou uma lista numerada de veículos e o cliente responde com um número (ex: "2", "1", "a segunda"), ele está ESCOLHENDO aquela opção da lista
+- Responda sobre o veículo que ele escolheu, NÃO busque novamente
+- Chame atualizar_lead com o veículo escolhido
 
-REGRAS DE BUSCA DE VEÍCULOS:
-- Chame buscar_veiculos quando o cliente perguntar sobre um veículo, marca ou modelo ESPECÍFICO
-- Chame buscar_veiculos quando o cliente quiser ver opções ou perguntar o que tem disponível
-- NÃO chame buscar_veiculos para mensagens genéricas como "tenho troca", "quero financiar", "ok", "sim"
-- Se a busca retornar APENAS 1 resultado, apresente esse veículo diretamente SEM pedir mais preferências
-- Se a busca retornar poucos resultados (2-3), apresente todos diretamente
-- Se a busca retornar muitos resultados (4+), mostre os mais relevantes e pergunte se quer filtrar
-- NUNCA invente veículos que não estão no estoque
-- Cada resultado tem um [ID:X] - use esse ID ao chamar atualizar_lead para vincular o veículo
+REGRA NÚMERO 4 - BUSCA DE VEÍCULOS:
+- Chame buscar_veiculos quando o cliente perguntar sobre um veículo, marca ou modelo específico
+- Chame buscar_veiculos quando o cliente quiser ver opções disponíveis
+- NÃO chame buscar_veiculos para: "ok", "sim", "tenho troca", "quero financiar", "obrigado", números de seleção
+- Se a busca retornar 1 resultado: apresente direto, sem perguntar preferências
+- Se a busca retornar 2-3 resultados: apresente todos
+- Se a busca retornar 4+ resultados: mostre os mais relevantes
+- NUNCA invente veículos. Só apresente o que a busca retornou.
+- Ao apresentar veículos, use este formato (sem markdown):
+  Opção 1: [Marca Modelo Versão] - [Ano]
+  Cor: [cor] | KM: [km] | Câmbio: [câmbio]
+  Preço: R$ [preço]
+  Veja mais: [link]
 
-REGRAS DE FOCO NA CONVERSA:
-- Preste atenção no que o cliente está pedindo AGORA, não no que foi discutido antes
-- Se o cliente mudar de veículo de interesse (ex: estava falando de Sprinter e agora pergunta sobre Vectra), FOQUE no novo veículo
-- Quando o cliente mudar de interesse, chame atualizar_lead com o NOVO veículo e busque no estoque
-- NÃO misture informações de veículos diferentes na mesma resposta
-- Se o cliente confirmar interesse em um veículo específico, siga a conversa sobre AQUELE veículo
+REGRA NÚMERO 5 - ATUALIZAÇÃO DO LEAD:
+- Chame atualizar_lead SEMPRE que coletar informação nova
+- Se o cliente MUDAR de veículo de interesse, atualize imediatamente
+- Se o cliente MUDAR dados da troca (vendeu o carro antigo, tem outro), atualize imediatamente
+- Se o cliente escolher um veículo da lista, passe o veiculo_id correspondente
 
-REGRAS DE ATUALIZAÇÃO DO LEAD:
-- SEMPRE chame atualizar_lead quando coletar QUALQUER informação nova do cliente
-- Quando o cliente ESCOLHER ou demonstrar interesse em um veículo, chame atualizar_lead com veiculo_interesse E veiculo_id
-- Quando o cliente MUDAR de veículo de interesse, atualize o lead com o NOVO veículo
-- Quando o cliente informar que tem carro para troca, chame atualizar_lead com os dados da troca
-- Quando o cliente informar forma de pagamento, chame atualizar_lead
+REGRA NÚMERO 6 - IMAGENS:
+- Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
+- Use o contexto da conversa para entender (ex: se falou de troca, provavelmente é foto do carro de troca)
+- NUNCA diga "não consigo visualizar", "não posso ver a imagem" ou similar
+- Diga algo como "Recebi a foto! Vou encaminhar para nossa equipe avaliar."
 
-IMAGENS DO CLIENTE:
-- Quando o cliente enviar uma imagem, CONFIRME o recebimento de forma natural e positiva
-- Use o CONTEXTO DA CONVERSA para entender o que é a imagem:
-  - Se o cliente mencionou que tem carro para troca e enviou foto: "Recebi as fotos do seu [veículo]! Vou encaminhar para nossa equipe avaliar."
-  - Se estavam falando de um veículo e o cliente envia foto: "Recebi a imagem! É uma referência do que você procura?"
-  - Se não houver contexto claro: "Recebi sua foto! Pode me dizer do que se trata?"
-- Você NÃO vê o conteúdo da imagem, mas NUNCA diga "não consigo visualizar" ou "não posso ver"
-- Simplesmente confirme o recebimento e continue o atendimento baseado no contexto
+REGRA NÚMERO 7 - ÁUDIO:
+- Áudios são transcritos automaticamente. Trate como texto normal.
+- NUNCA mencione que é áudio ou transcrição.
 
-ÁUDIO DO CLIENTE:
-- Quando o cliente enviar um áudio, o sistema transcreve automaticamente o conteúdo
-- Trate a transcrição EXATAMENTE como se fosse uma mensagem de texto normal
-- Responda ao conteúdo normalmente, seguindo o fluxo de atendimento
-- NÃO mencione que recebeu um áudio ou que está lendo uma transcrição
-
-OUTRAS REGRAS:
-- Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento
-- Não forneça valores exatos de financiamento, apenas estimativas gerais
-- Sempre que apresentar um veículo, mencione: marca, modelo, ano, preço, km e link
-- Quando houver preço promocional, destaque a economia
-- Nosso WhatsApp: (51) 99478-2062
-- Nosso endereço: Av Castro Alves, nº 1655, Sete de Setembro, Ivoti - RS`;
+INFORMAÇÕES DA LOJA:
+- WhatsApp: (51) 99478-2062
+- Endereço: Av Castro Alves, nº 1655, Sete de Setembro, Ivoti - RS
+- Se o cliente pedir para falar com humano, diga que vai transferir`;
 
 /**
  * Get the current system prompt - from database if customized, otherwise default.
@@ -94,9 +78,7 @@ export async function getSystemPrompt(): Promise<string> {
 }
 
 // Keywords that indicate the customer is asking about a SPECIFIC vehicle
-// These should only trigger when the customer is clearly asking about a vehicle model/brand
 const VEHICLE_MODEL_KEYWORDS = [
-  // Specific models and brands
   "sprinter", "corolla", "civic", "gol", "onix", "hb20", "polo", "t-cross",
   "tracker", "creta", "compass", "renegade", "kicks", "nivus", "taos",
   "hilux", "ranger", "s10", "toro", "saveiro", "strada", "montana",
@@ -113,11 +95,10 @@ const VEHICLE_MODEL_KEYWORDS = [
   "fit", "city", "hrv", "wrv", "crv",
   "etios", "yaris", "camry", "sw4", "rav4",
   "tucson", "ix35", "santa fe", "azera",
-  // Categories
   "suv", "sedan", "hatch", "picape", "pickup", "van", "caminhonete",
 ];
 
-// Keywords that indicate the customer wants to see what's available (broader search)
+// Keywords that indicate the customer wants to see what's available
 const VEHICLE_SEARCH_KEYWORDS = [
   "disponível", "disponivel", "estoque", "opção", "opcao", "opções",
   "o que tem", "o que voces tem", "o que vocês têm",
@@ -126,10 +107,24 @@ const VEHICLE_SEARCH_KEYWORDS = [
 ];
 
 /**
- * Detect if the message is about a specific vehicle and should trigger a search
+ * Detect if the message is about a specific vehicle and should trigger a search.
+ * Does NOT trigger for generic messages, trade-in info, or numeric selections.
  */
 function shouldForceVehicleSearch(message: string): boolean {
   const lower = message.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  
+  // Don't force search for very short messages (likely selections like "1", "2", "sim", "ok")
+  if (lower.trim().length <= 3) return false;
+  
+  // Don't force search for trade-in related messages
+  const tradeKeywords = ["troca", "trocar", "vendi", "tenho um", "meu carro", "meu gol", "meu fusca"];
+  const isTradeMessage = tradeKeywords.some(kw => lower.includes(kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
+  
+  // If it's a trade message that also mentions a model, it's about the trade-in car, not a search
+  // Exception: if they say something like "quero trocar por uma Hilux" - that mentions a new vehicle
+  if (isTradeMessage && !lower.includes("por um") && !lower.includes("por uma") && !lower.includes("interesse")) {
+    return false;
+  }
   
   // Check for specific vehicle model/brand mentions
   const hasModel = VEHICLE_MODEL_KEYWORDS.some(kw => {
@@ -153,7 +148,7 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque REAL da concessionária Auto Inova. Use quando o cliente perguntar sobre um veículo, marca ou modelo específico, ou quiser ver opções disponíveis. Cada resultado inclui um [ID:X] que deve ser usado ao vincular o veículo ao lead.",
+      description: "Busca veículos disponíveis no estoque REAL da Auto Inova. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. Cada resultado inclui [ID:X] para vincular ao lead.",
       parameters: {
         type: "object",
         properties: {
@@ -191,21 +186,21 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "atualizar_lead",
-      description: "Atualiza os dados do lead/cliente no CRM. OBRIGATÓRIO chamar sempre que coletar qualquer informação nova do cliente, incluindo quando o cliente MUDAR de veículo de interesse. Quando o cliente escolher um veículo específico do estoque, inclua o veiculo_id (número [ID:X] do resultado da busca) para vincular o veículo ao lead.",
+      description: "Atualiza os dados do lead/cliente no CRM. OBRIGATÓRIO chamar sempre que coletar informação nova, especialmente quando o cliente MUDAR de veículo de interesse ou dados de troca.",
       parameters: {
         type: "object",
         properties: {
           nome: { type: "string", description: "Nome do cliente" },
-          intencao: { type: "string", description: "Intenção do cliente: compra, troca, informacao, test_drive, financiamento" },
-          veiculo_interesse: { type: "string", description: "Veículo que o cliente demonstrou interesse AGORA (marca modelo ano). Atualize sempre que o cliente mudar de interesse." },
-          veiculo_id: { type: "number", description: "ID do veículo no estoque (número [ID:X] retornado por buscar_veiculos). Use para vincular o lead ao veículo específico." },
-          tem_troca: { type: "boolean", description: "Se o cliente tem veículo para dar como troca" },
-          veiculo_troca: { type: "string", description: "Modelo do veículo de troca do cliente" },
+          intencao: { type: "string", description: "Intenção: compra, troca, informacao, test_drive, financiamento" },
+          veiculo_interesse: { type: "string", description: "Veículo de interesse ATUAL (atualize sempre que mudar)" },
+          veiculo_id: { type: "number", description: "ID do veículo no estoque [ID:X] da busca" },
+          tem_troca: { type: "boolean", description: "Se tem veículo para troca" },
+          veiculo_troca: { type: "string", description: "Veículo de troca ATUAL do cliente (atualize se mudar)" },
           ano_troca: { type: "string", description: "Ano do veículo de troca" },
-          km_troca: { type: "string", description: "Quilometragem do veículo de troca" },
+          km_troca: { type: "string", description: "KM do veículo de troca" },
           forma_pagamento: { type: "string", description: "Forma de pagamento: financiamento, a_vista, consorcio, troca" },
           entrada: { type: "string", description: "Valor de entrada para financiamento" },
-          status: { type: "string", description: "Status do lead: qualifying (coletando dados), qualified (dados completos, pronto para contato)" },
+          status: { type: "string", description: "Status: qualifying ou qualified" },
         },
         required: [],
         additionalProperties: false,
@@ -233,31 +228,29 @@ export async function processAIMessage(
   // Customer identity
   const customerName = conversation.contactName || null;
   if (customerName) {
-    contextBlock += `\nNOME DO CLIENTE: ${customerName}. Use o nome dele(a) na conversa para personalizar o atendimento.`;
+    contextBlock += `\nNOME DO CLIENTE: ${customerName}`;
   }
   contextBlock += `\nTELEFONE: ${conversation.phone}`;
-  contextBlock += `\nCANAL: ${conversation.channel}`;
 
   // Contact notes from CRM
   if ((conversation as any).contactNotes) {
-    contextBlock += `\nOBSERVAÇÕES DO CRM: ${(conversation as any).contactNotes}`;
+    contextBlock += `\nOBSERVAÇÕES: ${(conversation as any).contactNotes}`;
   }
 
-  // Lead data (accumulated from previous interactions)
+  // Lead data - present as reference only, with clear warning about recency
   let existingLead: any = null;
   try {
     existingLead = await getLeadByConversationId(conversation.id);
     if (existingLead) {
-      contextBlock += `\n\nDADOS JÁ COLETADOS DESTE CLIENTE (via atualizar_lead):`;
+      contextBlock += `\n\nDADOS DO LEAD (podem estar desatualizados - CONFIE nas mensagens recentes do cliente):`;
       if (existingLead.name) contextBlock += `\n- Nome: ${existingLead.name}`;
       if (existingLead.intention) contextBlock += `\n- Intenção: ${existingLead.intention}`;
-      if (existingLead.vehicleInterest) contextBlock += `\n- Último veículo de interesse registrado: ${existingLead.vehicleInterest}`;
-      if (existingLead.vehicleId) contextBlock += `\n- ID do veículo vinculado: ${existingLead.vehicleId}`;
+      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse: ${existingLead.vehicleInterest} (ATENÇÃO: pode ter mudado, verifique as mensagens recentes)`;
       if (existingLead.hasTrade) contextBlock += `\n- Tem troca: Sim`;
-      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm ? existingLead.tradeKm + " km" : ""}`;
-      if (existingLead.paymentMethod) contextBlock += `\n- Forma de pagamento: ${existingLead.paymentMethod}`;
+      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm || ""} (ATENÇÃO: pode ter mudado)`;
+      if (existingLead.paymentMethod) contextBlock += `\n- Pagamento: ${existingLead.paymentMethod}`;
       if (existingLead.downPayment) contextBlock += `\n- Entrada: ${existingLead.downPayment}`;
-      contextBlock += `\n\nIMPORTANTE: Esses são dados já coletados. Se o cliente mudar de veículo de interesse, atualize o lead com o NOVO veículo usando atualizar_lead. Foque na mensagem ATUAL do cliente, não no histórico antigo.`;
+      contextBlock += `\n\nSe o cliente disser algo diferente dos dados acima, ATUALIZE o lead com atualizar_lead.`;
     }
   } catch (e) {
     console.error("[AI] Failed to load lead context:", e);
@@ -265,7 +258,7 @@ export async function processAIMessage(
 
   // Build full system prompt with context
   const fullSystemPrompt = contextBlock
-    ? `${systemPrompt}\n\n--- CONTEXTO DA CONVERSA ATUAL ---${contextBlock}`
+    ? `${systemPrompt}\n\n--- CONTEXTO ---${contextBlock}`
     : systemPrompt;
 
   // Build message history for context
@@ -280,15 +273,12 @@ export async function processAIMessage(
       const meta = msg.metadata as Record<string, unknown> | null;
       
       if (msg.messageType === "image") {
-        // For images: send as text with context indicator (no vision needed)
         const caption = msg.content && msg.content !== "[Imagem enviada pelo cliente]" && msg.content !== "[Imagem recebida]"
           ? msg.content
           : "";
         llmMessages.push({ role: "user", content: `[Cliente enviou uma imagem]${caption ? " " + caption : ""}` });
       } else if (msg.messageType === "audio") {
-        // For audio: send transcription as plain text (treat as normal message)
         const transcribed = (meta?.transcribedText as string) || msg.content;
-        // Send as plain text so the AI treats it like a normal message
         llmMessages.push({ role: "user", content: transcribed });
       } else {
         llmMessages.push({ role: "user", content: msg.content });
@@ -301,7 +291,6 @@ export async function processAIMessage(
   }
 
   // Add current message
-  // Strip image URL markers if present — just pass the text content
   const imageMatch = customerMessage.match(/\[IMAGEM: https?:\/\/[^\]]+\]\s*(.*)/);
   if (imageMatch) {
     const caption = imageMatch[1]?.trim() || "";
@@ -319,7 +308,6 @@ export async function processAIMessage(
   try {
     console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 80)}..." forceSearch=${forceSearch}`);
 
-    // First call - always use auto, but the prompt strongly instructs to use tools
     let result = await invokeLLM({
       messages: llmMessages,
       tools: TOOLS,
@@ -334,7 +322,7 @@ export async function processAIMessage(
       const retryMessages = [...llmMessages];
       retryMessages.push({
         role: "user",
-        content: "[SISTEMA: O cliente mencionou um veículo ou quer ver opções. Você DEVE chamar buscar_veiculos AGORA antes de responder. Não responda sem buscar no estoque primeiro.]",
+        content: "[SISTEMA: O cliente mencionou um veículo. Chame buscar_veiculos AGORA antes de responder.]",
       });
       try {
         result = await invokeLLM({
@@ -390,7 +378,7 @@ export async function processAIMessage(
               yearMax: args.ano_max,
               color: args.cor,
             });
-            console.log(`[AI] buscar_veiculos: ${toolResult.length} chars, results found`);
+            console.log(`[AI] buscar_veiculos: ${toolResult.length} chars`);
 
           } else if (toolCall.function.name === "resumo_estoque") {
             toolResult = await getStockSummaryForAI();
@@ -400,7 +388,6 @@ export async function processAIMessage(
             const args = JSON.parse(toolCall.function.arguments || "{}");
             console.log(`[AI] atualizar_lead args:`, JSON.stringify(args));
 
-            // Build lead data from tool call arguments
             const leadUpdate: any = {
               conversationId: conversation.id,
               phone: conversation.phone,
@@ -421,16 +408,16 @@ export async function processAIMessage(
             try {
               await upsertLead(leadUpdate);
               collectedLeadData = args;
-              toolResult = "Lead atualizado com sucesso no CRM. Continue o atendimento normalmente.";
-              console.log(`[AI] Lead updated successfully for conversation ${conversation.id}`);
+              toolResult = "Lead atualizado com sucesso.";
+              console.log(`[AI] Lead updated for conversation ${conversation.id}`);
             } catch (leadErr) {
               console.error("[AI] Failed to update lead:", leadErr);
-              toolResult = "Erro ao atualizar lead, mas continue o atendimento normalmente.";
+              toolResult = "Erro ao atualizar lead.";
             }
           }
         } catch (toolError) {
           console.error(`[AI] Tool ${toolCall.function.name} error:`, toolError);
-          toolResult = `Erro ao executar ferramenta: ${toolError instanceof Error ? toolError.message : "erro desconhecido"}`;
+          toolResult = `Erro: ${toolError instanceof Error ? toolError.message : "erro desconhecido"}`;
         }
 
         llmMessages.push({
@@ -477,10 +464,14 @@ export async function processAIMessage(
       }
     }
 
-    // Clean up any JSON artifacts from the response
+    // Clean up markdown formatting that the model might still use
     fullResponse = fullResponse
       .replace(/```json[\s\S]*?```/g, "")
       .replace(/\{[\s\S]*?"lead_data"[\s\S]*?\}/g, "")
+      .replace(/\*\*(.*?)\*\*/g, "$1")  // Remove bold **text**
+      .replace(/\*(.*?)\*/g, "$1")       // Remove italic *text*
+      .replace(/^[\s]*[-•]\s/gm, "")     // Remove bullet points
+      .replace(/^[\s]*\d+\.\s\s/gm, (match) => match.replace(/\s\s$/, " ")) // Clean double spaces after numbers
       .trim();
 
     if (!fullResponse) {
@@ -511,7 +502,6 @@ export async function processAIMessage(
   } catch (error) {
     console.error("[AI] Error processing message:", error);
 
-    // Log failed interaction
     const responseTime = Date.now() - startTime;
     try {
       await createAiLog({
@@ -529,7 +519,7 @@ export async function processAIMessage(
     }
 
     return {
-      response: "Desculpe, estou com uma instabilidade no momento. Um atendente humano será notificado para continuar seu atendimento. 🙏",
+      response: "Desculpe, estou com uma instabilidade no momento. Um atendente humano será notificado para continuar seu atendimento.",
       leadData: null,
     };
   }

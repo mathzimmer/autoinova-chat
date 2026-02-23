@@ -11,6 +11,7 @@ import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
+import { getMessageByExternalId } from "../db";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -134,6 +135,15 @@ async function startServer() {
         // Mark message as read in WhatsApp
         if (whatsappMessageId) {
           markAsRead(whatsappMessageId).catch(() => {});
+        }
+
+        // Deduplicate: skip if this WhatsApp message was already processed
+        if (whatsappMessageId) {
+          const existing = await getMessageByExternalId(whatsappMessageId);
+          if (existing) {
+            console.log(`[Webhook] Duplicate message detected (externalId: ${whatsappMessageId}), skipping`);
+            return res.sendStatus(200);
+          }
         }
 
         // Use tRPC caller to process the message
