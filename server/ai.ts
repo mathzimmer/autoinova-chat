@@ -37,6 +37,7 @@ REGRA NÚMERO 4 - BUSCA DE VEÍCULOS:
 - Se a busca retornar 4+ resultados: mostre os que foram retornados e pergunte se quer filtrar
 - REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
 - Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
+- PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta. O cliente recebe UMA mensagem com os resultados, não duas.
 
 REGRA NÚMERO 5 - ATUALIZAÇÃO DO LEAD:
 - Chame atualizar_lead SEMPRE que coletar informação nova
@@ -494,6 +495,40 @@ export async function processAIMessage(
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2") // Convert [text](url) to text url
       .replace(/\n{3,}/g, "\n\n")       // Max 2 consecutive newlines
       .trim();
+
+    // Detect if response is just a "wait" message without actual vehicle data
+    const waitPatterns = ["vou verificar", "só um momento", "vou buscar", "vou checar", "um momento", "aguarde", "deixa eu ver", "deixa eu buscar", "vou procurar", "vou pesquisar", "vou conferir"];
+    const isWaitResponse = waitPatterns.some(p => fullResponse.toLowerCase().includes(p)) && fullResponse.length < 200;
+    if (isWaitResponse) {
+      console.log(`[AI] Detected wait-only response: "${fullResponse.substring(0, 80)}...". Checking if tool results are available.`);
+      // Check if we have vehicle search results in the message history to re-inject
+      const toolResults = llmMessages.filter((m: any) => m.role === "tool" && m.content && m.content.includes("RESULTADOS DA BUSCA"));
+      if (toolResults.length > 0) {
+        const lastToolResult = toolResults[toolResults.length - 1] as any;
+        console.log(`[AI] Re-injecting vehicle search results into response.`);
+        llmMessages.push({ role: "user", content: `[SISTEMA: Você recebeu os resultados da busca mas não os incluiu na resposta. Aqui estão os resultados novamente. Apresente-os ao cliente AGORA em texto corrido:\n${lastToolResult.content}]` });
+        try {
+          const retryResult = await invokeLLM({ messages: llmMessages });
+          const retryContent = retryResult.choices?.[0]?.message?.content;
+          if (retryContent && typeof retryContent === "string" && retryContent.length > fullResponse.length) {
+            fullResponse = retryContent
+              .replace(/\*\*\*(.*?)\*\*\*/g, "$1")
+              .replace(/\*\*(.*?)\*\*/g, "$1")
+              .replace(/\*(.*?)\*/g, "$1")
+              .replace(/__(.*?)__/g, "$1")
+              .replace(/_(.*?)_/g, "$1")
+              .replace(/^#{1,6}\s+/gm, "")
+              .replace(/^[\s]*[-•\*]\s+/gm, "")
+              .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2")
+              .replace(/\n{3,}/g, "\n\n")
+              .trim();
+            console.log(`[AI] Successfully re-generated response with vehicle data.`);
+          }
+        } catch (retryErr) {
+          console.error(`[AI] Failed to re-generate response:`, retryErr);
+        }
+      }
+    }
 
     if (!fullResponse) {
       fullResponse = "Desculpe, não consegui processar sua mensagem. Pode repetir?";

@@ -233,3 +233,10 @@
 - [x] upsertLead permite null explícito para limpar campos (não apenas undefined)
 - [x] Notas do lead exibidas no contexto
 - [x] 67 testes passando (30 testes de IA incluindo interest change keywords)
+
+## Bugs - Rodada 12
+- [x] IA diz "vou verificar" sem resultados - CORRIGIDO: prompt proíbe frases de espera + detecção automática de resposta vazia
+- [x] Tool call não completa - CORRIGIDO: re-injeção de resultados quando resposta é só "vou verificar"
+- [x] IA volta a falar de Kia Soul - CORRIGIDO: [MENSAGEM ATUAL] + prioridade da conversa recente (já no código)
+- [x] IA responde "?" com assunto aleatório - CORRIGIDO: prompt mais claro sobre manter foco
+- [x] 67 testes passando
