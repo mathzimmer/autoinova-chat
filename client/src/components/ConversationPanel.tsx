@@ -5,8 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -16,12 +17,25 @@ type Props = {
 export default function ConversationPanel({ conversationId }: Props) {
   const utils = trpc.useUtils();
   const { data: conversation } = trpc.conversation.getById.useQuery({ id: conversationId });
-  const { data: lead } = trpc.lead.getByConversation.useQuery({ conversationId });
+  const { data: lead, refetch: refetchLead } = trpc.lead.getByConversation.useQuery({ conversationId });
 
+  // Contact editing state
   const [editingContact, setEditingContact] = useState(false);
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactNotes, setContactNotes] = useState("");
+
+  // Lead editing state
+  const [editingLead, setEditingLead] = useState(false);
+  const [leadIntention, setLeadIntention] = useState("");
+  const [leadVehicleInterest, setLeadVehicleInterest] = useState("");
+  const [leadHasTrade, setLeadHasTrade] = useState(false);
+  const [leadTradeVehicle, setLeadTradeVehicle] = useState("");
+  const [leadTradeYear, setLeadTradeYear] = useState("");
+  const [leadTradeKm, setLeadTradeKm] = useState("");
+  const [leadPaymentMethod, setLeadPaymentMethod] = useState("");
+  const [leadDownPayment, setLeadDownPayment] = useState("");
+  const [leadStatus, setLeadStatus] = useState("qualifying");
 
   useEffect(() => {
     if (conversation) {
@@ -30,6 +44,20 @@ export default function ConversationPanel({ conversationId }: Props) {
       setContactNotes((conversation as any).contactNotes || "");
     }
   }, [conversation]);
+
+  useEffect(() => {
+    if (lead) {
+      setLeadIntention(lead.intention || "");
+      setLeadVehicleInterest(lead.vehicleInterest || "");
+      setLeadHasTrade(lead.hasTrade || false);
+      setLeadTradeVehicle(lead.tradeVehicle || "");
+      setLeadTradeYear(lead.tradeYear || "");
+      setLeadTradeKm(lead.tradeKm || "");
+      setLeadPaymentMethod(lead.paymentMethod || "");
+      setLeadDownPayment(lead.downPayment || "");
+      setLeadStatus(lead.status || "qualifying");
+    }
+  }, [lead]);
 
   const toggleAI = trpc.conversation.toggleAI.useMutation({
     onSuccess: (data) => {
@@ -57,6 +85,15 @@ export default function ConversationPanel({ conversationId }: Props) {
     onError: (err) => toast.error("Erro: " + err.message),
   });
 
+  const updateLead = trpc.lead.update.useMutation({
+    onSuccess: () => {
+      refetchLead();
+      setEditingLead(false);
+      toast.success("Dados do lead atualizados");
+    },
+    onError: (err) => toast.error("Erro: " + err.message),
+  });
+
   const handleSaveContact = () => {
     updateContact.mutate({
       id: conversationId,
@@ -66,13 +103,43 @@ export default function ConversationPanel({ conversationId }: Props) {
     });
   };
 
-  const handleCancelEdit = () => {
+  const handleCancelContact = () => {
     if (conversation) {
       setContactName(conversation.contactName || "");
       setContactEmail((conversation as any).contactEmail || "");
       setContactNotes((conversation as any).contactNotes || "");
     }
     setEditingContact(false);
+  };
+
+  const handleSaveLead = () => {
+    updateLead.mutate({
+      conversationId,
+      intention: leadIntention.trim() || undefined,
+      vehicleInterest: leadVehicleInterest.trim() || undefined,
+      hasTrade: leadHasTrade,
+      tradeVehicle: leadTradeVehicle.trim() || undefined,
+      tradeYear: leadTradeYear.trim() || undefined,
+      tradeKm: leadTradeKm.trim() || undefined,
+      paymentMethod: leadPaymentMethod.trim() || undefined,
+      downPayment: leadDownPayment.trim() || undefined,
+      status: leadStatus as any,
+    });
+  };
+
+  const handleCancelLead = () => {
+    if (lead) {
+      setLeadIntention(lead.intention || "");
+      setLeadVehicleInterest(lead.vehicleInterest || "");
+      setLeadHasTrade(lead.hasTrade || false);
+      setLeadTradeVehicle(lead.tradeVehicle || "");
+      setLeadTradeYear(lead.tradeYear || "");
+      setLeadTradeKm(lead.tradeKm || "");
+      setLeadPaymentMethod(lead.paymentMethod || "");
+      setLeadDownPayment(lead.downPayment || "");
+      setLeadStatus(lead.status || "qualifying");
+    }
+    setEditingLead(false);
   };
 
   if (!conversation) return null;
@@ -145,7 +212,7 @@ export default function ConversationPanel({ conversationId }: Props) {
         </Select>
       </div>
 
-      {/* Contact Info - Editable */}
+      {/* Contact Info */}
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contato</h4>
@@ -160,7 +227,7 @@ export default function ConversationPanel({ conversationId }: Props) {
                 <Save className="h-3 w-3 mr-1" />
                 Salvar
               </Button>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground" onClick={handleCancelEdit}>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground" onClick={handleCancelContact}>
                 <X className="h-3 w-3" />
               </Button>
             </div>
@@ -168,57 +235,25 @@ export default function ConversationPanel({ conversationId }: Props) {
         </div>
 
         {editingContact ? (
-          <div className="space-y-3">
-            <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Nome</label>
-              <Input
-                value={contactName}
-                onChange={(e) => setContactName(e.target.value)}
-                placeholder="Nome do contato"
-                className="h-8 text-sm bg-input border-border"
-              />
-            </div>
-            <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Telefone</label>
-              <Input value={conversation.phone} disabled className="h-8 text-sm bg-muted border-border opacity-60" />
-            </div>
-            <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">E-mail</label>
-              <Input
-                value={contactEmail}
-                onChange={(e) => setContactEmail(e.target.value)}
-                placeholder="email@exemplo.com"
-                className="h-8 text-sm bg-input border-border"
-              />
-            </div>
+          <div className="space-y-2.5">
+            <FieldInput label="Nome" value={contactName} onChange={setContactName} placeholder="Nome do contato" />
+            <FieldInput label="Telefone" value={conversation.phone} disabled />
+            <FieldInput label="E-mail" value={contactEmail} onChange={setContactEmail} placeholder="email@exemplo.com" />
             <div>
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Observações</label>
               <Textarea
                 value={contactNotes}
                 onChange={(e) => setContactNotes(e.target.value)}
-                placeholder="Notas sobre o contato, preferências, observações..."
-                className="text-sm bg-input border-border min-h-[80px] resize-y"
+                placeholder="Notas sobre o contato..."
+                className="text-sm bg-input border-border min-h-[60px] resize-y"
               />
             </div>
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-card-foreground">{conversation.phone}</span>
-            </div>
-            {conversation.contactName && (
-              <div className="flex items-center gap-2 text-sm">
-                <UserCheck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="text-card-foreground">{conversation.contactName}</span>
-              </div>
-            )}
-            {(conversation as any).contactEmail && (
-              <div className="flex items-center gap-2 text-sm">
-                <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                <span className="text-card-foreground">{(conversation as any).contactEmail}</span>
-              </div>
-            )}
+            <InfoRow icon={<Phone className="h-3.5 w-3.5" />} value={conversation.phone} />
+            {conversation.contactName && <InfoRow icon={<UserCheck className="h-3.5 w-3.5" />} value={conversation.contactName} />}
+            {(conversation as any).contactEmail && <InfoRow icon={<Mail className="h-3.5 w-3.5" />} value={(conversation as any).contactEmail} />}
             <Badge variant="outline" className="text-xs">
               {conversation.channel === "whatsapp" ? "WhatsApp" : conversation.channel}
             </Badge>
@@ -235,29 +270,76 @@ export default function ConversationPanel({ conversationId }: Props) {
         )}
       </div>
 
-      {/* Lead Info */}
-      {lead && (
-        <div className="p-4 shrink-0">
-          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Dados do Lead</h4>
+      {/* Lead Info - Editable */}
+      <div className="p-4 shrink-0">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dados do Lead</h4>
+          {!editingLead ? (
+            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground hover:text-primary" onClick={() => setEditingLead(true)}>
+              <Pencil className="h-3 w-3 mr-1" />
+              Editar
+            </Button>
+          ) : (
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-primary" onClick={handleSaveLead} disabled={updateLead.isPending}>
+                <Save className="h-3 w-3 mr-1" />
+                Salvar
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground" onClick={handleCancelLead}>
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {editingLead ? (
+          <div className="space-y-2.5">
+            <FieldInput label="Intenção" value={leadIntention} onChange={setLeadIntention} placeholder="compra, troca, informação..." />
+            <FieldInput label="Veículo de Interesse" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
+            <div className="flex items-center justify-between py-1">
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Tem Troca?</label>
+              <Switch checked={leadHasTrade} onCheckedChange={setLeadHasTrade} />
+            </div>
+            {leadHasTrade && (
+              <>
+                <FieldInput label="Veículo de Troca" value={leadTradeVehicle} onChange={setLeadTradeVehicle} placeholder="Ex: Honda Civic" />
+                <div className="grid grid-cols-2 gap-2">
+                  <FieldInput label="Ano" value={leadTradeYear} onChange={setLeadTradeYear} placeholder="2020" />
+                  <FieldInput label="KM" value={leadTradeKm} onChange={setLeadTradeKm} placeholder="50.000" />
+                </div>
+              </>
+            )}
+            <FieldInput label="Forma de Pagamento" value={leadPaymentMethod} onChange={setLeadPaymentMethod} placeholder="financiamento, à vista..." />
+            <FieldInput label="Valor de Entrada" value={leadDownPayment} onChange={setLeadDownPayment} placeholder="R$ 10.000" />
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Status do Lead</label>
+              <Select value={leadStatus} onValueChange={setLeadStatus}>
+                <SelectTrigger className="h-8 text-sm bg-input border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="new">Novo</SelectItem>
+                  <SelectItem value="qualifying">Qualificando</SelectItem>
+                  <SelectItem value="qualified">Qualificado</SelectItem>
+                  <SelectItem value="contacted">Contatado</SelectItem>
+                  <SelectItem value="converted">Convertido</SelectItem>
+                  <SelectItem value="lost">Perdido</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        ) : lead ? (
           <div className="space-y-3">
-            {lead.intention && (
-              <LeadField icon={<Target className="h-3.5 w-3.5" />} label="Intenção" value={lead.intention} />
-            )}
-            {lead.vehicleInterest && (
-              <LeadField icon={<Car className="h-3.5 w-3.5" />} label="Veículo de Interesse" value={lead.vehicleInterest} />
-            )}
+            {lead.intention && <LeadField icon={<Target className="h-3.5 w-3.5" />} label="Intenção" value={lead.intention} />}
+            {lead.vehicleInterest && <LeadField icon={<Car className="h-3.5 w-3.5" />} label="Veículo de Interesse" value={lead.vehicleInterest} />}
             {lead.hasTrade !== null && lead.hasTrade !== undefined && (
               <LeadField icon={<ArrowLeftRight className="h-3.5 w-3.5" />} label="Tem Troca" value={lead.hasTrade ? "Sim" : "Não"} />
             )}
             {lead.tradeVehicle && (
               <LeadField icon={<Car className="h-3.5 w-3.5" />} label="Veículo Troca" value={`${lead.tradeVehicle} ${lead.tradeYear || ""} ${lead.tradeKm ? `- ${lead.tradeKm} km` : ""}`} />
             )}
-            {lead.paymentMethod && (
-              <LeadField icon={<CreditCard className="h-3.5 w-3.5" />} label="Pagamento" value={lead.paymentMethod} />
-            )}
-            {lead.downPayment && (
-              <LeadField icon={<CreditCard className="h-3.5 w-3.5" />} label="Entrada" value={lead.downPayment} />
-            )}
+            {lead.paymentMethod && <LeadField icon={<CreditCard className="h-3.5 w-3.5" />} label="Pagamento" value={lead.paymentMethod} />}
+            {lead.downPayment && <LeadField icon={<DollarSign className="h-3.5 w-3.5" />} label="Entrada" value={lead.downPayment} />}
             <Separator className="my-2" />
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Status do Lead</span>
@@ -271,8 +353,34 @@ export default function ConversationPanel({ conversationId }: Props) {
               </Badge>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-muted-foreground text-center py-3">Nenhum dado de lead coletado ainda. A IA coletará automaticamente durante a conversa.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FieldInput({ label, value, onChange, placeholder, disabled }: { label: string; value: string; onChange?: (v: string) => void; placeholder?: string; disabled?: boolean }) {
+  return (
+    <div>
+      <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">{label}</label>
+      <Input
+        value={value}
+        onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        placeholder={placeholder}
+        disabled={disabled}
+        className="h-8 text-sm bg-input border-border"
+      />
+    </div>
+  );
+}
+
+function InfoRow({ icon, value }: { icon: React.ReactNode; value: string }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="text-muted-foreground shrink-0">{icon}</span>
+      <span className="text-card-foreground">{value}</span>
     </div>
   );
 }

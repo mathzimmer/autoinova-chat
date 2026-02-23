@@ -12,7 +12,7 @@ export default function Dashboard() {
   const { data: leads } = trpc.lead.list.useQuery({ status: "all" });
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 pb-16 space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">Visão geral do atendimento Auto Inova</p>

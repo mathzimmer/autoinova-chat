@@ -159,15 +159,25 @@ const leadRouter = router({
   update: protectedProcedure
     .input(z.object({
       conversationId: z.number(),
+      name: z.string().optional(),
+      intention: z.string().optional(),
+      vehicleInterest: z.string().optional(),
+      hasTrade: z.boolean().optional(),
+      tradeVehicle: z.string().optional(),
+      tradeYear: z.string().optional(),
+      tradeKm: z.string().optional(),
+      paymentMethod: z.string().optional(),
+      downPayment: z.string().optional(),
       status: z.enum(["new", "qualifying", "qualified", "contacted", "converted", "lost"]).optional(),
-      notes: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
+      const { conversationId, ...data } = input;
+      // Get conversation phone for upsert
+      const conv = await getConversationById(conversationId);
       return upsertLead({
-        conversationId: input.conversationId,
-        phone: "",
-        status: input.status,
-        notes: input.notes,
+        conversationId,
+        phone: conv?.phone || "",
+        ...data,
       });
     }),
 });

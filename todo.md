@@ -142,3 +142,11 @@
 - [x] Agente de IA com memória: lembrar nome do cliente (contextBlock no system prompt)
 - [x] Agente de IA com contexto: seguir lógica da conversa conforme interação (lead data + 30 msgs)
 - [x] Agente de IA entender escolha de veículo e continuar conversa sobre ele (vehicleInterest no contexto)
+
+## Bugs e Melhorias - Rodada 2
+- [x] IA atualiza automaticamente dados do lead via tool atualizar_lead (intenção, veículo de interesse, troca, forma de pagamento)
+- [x] IA detecta quando cliente escolhe um veículo e chama atualizar_lead com essa escolha
+- [x] IA usa dados atualizados do lead para seguir o atendimento contextualizado
+- [x] Atendente humano pode editar todos os campos do lead no painel lateral (intenção, veículo, troca, pagamento, status)
+- [x] Dashboard com rolagem corrigida (overflow-auto no AppLayout + pb-16)
+- [x] Página de Veículos com rolagem corrigida (pb-16)
