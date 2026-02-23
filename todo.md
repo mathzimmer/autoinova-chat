@@ -131,3 +131,6 @@
 - [x] Adicionar botão "Restaurar Padrão" para voltar ao prompt original
 - [x] Adicionar rota de Configurações na sidebar de navegação
 - [x] Testes para os novos endpoints (37 testes passando)
+
+## Bugs
+- [x] IA retorna "instabilidade no momento" ao invés de buscar veículos no estoque quando cliente pergunta "Tem Corolla?" (CORRIGIDO: normalizeMessage não preservava tool_calls + IDs com caracteres inválidos)

@@ -30,13 +30,15 @@ INFORMAÇÕES A COLETAR (quando natural na conversa):
 - Forma de pagamento preferida (financiamento, à vista, consórcio)
 - Valor de entrada (se financiamento)
 
-REGRAS:
-- NUNCA invente veículos que não estão no estoque. Use APENAS os resultados da ferramenta de busca
-- Se não encontrar o veículo desejado, sugira alternativas similares do estoque
-- Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento
-- Não forneça valores exatos de financiamento, apenas estimativas gerais
-- Sempre que apresentar um veículo, mencione: marca, modelo, ano, preço, km e link
-- Quando houver preço promocional, destaque a economia
+REGRAS OBRIGATÓRIAS:
+- SEMPRE use a ferramenta buscar_veiculos quando o cliente mencionar QUALQUER veículo, marca, modelo, tipo de carro, faixa de preço ou perguntar o que tem disponível. NUNCA responda sobre veículos sem antes consultar o estoque com a ferramenta.
+- NUNCA invente veículos. Responda APENAS com base nos resultados da ferramenta buscar_veiculos.
+- Se o cliente perguntar "tem Corolla?", "tem SUV?", "tem carro até 50 mil?", etc., OBRIGATORIAMENTE chame buscar_veiculos ANTES de responder.
+- Se não encontrar o veículo desejado, use buscar_veiculos sem filtros para sugerir alternativas.
+- Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento.
+- Não forneça valores exatos de financiamento, apenas estimativas gerais.
+- Sempre que apresentar um veículo, mencione: marca, modelo, ano, preço, km e link.
+- Quando houver preço promocional, destaque a economia.
 - Nosso WhatsApp: (51) 99478-2062
 - Nosso endereço: Av Castro Alves, nº 1655, Sete de Setembro, Ivoti - RS
 
@@ -131,6 +133,8 @@ export async function processAIMessage(
   llmMessages.push({ role: "user", content: customerMessage });
 
   try {
+    console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 50)}..."`);
+
     // First call - may include tool calls
     let result = await invokeLLM({
       messages: llmMessages,
@@ -138,40 +142,60 @@ export async function processAIMessage(
       tool_choice: "auto",
     });
 
+    console.log(`[AI] First LLM response - finish_reason: ${result.choices[0]?.finish_reason}, has_tool_calls: ${!!result.choices[0]?.message?.tool_calls?.length}`);
+
     let assistantMessage = result.choices[0]?.message;
 
     // Handle tool calls (may need multiple rounds)
-    let maxToolRounds = 3;
+    let maxToolRounds = 5;
     while (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0 && maxToolRounds > 0) {
       maxToolRounds--;
 
+      // Sanitize tool_call IDs to match pattern ^[a-zA-Z0-9_-]+$
+      const sanitizedToolCalls = assistantMessage.tool_calls.map((tc: any) => ({
+        ...tc,
+        id: tc.id ? tc.id.replace(/[^a-zA-Z0-9_-]/g, '_') : `tool_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      }));
+
+      console.log(`[AI] Tool calls detected: ${sanitizedToolCalls.map((tc: any) => tc.function.name).join(", ")} (ids: ${sanitizedToolCalls.map((tc: any) => tc.id).join(", ")})`);
+
       // Add assistant message with tool calls to history
-      llmMessages.push({
+      const assistantMsg: any = {
         role: "assistant",
         content: assistantMessage.content || "",
-        tool_calls: assistantMessage.tool_calls,
-      } as any);
+        tool_calls: sanitizedToolCalls,
+      };
+      llmMessages.push(assistantMsg);
 
-      for (const toolCall of assistantMessage.tool_calls) {
+      for (const toolCall of sanitizedToolCalls) {
         let toolResult = "";
 
-        if (toolCall.function.name === "buscar_veiculos") {
-          const args = JSON.parse(toolCall.function.arguments);
-          toolResult = await searchVehiclesForAI({
-            brand: args.marca,
-            model: args.modelo,
-            maxPrice: args.preco_max,
-            minPrice: args.preco_min,
-            category: args.categoria,
-            fuel: args.combustivel,
-            transmission: args.cambio,
-            maxMileage: args.km_max,
-            yearMin: args.ano_min,
-            yearMax: args.ano_max,
-            color: args.cor,
-          });
-        } else if (toolCall.function.name === "resumo_estoque") {
-          toolResult = await getStockSummaryForAI();
+        try {
+          if (toolCall.function.name === "buscar_veiculos") {
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+            console.log(`[AI] Calling buscar_veiculos with args:`, JSON.stringify(args));
+            toolResult = await searchVehiclesForAI({
+              brand: args.marca,
+              model: args.modelo,
+              maxPrice: args.preco_max,
+              minPrice: args.preco_min,
+              category: args.categoria,
+              fuel: args.combustivel,
+              transmission: args.cambio,
+              maxMileage: args.km_max,
+              yearMin: args.ano_min,
+              yearMax: args.ano_max,
+              color: args.cor,
+            });
+            console.log(`[AI] buscar_veiculos result length: ${toolResult.length} chars`);
+          } else if (toolCall.function.name === "resumo_estoque") {
+            console.log(`[AI] Calling resumo_estoque`);
+            toolResult = await getStockSummaryForAI();
+            console.log(`[AI] resumo_estoque result length: ${toolResult.length} chars`);
+          }
+        } catch (toolError) {
+          console.error(`[AI] Tool ${toolCall.function.name} error:`, toolError);
+          toolResult = `Erro ao executar ferramenta: ${toolError instanceof Error ? toolError.message : "erro desconhecido"}`;
         }
 
         llmMessages.push({
@@ -182,17 +206,47 @@ export async function processAIMessage(
       }
 
       // Next call with tool results
-      result = await invokeLLM({
-        messages: llmMessages,
-        tools: TOOLS,
-        tool_choice: "auto",
-      });
-      assistantMessage = result.choices[0]?.message;
+      try {
+        result = await invokeLLM({
+          messages: llmMessages,
+          tools: TOOLS,
+          tool_choice: "auto",
+        });
+        console.log(`[AI] Follow-up LLM raw result:`, JSON.stringify(result).substring(0, 500));
+        assistantMessage = result.choices?.[0]?.message || null;
+        console.log(`[AI] Follow-up LLM response - finish_reason: ${result.choices?.[0]?.finish_reason}, has_tool_calls: ${!!assistantMessage?.tool_calls?.length}`);
+      } catch (followUpError) {
+        console.error(`[AI] Follow-up LLM call failed:`, followUpError);
+        // If follow-up fails, try without tools
+        try {
+          result = await invokeLLM({
+            messages: llmMessages,
+          });
+          assistantMessage = result.choices?.[0]?.message || null;
+          console.log(`[AI] Fallback LLM response (no tools):`, assistantMessage?.content?.toString().substring(0, 200));
+        } catch (fallbackError) {
+          console.error(`[AI] Fallback LLM also failed:`, fallbackError);
+          throw fallbackError;
+        }
+      }
     }
 
-    const fullResponse = typeof assistantMessage?.content === "string"
-      ? assistantMessage.content
-      : "";
+    // Extract content - handle both string and array content
+    let fullResponse = "";
+    if (assistantMessage?.content) {
+      if (typeof assistantMessage.content === "string") {
+        fullResponse = assistantMessage.content;
+      } else if (Array.isArray(assistantMessage.content)) {
+        fullResponse = assistantMessage.content
+          .map((part: any) => {
+            if (typeof part === "string") return part;
+            if (part?.type === "text") return part.text;
+            return "";
+          })
+          .join("");
+      }
+    }
+    console.log(`[AI] Final response length: ${fullResponse.length} chars`);
 
     // Extract lead data JSON from response
     let leadData: Record<string, unknown> | null = null;
