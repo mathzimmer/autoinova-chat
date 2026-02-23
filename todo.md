@@ -193,3 +193,12 @@
 - [x] Testado com áudio real: "Você não entende os meus áudios." - transcrito com sucesso
 - [x] 37 testes passando
 - [x] IMPORTANTE: Republicar para que correções entrem em produção
+
+## Bugs - Rodada 8 (Comportamento da IA)
+- [x] IA confunde veículos quando cliente muda de interesse (Sprinter -> Vectra) - CORRIGIDO: prompt reescrito com regras de foco
+- [x] IA pede preferências desnecessárias quando há apenas 1 resultado no estoque - CORRIGIDO: regra "se 1 resultado, apresente direto"
+- [x] IA diz "não consigo visualizar" quando recebe imagem - CORRIGIDO: prompt instrui a NUNCA dizer isso
+- [x] IA não atualiza lead quando cliente muda veículo de interesse - CORRIGIDO: regra explícita de atualizar lead ao mudar
+- [x] Melhorar prompt para manter foco no veículo atual da conversa - CORRIGIDO: seção REGRAS DE FOCO NA CONVERSA
+- [x] Reduzir keywords que ativam forceSearch desnecessariamente - CORRIGIDO: separado em model keywords e search keywords
+- [x] 52 testes passando (15 novos testes para IA)

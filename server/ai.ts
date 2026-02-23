@@ -7,13 +7,14 @@ export const DEFAULT_SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inov
 
 Seu papel é fazer atendimento de pré-venda, ajudando clientes a encontrar o veículo ideal e qualificando-os como leads.
 
-DIRETRIZES:
+DIRETRIZES DE COMUNICAÇÃO:
 - Seja cordial, profissional e objetivo
 - Use linguagem natural e amigável, como se estivesse conversando pelo WhatsApp
 - Responda sempre em português brasileiro
 - Não use formatação markdown (sem asteriscos, sem listas com bullet points)
 - Use emojis com moderação (1-2 por mensagem no máximo)
 - Mantenha respostas curtas e diretas (máximo 3 parágrafos)
+- NUNCA repita informações que já foram ditas na conversa
 
 FLUXO DE ATENDIMENTO:
 1. Cumprimente o cliente e pergunte como pode ajudar
@@ -30,36 +31,44 @@ INFORMAÇÕES A COLETAR (quando natural na conversa):
 - Forma de pagamento preferida (financiamento, à vista, consórcio)
 - Valor de entrada (se financiamento)
 
-REGRAS OBRIGATÓRIAS - BUSCA DE VEÍCULOS:
-- Você DEVE OBRIGATORIAMENTE chamar buscar_veiculos ANTES de responder QUALQUER mensagem que mencione veículo, marca, modelo, tipo de carro, faixa de preço ou pergunte o que tem disponível
-- Exemplos que EXIGEM buscar_veiculos: "tem Corolla?", "quero uma Sprinter", "tem SUV?", "carro até 50 mil", "quero outro carro", "tem algo parecido?", "o que vocês têm?", "quero ver opções"
-- NUNCA responda sobre veículos sem antes chamar buscar_veiculos. NUNCA invente veículos.
-- Se o cliente pedir um modelo específico (ex: "Palio Fire"), busque pelo modelo e mostre TODOS os disponíveis daquele modelo
-- Se não encontrar o veículo desejado, informe que não tem no estoque e use buscar_veiculos sem filtros para sugerir alternativas similares
-- Cada resultado da busca tem um [ID:X] - use esse ID ao chamar atualizar_lead para vincular o veículo ao lead
+REGRAS DE BUSCA DE VEÍCULOS:
+- Chame buscar_veiculos quando o cliente perguntar sobre um veículo, marca ou modelo ESPECÍFICO
+- Chame buscar_veiculos quando o cliente quiser ver opções ou perguntar o que tem disponível
+- NÃO chame buscar_veiculos para mensagens genéricas como "tenho troca", "quero financiar", "ok", "sim"
+- Se a busca retornar APENAS 1 resultado, apresente esse veículo diretamente SEM pedir mais preferências
+- Se a busca retornar poucos resultados (2-3), apresente todos diretamente
+- Se a busca retornar muitos resultados (4+), mostre os mais relevantes e pergunte se quer filtrar
+- NUNCA invente veículos que não estão no estoque
+- Cada resultado tem um [ID:X] - use esse ID ao chamar atualizar_lead para vincular o veículo
 
-REGRAS OBRIGATÓRIAS - ATUALIZAÇÃO DO LEAD:
+REGRAS DE FOCO NA CONVERSA:
+- Preste atenção no que o cliente está pedindo AGORA, não no que foi discutido antes
+- Se o cliente mudar de veículo de interesse (ex: estava falando de Sprinter e agora pergunta sobre Vectra), FOQUE no novo veículo
+- Quando o cliente mudar de interesse, chame atualizar_lead com o NOVO veículo e busque no estoque
+- NÃO misture informações de veículos diferentes na mesma resposta
+- Se o cliente confirmar interesse em um veículo específico, siga a conversa sobre AQUELE veículo
+
+REGRAS DE ATUALIZAÇÃO DO LEAD:
 - SEMPRE chame atualizar_lead quando coletar QUALQUER informação nova do cliente
-- Quando o cliente ESCOLHER um veículo entre as opções, chame atualizar_lead com veiculo_interesse E veiculo_id (o ID do veículo no estoque)
+- Quando o cliente ESCOLHER ou demonstrar interesse em um veículo, chame atualizar_lead com veiculo_interesse E veiculo_id
+- Quando o cliente MUDAR de veículo de interesse, atualize o lead com o NOVO veículo
 - Quando o cliente informar que tem carro para troca, chame atualizar_lead com os dados da troca
 - Quando o cliente informar forma de pagamento, chame atualizar_lead
-- Use atualizar_lead SEMPRE que houver informação nova, mesmo que parcial
 
 IMAGENS DO CLIENTE:
-- Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
-- Use o CONTEXTO DA CONVERSA para entender o que é a imagem. Exemplos:
-  - Se o cliente disse que vai mandar fotos do carro de troca e enviou imagens, entenda que são fotos do veículo de troca. Confirme: "Recebi as fotos do seu [veículo de troca]! Vou encaminhar para nossa equipe avaliar."
-  - Se o cliente está perguntando sobre um veículo e envia uma imagem, pode ser uma referência do que procura
-  - Se não houver contexto claro, pergunte educadamente: "Recebi sua foto! Pode me dizer do que se trata?"
-- NÃO tente descrever detalhes visuais da imagem (você não vê a imagem)
-- Sempre confirme o recebimento e siga o fluxo de atendimento normalmente
-- Se forem fotos de troca, chame atualizar_lead com tem_troca=true
+- Quando o cliente enviar uma imagem, CONFIRME o recebimento de forma natural e positiva
+- Use o CONTEXTO DA CONVERSA para entender o que é a imagem:
+  - Se o cliente mencionou que tem carro para troca e enviou foto: "Recebi as fotos do seu [veículo]! Vou encaminhar para nossa equipe avaliar."
+  - Se estavam falando de um veículo e o cliente envia foto: "Recebi a imagem! É uma referência do que você procura?"
+  - Se não houver contexto claro: "Recebi sua foto! Pode me dizer do que se trata?"
+- Você NÃO vê o conteúdo da imagem, mas NUNCA diga "não consigo visualizar" ou "não posso ver"
+- Simplesmente confirme o recebimento e continue o atendimento baseado no contexto
 
 ÁUDIO DO CLIENTE:
 - Quando o cliente enviar um áudio, o sistema transcreve automaticamente o conteúdo
-- Trate a transcrição do áudio EXATAMENTE como se fosse uma mensagem de texto normal
-- Responda ao conteúdo da transcrição normalmente, seguindo o fluxo de atendimento
-- NÃO mencione que recebeu um áudio ou que está lendo uma transcrição, apenas responda ao conteúdo
+- Trate a transcrição EXATAMENTE como se fosse uma mensagem de texto normal
+- Responda ao conteúdo normalmente, seguindo o fluxo de atendimento
+- NÃO mencione que recebeu um áudio ou que está lendo uma transcrição
 
 OUTRAS REGRAS:
 - Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento
@@ -84,38 +93,59 @@ export async function getSystemPrompt(): Promise<string> {
   return DEFAULT_SYSTEM_PROMPT;
 }
 
-// Keywords that indicate the customer is asking about vehicles
-const VEHICLE_KEYWORDS = [
-  "carro", "veículo", "veiculo", "auto", "automóvel", "automovel",
-  "suv", "sedan", "hatch", "picape", "pickup", "van", "caminhonete",
+// Keywords that indicate the customer is asking about a SPECIFIC vehicle
+// These should only trigger when the customer is clearly asking about a vehicle model/brand
+const VEHICLE_MODEL_KEYWORDS = [
+  // Specific models and brands
   "sprinter", "corolla", "civic", "gol", "onix", "hb20", "polo", "t-cross",
   "tracker", "creta", "compass", "renegade", "kicks", "nivus", "taos",
   "hilux", "ranger", "s10", "toro", "saveiro", "strada", "montana",
   "palio", "uno", "argo", "mobi", "kwid", "sandero", "logan",
   "cruze", "cobalt", "spin", "prisma", "joy", "virtus", "jetta",
-  "amarok", "tiguan", "nivus", "voyage", "fox", "up", "golf",
+  "amarok", "tiguan", "voyage", "fox", "up", "golf",
   "toyota", "honda", "volkswagen", "vw", "chevrolet", "gm", "fiat",
   "hyundai", "jeep", "nissan", "renault", "ford", "mitsubishi",
   "mercedes", "bmw", "audi", "volvo", "peugeot", "citroen", "kia",
   "caoa", "chery", "jac", "lifan", "byd", "gwm", "ram",
-  "tem", "quero", "procuro", "busco", "preciso", "gostaria",
+  "vectra", "astra", "celta", "classic", "meriva", "zafira", "blazer",
+  "fusca", "kombi", "brasilia", "variant", "passat",
+  "fiesta", "focus", "ka", "ecosport", "territory",
+  "fit", "city", "hrv", "wrv", "crv",
+  "etios", "yaris", "camry", "sw4", "rav4",
+  "tucson", "ix35", "santa fe", "azera",
+  // Categories
+  "suv", "sedan", "hatch", "picape", "pickup", "van", "caminhonete",
+];
+
+// Keywords that indicate the customer wants to see what's available (broader search)
+const VEHICLE_SEARCH_KEYWORDS = [
   "disponível", "disponivel", "estoque", "opção", "opcao", "opções",
-  "outro", "outra", "trocar", "mudar", "diferente",
-  "preço", "preco", "valor", "quanto", "custa", "financ",
-  "km", "quilometr", "ano", "modelo", "marca",
-  "flex", "diesel", "gasolina", "elétrico", "eletrico", "híbrido", "hibrido",
-  "manual", "automático", "automatico", "câmbio", "cambio",
+  "o que tem", "o que voces tem", "o que vocês têm",
+  "quero ver", "quero conhecer", "mostrar", "me mostra",
+  "carro até", "veículo até", "veiculo até",
 ];
 
 /**
- * Detect if the message is about vehicles and should trigger a search
+ * Detect if the message is about a specific vehicle and should trigger a search
  */
 function shouldForceVehicleSearch(message: string): boolean {
   const lower = message.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  return VEHICLE_KEYWORDS.some(kw => {
+  
+  // Check for specific vehicle model/brand mentions
+  const hasModel = VEHICLE_MODEL_KEYWORDS.some(kw => {
     const normalizedKw = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     return lower.includes(normalizedKw);
   });
+  
+  if (hasModel) return true;
+  
+  // Check for general search intent
+  const hasSearchIntent = VEHICLE_SEARCH_KEYWORDS.some(kw => {
+    const normalizedKw = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return lower.includes(normalizedKw);
+  });
+  
+  return hasSearchIntent;
 }
 
 const TOOLS: Tool[] = [
@@ -123,7 +153,7 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque REAL da concessionária Auto Inova. OBRIGATÓRIO usar SEMPRE que o cliente mencionar qualquer veículo, marca, modelo, tipo de carro, faixa de preço, ou quiser ver opções. Cada resultado inclui um [ID:X] que deve ser usado ao vincular o veículo ao lead.",
+      description: "Busca veículos disponíveis no estoque REAL da concessionária Auto Inova. Use quando o cliente perguntar sobre um veículo, marca ou modelo específico, ou quiser ver opções disponíveis. Cada resultado inclui um [ID:X] que deve ser usado ao vincular o veículo ao lead.",
       parameters: {
         type: "object",
         properties: {
@@ -161,13 +191,13 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "atualizar_lead",
-      description: "Atualiza os dados do lead/cliente no CRM. OBRIGATÓRIO chamar sempre que coletar qualquer informação nova do cliente. Quando o cliente escolher um veículo específico do estoque, inclua o veiculo_id (número [ID:X] do resultado da busca) para vincular o veículo ao lead.",
+      description: "Atualiza os dados do lead/cliente no CRM. OBRIGATÓRIO chamar sempre que coletar qualquer informação nova do cliente, incluindo quando o cliente MUDAR de veículo de interesse. Quando o cliente escolher um veículo específico do estoque, inclua o veiculo_id (número [ID:X] do resultado da busca) para vincular o veículo ao lead.",
       parameters: {
         type: "object",
         properties: {
           nome: { type: "string", description: "Nome do cliente" },
           intencao: { type: "string", description: "Intenção do cliente: compra, troca, informacao, test_drive, financiamento" },
-          veiculo_interesse: { type: "string", description: "Veículo que o cliente demonstrou interesse (marca modelo ano)" },
+          veiculo_interesse: { type: "string", description: "Veículo que o cliente demonstrou interesse AGORA (marca modelo ano). Atualize sempre que o cliente mudar de interesse." },
           veiculo_id: { type: "number", description: "ID do veículo no estoque (número [ID:X] retornado por buscar_veiculos). Use para vincular o lead ao veículo específico." },
           tem_troca: { type: "boolean", description: "Se o cliente tem veículo para dar como troca" },
           veiculo_troca: { type: "string", description: "Modelo do veículo de troca do cliente" },
@@ -221,13 +251,13 @@ export async function processAIMessage(
       contextBlock += `\n\nDADOS JÁ COLETADOS DESTE CLIENTE (via atualizar_lead):`;
       if (existingLead.name) contextBlock += `\n- Nome: ${existingLead.name}`;
       if (existingLead.intention) contextBlock += `\n- Intenção: ${existingLead.intention}`;
-      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse: ${existingLead.vehicleInterest}`;
+      if (existingLead.vehicleInterest) contextBlock += `\n- Último veículo de interesse registrado: ${existingLead.vehicleInterest}`;
       if (existingLead.vehicleId) contextBlock += `\n- ID do veículo vinculado: ${existingLead.vehicleId}`;
       if (existingLead.hasTrade) contextBlock += `\n- Tem troca: Sim`;
       if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm ? existingLead.tradeKm + " km" : ""}`;
       if (existingLead.paymentMethod) contextBlock += `\n- Forma de pagamento: ${existingLead.paymentMethod}`;
       if (existingLead.downPayment) contextBlock += `\n- Entrada: ${existingLead.downPayment}`;
-      contextBlock += `\n\nIMPORTANTE: Use essas informações para dar continuidade à conversa. NÃO pergunte novamente o que já foi respondido. Se o cliente já escolheu um veículo, continue a conversa sobre aquele veículo específico. Se coletar QUALQUER informação nova, chame atualizar_lead imediatamente.`;
+      contextBlock += `\n\nIMPORTANTE: Esses são dados já coletados. Se o cliente mudar de veículo de interesse, atualize o lead com o NOVO veículo usando atualizar_lead. Foque na mensagem ATUAL do cliente, não no histórico antigo.`;
     }
   } catch (e) {
     console.error("[AI] Failed to load lead context:", e);
@@ -304,7 +334,7 @@ export async function processAIMessage(
       const retryMessages = [...llmMessages];
       retryMessages.push({
         role: "user",
-        content: "[SISTEMA: O cliente mencionou um veículo. Você DEVE chamar buscar_veiculos AGORA antes de responder. Não responda sem buscar no estoque primeiro.]",
+        content: "[SISTEMA: O cliente mencionou um veículo ou quer ver opções. Você DEVE chamar buscar_veiculos AGORA antes de responder. Não responda sem buscar no estoque primeiro.]",
       });
       try {
         result = await invokeLLM({
