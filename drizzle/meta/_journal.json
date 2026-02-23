@@ -36,6 +36,13 @@
       "when": 1771809729179,
       "tag": "0004_parched_wrecker",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1771812982012,
+      "tag": "0005_faulty_lady_deathstrike",
+      "breakpoints": true
     }
   ]
 }

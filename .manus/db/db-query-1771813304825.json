@@ -1,0 +1,25 @@
+{
+  "query": "SELECT id, externalId, title FROM vehicles LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, externalId, title FROM vehicles LIMIT 3;",
+  "rows": [
+    {
+      "id": "2",
+      "externalId": "926538",
+      "title": "Hyundai HB20 C./C.Plus/C.Style 1.6 Flex 16V Mec. - Branco - 2015"
+    },
+    {
+      "id": "3",
+      "externalId": "926528",
+      "title": "Kia Motors Sportage EX 2.0 16V/ 2.0 16V Flex Aut. - Cinza - 2019"
+    },
+    {
+      "id": "4",
+      "externalId": "926277",
+      "title": "VolksWagen JETTA Comfort. 250 TSI 1.4 Flex 16v Aut. - Cinza - 2019"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\texternalId\ttitle\n2\t926538\tHyundai HB20 C./C.Plus/C.Style 1.6 Flex 16V Mec. - Branco - 2015\n3\t926528\tKia Motors Sportage EX 2.0 16V/ 2.0 16V Flex Aut. - Cinza - 2019\n4\t926277\tVolksWagen JETTA Comfort. 250 TSI 1.4 Flex 16v Aut. - Cinza - 2019\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

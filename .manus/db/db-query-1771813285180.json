@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, name, vehicleInterest, vehicleId, paymentMethod, downPayment, intention FROM leads WHERE vehicleId IS NOT NULL;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, name, vehicleInterest, vehicleId, paymentMethod, downPayment, intention FROM leads WHERE vehicleId IS NOT NULL;",
+  "rows": [
+    {
+      "id": "3",
+      "name": "NULL",
+      "vehicleInterest": "Mercedes Sprinter 417 Furgão Curto T.B. Die. (E6) - 2024",
+      "vehicleId": "811240",
+      "paymentMethod": "financiamento",
+      "downPayment": "50000",
+      "intention": "financiamento"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tvehicleInterest\tvehicleId\tpaymentMethod\tdownPayment\tintention\n3\tNULL\tMercedes Sprinter 417 Furgão Curto T.B. Die. (E6) - 2024\t811240\tfinanciamento\t50000\tfinanciamento\n",
+  "stderr": "",
+  "execution_time_ms": 51
+}

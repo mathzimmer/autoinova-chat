@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, name, vehicleInterest, vehicleId, paymentMethod, downPayment, intention, leadStatus FROM leads ORDER BY updatedAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, name, vehicleInterest, vehicleId, paymentMethod, downPayment, intention, leadStatus FROM leads ORDER BY updatedAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "3",
+      "name": "NULL",
+      "vehicleInterest": "Mercedes Sprinter 417 Furgão Curto T.B. Die. (E6) - 2024",
+      "vehicleId": "811240",
+      "paymentMethod": "financiamento",
+      "downPayment": "50000",
+      "intention": "financiamento",
+      "leadStatus": "new"
+    },
+    {
+      "id": "1",
+      "name": "Matheus",
+      "vehicleInterest": "Sprinter",
+      "vehicleId": "NULL",
+      "paymentMethod": "NULL",
+      "downPayment": "NULL",
+      "intention": "compra",
+      "leadStatus": "qualifying"
+    },
+    {
+      "id": "2",
+      "name": "Cliente Teste 4",
+      "vehicleInterest": "Corolla",
+      "vehicleId": "NULL",
+      "paymentMethod": "NULL",
+      "downPayment": "NULL",
+      "intention": "compra",
+      "leadStatus": "qualifying"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tvehicleInterest\tvehicleId\tpaymentMethod\tdownPayment\tintention\tleadStatus\n3\tNULL\tMercedes Sprinter 417 Furgão Curto T.B. Die. (E6) - 2024\t811240\tfinanciamento\t50000\tfinanciamento\tnew\n1\tMatheus\tSprinter\tNULL\tNULL\tNULL\tcompra\tqualifying\n2\tCliente Teste 4\tCorolla\tNULL\tNULL\tNULL\tcompra\tqualifying\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

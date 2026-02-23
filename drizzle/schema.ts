@@ -78,6 +78,7 @@ export const leads = mysqlTable("leads", {
   tradeKm: varchar("tradeKm", { length: 50 }),
   paymentMethod: varchar("paymentMethod", { length: 255 }),
   downPayment: varchar("downPayment", { length: 100 }),
+  vehicleId: int("vehicleId"),
   status: mysqlEnum("leadStatus", ["new", "qualifying", "qualified", "contacted", "converted", "lost"]).default("new").notNull(),
   score: int("score").default(0),
   notes: text("notes"),

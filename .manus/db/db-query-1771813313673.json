@@ -1,0 +1,30 @@
+{
+  "query": "SELECT id, externalId FROM vehicles ORDER BY id LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, externalId FROM vehicles ORDER BY id LIMIT 5;",
+  "rows": [
+    {
+      "id": "2",
+      "externalId": "926538"
+    },
+    {
+      "id": "3",
+      "externalId": "926528"
+    },
+    {
+      "id": "4",
+      "externalId": "926277"
+    },
+    {
+      "id": "5",
+      "externalId": "924078"
+    },
+    {
+      "id": "6",
+      "externalId": "919108"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\texternalId\n2\t926538\n3\t926528\n4\t926277\n5\t924078\n6\t919108\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

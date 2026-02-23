@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, externalId FROM vehicles WHERE model LIKE '%Sprinter%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, externalId FROM vehicles WHERE model LIKE '%Sprinter%';",
+  "rows": [
+    {
+      "id": "15",
+      "externalId": "920602"
+    },
+    {
+      "id": "36",
+      "externalId": "811240"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\texternalId\n15\t920602\n36\t811240\n",
+  "stderr": "",
+  "execution_time_ms": 53
+}

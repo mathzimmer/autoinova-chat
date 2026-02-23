@@ -308,7 +308,7 @@ async function searchVehiclesForAI(filters: {
     const features = Array.isArray(v.features) ? (v.features as string[]).slice(0, 5).join(", ") : "";
     const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
     
-    return `${i + 1}. **${v.title || `${v.brand} ${v.model}`}**
+    return `${i + 1}. [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`}
    ${priceStr} | ${v.year} | ${mileageStr} | ${v.fuel || ""} | ${v.transmission || ""}
    ${v.color ? `Cor: ${v.color}` : ""} ${v.condition ? `| ${v.condition}` : ""}
    ${features ? `Destaques: ${features}` : ""}

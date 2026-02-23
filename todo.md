@@ -150,3 +150,11 @@
 - [x] Atendente humano pode editar todos os campos do lead no painel lateral (intenção, veículo, troca, pagamento, status)
 - [x] Dashboard com rolagem corrigida (overflow-auto no AppLayout + pb-16)
 - [x] Página de Veículos com rolagem corrigida (pb-16)
+
+## Bugs e Melhorias - Rodada 3
+- [x] IA não busca veículos no estoque quando cliente pede um modelo - CORRIGIDO: forceSearch com retry automático
+- [x] IA SEMPRE chama buscar_veiculos antes de responder sobre qualquer veículo (prompt reforçado + retry)
+- [x] Quando cliente pede um modelo, mostra TODOS os disponíveis no estoque (até 10)
+- [x] Vincular lead ao veículo específico do estoque (vehicleId na tabela leads + schema atualizado)
+- [x] Tool atualizar_lead inclui vehicleId do estoque (usa [ID:X] da busca)
+- [x] 37 testes passando

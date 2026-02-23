@@ -1,0 +1,15 @@
+{
+  "query": "SELECT id, externalId, title FROM vehicles WHERE title LIKE '%Sprinter%' AND year = 2024;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, externalId, title FROM vehicles WHERE title LIKE '%Sprinter%' AND year = 2024;",
+  "rows": [
+    {
+      "id": "36",
+      "externalId": "811240",
+      "title": "Mercedes Sprinter 417 Furgão Curto T.B. Die. (E6) - Branco - 2024"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\texternalId\ttitle\n36\t811240\tMercedes Sprinter 417 Furgão Curto T.B. Die. (E6) - Branco - 2024\n",
+  "stderr": "",
+  "execution_time_ms": 65
+}

@@ -1,0 +1,30 @@
+{
+  "query": "SELECT id, externalId FROM vehicles WHERE id != CAST(externalId AS UNSIGNED) LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, externalId FROM vehicles WHERE id != CAST(externalId AS UNSIGNED) LIMIT 5;",
+  "rows": [
+    {
+      "id": "24",
+      "externalId": "475072"
+    },
+    {
+      "id": "37",
+      "externalId": "525466"
+    },
+    {
+      "id": "72",
+      "externalId": "534660"
+    },
+    {
+      "id": "12",
+      "externalId": "583995"
+    },
+    {
+      "id": "97",
+      "externalId": "627285"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\texternalId\n24\t475072\n37\t525466\n72\t534660\n12\t583995\n97\t627285\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}

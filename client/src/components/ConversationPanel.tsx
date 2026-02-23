@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -18,6 +18,10 @@ export default function ConversationPanel({ conversationId }: Props) {
   const utils = trpc.useUtils();
   const { data: conversation } = trpc.conversation.getById.useQuery({ id: conversationId });
   const { data: lead, refetch: refetchLead } = trpc.lead.getByConversation.useQuery({ conversationId });
+  const { data: vehicles } = trpc.vehicle.list.useQuery();
+
+  // Find the linked vehicle
+  const linkedVehicle = lead?.vehicleId && vehicles ? vehicles.find((v: any) => v.id === lead.vehicleId) : null;
 
   // Contact editing state
   const [editingContact, setEditingContact] = useState(false);
@@ -332,6 +336,21 @@ export default function ConversationPanel({ conversationId }: Props) {
           <div className="space-y-3">
             {lead.intention && <LeadField icon={<Target className="h-3.5 w-3.5" />} label="Intenção" value={lead.intention} />}
             {lead.vehicleInterest && <LeadField icon={<Car className="h-3.5 w-3.5" />} label="Veículo de Interesse" value={lead.vehicleInterest} />}
+            {linkedVehicle && (
+              <div className="p-2 rounded-md bg-primary/10 border border-primary/20">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Link2 className="h-3 w-3 text-primary" />
+                  <span className="text-[10px] text-primary uppercase tracking-wider font-semibold">Veículo Vinculado</span>
+                </div>
+                <p className="text-sm text-card-foreground font-medium">{linkedVehicle.title || `${linkedVehicle.brand} ${linkedVehicle.model}`}</p>
+                <p className="text-xs text-muted-foreground">{linkedVehicle.year} | R$ {linkedVehicle.price?.toLocaleString("pt-BR")} | {linkedVehicle.mileage?.toLocaleString("pt-BR")} km</p>
+                {linkedVehicle.url && (
+                  <a href={linkedVehicle.url} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline flex items-center gap-1 mt-1">
+                    <ExternalLink className="h-3 w-3" /> Ver anúncio
+                  </a>
+                )}
+              </div>
+            )}
             {lead.hasTrade !== null && lead.hasTrade !== undefined && (
               <LeadField icon={<ArrowLeftRight className="h-3.5 w-3.5" />} label="Tem Troca" value={lead.hasTrade ? "Sim" : "Não"} />
             )}

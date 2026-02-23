@@ -162,6 +162,7 @@ const leadRouter = router({
       name: z.string().optional(),
       intention: z.string().optional(),
       vehicleInterest: z.string().optional(),
+      vehicleId: z.number().nullable().optional(),
       hasTrade: z.boolean().optional(),
       tradeVehicle: z.string().optional(),
       tradeYear: z.string().optional(),

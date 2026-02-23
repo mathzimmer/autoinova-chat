@@ -18,7 +18,7 @@ DIRETRIZES:
 FLUXO DE ATENDIMENTO:
 1. Cumprimente o cliente e pergunte como pode ajudar
 2. Entenda o que o cliente procura (tipo de veículo, faixa de preço, preferências)
-3. Use a ferramenta de busca para encontrar veículos disponíveis no estoque REAL
+3. Use a ferramenta buscar_veiculos para encontrar veículos disponíveis no estoque REAL
 4. Apresente as opções de forma clara e atrativa, incluindo o link do veículo quando disponível
 5. Colete informações para qualificação: nome, interesse, se tem veículo para troca, forma de pagamento
 6. Se o cliente demonstrar interesse real, sugira agendar uma visita ou test drive
@@ -30,13 +30,17 @@ INFORMAÇÕES A COLETAR (quando natural na conversa):
 - Forma de pagamento preferida (financiamento, à vista, consórcio)
 - Valor de entrada (se financiamento)
 
-REGRAS OBRIGATÓRIAS SOBRE FERRAMENTAS:
-- SEMPRE use buscar_veiculos quando o cliente mencionar QUALQUER veículo, marca, modelo, tipo de carro, faixa de preço ou perguntar o que tem disponível
-- NUNCA invente veículos. Responda APENAS com base nos resultados de buscar_veiculos
-- Se o cliente perguntar "tem Corolla?", "tem SUV?", "tem carro até 50 mil?", etc., OBRIGATORIAMENTE chame buscar_veiculos ANTES de responder
-- Se não encontrar o veículo desejado, use buscar_veiculos sem filtros para sugerir alternativas
-- SEMPRE use atualizar_lead quando coletar QUALQUER informação nova do cliente: nome, veículo de interesse, se tem troca, forma de pagamento, etc.
-- Quando o cliente ESCOLHER um veículo entre as opções apresentadas, IMEDIATAMENTE chame atualizar_lead com o veículo escolhido
+REGRAS OBRIGATÓRIAS - BUSCA DE VEÍCULOS:
+- Você DEVE OBRIGATORIAMENTE chamar buscar_veiculos ANTES de responder QUALQUER mensagem que mencione veículo, marca, modelo, tipo de carro, faixa de preço ou pergunte o que tem disponível
+- Exemplos que EXIGEM buscar_veiculos: "tem Corolla?", "quero uma Sprinter", "tem SUV?", "carro até 50 mil", "quero outro carro", "tem algo parecido?", "o que vocês têm?", "quero ver opções"
+- NUNCA responda sobre veículos sem antes chamar buscar_veiculos. NUNCA invente veículos.
+- Se o cliente pedir um modelo específico (ex: "Palio Fire"), busque pelo modelo e mostre TODOS os disponíveis daquele modelo
+- Se não encontrar o veículo desejado, informe que não tem no estoque e use buscar_veiculos sem filtros para sugerir alternativas similares
+- Cada resultado da busca tem um [ID:X] - use esse ID ao chamar atualizar_lead para vincular o veículo ao lead
+
+REGRAS OBRIGATÓRIAS - ATUALIZAÇÃO DO LEAD:
+- SEMPRE chame atualizar_lead quando coletar QUALQUER informação nova do cliente
+- Quando o cliente ESCOLHER um veículo entre as opções, chame atualizar_lead com veiculo_interesse E veiculo_id (o ID do veículo no estoque)
 - Quando o cliente informar que tem carro para troca, chame atualizar_lead com os dados da troca
 - Quando o cliente informar forma de pagamento, chame atualizar_lead
 - Use atualizar_lead SEMPRE que houver informação nova, mesmo que parcial
@@ -64,12 +68,46 @@ export async function getSystemPrompt(): Promise<string> {
   return DEFAULT_SYSTEM_PROMPT;
 }
 
+// Keywords that indicate the customer is asking about vehicles
+const VEHICLE_KEYWORDS = [
+  "carro", "veículo", "veiculo", "auto", "automóvel", "automovel",
+  "suv", "sedan", "hatch", "picape", "pickup", "van", "caminhonete",
+  "sprinter", "corolla", "civic", "gol", "onix", "hb20", "polo", "t-cross",
+  "tracker", "creta", "compass", "renegade", "kicks", "nivus", "taos",
+  "hilux", "ranger", "s10", "toro", "saveiro", "strada", "montana",
+  "palio", "uno", "argo", "mobi", "kwid", "sandero", "logan",
+  "cruze", "cobalt", "spin", "prisma", "joy", "virtus", "jetta",
+  "amarok", "tiguan", "nivus", "voyage", "fox", "up", "golf",
+  "toyota", "honda", "volkswagen", "vw", "chevrolet", "gm", "fiat",
+  "hyundai", "jeep", "nissan", "renault", "ford", "mitsubishi",
+  "mercedes", "bmw", "audi", "volvo", "peugeot", "citroen", "kia",
+  "caoa", "chery", "jac", "lifan", "byd", "gwm", "ram",
+  "tem", "quero", "procuro", "busco", "preciso", "gostaria",
+  "disponível", "disponivel", "estoque", "opção", "opcao", "opções",
+  "outro", "outra", "trocar", "mudar", "diferente",
+  "preço", "preco", "valor", "quanto", "custa", "financ",
+  "km", "quilometr", "ano", "modelo", "marca",
+  "flex", "diesel", "gasolina", "elétrico", "eletrico", "híbrido", "hibrido",
+  "manual", "automático", "automatico", "câmbio", "cambio",
+];
+
+/**
+ * Detect if the message is about vehicles and should trigger a search
+ */
+function shouldForceVehicleSearch(message: string): boolean {
+  const lower = message.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return VEHICLE_KEYWORDS.some(kw => {
+    const normalizedKw = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    return lower.includes(normalizedKw);
+  });
+}
+
 const TOOLS: Tool[] = [
   {
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque REAL da concessionária Auto Inova. Use sempre que o cliente perguntar sobre veículos, preços, modelos ou quiser ver opções.",
+      description: "Busca veículos disponíveis no estoque REAL da concessionária Auto Inova. OBRIGATÓRIO usar SEMPRE que o cliente mencionar qualquer veículo, marca, modelo, tipo de carro, faixa de preço, ou quiser ver opções. Cada resultado inclui um [ID:X] que deve ser usado ao vincular o veículo ao lead.",
       parameters: {
         type: "object",
         properties: {
@@ -107,13 +145,14 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "atualizar_lead",
-      description: "Atualiza os dados do lead/cliente no CRM. OBRIGATÓRIO chamar sempre que coletar qualquer informação nova do cliente durante a conversa: nome, veículo de interesse, se tem troca, veículo de troca, forma de pagamento, valor de entrada, intenção. Chame mesmo com dados parciais - cada campo é opcional. Quando o cliente escolher um veículo específico, atualize veiculo_interesse com o veículo escolhido.",
+      description: "Atualiza os dados do lead/cliente no CRM. OBRIGATÓRIO chamar sempre que coletar qualquer informação nova do cliente. Quando o cliente escolher um veículo específico do estoque, inclua o veiculo_id (número [ID:X] do resultado da busca) para vincular o veículo ao lead.",
       parameters: {
         type: "object",
         properties: {
           nome: { type: "string", description: "Nome do cliente" },
           intencao: { type: "string", description: "Intenção do cliente: compra, troca, informacao, test_drive, financiamento" },
-          veiculo_interesse: { type: "string", description: "Veículo que o cliente demonstrou interesse (marca modelo ano). Atualize quando o cliente escolher um veículo específico." },
+          veiculo_interesse: { type: "string", description: "Veículo que o cliente demonstrou interesse (marca modelo ano)" },
+          veiculo_id: { type: "number", description: "ID do veículo no estoque (número [ID:X] retornado por buscar_veiculos). Use para vincular o lead ao veículo específico." },
           tem_troca: { type: "boolean", description: "Se o cliente tem veículo para dar como troca" },
           veiculo_troca: { type: "string", description: "Modelo do veículo de troca do cliente" },
           ano_troca: { type: "string", description: "Ano do veículo de troca" },
@@ -167,6 +206,7 @@ export async function processAIMessage(
       if (existingLead.name) contextBlock += `\n- Nome: ${existingLead.name}`;
       if (existingLead.intention) contextBlock += `\n- Intenção: ${existingLead.intention}`;
       if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse: ${existingLead.vehicleInterest}`;
+      if (existingLead.vehicleId) contextBlock += `\n- ID do veículo vinculado: ${existingLead.vehicleId}`;
       if (existingLead.hasTrade) contextBlock += `\n- Tem troca: Sim`;
       if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm ? existingLead.tradeKm + " km" : ""}`;
       if (existingLead.paymentMethod) contextBlock += `\n- Forma de pagamento: ${existingLead.paymentMethod}`;
@@ -205,17 +245,40 @@ export async function processAIMessage(
   // Track lead data collected during this interaction
   let collectedLeadData: Record<string, unknown> | null = null;
 
-  try {
-    console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 50)}..."`);
+  // Detect if we should force vehicle search
+  const forceSearch = shouldForceVehicleSearch(customerMessage);
 
-    // First call - may include tool calls
+  try {
+    console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 80)}..." forceSearch=${forceSearch}`);
+
+    // First call - always use auto, but the prompt strongly instructs to use tools
     let result = await invokeLLM({
       messages: llmMessages,
       tools: TOOLS,
       tool_choice: "auto",
     });
 
-    console.log(`[AI] First LLM response - finish_reason: ${result.choices[0]?.finish_reason}, has_tool_calls: ${!!result.choices[0]?.message?.tool_calls?.length}`);
+    console.log(`[AI] First LLM response - finish_reason: ${result.choices[0]?.finish_reason}, has_tool_calls: ${!!result.choices[0]?.message?.tool_calls?.length}, forceSearch: ${forceSearch}`);
+
+    // If forceSearch is true but the model didn't use tools, retry with explicit instruction
+    if (forceSearch && !result.choices[0]?.message?.tool_calls?.length) {
+      console.log(`[AI] Force search active but no tool call detected. Retrying with explicit instruction.`);
+      const retryMessages = [...llmMessages];
+      retryMessages.push({
+        role: "user",
+        content: "[SISTEMA: O cliente mencionou um veículo. Você DEVE chamar buscar_veiculos AGORA antes de responder. Não responda sem buscar no estoque primeiro.]",
+      });
+      try {
+        result = await invokeLLM({
+          messages: retryMessages,
+          tools: TOOLS,
+          tool_choice: "auto",
+        });
+        console.log(`[AI] Retry response - finish_reason: ${result.choices[0]?.finish_reason}, has_tool_calls: ${!!result.choices[0]?.message?.tool_calls?.length}`);
+      } catch (retryErr) {
+        console.error(`[AI] Retry failed, using original response:`, retryErr);
+      }
+    }
 
     let assistantMessage = result.choices[0]?.message;
 
@@ -259,7 +322,7 @@ export async function processAIMessage(
               yearMax: args.ano_max,
               color: args.cor,
             });
-            console.log(`[AI] buscar_veiculos: ${toolResult.length} chars`);
+            console.log(`[AI] buscar_veiculos: ${toolResult.length} chars, results found`);
 
           } else if (toolCall.function.name === "resumo_estoque") {
             toolResult = await getStockSummaryForAI();
@@ -278,6 +341,7 @@ export async function processAIMessage(
             if (args.nome) leadUpdate.name = args.nome;
             if (args.intencao) leadUpdate.intention = args.intencao;
             if (args.veiculo_interesse) leadUpdate.vehicleInterest = args.veiculo_interesse;
+            if (args.veiculo_id) leadUpdate.vehicleId = args.veiculo_id;
             if (args.tem_troca !== undefined) leadUpdate.hasTrade = args.tem_troca;
             if (args.veiculo_troca) leadUpdate.tradeVehicle = args.veiculo_troca;
             if (args.ano_troca) leadUpdate.tradeYear = args.ano_troca;
@@ -344,38 +408,57 @@ export async function processAIMessage(
           .join("");
       }
     }
-    console.log(`[AI] Final response length: ${fullResponse.length} chars`);
 
-    // Clean response - remove any stray JSON blocks that might still appear
-    const cleanResponse = fullResponse.replace(/\{[\s]*"intencao"[\s\S]*?\}$/g, "").trim();
+    // Clean up any JSON artifacts from the response
+    fullResponse = fullResponse
+      .replace(/```json[\s\S]*?```/g, "")
+      .replace(/\{[\s\S]*?"lead_data"[\s\S]*?\}/g, "")
+      .trim();
 
-    // Log AI usage
+    if (!fullResponse) {
+      fullResponse = "Desculpe, não consegui processar sua mensagem. Pode repetir?";
+    }
+
+    // Log AI interaction
     const responseTime = Date.now() - startTime;
-    await createAiLog({
-      conversationId: conversation.id,
-      promptTokens: result.usage?.prompt_tokens || 0,
-      completionTokens: result.usage?.completion_tokens || 0,
-      totalTokens: result.usage?.total_tokens || 0,
-      responseTimeMs: responseTime,
-      toolUsed: assistantMessage?.tool_calls ? assistantMessage.tool_calls.map((tc: any) => tc.function.name).join(",") : null,
-      success: true,
-    });
+    const usage = result.usage;
+    try {
+      await createAiLog({
+        conversationId: conversation.id,
+        promptTokens: usage?.prompt_tokens || 0,
+        completionTokens: usage?.completion_tokens || 0,
+        totalTokens: usage?.total_tokens || 0,
+        responseTimeMs: responseTime,
+        toolUsed: assistantMessage?.tool_calls?.length ? "tool_calls" : "none",
+        success: true,
+      });
+    } catch (logErr) {
+      console.error("[AI] Failed to log AI interaction:", logErr);
+    }
 
-    return { response: cleanResponse, leadData: collectedLeadData };
+    console.log(`[AI] Response generated in ${responseTime}ms (${usage?.total_tokens || 0} tokens)`);
+
+    return { response: fullResponse, leadData: collectedLeadData };
+
   } catch (error) {
     console.error("[AI] Error processing message:", error);
 
-    // Log failed attempt
+    // Log failed interaction
     const responseTime = Date.now() - startTime;
-    await createAiLog({
-      conversationId: conversation.id,
-      promptTokens: 0,
-      completionTokens: 0,
-      totalTokens: 0,
-      responseTimeMs: responseTime,
-      toolUsed: null,
-      success: false,
-    });
+    try {
+      await createAiLog({
+        conversationId: conversation.id,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        responseTimeMs: responseTime,
+        toolUsed: "none",
+        success: false,
+        errorMessage: error instanceof Error ? error.message : "Unknown error",
+      });
+    } catch (logErr) {
+      console.error("[AI] Failed to log error:", logErr);
+    }
 
     return {
       response: "Desculpe, estou com uma instabilidade no momento. Um atendente humano será notificado para continuar seu atendimento. 🙏",
