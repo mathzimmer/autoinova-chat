@@ -47,13 +47,20 @@ REGRA NÚMERO 5 - ATUALIZAÇÃO DO LEAD:
 - Ao final de cada interação significativa, chame atualizar_lead com o campo "notas" contendo um resumo breve da conversa (ex: "Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar")
 - FLUXO DE MUDANÇA DE INTERESSE: 1) atualizar_lead com novo veiculo_interesse + veiculo_id: null → 2) buscar_veiculos pelo novo modelo → 3) apresentar resultados
 
-REGRA NÚMERO 6 - IMAGENS:
+REGRA NÚMERO 6 - IMAGENS E FOTOS:
 - Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
 - Use o contexto da conversa para entender (ex: se falou de troca, provavelmente é foto do carro de troca)
 - NUNCA diga "não consigo visualizar", "não posso ver a imagem" ou similar
 - Diga algo como "Recebi a foto! Vou encaminhar para nossa equipe avaliar."
+- PROIBIDO usar [FOTO], [IMAGEM], [IMAGE] ou qualquer marcação de imagem na resposta
+- As fotos dos veículos são enviadas automaticamente - NÃO mencione isso na resposta
+- PROIBIDO mencionar [ID:X] ou qualquer ID interno na resposta
 
-REGRA NÚMERO 7 - ÁUDIO:
+REGRA NÚMERO 7 - LIMPEZA DE RESPOSTA:
+- Remova qualquer [ID:X], [FOTO], [IMAGEM] ou marcação técnica da resposta antes de enviar
+- A resposta deve ser apenas texto natural e legível para o cliente
+
+REGRA NÚMERO 8 - ÁUDIO:
 - Áudios são transcritos automaticamente. Trate como texto normal.
 - NUNCA mencione que é áudio ou transcrição.
 
@@ -493,6 +500,10 @@ export async function processAIMessage(
       .replace(/^[\s]*[-•\*]\s+/gm, "") // Remove bullet points (-, •, *)
       .replace(/^[\s]*\d+\.\s{2,}/gm, (match) => match.replace(/\s{2,}$/, " ")) // Clean double spaces after numbers
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2") // Convert [text](url) to text url
+      .replace(/\[FOTO\]/gi, "")        // Remove [FOTO] markers
+      .replace(/\[IMAGEM\]/gi, "")      // Remove [IMAGEM] markers
+      .replace(/\[IMAGE\]/gi, "")       // Remove [IMAGE] markers
+      .replace(/\[ID:\d+\]/g, "")       // Remove [ID:X] markers
       .replace(/\n{3,}/g, "\n\n")       // Max 2 consecutive newlines
       .trim();
 

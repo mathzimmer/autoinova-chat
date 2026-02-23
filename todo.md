@@ -254,3 +254,10 @@
 - [x] Testar envio de múltiplas imagens em sequência (com delay de 500ms)
 - [x] Extrair IDs [ID:X] da resposta da IA e buscar imagens
 - [x] 67 testes passando
+
+## Bugs - Rodada 15 (Envio de Fotos)
+- [x] IA estava colocando [FOTO] no texto - CORRIGIDO: prompt proíbe explicitamente + strip de [FOTO], [ID:X]
+- [x] Remover marcações de foto da resposta - CORRIGIDO: regex remove [FOTO], [IMAGEM], [IMAGE], [ID:X]
+- [x] Garantir envio automático sem texto [FOTO] - CORRIGIDO: fotos enviadas assincronamente, resposta limpa
+- [x] Validar recebimento no WhatsApp - CONFIRMADO: cliente recebe foto + resposta limpa
+- [x] 67 testes passando
