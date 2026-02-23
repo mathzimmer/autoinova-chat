@@ -183,3 +183,13 @@
 - [x] Melhorado fallback: se transcrição falhar, IA pede gentilmente para cliente digitar
 - [x] Adicionado logging detalhado para diagnóstico
 - [x] 37 testes passando
+
+## Bugs - Rodada 7 (Transcrição de Áudio - Persistente)
+- [x] Transcrição corrigida: mime type 'audio/ogg; codecs=opus' não era tratado corretamente
+- [x] Corrigido voiceTranscription.ts: getFileExtension agora strip codec params
+- [x] Corrigido voiceTranscription.ts: normaliza mime type do Blob para Whisper API
+- [x] Corrigido voiceTranscription.ts: passa language no FormData para melhor precisão
+- [x] Corrigido media.ts: getExtension e contentType agora strip codec params
+- [x] Testado com áudio real: "Você não entende os meus áudios." - transcrito com sucesso
+- [x] 37 testes passando
+- [x] IMPORTANTE: Republicar para que correções entrem em produção

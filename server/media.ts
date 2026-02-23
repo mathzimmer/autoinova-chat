@@ -35,7 +35,8 @@ export async function processWhatsAppMedia(
 
     // Step 3: Determine file extension and content type
     const ext = getExtension(type, mimeType);
-    const contentType = mimeType || getDefaultMimeType(type);
+    // Strip codec params for S3 content type (e.g., 'audio/ogg; codecs=opus' -> 'audio/ogg')
+    const contentType = (mimeType || getDefaultMimeType(type)).split(';')[0].trim();
     const uniqueId = nanoid(12);
     const key = `media/${type}/${uniqueId}.${ext}`;
 
@@ -75,6 +76,8 @@ export async function uploadMediaToS3(
 
 function getExtension(type: "image" | "audio" | "document", mimeType?: string): string {
   if (mimeType) {
+    // Strip codec parameters (e.g., 'audio/ogg; codecs=opus' -> 'audio/ogg')
+    const baseMime = mimeType.split(';')[0].trim().toLowerCase();
     const mimeMap: Record<string, string> = {
       "image/jpeg": "jpg",
       "image/png": "png",
@@ -88,7 +91,7 @@ function getExtension(type: "image" | "audio" | "document", mimeType?: string): 
       "audio/webm": "webm",
       "application/pdf": "pdf",
     };
-    if (mimeMap[mimeType]) return mimeMap[mimeType];
+    if (mimeMap[baseMime]) return mimeMap[baseMime];
   }
 
   switch (type) {

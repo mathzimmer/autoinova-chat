@@ -126,13 +126,19 @@ export async function transcribeAudio(
     // Step 3: Create FormData for multipart upload to Whisper API
     const formData = new FormData();
     
-    // Create a Blob from the buffer and append to form
+    // Normalize mime type (strip codec params) and create Blob
+    const baseMime = mimeType.split(';')[0].trim();
     const filename = `audio.${getFileExtension(mimeType)}`;
-    const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
+    const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: baseMime });
     formData.append("file", audioBlob, filename);
     
     formData.append("model", "whisper-1");
     formData.append("response_format", "verbose_json");
+    
+    // Add language if specified (helps Whisper accuracy)
+    if (options.language) {
+      formData.append("language", options.language);
+    }
     
     // Add prompt - use custom prompt if provided, otherwise generate based on language
     const prompt = options.prompt || (
@@ -198,6 +204,8 @@ export async function transcribeAudio(
  * Helper function to get file extension from MIME type
  */
 function getFileExtension(mimeType: string): string {
+  // Strip codec parameters (e.g., 'audio/ogg; codecs=opus' -> 'audio/ogg')
+  const baseMime = mimeType.split(';')[0].trim().toLowerCase();
   const mimeToExt: Record<string, string> = {
     'audio/webm': 'webm',
     'audio/mp3': 'mp3',
@@ -207,9 +215,12 @@ function getFileExtension(mimeType: string): string {
     'audio/ogg': 'ogg',
     'audio/m4a': 'm4a',
     'audio/mp4': 'm4a',
+    'audio/x-m4a': 'm4a',
+    'audio/aac': 'aac',
+    'audio/opus': 'ogg',
   };
   
-  return mimeToExt[mimeType] || 'audio';
+  return mimeToExt[baseMime] || 'ogg';
 }
 
 /**
