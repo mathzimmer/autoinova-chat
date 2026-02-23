@@ -240,3 +240,9 @@
 - [x] IA volta a falar de Kia Soul - CORRIGIDO: [MENSAGEM ATUAL] + prioridade da conversa recente (já no código)
 - [x] IA responde "?" com assunto aleatório - CORRIGIDO: prompt mais claro sobre manter foco
 - [x] 67 testes passando
+
+## Feature - Rodada 13
+- [x] Adicionar campo de notas/resumo da conversa visível na interface do Lead (ConversationPanel + Leads page)
+- [x] Permitir visualizar e editar o resumo gerado pela IA na tela de leads
+- [x] Campo notes adicionado ao lead.update no router
+- [x] 67 testes passando

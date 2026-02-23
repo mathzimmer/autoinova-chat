@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Target, Phone, Car, CreditCard, ArrowLeftRight, Users } from "lucide-react";
+import { Target, Phone, Car, CreditCard, ArrowLeftRight, Users, FileText } from "lucide-react";
 
 export default function Leads() {
   const [statusFilter, setStatusFilter] = useState("all");
@@ -112,6 +112,15 @@ export default function Leads() {
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <CreditCard className="h-3 w-3" />
                     <span>{lead.paymentMethod} {lead.downPayment ? `- Entrada: ${lead.downPayment}` : ""}</span>
+                  </div>
+                )}
+                {(lead as any).notes && (
+                  <div className="mt-2 p-2 rounded-md bg-muted/50 border border-border">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <FileText className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Resumo</span>
+                    </div>
+                    <p className="text-xs text-card-foreground leading-relaxed whitespace-pre-wrap line-clamp-3">{(lead as any).notes}</p>
                   </div>
                 )}
                 {lead.score !== null && lead.score !== undefined && lead.score > 0 && (

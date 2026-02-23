@@ -169,6 +169,7 @@ const leadRouter = router({
       tradeKm: z.string().optional(),
       paymentMethod: z.string().optional(),
       downPayment: z.string().optional(),
+      notes: z.string().optional(),
       status: z.enum(["new", "qualifying", "qualified", "contacted", "converted", "lost"]).optional(),
     }))
     .mutation(async ({ input }) => {

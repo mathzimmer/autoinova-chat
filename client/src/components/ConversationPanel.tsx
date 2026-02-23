@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2 } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -39,6 +39,7 @@ export default function ConversationPanel({ conversationId }: Props) {
   const [leadTradeKm, setLeadTradeKm] = useState("");
   const [leadPaymentMethod, setLeadPaymentMethod] = useState("");
   const [leadDownPayment, setLeadDownPayment] = useState("");
+  const [leadNotes, setLeadNotes] = useState("");
   const [leadStatus, setLeadStatus] = useState("qualifying");
 
   useEffect(() => {
@@ -59,6 +60,7 @@ export default function ConversationPanel({ conversationId }: Props) {
       setLeadTradeKm(lead.tradeKm || "");
       setLeadPaymentMethod(lead.paymentMethod || "");
       setLeadDownPayment(lead.downPayment || "");
+      setLeadNotes((lead as any).notes || "");
       setLeadStatus(lead.status || "qualifying");
     }
   }, [lead]);
@@ -127,6 +129,7 @@ export default function ConversationPanel({ conversationId }: Props) {
       tradeKm: leadTradeKm.trim() || undefined,
       paymentMethod: leadPaymentMethod.trim() || undefined,
       downPayment: leadDownPayment.trim() || undefined,
+      notes: leadNotes.trim() || undefined,
       status: leadStatus as any,
     });
   };
@@ -141,6 +144,7 @@ export default function ConversationPanel({ conversationId }: Props) {
       setLeadTradeKm(lead.tradeKm || "");
       setLeadPaymentMethod(lead.paymentMethod || "");
       setLeadDownPayment(lead.downPayment || "");
+      setLeadNotes((lead as any).notes || "");
       setLeadStatus(lead.status || "qualifying");
     }
     setEditingLead(false);
@@ -316,6 +320,15 @@ export default function ConversationPanel({ conversationId }: Props) {
             <FieldInput label="Forma de Pagamento" value={leadPaymentMethod} onChange={setLeadPaymentMethod} placeholder="financiamento, à vista..." />
             <FieldInput label="Valor de Entrada" value={leadDownPayment} onChange={setLeadDownPayment} placeholder="R$ 10.000" />
             <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Notas / Resumo</label>
+              <Textarea
+                value={leadNotes}
+                onChange={(e) => setLeadNotes(e.target.value)}
+                placeholder="Resumo da conversa, observações..."
+                className="text-sm bg-input border-border min-h-[60px] resize-y"
+              />
+            </div>
+            <div>
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Status do Lead</label>
               <Select value={leadStatus} onValueChange={setLeadStatus}>
                 <SelectTrigger className="h-8 text-sm bg-input border-border">
@@ -359,6 +372,15 @@ export default function ConversationPanel({ conversationId }: Props) {
             )}
             {lead.paymentMethod && <LeadField icon={<CreditCard className="h-3.5 w-3.5" />} label="Pagamento" value={lead.paymentMethod} />}
             {lead.downPayment && <LeadField icon={<DollarSign className="h-3.5 w-3.5" />} label="Entrada" value={lead.downPayment} />}
+            {(lead as any).notes && (
+              <div className="mt-2 p-2.5 rounded-md bg-muted/50 border border-border">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <FileText className="h-3 w-3 text-muted-foreground" />
+                  <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Resumo da Conversa</span>
+                </div>
+                <p className="text-xs text-card-foreground leading-relaxed whitespace-pre-wrap">{(lead as any).notes}</p>
+              </div>
+            )}
             <Separator className="my-2" />
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Status do Lead</span>
