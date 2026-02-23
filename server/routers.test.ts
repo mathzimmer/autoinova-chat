@@ -89,11 +89,12 @@ describe("auth.me", () => {
 
 describe("webhook.verify", () => {
   it("returns challenge when token matches", async () => {
+    const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
     const ctx = createPublicContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.webhook.verify({
       mode: "subscribe",
-      token: "autoinova_verify_token",
+      token: verifyToken,
       challenge: "test_challenge_123",
     });
     expect(result).toBe("test_challenge_123");

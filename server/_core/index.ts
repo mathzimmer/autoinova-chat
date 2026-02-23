@@ -9,6 +9,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
+import { startAutoSync } from "../stockSync";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -38,6 +39,9 @@ async function startServer() {
 
   // Initialize Socket.IO for real-time communication
   initSocketIO(server);
+
+  // Start automatic stock synchronization (every 30 minutes)
+  startAutoSync();
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

@@ -213,7 +213,7 @@ export async function searchVehicles(filters?: { brand?: string; model?: string;
 export async function listVehicles() {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(vehicles).where(eq(vehicles.available, true)).orderBy(vehicles.brand);
+  return db.select().from(vehicles).orderBy(vehicles.brand);
 }
 
 export async function createVehicle(data: typeof vehicles.$inferInsert) {

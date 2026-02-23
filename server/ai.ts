@@ -1,8 +1,9 @@
 import { invokeLLM, type Tool, type Message as LLMMessage } from "./_core/llm";
-import { searchVehicles, upsertLead, createAiLog, getLeadByConversationId } from "./db";
+import { upsertLead, createAiLog } from "./db";
+import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
-const SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada no Rio Grande do Sul.
+const SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
 
 Seu papel é fazer atendimento de pré-venda, ajudando clientes a encontrar o veículo ideal e qualificando-os como leads.
 
@@ -17,8 +18,8 @@ DIRETRIZES:
 FLUXO DE ATENDIMENTO:
 1. Cumprimente o cliente e pergunte como pode ajudar
 2. Entenda o que o cliente procura (tipo de veículo, faixa de preço, preferências)
-3. Use a ferramenta de busca para encontrar veículos disponíveis
-4. Apresente as opções de forma clara e atrativa
+3. Use a ferramenta de busca para encontrar veículos disponíveis no estoque REAL
+4. Apresente as opções de forma clara e atrativa, incluindo o link do veículo quando disponível
 5. Colete informações para qualificação: nome, interesse, se tem veículo para troca, forma de pagamento
 6. Se o cliente demonstrar interesse real, sugira agendar uma visita ou test drive
 
@@ -30,11 +31,14 @@ INFORMAÇÕES A COLETAR (quando natural na conversa):
 - Valor de entrada (se financiamento)
 
 REGRAS:
-- Nunca invente veículos que não estão no estoque
-- Se não encontrar o veículo desejado, sugira alternativas similares
+- NUNCA invente veículos que não estão no estoque. Use APENAS os resultados da ferramenta de busca
+- Se não encontrar o veículo desejado, sugira alternativas similares do estoque
 - Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento
 - Não forneça valores exatos de financiamento, apenas estimativas gerais
-- Sempre que apresentar um veículo, mencione: marca, modelo, ano, preço e km
+- Sempre que apresentar um veículo, mencione: marca, modelo, ano, preço, km e link
+- Quando houver preço promocional, destaque a economia
+- Nosso WhatsApp: (51) 99478-2062
+- Nosso endereço: Av Castro Alves, nº 1655, Sete de Setembro, Ivoti - RS
 
 Ao final de CADA resposta, inclua um bloco JSON (que será removido antes de enviar ao cliente) com os dados coletados até o momento:
 {"intencao":"compra/troca/informacao","veiculo_interesse":"modelo","tem_troca":true/false,"veiculo_troca":"modelo","ano_troca":"ano","km_troca":"km","forma_pagamento":"tipo","entrada":"valor","status":"qualifying/qualified"}`;
@@ -44,16 +48,35 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque da concessionária Auto Inova. Use quando o cliente perguntar sobre veículos disponíveis, preços ou modelos específicos.",
+      description: "Busca veículos disponíveis no estoque REAL da concessionária Auto Inova. Use sempre que o cliente perguntar sobre veículos, preços, modelos ou quiser ver opções. Os resultados vêm do estoque atualizado automaticamente.",
       parameters: {
         type: "object",
         properties: {
-          marca: { type: "string", description: "Marca do veículo (ex: Toyota, Honda, Volkswagen)" },
-          modelo: { type: "string", description: "Modelo do veículo (ex: Corolla, Civic, Gol)" },
+          marca: { type: "string", description: "Marca do veículo (ex: Toyota, Honda, Volkswagen, Hyundai, Fiat, Chevrolet, BMW, etc)" },
+          modelo: { type: "string", description: "Modelo do veículo (ex: Corolla, Civic, Gol, HB20, Onix, etc)" },
           preco_max: { type: "number", description: "Preço máximo em reais" },
-          categoria: { type: "string", description: "Categoria: SUV, sedan, hatch, pickup, etc." },
-          cambio: { type: "string", description: "Tipo de câmbio: manual ou automatic" },
+          preco_min: { type: "number", description: "Preço mínimo em reais" },
+          categoria: { type: "string", description: "Categoria/carroceria: SUV, Sedan, Hatch, Picapes, Conversível, etc" },
+          combustivel: { type: "string", description: "Tipo de combustível: flex, gasolina, diesel, elétrico, híbrido" },
+          cambio: { type: "string", description: "Tipo de câmbio: manual ou automatico" },
+          km_max: { type: "number", description: "Quilometragem máxima" },
+          ano_min: { type: "number", description: "Ano mínimo do veículo" },
+          ano_max: { type: "number", description: "Ano máximo do veículo" },
+          cor: { type: "string", description: "Cor do veículo" },
         },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "resumo_estoque",
+      description: "Obtém um resumo geral do estoque atual da Auto Inova: quantos veículos, marcas disponíveis, faixa de preço. Use quando o cliente perguntar de forma genérica o que vocês têm.",
+      parameters: {
+        type: "object",
+        properties: {},
         required: [],
         additionalProperties: false,
       },
@@ -94,49 +117,57 @@ export async function processAIMessage(
     let result = await invokeLLM({
       messages: llmMessages,
       tools: TOOLS,
-      toolChoice: "auto",
+      tool_choice: "auto",
     });
 
     let assistantMessage = result.choices[0]?.message;
 
-    // Handle tool calls
-    if (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0) {
+    // Handle tool calls (may need multiple rounds)
+    let maxToolRounds = 3;
+    while (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0 && maxToolRounds > 0) {
+      maxToolRounds--;
+
       // Add assistant message with tool calls to history
       llmMessages.push({
         role: "assistant",
         content: assistantMessage.content || "",
-      });
+        tool_calls: assistantMessage.tool_calls,
+      } as any);
 
       for (const toolCall of assistantMessage.tool_calls) {
+        let toolResult = "";
+
         if (toolCall.function.name === "buscar_veiculos") {
           const args = JSON.parse(toolCall.function.arguments);
-          const vehicles = await searchVehicles({
+          toolResult = await searchVehiclesForAI({
             brand: args.marca,
             model: args.modelo,
             maxPrice: args.preco_max,
+            minPrice: args.preco_min,
             category: args.categoria,
+            fuel: args.combustivel,
             transmission: args.cambio,
+            maxMileage: args.km_max,
+            yearMin: args.ano_min,
+            yearMax: args.ano_max,
+            color: args.cor,
           });
-
-          const vehicleList = vehicles.length > 0
-            ? vehicles.slice(0, 5).map(v =>
-              `${v.brand} ${v.model} ${v.year} - R$ ${v.price.toLocaleString("pt-BR")} - ${v.mileage?.toLocaleString("pt-BR") || "N/A"} km - ${v.transmission === "automatic" ? "Automático" : "Manual"} - ${v.color || ""}`
-            ).join("\n")
-            : "Nenhum veículo encontrado com esses critérios.";
-
-          llmMessages.push({
-            role: "tool",
-            tool_call_id: toolCall.id,
-            content: vehicleList,
-          });
+        } else if (toolCall.function.name === "resumo_estoque") {
+          toolResult = await getStockSummaryForAI();
         }
+
+        llmMessages.push({
+          role: "tool",
+          tool_call_id: toolCall.id,
+          content: toolResult,
+        } as any);
       }
 
-      // Second call with tool results
+      // Next call with tool results
       result = await invokeLLM({
         messages: llmMessages,
         tools: TOOLS,
-        toolChoice: "auto",
+        tool_choice: "auto",
       });
       assistantMessage = result.choices[0]?.message;
     }
@@ -187,7 +218,7 @@ export async function processAIMessage(
       completionTokens: result.usage?.completion_tokens || 0,
       totalTokens: result.usage?.total_tokens || 0,
       responseTimeMs: responseTime,
-      toolUsed: assistantMessage?.tool_calls ? "buscar_veiculos" : null,
+      toolUsed: assistantMessage?.tool_calls ? assistantMessage.tool_calls.map((tc: any) => tc.function.name).join(",") : null,
       success: true,
     });
 

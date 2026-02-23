@@ -108,21 +108,39 @@ export type InsertAiLog = typeof aiLogs.$inferInsert;
 
 /**
  * Vehicles table - vehicle inventory for the dealership.
+ * Synced from external S3 JSON feed.
  */
 export const vehicles = mysqlTable("vehicles", {
   id: int("id").autoincrement().primaryKey(),
+  externalId: int("externalId").unique(),
   brand: varchar("brand", { length: 100 }).notNull(),
-  model: varchar("model", { length: 200 }).notNull(),
+  model: varchar("model", { length: 300 }).notNull(),
+  version: varchar("version", { length: 300 }),
+  title: varchar("title", { length: 500 }),
   year: int("year").notNull(),
+  fabricYear: int("fabricYear"),
   price: int("price").notNull(),
+  regularPrice: int("regularPrice"),
+  promotionPrice: int("promotionPrice"),
   mileage: int("mileage"),
   color: varchar("color", { length: 50 }),
-  transmission: mysqlEnum("transmission", ["manual", "automatic"]).default("manual"),
+  transmission: varchar("transmission", { length: 30 }).default("manual"),
   fuel: varchar("fuel", { length: 50 }),
   category: varchar("category", { length: 100 }),
+  condition: varchar("vehicleCondition", { length: 30 }),
+  doors: int("doors"),
   description: text("description"),
+  url: varchar("url", { length: 500 }),
   imageUrl: varchar("imageUrl", { length: 500 }),
+  images: json("images"),
+  features: json("features"),
+  negotiation: varchar("negotiation", { length: 100 }),
+  plate: varchar("plate", { length: 20 }),
+  seller: varchar("seller", { length: 200 }),
+  locationCity: varchar("locationCity", { length: 100 }),
+  phone: varchar("vehiclePhone", { length: 32 }),
   available: boolean("available").default(true).notNull(),
+  lastSyncedAt: timestamp("lastSyncedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

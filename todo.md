@@ -112,3 +112,13 @@
 - [x] Marcar mensagens como lidas no WhatsApp (mark_as_read)
 - [x] Credenciais validadas: +55 51 3191-9081
 - [x] Documentação/guia de configuração no Meta Business
+
+## Integração Estoque Externo (S3 JSON)
+- [x] Analisar estrutura do JSON do estoque externo (111 veículos, 32 marcas)
+- [x] Criar endpoint de sincronização do estoque externo com o banco de dados
+- [x] Sincronização automática a cada 30 minutos
+- [x] Botão manual para forçar sincronização no painel
+- [x] Agente de IA usar dados do estoque real para responder clientes (tool buscar_veiculos + resumo_estoque)
+- [x] Exibir estoque real na página de veículos do CRM (com imagens, promoções, filtros)
+- [x] Marcar veículos removidos do feed como indisponíveis
+- [x] 32 testes passando

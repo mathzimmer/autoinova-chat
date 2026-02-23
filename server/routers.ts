@@ -14,6 +14,7 @@ import { processAIMessage } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { syncStock } from "./stockSync";
 
 const conversationRouter = router({
   list: protectedProcedure
@@ -200,6 +201,12 @@ const vehicleRouter = router({
     .mutation(async ({ input }) => {
       const id = await createVehicle({ ...input, available: true });
       return { id };
+    }),
+
+  syncStock: adminProcedure
+    .mutation(async () => {
+      const result = await syncStock();
+      return result;
     }),
 });
 
