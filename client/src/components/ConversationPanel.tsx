@@ -33,6 +33,7 @@ export default function ConversationPanel({ conversationId }: Props) {
   const [editingLead, setEditingLead] = useState(false);
   const [leadIntention, setLeadIntention] = useState("");
   const [leadVehicleInterest, setLeadVehicleInterest] = useState("");
+  const [leadVehicleId, setLeadVehicleId] = useState<number | null>(null);
   const [leadHasTrade, setLeadHasTrade] = useState(false);
   const [leadTradeVehicle, setLeadTradeVehicle] = useState("");
   const [leadTradeYear, setLeadTradeYear] = useState("");
@@ -54,6 +55,7 @@ export default function ConversationPanel({ conversationId }: Props) {
     if (lead) {
       setLeadIntention(lead.intention || "");
       setLeadVehicleInterest(lead.vehicleInterest || "");
+      setLeadVehicleId(lead.vehicleId || null);
       setLeadHasTrade(lead.hasTrade || false);
       setLeadTradeVehicle(lead.tradeVehicle || "");
       setLeadTradeYear(lead.tradeYear || "");
@@ -123,6 +125,7 @@ export default function ConversationPanel({ conversationId }: Props) {
       conversationId,
       intention: leadIntention.trim() || undefined,
       vehicleInterest: leadVehicleInterest.trim() || undefined,
+      vehicleId: leadVehicleId || undefined,
       hasTrade: leadHasTrade,
       tradeVehicle: leadTradeVehicle.trim() || undefined,
       tradeYear: leadTradeYear.trim() || undefined,
@@ -138,6 +141,7 @@ export default function ConversationPanel({ conversationId }: Props) {
     if (lead) {
       setLeadIntention(lead.intention || "");
       setLeadVehicleInterest(lead.vehicleInterest || "");
+      setLeadVehicleId(lead.vehicleId || null);
       setLeadHasTrade(lead.hasTrade || false);
       setLeadTradeVehicle(lead.tradeVehicle || "");
       setLeadTradeYear(lead.tradeYear || "");
@@ -302,8 +306,28 @@ export default function ConversationPanel({ conversationId }: Props) {
 
         {editingLead ? (
           <div className="space-y-2.5">
-            <FieldInput label="Intenção" value={leadIntention} onChange={setLeadIntention} placeholder="compra, troca, informação..." />
-            <FieldInput label="Veículo de Interesse" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
+            <FieldInput label="Intenu00e7u00e3o" value={leadIntention} onChange={setLeadIntention} placeholder="compra, troca, informau00e7u00e3o..." />
+            <FieldInput label="Veu00edculo de Interesse (Texto)" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
+            <div>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Veu00edculo do Estoque</label>
+              <Select value={leadVehicleId?.toString() || ""} onValueChange={(val) => setLeadVehicleId(val ? parseInt(val) : null)}>
+                <SelectTrigger className="h-8 text-sm bg-input border-border">
+                  <SelectValue placeholder="Selecione um veu00edculo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Nenhum (limpar)</SelectItem>
+                  {vehicles && vehicles.length > 0 ? (
+                    vehicles.map((v: any) => (
+                      <SelectItem key={v.id} value={v.id.toString()}>
+                        {v.year} {v.brand} {v.model} - {v.km}km
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="" disabled>Carregando veu00edculos...</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center justify-between py-1">
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider">Tem Troca?</label>
               <Switch checked={leadHasTrade} onCheckedChange={setLeadHasTrade} />

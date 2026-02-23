@@ -261,3 +261,10 @@
 - [x] Garantir envio automático sem texto [FOTO] - CORRIGIDO: fotos enviadas assincronamente, resposta limpa
 - [x] Validar recebimento no WhatsApp - CONFIRMADO: cliente recebe foto + resposta limpa
 - [x] 67 testes passando
+
+## Feature - Rodada 16 (Seleu00e7u00e3o de Veu00edculo do Estoque)
+- [x] Adicionar campo de seleu00e7u00e3o de veu00edculo do estoque na interface de Lead
+- [x] Implementar dropdown/select com veu00edculos disponíveis
+- [x] Permitir vincular veu00edculo específico ao lead como "veu00edculo de interesse"
+- [x] Atualizar API para suportar seleu00e7u00e3o de veu00edculo do estoque
+- [x] 67 testes passando
