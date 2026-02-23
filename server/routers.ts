@@ -9,8 +9,9 @@ import {
   listLeads, getLeadByConversationId, upsertLead,
   getDashboardStats, getAiStats,
   searchVehicles, listVehicles, createVehicle,
+  getSetting, upsertSetting, getAllSettings,
 } from "./db";
-import { processAIMessage } from "./ai";
+import { processAIMessage, DEFAULT_SYSTEM_PROMPT } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
@@ -309,6 +310,41 @@ const webhookRouter = router({
     }),
 });
 
+const settingsRouter = router({
+  getPrompt: protectedProcedure.query(async () => {
+    const customPrompt = await getSetting("ai_prompt");
+    return {
+      prompt: customPrompt || DEFAULT_SYSTEM_PROMPT,
+      isCustom: !!customPrompt,
+      defaultPrompt: DEFAULT_SYSTEM_PROMPT,
+    };
+  }),
+
+  savePrompt: adminProcedure
+    .input(z.object({ prompt: z.string().min(10) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ai_prompt", input.prompt, ctx.user.id);
+      return { success: true };
+    }),
+
+  resetPrompt: adminProcedure
+    .mutation(async ({ ctx }) => {
+      await upsertSetting("ai_prompt", "", ctx.user.id);
+      return { success: true, defaultPrompt: DEFAULT_SYSTEM_PROMPT };
+    }),
+
+  getAll: protectedProcedure.query(async () => {
+    return getAllSettings();
+  }),
+
+  save: adminProcedure
+    .input(z.object({ key: z.string(), value: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting(input.key, input.value, ctx.user.id);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -325,6 +361,7 @@ export const appRouter = router({
   dashboard: dashboardRouter,
   vehicle: vehicleRouter,
   webhook: webhookRouter,
+  settings: settingsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2 } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings } from "lucide-react";
 import { useLocation } from "wouter";
 
 const navItems = [
@@ -17,6 +17,7 @@ const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { icon: Car, label: "Veículos", path: "/vehicles" },
   { icon: Users, label: "Leads", path: "/leads" },
+  { icon: Settings, label: "Configurações", path: "/settings" },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

@@ -207,3 +207,48 @@ describe("message.send", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("settings.getPrompt", () => {
+  it("requires authentication", async () => {
+    const ctx = createPublicContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.settings.getPrompt()).rejects.toThrow();
+  });
+
+  it("returns prompt data for authenticated users", async () => {
+    const { ctx } = createAuthContext();
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.settings.getPrompt();
+    expect(result).toHaveProperty("prompt");
+    expect(result).toHaveProperty("isCustom");
+    expect(result).toHaveProperty("defaultPrompt");
+    expect(typeof result.prompt).toBe("string");
+    expect(result.prompt.length).toBeGreaterThan(0);
+  });
+});
+
+describe("settings.savePrompt", () => {
+  it("requires admin role", async () => {
+    const { ctx } = createAuthContext("user");
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.settings.savePrompt({ prompt: "Novo prompt de teste para o agente de IA" })
+    ).rejects.toThrow();
+  });
+
+  it("rejects prompt shorter than 10 chars", async () => {
+    const { ctx } = createAuthContext("admin");
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.settings.savePrompt({ prompt: "curto" })
+    ).rejects.toThrow();
+  });
+});
+
+describe("settings.resetPrompt", () => {
+  it("requires admin role", async () => {
+    const { ctx } = createAuthContext("user");
+    const caller = appRouter.createCaller(ctx);
+    await expect(caller.settings.resetPrompt()).rejects.toThrow();
+  });
+});

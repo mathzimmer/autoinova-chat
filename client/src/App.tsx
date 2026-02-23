@@ -9,6 +9,7 @@ import Inbox from "./pages/Inbox";
 import Dashboard from "./pages/Dashboard";
 import Vehicles from "./pages/Vehicles";
 import Leads from "./pages/Leads";
+import Settings from "./pages/Settings";
 import AppLayout from "./components/AppLayout";
 
 function Router() {
@@ -33,6 +34,11 @@ function Router() {
       <Route path={"/leads"}>
         <AppLayout>
           <Leads />
+        </AppLayout>
+      </Route>
+      <Route path={"/settings"}>
+        <AppLayout>
+          <Settings />
         </AppLayout>
       </Route>
       <Route path={"/404"} component={NotFound} />

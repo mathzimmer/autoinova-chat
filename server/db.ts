@@ -7,6 +7,7 @@ import {
   leads, InsertLead,
   aiLogs, InsertAiLog,
   vehicles,
+  settings,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -249,4 +250,34 @@ export async function getDashboardStats() {
     qualifiedLeads: leadStats?.qualified ?? 0,
     totalVehicles: vehicleStats?.total ?? 0,
   };
+}
+
+// ─── Settings Queries ──────────────────────────────────────────
+export async function getSetting(key: string): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
+  return result.length > 0 ? result[0].value : null;
+}
+
+export async function upsertSetting(key: string, value: string, updatedBy?: number): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const existing = await db.select({ id: settings.id }).from(settings).where(eq(settings.key, key)).limit(1);
+  if (existing.length > 0) {
+    await db.update(settings).set({ value, updatedBy: updatedBy || null }).where(eq(settings.key, key));
+  } else {
+    await db.insert(settings).values({ key, value, updatedBy: updatedBy || null });
+  }
+}
+
+export async function getAllSettings(): Promise<Record<string, string>> {
+  const db = await getDb();
+  if (!db) return {};
+  const rows = await db.select().from(settings);
+  const result: Record<string, string> = {};
+  for (const row of rows) {
+    result[row.key] = row.value;
+  }
+  return result;
 }

@@ -122,3 +122,12 @@
 - [x] Exibir estoque real na página de veículos do CRM (com imagens, promoções, filtros)
 - [x] Marcar veículos removidos do feed como indisponíveis
 - [x] 32 testes passando
+
+## Personalização do Prompt da IA
+- [x] Criar tabela settings no banco de dados para armazenar configurações
+- [x] Criar endpoint tRPC para ler e salvar o prompt personalizado
+- [x] Integrar prompt personalizado no agente de IA (usar do banco se existir, senão usar padrão)
+- [x] Criar página de Configurações no frontend com editor de texto para o prompt
+- [x] Adicionar botão "Restaurar Padrão" para voltar ao prompt original
+- [x] Adicionar rota de Configurações na sidebar de navegação
+- [x] Testes para os novos endpoints (37 testes passando)

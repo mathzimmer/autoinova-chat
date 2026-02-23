@@ -1,9 +1,9 @@
 import { invokeLLM, type Tool, type Message as LLMMessage } from "./_core/llm";
-import { upsertLead, createAiLog } from "./db";
+import { upsertLead, createAiLog, getSetting } from "./db";
 import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
-const SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
+export const DEFAULT_SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
 
 Seu papel é fazer atendimento de pré-venda, ajudando clientes a encontrar o veículo ideal e qualificando-os como leads.
 
@@ -42,6 +42,21 @@ REGRAS:
 
 Ao final de CADA resposta, inclua um bloco JSON (que será removido antes de enviar ao cliente) com os dados coletados até o momento:
 {"intencao":"compra/troca/informacao","veiculo_interesse":"modelo","tem_troca":true/false,"veiculo_troca":"modelo","ano_troca":"ano","km_troca":"km","forma_pagamento":"tipo","entrada":"valor","status":"qualifying/qualified"}`;
+
+/**
+ * Get the current system prompt - from database if customized, otherwise default.
+ */
+export async function getSystemPrompt(): Promise<string> {
+  try {
+    const customPrompt = await getSetting("ai_prompt");
+    if (customPrompt && customPrompt.trim().length > 0) {
+      return customPrompt;
+    }
+  } catch (e) {
+    console.error("[AI] Failed to load custom prompt, using default:", e);
+  }
+  return DEFAULT_SYSTEM_PROMPT;
+}
 
 const TOOLS: Tool[] = [
   {
@@ -94,9 +109,12 @@ export async function processAIMessage(
 ): Promise<{ response: string; leadData: Record<string, unknown> | null }> {
   const startTime = Date.now();
 
+  // Load the current system prompt (custom from DB or default)
+  const systemPrompt = await getSystemPrompt();
+
   // Build message history for context
   const llmMessages: LLMMessage[] = [
-    { role: "system", content: SYSTEM_PROMPT },
+    { role: "system", content: systemPrompt },
   ];
 
   // Add recent conversation history (last 20 messages)
