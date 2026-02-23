@@ -42,7 +42,7 @@
 - [x] Processamento de mensagens de texto
 - [x] Processamento de mensagens de áudio
 - [x] Endpoint genérico compatível com Chatwoot/n8n
-- [ ] Envio de respostas via WhatsApp Cloud API (requer token de acesso)
+- [x] Envio de respostas via WhatsApp Cloud API
 
 ## Transcrição de Áudio
 - [x] Integração com Whisper API (transcribeAudio do template)
@@ -103,3 +103,12 @@
 - [x] Testes unitários para routers principais (16 testes passando)
 - [x] Teste de integração do webhook (verify)
 - [x] Teste do sistema de autenticação e autorização
+
+## Integração WhatsApp Business Cloud API (Meta)
+- [x] Criar módulo de envio de mensagens via WhatsApp Cloud API
+- [x] Integrar envio automático de respostas da IA ao cliente via WhatsApp
+- [x] Integrar envio de mensagens do atendente humano ao cliente via WhatsApp
+- [x] Adicionar secrets: WHATSAPP_ACCESS_TOKEN, WHATSAPP_PHONE_NUMBER_ID, WHATSAPP_VERIFY_TOKEN
+- [x] Marcar mensagens como lidas no WhatsApp (mark_as_read)
+- [x] Credenciais validadas: +55 51 3191-9081
+- [x] Documentação/guia de configuração no Meta Business

@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initSocketIO } from "../socket";
+import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -66,6 +67,7 @@ async function startServer() {
         const contact = body.entry[0].changes[0].value.contacts?.[0];
         const phone = msg.from;
         const name = contact?.profile?.name || "Cliente";
+        const whatsappMessageId = msg.id;
 
         let content = "";
         let messageType: "text" | "audio" = "text";
@@ -75,15 +77,42 @@ async function startServer() {
           content = msg.text?.body || "";
         } else if (msg.type === "audio") {
           messageType = "audio";
-          audioUrl = msg.audio?.url;
+          // Get the actual download URL from WhatsApp media ID
+          const mediaId = msg.audio?.id;
+          if (mediaId) {
+            const mediaDownloadUrl = await getMediaUrl(mediaId);
+            audioUrl = mediaDownloadUrl || undefined;
+          }
           content = "[Mensagem de áudio]";
+        } else if (msg.type === "image") {
+          content = msg.image?.caption || "[Imagem recebida]";
+        } else if (msg.type === "document") {
+          content = `[Documento: ${msg.document?.filename || "arquivo"}]`;
+        } else if (msg.type === "location") {
+          content = `[Localização: ${msg.location?.latitude}, ${msg.location?.longitude}]`;
         } else {
           content = `[${msg.type}]`;
         }
 
+        // Mark message as read in WhatsApp
+        if (whatsappMessageId) {
+          markAsRead(whatsappMessageId).catch(() => {});
+        }
+
         // Use tRPC caller to process the message
         const caller = appRouter.createCaller({ user: null, req: req as any, res: res as any });
-        await caller.webhook.receive({ phone, name, content, messageType, audioUrl });
+        const result = await caller.webhook.receive({ phone, name, content, messageType, audioUrl, externalId: whatsappMessageId });
+
+        // Send AI response back to WhatsApp
+        if (result.aiResponse && isWhatsAppConfigured()) {
+          await sendTextMessage(phone, result.aiResponse);
+        }
+      }
+
+      // Handle status updates (delivered, read, etc.)
+      if (body?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]) {
+        const status = body.entry[0].changes[0].value.statuses[0];
+        console.log(`[WhatsApp] Status update: ${status.id} -> ${status.status}`);
       }
 
       res.sendStatus(200);

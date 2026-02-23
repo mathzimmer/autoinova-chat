@@ -13,6 +13,7 @@ import {
 import { processAIMessage } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
+import { sendTextMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
 
 const conversationRouter = router({
   list: protectedProcedure
@@ -111,6 +112,17 @@ const messageRouter = router({
       });
 
       emitNewMessage(input.conversationId, message);
+
+      // Send message to WhatsApp if configured and conversation is from WhatsApp
+      if (isWhatsAppConfigured()) {
+        const conv = await getConversationById(input.conversationId);
+        if (conv && conv.channel === "whatsapp" && conv.phone) {
+          sendTextMessage(conv.phone, input.content).catch((err) => {
+            console.error("[WhatsApp] Failed to send agent message:", err);
+          });
+        }
+      }
+
       return message;
     }),
 });
