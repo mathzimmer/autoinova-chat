@@ -16,11 +16,12 @@ REGRA NÚMERO 1 - FORMATO DAS MENSAGENS:
 - Mantenha respostas curtas (máximo 3 parágrafos curtos)
 
 REGRA NÚMERO 2 - PRIORIDADE DA CONVERSA RECENTE:
-- A mensagem mais recente do cliente é o que importa. Responda a ELA.
-- Se o cliente disse algo nas últimas mensagens que contradiz dados antigos, CONFIE na mensagem recente
-- Exemplo: se o lead diz "Fusca" como troca mas o cliente acabou de dizer "vendi o Fusca, agora tenho um Gol", o correto é Gol
-- Exemplo: se o lead diz "Sprinter" como interesse mas o cliente acabou de pedir "Hilux", o correto é Hilux
-- SEMPRE atualize o lead (via atualizar_lead) quando o cliente corrigir ou mudar qualquer informação
+- A ÚLTIMA MENSAGEM DO CLIENTE (marcada como [MENSAGEM ATUAL]) é a que define o que você deve responder.
+- Se a mensagem atual contradiz dados do lead ou do histórico, a mensagem atual SEMPRE vence.
+- Exemplo: lead diz "Sprinter" mas MENSAGEM ATUAL é "mudei de ideia, quero uma Hilux" → responda sobre Hilux.
+- Exemplo: lead diz "Fusca" como troca mas MENSAGEM ATUAL é "vendi o Fusca, tenho um Gol" → atualize para Gol.
+- Quando o cliente MUDA de veículo de interesse: chame atualizar_lead com veiculo_interesse novo E veiculo_id: null (para limpar o vínculo antigo), depois busque o novo veículo.
+- NUNCA continue falando de um veículo que o cliente acabou de descartar ou dizer que não quer mais.
 
 REGRA NÚMERO 3 - RESPOSTAS NUMÉRICAS:
 - Quando você apresentou uma lista numerada de veículos e o cliente responde com um número (ex: "2", "1", "a segunda"), ele está ESCOLHENDO aquela opção da lista
@@ -39,10 +40,11 @@ REGRA NÚMERO 4 - BUSCA DE VEÍCULOS:
 
 REGRA NÚMERO 5 - ATUALIZAÇÃO DO LEAD:
 - Chame atualizar_lead SEMPRE que coletar informação nova
-- Se o cliente MUDAR de veículo de interesse, atualize imediatamente
-- Se o cliente MUDAR dados da troca (vendeu o carro antigo, tem outro), atualize imediatamente
+- Se o cliente MUDAR de veículo de interesse: chame atualizar_lead com o novo veiculo_interesse E veiculo_id: null para limpar o vínculo anterior, DEPOIS busque o novo veículo
+- Se o cliente MUDAR dados da troca (vendeu o carro antigo, tem outro), atualize imediatamente com os novos dados
 - Se o cliente escolher um veículo da lista, passe o veiculo_id correspondente
 - Ao final de cada interação significativa, chame atualizar_lead com o campo "notas" contendo um resumo breve da conversa (ex: "Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar")
+- FLUXO DE MUDANÇA DE INTERESSE: 1) atualizar_lead com novo veiculo_interesse + veiculo_id: null → 2) buscar_veiculos pelo novo modelo → 3) apresentar resultados
 
 REGRA NÚMERO 6 - IMAGENS:
 - Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
@@ -114,6 +116,11 @@ function shouldForceVehicleSearch(message: string): boolean {
   
   // Don't force search for very short messages (likely selections like "1", "2", "sim", "ok")
   if (lower.trim().length <= 3) return false;
+  
+  // Detect explicit vehicle interest change: "mudei de ideia", "prefiro", "na verdade quero", etc.
+  const interestChangeKeywords = ["mudei de ideia", "mudei de interesse", "na verdade quero", "prefiro", "quero outro", "nao quero mais", "não quero mais", "desisti", "esquece o", "esquece a"];
+  const hasInterestChange = interestChangeKeywords.some(kw => lower.includes(kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
+  if (hasInterestChange) return true;
   
   // Don't force search for trade-in related messages
   const tradeKeywords = ["troca", "trocar", "vendi", "tenho um", "meu carro", "meu gol", "meu fusca"];
@@ -242,15 +249,16 @@ export async function processAIMessage(
   try {
     existingLead = await getLeadByConversationId(conversation.id);
     if (existingLead) {
-      contextBlock += `\n\nDADOS DO LEAD (podem estar desatualizados - CONFIE nas mensagens recentes do cliente):`;
+      contextBlock += `\n\nDADOS DO LEAD SALVOS (informações antigas - podem estar DESATUALIZADAS):`;
       if (existingLead.name) contextBlock += `\n- Nome: ${existingLead.name}`;
       if (existingLead.intention) contextBlock += `\n- Intenção: ${existingLead.intention}`;
-      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse: ${existingLead.vehicleInterest} (ATENÇÃO: pode ter mudado, verifique as mensagens recentes)`;
+      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse (ANTIGO, pode ter mudado): ${existingLead.vehicleInterest}`;
       if (existingLead.hasTrade) contextBlock += `\n- Tem troca: Sim`;
-      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm || ""} (ATENÇÃO: pode ter mudado)`;
+      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca (ANTIGO, pode ter mudado): ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm || ""}`;
       if (existingLead.paymentMethod) contextBlock += `\n- Pagamento: ${existingLead.paymentMethod}`;
       if (existingLead.downPayment) contextBlock += `\n- Entrada: ${existingLead.downPayment}`;
-      contextBlock += `\n\nSe o cliente disser algo diferente dos dados acima, ATUALIZE o lead com atualizar_lead.`;
+      if (existingLead.notes) contextBlock += `\n- Notas: ${existingLead.notes}`;
+      contextBlock += `\n\nATENÇÃO: Se a [MENSAGEM ATUAL] do cliente contradiz qualquer dado acima, a mensagem atual tem PRIORIDADE TOTAL. Atualize o lead com atualizar_lead.`;
     }
   } catch (e) {
     console.error("[AI] Failed to load lead context:", e);
@@ -290,13 +298,13 @@ export async function processAIMessage(
     }
   }
 
-  // Add current message
+  // Add current message - marked clearly as the message to respond to
   const imageMatch = customerMessage.match(/\[IMAGEM: https?:\/\/[^\]]+\]\s*(.*)/);
   if (imageMatch) {
     const caption = imageMatch[1]?.trim() || "";
-    llmMessages.push({ role: "user", content: `[Cliente enviou uma imagem]${caption ? " " + caption : ""}` });
+    llmMessages.push({ role: "user", content: `[MENSAGEM ATUAL] [Cliente enviou uma imagem]${caption ? " " + caption : ""}` });
   } else {
-    llmMessages.push({ role: "user", content: customerMessage });
+    llmMessages.push({ role: "user", content: `[MENSAGEM ATUAL] ${customerMessage}` });
   }
 
   // Track lead data collected during this interaction
@@ -320,10 +328,14 @@ export async function processAIMessage(
     if (forceSearch && !result.choices[0]?.message?.tool_calls?.length) {
       console.log(`[AI] Force search active but no tool call detected. Retrying with explicit instruction.`);
       const retryMessages = [...llmMessages];
-      retryMessages.push({
-        role: "user",
-        content: "[SISTEMA: O cliente mencionou um veículo. Chame buscar_veiculos AGORA antes de responder.]",
-      });
+      
+      // Check if lead has an existing vehicle interest (possible change of interest)
+      const hasExistingInterest = existingLead?.vehicleInterest;
+      const retryInstruction = hasExistingInterest
+        ? `[SISTEMA: O cliente mencionou um veículo. Se for um veículo DIFERENTE de "${existingLead.vehicleInterest}", chame atualizar_lead com o novo veiculo_interesse e veiculo_id: null PRIMEIRO. Depois chame buscar_veiculos para o novo modelo.]`
+        : `[SISTEMA: O cliente mencionou um veículo. Chame buscar_veiculos AGORA antes de responder.]`;
+      
+      retryMessages.push({ role: "user", content: retryInstruction });
       try {
         result = await invokeLLM({
           messages: retryMessages,
@@ -396,9 +408,10 @@ export async function processAIMessage(
             if (args.nome) leadUpdate.name = args.nome;
             if (args.intencao) leadUpdate.intention = args.intencao;
             if (args.veiculo_interesse) leadUpdate.vehicleInterest = args.veiculo_interesse;
-            if (args.veiculo_id) leadUpdate.vehicleId = args.veiculo_id;
+            // Allow null to explicitly clear vehicleId when customer changes vehicle interest
+            if (args.veiculo_id !== undefined) leadUpdate.vehicleId = args.veiculo_id;
             if (args.tem_troca !== undefined) leadUpdate.hasTrade = args.tem_troca;
-            if (args.veiculo_troca) leadUpdate.tradeVehicle = args.veiculo_troca;
+            if (args.veiculo_troca !== undefined) leadUpdate.tradeVehicle = args.veiculo_troca;
             if (args.ano_troca) leadUpdate.tradeYear = args.ano_troca;
             if (args.km_troca) leadUpdate.tradeKm = args.km_troca;
             if (args.forma_pagamento) leadUpdate.paymentMethod = args.forma_pagamento;

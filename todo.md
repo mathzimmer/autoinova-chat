@@ -222,3 +222,14 @@
 - [x] Resposta muito longa - CORRIGIDO: limitado a 5 resultados + filtro de motos/barcos
 - [x] Keywords de busca por faixa de preço ("até 100 mil") adicionadas
 - [x] 66 testes passando (29 testes de IA + 9 de markdown)
+
+## Melhorias - Rodada 11 (Enviadas pelo usuário)
+- [x] Regra 2 reescrita: prioridade da mensagem atual com marcação [MENSAGEM ATUAL]
+- [x] Contexto do lead marcado como "(ANTIGO, pode ter mudado)"
+- [x] Retry inteligente: detecta mudança de interesse e instrui atualizar lead antes de buscar
+- [x] veiculo_id aceita null para limpar vínculo ao mudar de interesse
+- [x] Keywords de mudança de interesse: "mudei de ideia", "prefiro", "na verdade quero"
+- [x] Fluxo de mudança de interesse documentado no prompt (atualizar → buscar → apresentar)
+- [x] upsertLead permite null explícito para limpar campos (não apenas undefined)
+- [x] Notas do lead exibidas no contexto
+- [x] 67 testes passando (30 testes de IA incluindo interest change keywords)

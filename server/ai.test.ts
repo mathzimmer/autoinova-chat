@@ -9,7 +9,8 @@ describe("AI System Prompt", () => {
 
   it("contains rules about prioritizing recent messages over lead data", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("PRIORIDADE DA CONVERSA RECENTE");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("CONFIE na mensagem recente");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("MENSAGEM ATUAL");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("mensagem atual SEMPRE vence");
   });
 
   it("contains rules about numeric selections", () => {
@@ -27,11 +28,12 @@ describe("AI System Prompt", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("1 resultado: apresente direto");
   });
 
-  it("contains lead update rules with notes/summary", () => {
+  it("contains lead update rules with notes/summary and interest change flow", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("MUDAR de veículo de interesse");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("MUDAR dados da troca");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("notas");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("resumo breve da conversa");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("veiculo_id: null");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("FLUXO DE MUDANÇA DE INTERESSE");
   });
 
   it("contains image handling rules", () => {
@@ -90,6 +92,12 @@ describe("Vehicle Search Keyword Detection", () => {
   function shouldForceVehicleSearch(message: string): boolean {
     const lower = message.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (lower.trim().length <= 3) return false;
+
+    // Detect explicit vehicle interest change
+    const interestChangeKeywords = ["mudei de ideia", "mudei de interesse", "na verdade quero", "prefiro", "quero outro", "nao quero mais", "não quero mais", "desisti", "esquece o", "esquece a"];
+    const hasInterestChange = interestChangeKeywords.some(kw => lower.includes(kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
+    if (hasInterestChange) return true;
+
     const tradeKeywords = ["troca", "trocar", "vendi", "tenho um", "meu carro", "meu gol", "meu fusca"];
     const isTradeMessage = tradeKeywords.some(kw => lower.includes(kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
     if (isTradeMessage && !lower.includes("por um") && !lower.includes("por uma") && !lower.includes("interesse")) {
@@ -136,6 +144,15 @@ describe("Vehicle Search Keyword Detection", () => {
     expect(shouldForceVehicleSearch("Me diz uma coisa que tu tem de carro aí até 100 mil reais")).toBe(true);
     expect(shouldForceVehicleSearch("Quero ver carro até 50 mil")).toBe(true);
     expect(shouldForceVehicleSearch("Veículo até 80 mil")).toBe(true);
+  });
+
+  it("triggers search for interest change keywords", () => {
+    expect(shouldForceVehicleSearch("Mudei de ideia, quero outra coisa")).toBe(true);
+    expect(shouldForceVehicleSearch("Na verdade quero um carro menor")).toBe(true);
+    expect(shouldForceVehicleSearch("Prefiro ver outras opções")).toBe(true);
+    expect(shouldForceVehicleSearch("Não quero mais a Sprinter")).toBe(true);
+    expect(shouldForceVehicleSearch("Desisti daquele carro")).toBe(true);
+    expect(shouldForceVehicleSearch("Esquece o Vectra")).toBe(true);
   });
 
   it("does NOT trigger search for short messages (numeric selections)", () => {

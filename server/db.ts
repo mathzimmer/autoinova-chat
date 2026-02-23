@@ -173,10 +173,10 @@ export async function upsertLead(data: InsertLead) {
   if (!db) throw new Error("Database not available");
   const existing = await getLeadByConversationId(data.conversationId);
   if (existing) {
-    // Only update non-null fields (preserve existing data)
+    // Update non-undefined fields (null is allowed to explicitly clear a field)
     const updateData: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
-      if (value !== null && value !== undefined && key !== "id" && key !== "conversationId") {
+      if (value !== undefined && key !== "id" && key !== "conversationId") {
         updateData[key] = value;
       }
     }
