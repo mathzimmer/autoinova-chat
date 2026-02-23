@@ -169,3 +169,10 @@
 - [x] Exibir imagens recebidas no chat (thumbnail clicável para abrir)
 - [x] Módulo media.ts para download do WhatsApp e upload para S3
 - [x] 37 testes passando
+
+## Bugs e Melhorias - Rodada 5 (Áudio e Imagem - Comportamento IA)
+- [x] IA entende áudio — transcrição é passada como texto normal, IA responde ao conteúdo
+- [x] IA não analisa imagem visualmente — apenas confirma recebimento contextualmente
+- [x] IA usa contexto da conversa para entender imagens (ex: fotos da troca)
+- [x] Removida visão multimodal (image_url) — imagens tratadas como texto contextual
+- [x] 37 testes passando

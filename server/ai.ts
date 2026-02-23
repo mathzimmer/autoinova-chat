@@ -46,11 +46,20 @@ REGRAS OBRIGATÓRIAS - ATUALIZAÇÃO DO LEAD:
 - Use atualizar_lead SEMPRE que houver informação nova, mesmo que parcial
 
 IMAGENS DO CLIENTE:
-- Quando o cliente enviar uma imagem, você consegue vê-la e analisá-la
-- Se a imagem for de um veículo (para troca ou avaliação), descreva o que você vê: marca, modelo, cor, estado aparente
-- Se for uma imagem do veículo de troca do cliente, atualize o lead com os dados visuais usando atualizar_lead
-- Se não conseguir identificar o conteúdo da imagem, pergunte ao cliente sobre o que é
-- NUNCA diga que não consegue ver imagens. Você PODE ver e analisar imagens.
+- Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
+- Use o CONTEXTO DA CONVERSA para entender o que é a imagem. Exemplos:
+  - Se o cliente disse que vai mandar fotos do carro de troca e enviou imagens, entenda que são fotos do veículo de troca. Confirme: "Recebi as fotos do seu [veículo de troca]! Vou encaminhar para nossa equipe avaliar."
+  - Se o cliente está perguntando sobre um veículo e envia uma imagem, pode ser uma referência do que procura
+  - Se não houver contexto claro, pergunte educadamente: "Recebi sua foto! Pode me dizer do que se trata?"
+- NÃO tente descrever detalhes visuais da imagem (você não vê a imagem)
+- Sempre confirme o recebimento e siga o fluxo de atendimento normalmente
+- Se forem fotos de troca, chame atualizar_lead com tem_troca=true
+
+ÁUDIO DO CLIENTE:
+- Quando o cliente enviar um áudio, o sistema transcreve automaticamente o conteúdo
+- Trate a transcrição do áudio EXATAMENTE como se fosse uma mensagem de texto normal
+- Responda ao conteúdo da transcrição normalmente, seguindo o fluxo de atendimento
+- NÃO mencione que recebeu um áudio ou que está lendo uma transcrição, apenas responda ao conteúdo
 
 OUTRAS REGRAS:
 - Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento
@@ -238,23 +247,19 @@ export async function processAIMessage(
   const history = recentMessages.slice(-30);
   for (const msg of history) {
     if (msg.senderType === "customer") {
-      // Check if message has an image in metadata
       const meta = msg.metadata as Record<string, unknown> | null;
-      const msgMediaUrl = meta?.mediaUrl as string | undefined;
       
-      if (msg.messageType === "image" && msgMediaUrl) {
-        // Send image as multimodal content for vision
-        llmMessages.push({
-          role: "user",
-          content: [
-            { type: "image_url", image_url: { url: msgMediaUrl, detail: "low" } },
-            { type: "text", text: msg.content || "[Imagem enviada pelo cliente]" },
-          ],
-        } as any);
-      } else if (msg.messageType === "audio" && msgMediaUrl) {
-        // For audio, include transcription text + note about audio
-        const transcribed = meta?.transcribedText as string || msg.content;
-        llmMessages.push({ role: "user", content: `[🎤 Mensagem de áudio - transcrição]: ${transcribed}` });
+      if (msg.messageType === "image") {
+        // For images: send as text with context indicator (no vision needed)
+        const caption = msg.content && msg.content !== "[Imagem enviada pelo cliente]" && msg.content !== "[Imagem recebida]"
+          ? msg.content
+          : "";
+        llmMessages.push({ role: "user", content: `[Cliente enviou uma imagem]${caption ? " " + caption : ""}` });
+      } else if (msg.messageType === "audio") {
+        // For audio: send transcription as plain text (treat as normal message)
+        const transcribed = (meta?.transcribedText as string) || msg.content;
+        // Send as plain text so the AI treats it like a normal message
+        llmMessages.push({ role: "user", content: transcribed });
       } else {
         llmMessages.push({ role: "user", content: msg.content });
       }
@@ -265,18 +270,12 @@ export async function processAIMessage(
     }
   }
 
-  // Add current message - check if it contains an image URL
-  const imageMatch = customerMessage.match(/\[IMAGEM: (https?:\/\/[^\]]+)\]\s*(.*)/);
+  // Add current message
+  // Strip image URL markers if present — just pass the text content
+  const imageMatch = customerMessage.match(/\[IMAGEM: https?:\/\/[^\]]+\]\s*(.*)/);
   if (imageMatch) {
-    const imageUrl = imageMatch[1];
-    const caption = imageMatch[2] || "[Imagem enviada pelo cliente]";
-    llmMessages.push({
-      role: "user",
-      content: [
-        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
-        { type: "text", text: caption },
-      ],
-    } as any);
+    const caption = imageMatch[1]?.trim() || "";
+    llmMessages.push({ role: "user", content: `[Cliente enviou uma imagem]${caption ? " " + caption : ""}` });
   } else {
     llmMessages.push({ role: "user", content: customerMessage });
   }
