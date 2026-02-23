@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Vehicles from "./pages/Vehicles";
 import Leads from "./pages/Leads";
 import Settings from "./pages/Settings";
+import Team from "./pages/Team";
 import AppLayout from "./components/AppLayout";
 
 function Router() {
@@ -34,6 +35,11 @@ function Router() {
       <Route path={"/leads"}>
         <AppLayout>
           <Leads />
+        </AppLayout>
+      </Route>
+      <Route path={"/team"}>
+        <AppLayout>
+          <Team />
         </AppLayout>
       </Route>
       <Route path={"/settings"}>

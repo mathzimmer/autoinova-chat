@@ -10,6 +10,9 @@ import {
   getDashboardStats, getAiStats,
   searchVehicles, listVehicles, createVehicle,
   getSetting, upsertSetting, getAllSettings,
+  getActiveTeamMembers, getTeamMemberById,
+  createActivityLog, listActivityLogs,
+  createTeamNotification, listTeamNotifications, markNotificationsAsRead, getUnreadNotificationCount,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -17,6 +20,8 @@ import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, sendImageMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
 import { syncStock } from "./stockSync";
 import { getDb } from "./db";
+import { createTeamMember, updateTeamMember, deactivateTeamMember, hashPassword } from "./teamAuth";
+import { listTeamMembers as listTeamMembersAuth } from "./teamAuth";
 
 /**
  * Extract vehicle IDs from AI response and send their images
@@ -387,6 +392,17 @@ const webhookRouter = router({
 
       emitNewMessage(conversation.id, customerMsg);
 
+      // Notify assigned agent if conversation is assigned and AI is off
+      if (conversation.assignedTo && !conversation.aiActive) {
+        createTeamNotification({
+          userId: conversation.assignedTo,
+          type: "new_message",
+          title: "Nova mensagem",
+          message: `${conversation.contactName || conversation.phone}: ${messageContent.substring(0, 100)}`,
+          conversationId: conversation.id,
+        }).catch(err => console.error("[Webhook] Error creating notification:", err));
+      }
+
       // Check if AI should respond
       if (conversation.aiActive) {
         emitTypingIndicator(conversation.id, true, "Auto Inova IA");
@@ -462,6 +478,121 @@ const settingsRouter = router({
     }),
 });
 
+// ─── Team Members Router ──────────────────────────────────────
+const teamRouter = router({
+  list: protectedProcedure.query(async () => {
+    return getActiveTeamMembers();
+  }),
+
+  listAll: adminProcedure.query(async () => {
+    return listTeamMembersAuth();
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return getTeamMemberById(input.id);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(2),
+      email: z.string().email(),
+      password: z.string().min(6),
+      cargo: z.enum(["admin", "gerente", "vendedor", "suporte"]).default("vendedor"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await createTeamMember(input.name, input.email, input.password, input.cargo);
+      await createActivityLog({
+        userId: ctx.user.id,
+        action: "create_team_member",
+        details: { name: input.name, email: input.email, cargo: input.cargo },
+      });
+      return { success: true };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      email: z.string().email().optional(),
+      cargo: z.enum(["admin", "gerente", "vendedor", "suporte"]).optional(),
+      status: z.enum(["ativo", "inativo"]).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { id, ...updates } = input;
+      await updateTeamMember(id, updates);
+      await createActivityLog({
+        userId: ctx.user.id,
+        action: "update_team_member",
+        details: { memberId: id, ...updates },
+      });
+      return { success: true };
+    }),
+
+  resetPassword: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      newPassword: z.string().min(6),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const newHash = hashPassword(input.newPassword);
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { teamMembers: tm } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.update(tm).set({ passwordHash: newHash }).where(eq(tm.id, input.id));
+      await createActivityLog({
+        userId: ctx.user.id,
+        action: "reset_password",
+        details: { memberId: input.id },
+      });
+      return { success: true };
+    }),
+
+  deactivate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      await deactivateTeamMember(input.id);
+      await createActivityLog({
+        userId: ctx.user.id,
+        action: "deactivate_team_member",
+        details: { memberId: input.id },
+      });
+      return { success: true };
+    }),
+});
+
+// ─── Notification Router ──────────────────────────────────────
+const notificationRouter = router({
+  list: protectedProcedure
+    .input(z.object({ unreadOnly: z.boolean().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      return listTeamNotifications(ctx.user.id, input?.unreadOnly);
+    }),
+
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    return getUnreadNotificationCount(ctx.user.id);
+  }),
+
+  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+    await markNotificationsAsRead(ctx.user.id);
+    return { success: true };
+  }),
+});
+
+// ─── Activity Log Router ──────────────────────────────────────
+const activityRouter = router({
+  list: protectedProcedure
+    .input(z.object({
+      conversationId: z.number().optional(),
+      limit: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return listActivityLogs(input?.conversationId, input?.limit);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -479,6 +610,9 @@ export const appRouter = router({
   vehicle: vehicleRouter,
   webhook: webhookRouter,
   settings: settingsRouter,
+  team: teamRouter,
+  notification: notificationRouter,
+  activity: activityRouter,
 });
 
 export type AppRouter = typeof appRouter;

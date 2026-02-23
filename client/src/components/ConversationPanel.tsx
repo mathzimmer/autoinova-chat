@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -19,6 +19,15 @@ export default function ConversationPanel({ conversationId }: Props) {
   const { data: conversation } = trpc.conversation.getById.useQuery({ id: conversationId });
   const { data: lead, refetch: refetchLead } = trpc.lead.getByConversation.useQuery({ conversationId });
   const { data: vehicles } = trpc.vehicle.list.useQuery();
+  const { data: teamMembers } = trpc.team.list.useQuery();
+  const assignAgent = trpc.conversation.assignAgent.useMutation({
+    onSuccess: () => {
+      utils.conversation.getById.invalidate({ id: conversationId });
+      utils.conversation.list.invalidate();
+      toast.success("Agente atribuído!");
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
 
   // Find the linked vehicle
   const linkedVehicle = lead?.vehicleId && vehicles ? vehicles.find((v: any) => v.id === lead.vehicleId) : null;
@@ -224,6 +233,38 @@ export default function ConversationPanel({ conversationId }: Props) {
         </Select>
       </div>
 
+      {/* Agent Assignment */}
+      <div className="p-4 border-b border-border shrink-0">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <UserCog className="h-3.5 w-3.5" />
+          Atribuído a
+        </h4>
+        <Select
+          value={conversation.assignedTo?.toString() || "none"}
+          onValueChange={(val) => assignAgent.mutate({ id: conversationId, agentId: val === "none" ? null : parseInt(val) })}
+        >
+          <SelectTrigger className="bg-input border-border">
+            <SelectValue placeholder="Nenhum agente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Nenhum (IA responde)</SelectItem>
+            {teamMembers && teamMembers.map((m: any) => (
+              <SelectItem key={m.id} value={m.id.toString()}>
+                {m.name} ({m.cargo})
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {conversation.assignedTo && teamMembers && (
+          <div className="mt-2 flex items-center gap-2 p-2 rounded-md bg-blue-500/10">
+            <UserCheck className="h-3.5 w-3.5 text-blue-400" />
+            <span className="text-xs text-blue-400 font-medium">
+              {teamMembers.find((m: any) => m.id === conversation.assignedTo)?.name || "Agente"} está atendendo
+            </span>
+          </div>
+        )}
+      </div>
+
       {/* Contact Info */}
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-3">
@@ -310,20 +351,18 @@ export default function ConversationPanel({ conversationId }: Props) {
             <FieldInput label="Veu00edculo de Interesse (Texto)" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
             <div>
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Veu00edculo do Estoque</label>
-              <Select value={leadVehicleId?.toString() || ""} onValueChange={(val) => setLeadVehicleId(val ? parseInt(val) : null)}>
+              <Select value={leadVehicleId?.toString() || "none"} onValueChange={(val) => setLeadVehicleId(val === "none" ? null : parseInt(val))}>
                 <SelectTrigger className="h-8 text-sm bg-input border-border">
-                  <SelectValue placeholder="Selecione um veu00edculo..." />
+                  <SelectValue placeholder="Selecione um veículo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Nenhum (limpar)</SelectItem>
-                  {vehicles && vehicles.length > 0 ? (
+                  <SelectItem value="none">Nenhum (limpar)</SelectItem>
+                  {vehicles && vehicles.length > 0 && (
                     vehicles.map((v: any) => (
                       <SelectItem key={v.id} value={v.id.toString()}>
-                        {v.year} {v.brand} {v.model} - {v.km}km
+                        {v.year} {v.brand} {v.model} - {v.km?.toLocaleString()}km
                       </SelectItem>
                     ))
-                  ) : (
-                    <SelectItem value="" disabled>Carregando veu00edculos...</SelectItem>
                   )}
                 </SelectContent>
               </Select>

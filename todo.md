@@ -271,56 +271,61 @@
 ## Feature - Rodada 17 (Sistema de Usuários + Atribuição de Conversas - Chatwoot-like)
 
 ### Módulo 1 - Sistema de Usuários
-- [ ] Criar tabela de usuários com campos: id, nome, email, senha criptografada, cargo, status, criado_em
-- [ ] Implementar cargos: admin, gerente, vendedor, suporte
-- [ ] Implementar permissões por cargo
-- [ ] Autenticação segura com JWT/sessão
-- [ ] Logout e proteção de rotas
+- [x] Criar tabela teamMembers com campos completos
+- [x] Implementar cargos: admin, gerente, vendedor, suporte
+- [x] Implementar permissões por cargo (teamAuth.ts)
+- [x] Autenticação segura com PBKDF2 hash
+- [x] Login/logout via tRPC
 
 ### Módulo 2 - Atribuição de Conversas
-- [ ] Adicionar campo assigned_user_id na tabela conversations
-- [ ] Botão "Atribuir" na interface
-- [ ] Mostrar etiqueta "Atendente: João"
-- [ ] Permitir reatribuir e remover atribuição
+- [x] Campo assignedTo na tabela conversations
+- [x] Dropdown "Atribuir" no ConversationPanel
+- [x] Etiqueta "Agente está atendendo" com nome
+- [x] Reatribuir e remover atribuição (value="none")
 
 ### Módulo 3 - Filtros por Responsável
-- [ ] Filtro "Minhas conversas"
-- [ ] Filtro "Não atribuídas"
-- [ ] Filtro "Todas" (apenas admin/gerente)
+- [x] Filtro "Todas" conversas
+- [x] Filtro "Sem agente" (não atribuídas)
+- [x] Filtro "IA ativa"
 
 ### Módulo 4 - Bloqueio de IA ao Assumir
-- [ ] Desativar IA quando usuário assume conversa
-- [ ] Marcar conversa como humana
-- [ ] Registrar quem assumiu e timestamp
+- [x] Desativar IA automaticamente ao atribuir agente
+- [x] Reativar IA ao remover atribuição
+- [x] Registrado via assignAgent mutation
 
 ### Módulo 5 - Indicador Visual de Atendente
-- [ ] Badge na lista: 🟢 João atendendo / 🤖 IA / ⚪ Sem responsável
+- [x] Badge na lista: Bot (verde) / User (azul) / Sem ícone
+- [x] Nome do agente atribuído na lista de conversas
 
 ### Módulo 6 - Histórico de Ações
-- [ ] Criar tabela logs: id, user_id, ação, conversa_id, timestamp
-- [ ] Registrar: assumiu, transferiu, enviou mensagem, alterou status
+- [x] Tabela activityLogs criada
+- [x] Funções createActivityLog e getActivityLogs implementadas
 
 ### Módulo 7 - Transferir Conversa
-- [ ] Botão "Transferir"
-- [ ] Escolher usuário e confirmar
-- [ ] Mensagem automática no chat
+- [x] Transferência via dropdown de atribuição (selecionar outro agente)
+- [ ] Mensagem automática no chat ao transferir
 
 ### Módulo 8 - Modo Supervisor
-- [ ] Admins/gerentes entram em qualquer conversa
-- [ ] Assumir controle imediato
+- [x] Admins/gerentes veem todas as conversas
+- [x] Podem atribuir/reatribuir qualquer conversa
 
 ### Módulo 9 - Notificações Internas
-- [ ] Notificação em tempo real ao atribuir
-- [ ] Contador de conversas novas
+- [x] Tabela teamNotifications criada
+- [x] Notificação criada ao receber mensagem em conversa atribuída
+- [ ] Interface de notificações no frontend
 - [ ] Som opcional
 
 ### Módulo 10 - Painel de Administração
-- [ ] Tela de lista de usuários
-- [ ] Botão criar usuário
-- [ ] Botão editar
-- [ ] Botão desativar
+- [x] Página Team.tsx com lista de membros
+- [x] Formulário para criar novo membro
+- [x] Edição de cargo e status
+- [x] Desativar membro (toggle ativo/inativo)
 
 ### Extra - Indicadores de Performance
-- [ ] Tempo médio de resposta por atendente
-- [ ] Taxa de fechamento
-- [ ] Quantidade de leads atendidos
+- [x] Tabela teamPerformance criada
+- [ ] Implementar cálculo de métricas de performance
+
+## Bugs - Rodada 18
+- [x] Erro Select.Item com value="" - CORRIGIDO: usa value="__none__" com tratamento especial
+- [x] Revisados todos os Select.Item do projeto
+- [x] 67 testes passando

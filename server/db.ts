@@ -293,3 +293,105 @@ export async function getAllSettings(): Promise<Record<string, string>> {
   }
   return result;
 }
+
+// ─── Team Members Queries ─────────────────────────────────────
+export async function listTeamMembers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: teamMembers.id,
+    name: teamMembers.name,
+    email: teamMembers.email,
+    cargo: teamMembers.cargo,
+    status: teamMembers.status,
+    createdAt: teamMembers.createdAt,
+    updatedAt: teamMembers.updatedAt,
+  }).from(teamMembers);
+}
+
+export async function getTeamMemberById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select({
+    id: teamMembers.id,
+    name: teamMembers.name,
+    email: teamMembers.email,
+    cargo: teamMembers.cargo,
+    status: teamMembers.status,
+    createdAt: teamMembers.createdAt,
+    updatedAt: teamMembers.updatedAt,
+  }).from(teamMembers).where(eq(teamMembers.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
+export async function getActiveTeamMembers() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select({
+    id: teamMembers.id,
+    name: teamMembers.name,
+    cargo: teamMembers.cargo,
+  }).from(teamMembers).where(eq(teamMembers.status, "ativo"));
+}
+
+// ─── Activity Logs Queries ────────────────────────────────────
+export async function createActivityLog(data: InsertActivityLog) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(activityLogs).values(data);
+}
+
+export async function listActivityLogs(conversationId?: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  if (conversationId) {
+    return db.select().from(activityLogs)
+      .where(eq(activityLogs.conversationId, conversationId))
+      .orderBy(desc(activityLogs.createdAt))
+      .limit(limit);
+  }
+  return db.select().from(activityLogs)
+    .orderBy(desc(activityLogs.createdAt))
+    .limit(limit);
+}
+
+// ─── Team Notifications Queries ───────────────────────────────
+export async function createTeamNotification(data: {
+  userId: number;
+  type: string;
+  title: string;
+  message?: string;
+  conversationId?: number;
+}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(teamNotifications).values(data);
+}
+
+export async function listTeamNotifications(userId: number, unreadOnly = false) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [eq(teamNotifications.userId, userId)];
+  if (unreadOnly) conditions.push(eq(teamNotifications.read, false));
+  return db.select().from(teamNotifications)
+    .where(and(...conditions))
+    .orderBy(desc(teamNotifications.createdAt))
+    .limit(50);
+}
+
+export async function markNotificationsAsRead(userId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(teamNotifications)
+    .set({ read: true })
+    .where(eq(teamNotifications.userId, userId));
+}
+
+export async function getUnreadNotificationCount(userId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.select({ count: sql<number>`count(*)` })
+    .from(teamNotifications)
+    .where(and(eq(teamNotifications.userId, userId), eq(teamNotifications.read, false)));
+  return result[0]?.count ?? 0;
+}
