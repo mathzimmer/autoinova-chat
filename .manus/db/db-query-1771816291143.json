@@ -1,0 +1,28 @@
+{
+  "query": "SELECT id, content, LEFT(metadata, 500) as meta_preview, createdAt FROM messages WHERE messageType = 'audio' ORDER BY createdAt DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, content, LEFT(metadata, 500) as meta_preview, createdAt FROM messages WHERE messageType = 'audio' ORDER BY createdAt DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "167",
+      "content": "[Áudio não pôde ser transcrito]",
+      "meta_preview": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/z60m_Fr3Zus0.ogg\"}",
+      "createdAt": "2026-02-23 03:09:01"
+    },
+    {
+      "id": "165",
+      "content": "[Áudio não pôde ser transcrito]",
+      "meta_preview": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/Ccj4nDdQLrEo.ogg\"}",
+      "createdAt": "2026-02-23 03:05:09"
+    },
+    {
+      "id": "163",
+      "content": "[Áudio não pôde ser transcrito]",
+      "meta_preview": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/WAKjRJX-A371.ogg\"}",
+      "createdAt": "2026-02-23 03:04:23"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tcontent\tmeta_preview\tcreatedAt\n167\t[Áudio não pôde ser transcrito]\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/z60m_Fr3Zus0.ogg\"}\t2026-02-23 03:09:01\n165\t[Áudio não pôde ser transcrito]\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/Ccj4nDdQLrEo.ogg\"}\t2026-02-23 03:05:09\n163\t[Áudio não pôde ser transcrito]\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/WAKjRJX-A371.ogg\"}\t2026-02-23 03:04:23\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}

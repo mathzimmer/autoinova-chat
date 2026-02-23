@@ -271,25 +271,36 @@ const webhookRouter = router({
       // Handle audio: transcribe + keep audio URL for playback
       if (input.messageType === "audio") {
         const audioSource = input.mediaUrl || input.audioUrl;
+        console.log(`[Webhook] Audio message received. Source URL: ${audioSource || 'none'}`);
         if (audioSource) {
           storedMediaUrl = audioSource;
           // Transcribe the audio
           try {
+            console.log(`[Webhook] Starting audio transcription from: ${audioSource}`);
             const transcription = await transcribeAudio({
               audioUrl: audioSource,
               language: "pt",
-              prompt: "Transcrever mensagem de voz do cliente sobre veículos",
+              prompt: "Transcrever mensagem de voz do cliente sobre veículos e automóveis",
             });
-            if ("text" in transcription) {
+            console.log(`[Webhook] Transcription result:`, JSON.stringify(transcription).substring(0, 500));
+            if ("text" in transcription && transcription.text) {
               transcribedText = transcription.text;
               messageContent = transcription.text;
+              console.log(`[Webhook] Audio transcribed successfully: "${transcription.text}"`);
+            } else if ("error" in transcription) {
+              console.error(`[Webhook] Transcription error: ${transcription.error} (${transcription.code}) - ${transcription.details || ''}`);
+              // Keep audio URL for playback, tell AI it's an untranscribed audio
+              messageContent = "[Cliente enviou uma mensagem de áudio que não pôde ser transcrita. Peça gentilmente para o cliente digitar a mensagem.]";
             } else {
-              messageContent = "[Áudio não pôde ser transcrito]";
+              console.error(`[Webhook] Transcription returned unexpected format`);
+              messageContent = "[Cliente enviou uma mensagem de áudio que não pôde ser transcrita. Peça gentilmente para o cliente digitar a mensagem.]";
             }
           } catch (err) {
-            console.error("[Webhook] Audio transcription failed:", err);
-            messageContent = "[Áudio não pôde ser transcrito]";
+            console.error("[Webhook] Audio transcription exception:", err);
+            messageContent = "[Cliente enviou uma mensagem de áudio que não pôde ser transcrita. Peça gentilmente para o cliente digitar a mensagem.]";
           }
+        } else {
+          console.warn(`[Webhook] Audio message received but no URL available`);
         }
       }
 

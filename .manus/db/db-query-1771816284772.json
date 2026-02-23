@@ -1,0 +1,42 @@
+{
+  "query": "SELECT id, conversationId, content, messageType, metadata, createdAt FROM messages WHERE messageType = 'audio' ORDER BY createdAt DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, conversationId, content, messageType, metadata, createdAt FROM messages WHERE messageType = 'audio' ORDER BY createdAt DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "167",
+      "conversationId": "13",
+      "content": "[Áudio não pôde ser transcrito]",
+      "messageType": "audio",
+      "metadata": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/z60m_Fr3Zus0.ogg\"}",
+      "createdAt": "2026-02-23 03:09:01"
+    },
+    {
+      "id": "165",
+      "conversationId": "13",
+      "content": "[Áudio não pôde ser transcrito]",
+      "messageType": "audio",
+      "metadata": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/Ccj4nDdQLrEo.ogg\"}",
+      "createdAt": "2026-02-23 03:05:09"
+    },
+    {
+      "id": "163",
+      "conversationId": "13",
+      "content": "[Áudio não pôde ser transcrito]",
+      "messageType": "audio",
+      "metadata": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/WAKjRJX-A371.ogg\"}",
+      "createdAt": "2026-02-23 03:04:23"
+    },
+    {
+      "id": "157",
+      "conversationId": "13",
+      "content": "[Áudio não pôde ser transcrito]",
+      "messageType": "audio",
+      "metadata": "{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/p2zvUmWuP_G_.ogg\"}",
+      "createdAt": "2026-02-23 02:54:20"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tconversationId\tcontent\tmessageType\tmetadata\tcreatedAt\n167\t13\t[Áudio não pôde ser transcrito]\taudio\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/z60m_Fr3Zus0.ogg\"}\t2026-02-23 03:09:01\n165\t13\t[Áudio não pôde ser transcrito]\taudio\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/Ccj4nDdQLrEo.ogg\"}\t2026-02-23 03:05:09\n163\t13\t[Áudio não pôde ser transcrito]\taudio\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/WAKjRJX-A371.ogg\"}\t2026-02-23 03:04:23\n157\t13\t[Áudio não pôde ser transcrito]\taudio\t{\"mediaUrl\": \"https://d2xsxph8kpxj0f.cloudfront.net/310519663367249846/WRYbLJeRQcsg6cNcJJnu32/media/audio/p2zvUmWuP_G_.ogg\"}\t2026-02-23 02:54:20\n",
+  "stderr": "",
+  "execution_time_ms": 90
+}

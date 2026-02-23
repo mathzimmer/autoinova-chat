@@ -176,3 +176,10 @@
 - [x] IA usa contexto da conversa para entender imagens (ex: fotos da troca)
 - [x] Removida visão multimodal (image_url) — imagens tratadas como texto contextual
 - [x] 37 testes passando
+
+## Bugs - Rodada 6 (Transcrição de Áudio)
+- [x] Transcrição de áudio funciona corretamente (testado: "Boa noite meu amigo, você tem uma Sprinter aí pra venda, você financia?")
+- [x] Problema era no servidor publicado com código antigo — precisa republicar
+- [x] Melhorado fallback: se transcrição falhar, IA pede gentilmente para cliente digitar
+- [x] Adicionado logging detalhado para diagnóstico
+- [x] 37 testes passando
