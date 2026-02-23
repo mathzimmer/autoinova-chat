@@ -1,0 +1,105 @@
+# Auto Inova Chat - TODO
+
+## Banco de Dados
+- [x] Schema: tabela conversations (id, phone, name, channel, status, ai_active, assigned_to, last_message_at, created_at, updated_at)
+- [x] Schema: tabela messages (id, conversation_id, content, sender_type, message_type, status, metadata, created_at)
+- [x] Schema: tabela leads (id, conversation_id, phone, name, intention, vehicle_interest, has_trade, trade_vehicle, trade_year, trade_km, payment_method, down_payment, status, created_at, updated_at)
+- [x] Schema: tabela ai_logs (id, conversation_id, prompt_tokens, completion_tokens, cost_estimate, response_time_ms, tool_used, created_at)
+- [x] Schema: tabela vehicles (id, brand, model, year, price, mileage, color, transmission, fuel, category, description, image_url, available)
+- [x] Migração e push do schema
+
+## Backend API (tRPC)
+- [x] Router: conversations (list, getById, updateStatus, assignAgent, toggleAI, markAsRead)
+- [x] Router: messages (listByConversation, send)
+- [x] Router: leads (list, getByConversation, update)
+- [x] Router: dashboard (getMetrics com stats de IA)
+- [x] Router: webhook (verify, receive com processamento de texto e áudio)
+- [x] Router: vehicles (list, search, create)
+
+## WebSocket (Tempo Real)
+- [x] Configurar Socket.IO no servidor Express
+- [x] Eventos: new_message, conversation_updated, typing_indicator
+- [x] Integração com frontend para atualizações em tempo real
+- [x] Broadcast de mensagens para atendentes conectados
+
+## Agente de IA
+- [x] Sistema de decisão (ai_active check antes de responder)
+- [x] Prompt de pré-venda para concessionária de veículos
+- [x] Extração estruturada de dados do lead (JSON)
+- [x] Tool: buscar veículos no estoque
+- [x] Qualificação automática de lead via extração de dados
+- [x] Integração com invokeLLM do template
+
+## Handoff Humano/IA
+- [x] Botão "Assumir Conversa" (desativa IA)
+- [x] Botão "Reativar IA" (ativa IA)
+- [x] Pausa automática da IA quando humano envia mensagem
+- [x] Indicador visual de quem está atendendo (IA ou humano)
+
+## Webhook WhatsApp
+- [x] Endpoint POST para receber mensagens do WhatsApp Cloud API
+- [x] Endpoint GET para validação de webhook (verify token)
+- [x] Processamento de mensagens de texto
+- [x] Processamento de mensagens de áudio
+- [x] Endpoint genérico compatível com Chatwoot/n8n
+- [ ] Envio de respostas via WhatsApp Cloud API (requer token de acesso)
+
+## Transcrição de Áudio
+- [x] Integração com Whisper API (transcribeAudio do template)
+- [x] Processamento de mensagens de voz recebidas
+- [x] Armazenamento da transcrição junto à mensagem
+
+## Frontend - Layout e Design
+- [x] Design system: tema escuro SaaS com cores verdes da marca
+- [x] Layout principal: sidebar compacta + inbox + chat + painel lateral
+- [x] Responsividade para diferentes tamanhos de tela
+- [x] Fonte Inter do Google Fonts
+- [x] Scrollbar customizada para tema escuro
+
+## Frontend - Inbox
+- [x] Lista de conversas em tempo real
+- [x] Ordenação por última mensagem
+- [x] Indicador de status (aberta, pendente, resolvida)
+- [x] Indicador se IA está ativa (ícone de bot)
+- [x] Indicador de mensagens não lidas (badge)
+- [x] Busca/filtro de conversas por status e texto
+
+## Frontend - Chat
+- [x] Histórico completo de mensagens
+- [x] Diferenciação visual: cliente (esquerda), bot (verde), atendente (azul)
+- [x] Timestamps em cada mensagem
+- [x] Campo de envio de mensagem com Enter para enviar
+- [x] Indicador de digitação (animação de pontos)
+- [x] Scroll automático para última mensagem
+
+## Frontend - Painel de Controle
+- [x] Dados do cliente/lead (telefone, nome, canal)
+- [x] Controles de handoff (Assumir/Reativar IA)
+- [x] Status da conversa (select dropdown)
+- [x] Informações do lead qualificado (intenção, veículo, troca, pagamento)
+
+## Frontend - Dashboard
+- [x] Métricas: total conversas, abertas, leads qualificados, veículos
+- [x] Métricas IA: interações, tokens, tempo médio resposta
+- [x] Conversas ativas em tempo real
+- [x] Leads recentes
+
+## Frontend - Veículos
+- [x] Grid de veículos do estoque
+- [x] Formulário para adicionar veículo (admin only)
+- [x] Cards com informações: marca, modelo, ano, preço, km, câmbio
+
+## Frontend - Leads
+- [x] Lista de leads com filtros por status
+- [x] Cards com dados qualificados pela IA
+- [x] Badge de status do lead
+
+## Autenticação e Segurança
+- [x] Autenticação via Manus OAuth
+- [x] Roles: admin e user
+- [x] Proteção de rotas por role (adminProcedure, protectedProcedure)
+
+## Testes
+- [x] Testes unitários para routers principais (16 testes passando)
+- [x] Teste de integração do webhook (verify)
+- [x] Teste do sistema de autenticação e autorização

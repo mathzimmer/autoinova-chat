@@ -1,17 +1,10 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, bigint } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
- * Extend this file with additional tables as your product grows.
- * Columns use camelCase to match both database fields and generated types.
  */
 export const users = mysqlTable("users", {
-  /**
-   * Surrogate primary key. Auto-incremented numeric value managed by the database.
-   * Use this for relations between tables.
-   */
   id: int("id").autoincrement().primaryKey(),
-  /** Manus OAuth identifier (openId) returned from the OAuth callback. Unique per user. */
   openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
@@ -25,4 +18,114 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * Conversations table - each conversation represents a chat session with a customer.
+ */
+export const conversations = mysqlTable("conversations", {
+  id: int("id").autoincrement().primaryKey(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  contactName: varchar("contactName", { length: 255 }),
+  channel: mysqlEnum("channel", ["whatsapp", "web", "webhook"]).default("whatsapp").notNull(),
+  status: mysqlEnum("status", ["open", "pending", "resolved", "closed"]).default("open").notNull(),
+  aiActive: boolean("aiActive").default(true).notNull(),
+  assignedTo: int("assignedTo"),
+  unreadCount: int("unreadCount").default(0).notNull(),
+  lastMessageAt: bigint("lastMessageAt", { mode: "number" }),
+  lastMessagePreview: varchar("lastMessagePreview", { length: 500 }),
+  metadata: json("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Conversation = typeof conversations.$inferSelect;
+export type InsertConversation = typeof conversations.$inferInsert;
+
+/**
+ * Messages table - stores all messages in conversations.
+ * senderType: "customer" (incoming), "bot" (AI), "agent" (human operator)
+ */
+export const messages = mysqlTable("messages", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  content: text("content").notNull(),
+  senderType: mysqlEnum("senderType", ["customer", "bot", "agent"]).notNull(),
+  senderName: varchar("senderName", { length: 255 }),
+  messageType: mysqlEnum("messageType", ["text", "audio", "image", "document", "system"]).default("text").notNull(),
+  status: mysqlEnum("messageStatus", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
+  metadata: json("metadata"),
+  externalId: varchar("externalId", { length: 255 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Message = typeof messages.$inferSelect;
+export type InsertMessage = typeof messages.$inferInsert;
+
+/**
+ * Leads table - qualified lead information extracted by AI.
+ */
+export const leads = mysqlTable("leads", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  name: varchar("name", { length: 255 }),
+  intention: varchar("intention", { length: 255 }),
+  vehicleInterest: varchar("vehicleInterest", { length: 500 }),
+  hasTrade: boolean("hasTrade"),
+  tradeVehicle: varchar("tradeVehicle", { length: 255 }),
+  tradeYear: varchar("tradeYear", { length: 10 }),
+  tradeKm: varchar("tradeKm", { length: 50 }),
+  paymentMethod: varchar("paymentMethod", { length: 255 }),
+  downPayment: varchar("downPayment", { length: 100 }),
+  status: mysqlEnum("leadStatus", ["new", "qualifying", "qualified", "contacted", "converted", "lost"]).default("new").notNull(),
+  score: int("score").default(0),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Lead = typeof leads.$inferSelect;
+export type InsertLead = typeof leads.$inferInsert;
+
+/**
+ * AI Logs table - tracks AI interactions for monitoring and cost analysis.
+ */
+export const aiLogs = mysqlTable("aiLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  promptTokens: int("promptTokens").default(0),
+  completionTokens: int("completionTokens").default(0),
+  totalTokens: int("totalTokens").default(0),
+  costEstimate: varchar("costEstimate", { length: 20 }),
+  responseTimeMs: int("responseTimeMs"),
+  toolUsed: varchar("toolUsed", { length: 100 }),
+  success: boolean("success").default(true),
+  errorMessage: text("errorMessage"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiLog = typeof aiLogs.$inferSelect;
+export type InsertAiLog = typeof aiLogs.$inferInsert;
+
+/**
+ * Vehicles table - vehicle inventory for the dealership.
+ */
+export const vehicles = mysqlTable("vehicles", {
+  id: int("id").autoincrement().primaryKey(),
+  brand: varchar("brand", { length: 100 }).notNull(),
+  model: varchar("model", { length: 200 }).notNull(),
+  year: int("year").notNull(),
+  price: int("price").notNull(),
+  mileage: int("mileage"),
+  color: varchar("color", { length: 50 }),
+  transmission: mysqlEnum("transmission", ["manual", "automatic"]).default("manual"),
+  fuel: varchar("fuel", { length: 50 }),
+  category: varchar("category", { length: 100 }),
+  description: text("description"),
+  imageUrl: varchar("imageUrl", { length: 500 }),
+  available: boolean("available").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Vehicle = typeof vehicles.$inferSelect;
+export type InsertVehicle = typeof vehicles.$inferInsert;
