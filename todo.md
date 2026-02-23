@@ -246,3 +246,11 @@
 - [x] Permitir visualizar e editar o resumo gerado pela IA na tela de leads
 - [x] Campo notes adicionado ao lead.update no router
 - [x] 67 testes passando
+
+## Feature - Rodada 14 (Envio de Fotos)
+- [x] Investigar estrutura de dados dos veículos e URLs de imagens
+- [x] Implementar envio automático de fotos após IA apresentar veículos
+- [x] Integrar com WhatsApp API para enviar imagens (sendImageMessage)
+- [x] Testar envio de múltiplas imagens em sequência (com delay de 500ms)
+- [x] Extrair IDs [ID:X] da resposta da IA e buscar imagens
+- [x] 67 testes passando

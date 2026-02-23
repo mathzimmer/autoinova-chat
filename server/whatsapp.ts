@@ -147,6 +147,52 @@ async function downloadMedia(mediaUrl: string): Promise<Buffer | null> {
 }
 
 /**
+ * Send an image message to a WhatsApp number
+ */
+async function sendImageMessage(to: string, imageUrl: string, caption?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. Image message not sent to:", to);
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  try {
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "image",
+        image: {
+          link: imageUrl,
+          ...(caption && { caption }),
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const messageId = response.data?.messages?.[0]?.id;
+    if (messageId) {
+      console.log(`[WhatsApp] Image sent successfully to ${to}, message ID: ${messageId}`);
+      return { success: true, messageId };
+    } else {
+      return { success: false, error: "No message ID returned" };
+    }
+  } catch (error: any) {
+    const errorMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send image to ${to}:`, errorMsg);
+    return { success: false, error: errorMsg };
+  }
+}
+
+/**
  * Send a reaction to a message
  */
 async function sendReaction(to: string, messageId: string, emoji: string): Promise<boolean> {
@@ -184,6 +230,7 @@ async function sendReaction(to: string, messageId: string, emoji: string): Promi
 export {
   isConfigured,
   sendTextMessage,
+  sendImageMessage,
   markAsRead,
   getMediaUrl,
   downloadMedia,

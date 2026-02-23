@@ -14,8 +14,47 @@ import {
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
-import { sendTextMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { sendTextMessage, sendImageMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
 import { syncStock } from "./stockSync";
+import { getDb } from "./db";
+
+/**
+ * Extract vehicle IDs from AI response and send their images
+ */
+async function sendVehicleImages(conversationPhone: string, aiResponse: string) {
+  // Extract all [ID:X] patterns from the response
+  const idMatches = aiResponse.match(/\[ID:(\d+)\]/g);
+  if (!idMatches || idMatches.length === 0) return;
+
+  const vehicleIds = Array.from(new Set(idMatches.map(m => parseInt(m.match(/\d+/)![0])))); // Remove duplicates
+  const db = await getDb();
+  if (!db) return;
+
+  // Get vehicle images
+  const vehiclesTable = (await import("../drizzle/schema")).vehicles;
+  const { eq, inArray } = await import("drizzle-orm");
+  
+  try {
+    const vehicleRecords = await db
+      .select()
+      .from(vehiclesTable)
+      .where(inArray(vehiclesTable.id, vehicleIds))
+      .limit(5); // Send max 5 images
+
+    // Send each image with a small delay to avoid rate limiting
+    for (const vehicle of vehicleRecords) {
+      if (!vehicle.imageUrl) continue;
+      
+      const caption = `${vehicle.title || `${vehicle.brand} ${vehicle.model}`} (${vehicle.year})`;
+      await sendImageMessage(conversationPhone, vehicle.imageUrl, caption);
+      
+      // Small delay between images
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch (err) {
+    console.error("[Webhook] Failed to send vehicle images:", err);
+  }
+}
 
 const conversationRouter = router({
   list: protectedProcedure
@@ -374,6 +413,11 @@ const webhookRouter = router({
           });
 
           emitNewMessage(conversation.id, botMsg);
+
+          // Send vehicle images asynchronously (don't wait for completion)
+          sendVehicleImages(conversation.phone, aiResult.response).catch(err => 
+            console.error("[Webhook] Error sending vehicle images:", err)
+          );
 
           return { conversationId: conversation.id, aiResponse: aiResult.response, leadData: aiResult.leadData };
         }
