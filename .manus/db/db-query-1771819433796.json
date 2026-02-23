@@ -1,0 +1,19 @@
+{
+  "query": "SELECT COUNT(*) as total_available FROM vehicles WHERE available = 1; SELECT COUNT(*) as total_all FROM vehicles;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT COUNT(*) as total_available FROM vehicles WHERE available = 1; SELECT COUNT(*) as total_all FROM vehicles;",
+  "rows": [
+    {
+      "total_available": "111"
+    },
+    {
+      "total_available": "total_all"
+    },
+    {
+      "total_available": "111"
+    }
+  ],
+  "messages": [],
+  "stdout": "total_available\n111\ntotal_all\n111\n",
+  "stderr": "",
+  "execution_time_ms": 82
+}

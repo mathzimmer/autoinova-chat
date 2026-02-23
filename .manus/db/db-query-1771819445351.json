@@ -1,0 +1,25 @@
+{
+  "query": "SELECT COUNT(*) as total FROM vehicles; SELECT COUNT(*) as with_external_id FROM vehicles WHERE externalId IS NOT NULL; SELECT COUNT(*) as without_external_id FROM vehicles WHERE externalId IS NULL",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT COUNT(*) as total FROM vehicles; SELECT COUNT(*) as with_external_id FROM vehicles WHERE externalId IS NOT NULL; SELECT COUNT(*) as without_external_id FROM vehicles WHERE externalId IS NULL",
+  "rows": [
+    {
+      "total": "111"
+    },
+    {
+      "total": "with_external_id"
+    },
+    {
+      "total": "111"
+    },
+    {
+      "total": "without_external_id"
+    },
+    {
+      "total": "0"
+    }
+  ],
+  "messages": [],
+  "stdout": "total\n111\nwith_external_id\n111\nwithout_external_id\n0\n",
+  "stderr": "",
+  "execution_time_ms": 70
+}

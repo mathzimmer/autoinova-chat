@@ -214,3 +214,11 @@
 - [x] Dedup de mensagens WhatsApp por externalId - CORRIGIDO: getMessageByExternalId + check no webhook
 - [x] forceSearch não dispara para msgs de troca ("vendi meu fusca, tenho um gol") - CORRIGIDO
 - [x] 56 testes passando (19 testes de IA)
+
+## Bugs - Rodada 10
+- [x] Busca retorna veículos inventados - CORRIGIDO: resultado agora diz "Copie EXATAMENTE" + formato compacto
+- [x] IA ainda usa formatação markdown - CORRIGIDO: strip agressivo (bold, italic, headers, bullets, links)
+- [x] Implementar resumo automático da conversa - CORRIGIDO: campo "notas" no atualizar_lead
+- [x] Resposta muito longa - CORRIGIDO: limitado a 5 resultados + filtro de motos/barcos
+- [x] Keywords de busca por faixa de preço ("até 100 mil") adicionadas
+- [x] 66 testes passando (29 testes de IA + 9 de markdown)

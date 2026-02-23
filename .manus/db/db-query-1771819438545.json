@@ -1,0 +1,14 @@
+{
+  "query": "SELECT available, COUNT(*) as cnt FROM vehicles GROUP BY available",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT available, COUNT(*) as cnt FROM vehicles GROUP BY available",
+  "rows": [
+    {
+      "available": "1",
+      "cnt": "111"
+    }
+  ],
+  "messages": [],
+  "stdout": "available\tcnt\n1\t111\n",
+  "stderr": "",
+  "execution_time_ms": 53
+}

@@ -17,18 +17,21 @@ describe("AI System Prompt", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("ESCOLHENDO aquela opção da lista");
   });
 
-  it("contains vehicle search rules", () => {
+  it("contains vehicle search rules with CRITICAL copy rule", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("buscar_veiculos");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("NUNCA invente veículos");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("NUNCA modifique, resuma ou invente veículos");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("Copie EXATAMENTE");
   });
 
   it("contains rules about single result behavior", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("1 resultado: apresente direto");
   });
 
-  it("contains lead update rules for vehicle changes", () => {
+  it("contains lead update rules with notes/summary", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("MUDAR de veículo de interesse");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("MUDAR dados da troca");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("notas");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("resumo breve da conversa");
   });
 
   it("contains image handling rules", () => {
@@ -80,28 +83,23 @@ describe("Vehicle Search Keyword Detection", () => {
     "o que tem", "o que voces tem", "o que vocês têm",
     "quero ver", "quero conhecer", "mostrar", "me mostra",
     "carro até", "veículo até", "veiculo até",
+    "até 100", "até 50", "até 80", "até 200", "até 150",
+    "mil reais", "mil real",
   ];
 
   function shouldForceVehicleSearch(message: string): boolean {
     const lower = message.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    
-    // Don't force search for very short messages
     if (lower.trim().length <= 3) return false;
-    
-    // Don't force search for trade-in related messages
     const tradeKeywords = ["troca", "trocar", "vendi", "tenho um", "meu carro", "meu gol", "meu fusca"];
     const isTradeMessage = tradeKeywords.some(kw => lower.includes(kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
-    
     if (isTradeMessage && !lower.includes("por um") && !lower.includes("por uma") && !lower.includes("interesse")) {
       return false;
     }
-    
     const hasModel = VEHICLE_MODEL_KEYWORDS.some(kw => {
       const normalizedKw = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       return lower.includes(normalizedKw);
     });
     if (hasModel) return true;
-    
     const hasSearchIntent = VEHICLE_SEARCH_KEYWORDS.some(kw => {
       const normalizedKw = kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       return lower.includes(normalizedKw);
@@ -134,6 +132,12 @@ describe("Vehicle Search Keyword Detection", () => {
     expect(shouldForceVehicleSearch("Me mostra as opções")).toBe(true);
   });
 
+  it("triggers search for price range queries", () => {
+    expect(shouldForceVehicleSearch("Me diz uma coisa que tu tem de carro aí até 100 mil reais")).toBe(true);
+    expect(shouldForceVehicleSearch("Quero ver carro até 50 mil")).toBe(true);
+    expect(shouldForceVehicleSearch("Veículo até 80 mil")).toBe(true);
+  });
+
   it("does NOT trigger search for short messages (numeric selections)", () => {
     expect(shouldForceVehicleSearch("2")).toBe(false);
     expect(shouldForceVehicleSearch("1")).toBe(false);
@@ -163,5 +167,61 @@ describe("Vehicle Search Keyword Detection", () => {
   it("handles accented characters correctly", () => {
     expect(shouldForceVehicleSearch("Tem veículo disponível?")).toBe(true);
     expect(shouldForceVehicleSearch("Quero ver as opções")).toBe(true);
+  });
+});
+
+describe("Markdown Stripping", () => {
+  function stripMarkdown(text: string): string {
+    return text
+      .replace(/```json[\s\S]*?```/g, "")
+      .replace(/```[\s\S]*?```/g, "")
+      .replace(/\{[\s\S]*?"lead_data"[\s\S]*?\}/g, "")
+      .replace(/\*\*\*(.*?)\*\*\*/g, "$1")
+      .replace(/\*\*(.*?)\*\*/g, "$1")
+      .replace(/\*(.*?)\*/g, "$1")
+      .replace(/__(.*?)__/g, "$1")
+      .replace(/_(.*?)_/g, "$1")
+      .replace(/^#{1,6}\s+/gm, "")
+      .replace(/^[\s]*[-•\*]\s+/gm, "")
+      .replace(/^[\s]*\d+\.\s{2,}/gm, (match) => match.replace(/\s{2,}$/, " "))
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  it("removes bold formatting", () => {
+    expect(stripMarkdown("**Toyota Hilux** 2012")).toBe("Toyota Hilux 2012");
+  });
+
+  it("removes italic formatting", () => {
+    expect(stripMarkdown("*Preço especial*")).toBe("Preço especial");
+  });
+
+  it("removes bold+italic formatting", () => {
+    expect(stripMarkdown("***Destaque***")).toBe("Destaque");
+  });
+
+  it("removes underscore formatting", () => {
+    expect(stripMarkdown("__negrito__ e _itálico_")).toBe("negrito e itálico");
+  });
+
+  it("removes bullet points", () => {
+    expect(stripMarkdown("- Item 1\n- Item 2\n* Item 3")).toBe("Item 1\nItem 2\nItem 3");
+  });
+
+  it("removes headers", () => {
+    expect(stripMarkdown("# Título\n## Subtítulo")).toBe("Título\nSubtítulo");
+  });
+
+  it("converts markdown links to plain text", () => {
+    expect(stripMarkdown("[Veja aqui](https://example.com)")).toBe("Veja aqui https://example.com");
+  });
+
+  it("removes code blocks", () => {
+    expect(stripMarkdown("Texto\n```json\n{}\n```\nMais texto")).toBe("Texto\n\nMais texto");
+  });
+
+  it("limits consecutive newlines", () => {
+    expect(stripMarkdown("A\n\n\n\nB")).toBe("A\n\nB");
   });
 });

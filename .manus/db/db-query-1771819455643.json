@@ -1,0 +1,190 @@
+{
+  "query": "SELECT id, externalId, brand, model, title, price, available FROM vehicles WHERE price <= 50000 AND available = 1 ORDER BY price LIMIT 20",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, externalId, brand, model, title, price, available FROM vehicles WHERE price <= 50000 AND available = 1 ORDER BY price LIMIT 20",
+  "rows": [
+    {
+      "id": "106",
+      "externalId": "909223",
+      "brand": "Honda",
+      "model": "HONDA/C100 BIZ ES",
+      "title": "Honda HONDA/C100 BIZ ES - Preto - 2004",
+      "price": "8990",
+      "available": "1"
+    },
+    {
+      "id": "20",
+      "externalId": "906933",
+      "brand": "VolksWagen",
+      "model": "Gol 1000 Mi Plus 16V 2p e 4p",
+      "title": "VolksWagen Gol 1000 Mi Plus 16V 2p e 4p - Vermelho - 1999",
+      "price": "9990",
+      "available": "1"
+    },
+    {
+      "id": "56",
+      "externalId": "857856",
+      "brand": "HONDA",
+      "model": "C 100 BIZ-ES",
+      "title": "HONDA C 100 BIZ-ES - Rosa - 2013",
+      "price": "10990",
+      "available": "1"
+    },
+    {
+      "id": "93",
+      "externalId": "627467",
+      "brand": "Barco",
+      "model": "Barco",
+      "title": "Barco de Pesca - Verde - 2010",
+      "price": "17990",
+      "available": "1"
+    },
+    {
+      "id": "87",
+      "externalId": "754637",
+      "brand": "YAMAHA",
+      "model": "FZ15 150 FAZER FLEX",
+      "title": "YAMAHA FZ15 150 FAZER FLEX - Vermelho - 2024",
+      "price": "20990",
+      "available": "1"
+    },
+    {
+      "id": "94",
+      "externalId": "661840",
+      "brand": "Royal Enfield",
+      "model": "Himalayan 411 EFI",
+      "title": "Royal Enfield Himalayan 411 EFI - Preto - 2024",
+      "price": "24990",
+      "available": "1"
+    },
+    {
+      "id": "40",
+      "externalId": "880719",
+      "brand": "Fiat",
+      "model": "Palio 1.0/ Trofeo 1.0 Fire/ Fire Flex 4p",
+      "title": "Fiat Palio Fire - Preto - 2007",
+      "price": "26990",
+      "available": "1"
+    },
+    {
+      "id": "49",
+      "externalId": "865492",
+      "brand": "Volkswagen",
+      "model": "Brasília",
+      "title": "Volkswagen Brasília - Branco - 1979",
+      "price": "27990",
+      "available": "1"
+    },
+    {
+      "id": "112",
+      "externalId": "854252",
+      "brand": "Chevrolet",
+      "model": "Celta Life/ LS 1.0 MPFI 8V FlexPower 5p",
+      "title": "Chevrolet Celta Life/ LS 1.0 MPFI 8V FlexPower 5p - Preto - 2012",
+      "price": "28990",
+      "available": "1"
+    },
+    {
+      "id": "83",
+      "externalId": "689215",
+      "brand": "VolksWagen",
+      "model": "FUSCA 1.5 8V GASOLINA 2P MANUAL",
+      "title": "VolksWagen FUSCA 1.3 8V GASOLINA 2P MANUAL - Bege - 1974",
+      "price": "29990",
+      "available": "1"
+    },
+    {
+      "id": "37",
+      "externalId": "525466",
+      "brand": "Ford",
+      "model": "Belina L 1.8/ 1.6",
+      "title": "Ford Belina L 1.8/ 1.6 - Dourado - 1985",
+      "price": "29990",
+      "available": "1"
+    },
+    {
+      "id": "12",
+      "externalId": "583995",
+      "brand": "Buggy",
+      "model": "Galgo",
+      "title": "Buggy Galgo - Branco - 1971",
+      "price": "31990",
+      "available": "1"
+    },
+    {
+      "id": "55",
+      "externalId": "856789",
+      "brand": "VolksWagen",
+      "model": "SPACEFOX 1.6/ 1.6 Trend Total Flex 8V 5p",
+      "title": "VolksWagen SPACEFOX 1.6/ 1.6 Trend Total Flex 8V 5p - Cinza - 2008",
+      "price": "33990",
+      "available": "1"
+    },
+    {
+      "id": "101",
+      "externalId": "920966",
+      "brand": "BMW",
+      "model": "G 310 R",
+      "title": "BMW G 310 R - Vermelho - 2023",
+      "price": "33990",
+      "available": "1"
+    },
+    {
+      "id": "108",
+      "externalId": "898898",
+      "brand": "Ford",
+      "model": "Ka 1.0 SE/SE Plus TiVCT Flex 5p",
+      "title": "Ford Ka 1.0 SE/SE Plus TiVCT Flex 5p - Vermelho - 2015",
+      "price": "34990",
+      "available": "1"
+    },
+    {
+      "id": "19",
+      "externalId": "910472",
+      "brand": "Honda",
+      "model": "Fit LX 1.4/ 1.4 Flex 8V/16V 5p Mec.",
+      "title": "Honda Fit LX 1.4/ 1.4 Flex 8V/16V 5p Mec. - Branco - 2008",
+      "price": "35990",
+      "available": "1"
+    },
+    {
+      "id": "26",
+      "externalId": "871749",
+      "brand": "Chevrolet",
+      "model": "Vectra CD 2.2 16V / 2.0 16V Mec./Aut.",
+      "title": "Chevrolet Vectra CD 2.0 16V Mec. - Vermelho - 1997",
+      "price": "37990",
+      "available": "1"
+    },
+    {
+      "id": "9",
+      "externalId": "901229",
+      "brand": "Chevrolet",
+      "model": "AGILE LTZ 1.4 MPFI 8V FlexPower 5p",
+      "title": "Chevrolet AGILE LTZ 1.4 MPFI 8V FlexPower 5p - Preto - 2013",
+      "price": "37990",
+      "available": "1"
+    },
+    {
+      "id": "80",
+      "externalId": "788696",
+      "brand": "YAMAHA",
+      "model": "YZF R-1 1000",
+      "title": "YAMAHA YZF R-1 1000 - Branco - 2010",
+      "price": "38990",
+      "available": "1"
+    },
+    {
+      "id": "100",
+      "externalId": "924114",
+      "brand": "Fiat",
+      "model": "Grand Siena ESSENCE Dual. 1.6 Flex 16V",
+      "title": "Fiat Grand Siena ESSENCE Dual. 1.6 Flex 16V - Branco - 2014",
+      "price": "39990",
+      "available": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\texternalId\tbrand\tmodel\ttitle\tprice\tavailable\n106\t909223\tHonda\tHONDA/C100 BIZ ES\tHonda HONDA/C100 BIZ ES - Preto - 2004\t8990\t1\n20\t906933\tVolksWagen\tGol 1000 Mi Plus 16V 2p e 4p\tVolksWagen Gol 1000 Mi Plus 16V 2p e 4p - Vermelho - 1999\t9990\t1\n56\t857856\tHONDA\tC 100 BIZ-ES\tHONDA C 100 BIZ-ES - Rosa - 2013\t10990\t1\n93\t627467\tBarco\tBarco\tBarco de Pesca - Verde - 2010\t17990\t1\n87\t754637\tYAMAHA\tFZ15 150 FAZER FLEX\tYAMAHA FZ15 150 FAZER FLEX - Vermelho - 2024\t20990\t1\n94\t661840\tRoyal Enfield\tHimalayan 411 EFI\tRoyal Enfield Himalayan 411 EFI - Preto - 2024\t24990\t1\n40\t880719\tFiat\tPalio 1.0/ Trofeo 1.0 Fire/ Fire Flex 4p\tFiat Palio Fire - Preto - 2007\t26990\t1\n49\t865492\tVolkswagen\tBrasília\tVolkswagen Brasília - Branco - 1979\t27990\t1\n112\t854252\tChevrolet\tCelta Life/ LS 1.0 MPFI 8V FlexPower 5p\tChevrolet Celta Life/ LS 1.0 MPFI 8V FlexPower 5p - Preto - 2012\t28990\t1\n83\t689215\tVolksWagen\tFUSCA 1.5 8V GASOLINA 2P MANUAL\tVolksWagen FUSCA 1.3 8V GASOLINA 2P MANUAL - Bege - 1974\t29990\t1\n37\t525466\tFord\tBelina L 1.8/ 1.6\tFord Belina L 1.8/ 1.6 - Dourado - 1985\t29990\t1\n12\t583995\tBuggy\tGalgo\tBuggy Galgo - Branco - 1971\t31990\t1\n55\t856789\tVolksWagen\tSPACEFOX 1.6/ 1.6 Trend Total Flex 8V 5p\tVolksWagen SPACEFOX 1.6/ 1.6 Trend Total Flex 8V 5p - Cinza - 2008\t33990\t1\n101\t920966\tBMW\tG 310 R\tBMW G 310 R - Vermelho - 2023\t33990\t1\n108\t898898\tFord\tKa 1.0 SE/SE Plus TiVCT Flex 5p\tFord Ka 1.0 SE/SE Plus TiVCT Flex 5p - Vermelho - 2015\t34990\t1\n19\t910472\tHonda\tFit LX 1.4/ 1.4 Flex 8V/16V 5p Mec.\tHonda Fit LX 1.4/ 1.4 Flex 8V/16V 5p Mec. - Branco - 2008\t35990\t1\n26\t871749\tChevrolet\tVectra CD 2.2 16V / 2.0 16V Mec./Aut.\tChevrolet Vectra CD 2.0 16V Mec. - Vermelho - 1997\t37990\t1\n9\t901229\tChevrolet\tAGILE LTZ 1.4 MPFI 8V FlexPower 5p\tChevrolet AGILE LTZ 1.4 MPFI 8V FlexPower 5p - Preto - 2013\t37990\t1\n80\t788696\tYAMAHA\tYZF R-1 1000\tYAMAHA YZF R-1 1000 - Branco - 2010\t38990\t1\n100\t924114\tFiat\tGrand Siena ESSENCE Dual. 1.6 Flex 16V\tFiat Grand Siena ESSENCE Dual. 1.6 Flex 16V - Branco - 2014\t39990\t1\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

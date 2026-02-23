@@ -293,29 +293,44 @@ async function searchVehiclesForAI(filters: {
     allVehicles = allVehicles.filter(v => v.color?.toLowerCase().includes(colorLower));
   }
 
+  // Filter out non-car items (motos, barcos, quadriciclos, etc.) unless specifically searched
+  const nonCarCategories = ["motos", "moto", "barco", "barcos", "quadriciclo", "utv", "atv"];
+  const isSearchingNonCar = filters.category && nonCarCategories.some(nc => filters.category!.toLowerCase().includes(nc));
+  if (!isSearchingNonCar) {
+    allVehicles = allVehicles.filter(v => {
+      const cat = (v.category || "").toLowerCase();
+      const model = (v.model || "").toLowerCase();
+      const brand = (v.brand || "").toLowerCase();
+      // Exclude motos, barcos, etc
+      const isNonCar = nonCarCategories.some(nc => cat.includes(nc)) ||
+        ["honda/c100", "yamaha", "suzuki gsx", "bmw g 310", "bmw r 1200", "royal enfield", "barco", "polaris", "buggy"].some(nc => 
+          brand.toLowerCase().includes(nc) || model.toLowerCase().includes(nc) || (v.title || "").toLowerCase().includes(nc)
+        );
+      return !isNonCar;
+    });
+  }
+
   if (allVehicles.length === 0) {
     return "Nenhum veículo encontrado com esses critérios. Tente ampliar a busca.";
   }
 
-  // Limit to top 10 results, sorted by price
-  const sorted = allVehicles.sort((a, b) => a.price - b.price).slice(0, 10);
+  // Limit to top 5 results for clearer presentation, sorted by price
+  const sorted = allVehicles.sort((a, b) => a.price - b.price).slice(0, 5);
 
   const vehicleList = sorted.map((v, i) => {
     const priceStr = v.promotionPrice && v.promotionPrice < v.price
       ? `De R$ ${v.regularPrice?.toLocaleString("pt-BR") || v.price.toLocaleString("pt-BR")} por R$ ${v.promotionPrice.toLocaleString("pt-BR")}`
       : `R$ ${v.price.toLocaleString("pt-BR")}`;
     
-    const features = Array.isArray(v.features) ? (v.features as string[]).slice(0, 5).join(", ") : "";
     const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
     
-    return `${i + 1}. [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`}
-   ${priceStr} | ${v.year} | ${mileageStr} | ${v.fuel || ""} | ${v.transmission || ""}
-   ${v.color ? `Cor: ${v.color}` : ""} ${v.condition ? `| ${v.condition}` : ""}
-   ${features ? `Destaques: ${features}` : ""}
-   ${v.url ? `Link: ${v.url}` : ""}`;
-  }).join("\n\n");
+    // Compact format to prevent AI from inventing details
+    return `Opção ${i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${priceStr} - ${v.url || ""}`;
+  }).join("\n");
 
-  return `Encontrei ${allVehicles.length} veículo(s) (mostrando ${sorted.length}):\n\n${vehicleList}`;
+  const moreText = allVehicles.length > 5 ? `\n\n(Existem mais ${allVehicles.length - 5} veículos nessa faixa. Pergunte ao cliente se quer ver mais ou filtrar por marca/modelo.)` : "";
+
+  return `RESULTADOS DA BUSCA (${allVehicles.length} veículos encontrados, mostrando ${sorted.length}):\n\nIMPORTANTE: Apresente EXATAMENTE os veículos abaixo. NÃO invente ou modifique nomes, preços ou links.\n\n${vehicleList}${moreText}`;
 }
 
 // Auto-sync interval (every 30 minutes)

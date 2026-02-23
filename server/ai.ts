@@ -33,19 +33,16 @@ REGRA NÚMERO 4 - BUSCA DE VEÍCULOS:
 - NÃO chame buscar_veiculos para: "ok", "sim", "tenho troca", "quero financiar", "obrigado", números de seleção
 - Se a busca retornar 1 resultado: apresente direto, sem perguntar preferências
 - Se a busca retornar 2-3 resultados: apresente todos
-- Se a busca retornar 4+ resultados: mostre os mais relevantes
-- NUNCA invente veículos. Só apresente o que a busca retornou.
-- Ao apresentar veículos, use este formato (sem markdown):
-  Opção 1: [Marca Modelo Versão] - [Ano]
-  Cor: [cor] | KM: [km] | Câmbio: [câmbio]
-  Preço: R$ [preço]
-  Veja mais: [link]
+- Se a busca retornar 4+ resultados: mostre os que foram retornados e pergunte se quer filtrar
+- REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
+- Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
 
 REGRA NÚMERO 5 - ATUALIZAÇÃO DO LEAD:
 - Chame atualizar_lead SEMPRE que coletar informação nova
 - Se o cliente MUDAR de veículo de interesse, atualize imediatamente
 - Se o cliente MUDAR dados da troca (vendeu o carro antigo, tem outro), atualize imediatamente
 - Se o cliente escolher um veículo da lista, passe o veiculo_id correspondente
+- Ao final de cada interação significativa, chame atualizar_lead com o campo "notas" contendo um resumo breve da conversa (ex: "Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar")
 
 REGRA NÚMERO 6 - IMAGENS:
 - Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
@@ -104,6 +101,8 @@ const VEHICLE_SEARCH_KEYWORDS = [
   "o que tem", "o que voces tem", "o que vocês têm",
   "quero ver", "quero conhecer", "mostrar", "me mostra",
   "carro até", "veículo até", "veiculo até",
+  "até 100", "até 50", "até 80", "até 200", "até 150",
+  "mil reais", "mil real",
 ];
 
 /**
@@ -201,6 +200,7 @@ const TOOLS: Tool[] = [
           forma_pagamento: { type: "string", description: "Forma de pagamento: financiamento, a_vista, consorcio, troca" },
           entrada: { type: "string", description: "Valor de entrada para financiamento" },
           status: { type: "string", description: "Status: qualifying ou qualified" },
+          notas: { type: "string", description: "Resumo breve da conversa para o vendedor (ex: 'Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar')" },
         },
         required: [],
         additionalProperties: false,
@@ -404,6 +404,7 @@ export async function processAIMessage(
             if (args.forma_pagamento) leadUpdate.paymentMethod = args.forma_pagamento;
             if (args.entrada) leadUpdate.downPayment = args.entrada;
             if (args.status) leadUpdate.status = args.status;
+            if (args.notas) leadUpdate.notes = args.notas;
 
             try {
               await upsertLead(leadUpdate);
@@ -464,14 +465,21 @@ export async function processAIMessage(
       }
     }
 
-    // Clean up markdown formatting that the model might still use
+    // Aggressively clean up markdown formatting
     fullResponse = fullResponse
       .replace(/```json[\s\S]*?```/g, "")
+      .replace(/```[\s\S]*?```/g, "")
       .replace(/\{[\s\S]*?"lead_data"[\s\S]*?\}/g, "")
+      .replace(/\*\*\*(.*?)\*\*\*/g, "$1")  // Remove bold+italic ***text***
       .replace(/\*\*(.*?)\*\*/g, "$1")  // Remove bold **text**
       .replace(/\*(.*?)\*/g, "$1")       // Remove italic *text*
-      .replace(/^[\s]*[-•]\s/gm, "")     // Remove bullet points
-      .replace(/^[\s]*\d+\.\s\s/gm, (match) => match.replace(/\s\s$/, " ")) // Clean double spaces after numbers
+      .replace(/__(.*?)__/g, "$1")       // Remove bold __text__
+      .replace(/_(.*?)_/g, "$1")         // Remove italic _text_
+      .replace(/^#{1,6}\s+/gm, "")       // Remove headers # ## ###
+      .replace(/^[\s]*[-•\*]\s+/gm, "") // Remove bullet points (-, •, *)
+      .replace(/^[\s]*\d+\.\s{2,}/gm, (match) => match.replace(/\s{2,}$/, " ")) // Clean double spaces after numbers
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2") // Convert [text](url) to text url
+      .replace(/\n{3,}/g, "\n\n")       // Max 2 consecutive newlines
       .trim();
 
     if (!fullResponse) {
