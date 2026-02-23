@@ -1,5 +1,5 @@
 import { invokeLLM, type Tool, type Message as LLMMessage } from "./_core/llm";
-import { upsertLead, createAiLog, getSetting } from "./db";
+import { upsertLead, createAiLog, getSetting, getLeadByConversationId } from "./db";
 import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
@@ -114,18 +114,60 @@ export async function processAIMessage(
   // Load the current system prompt (custom from DB or default)
   const systemPrompt = await getSystemPrompt();
 
+  // Build contextual memory: customer info, lead data, conversation state
+  let contextBlock = "";
+
+  // Customer identity
+  const customerName = conversation.contactName || null;
+  if (customerName) {
+    contextBlock += `\nNOME DO CLIENTE: ${customerName}. Use o nome dele(a) na conversa para personalizar o atendimento.`;
+  }
+  contextBlock += `\nTELEFONE: ${conversation.phone}`;
+  contextBlock += `\nCANAL: ${conversation.channel}`;
+
+  // Contact notes from CRM
+  if ((conversation as any).contactNotes) {
+    contextBlock += `\nOBSERVAÇÕES DO CRM: ${(conversation as any).contactNotes}`;
+  }
+
+  // Lead data (accumulated from previous interactions)
+  try {
+    const existingLead = await getLeadByConversationId(conversation.id);
+    if (existingLead) {
+      contextBlock += `\n\nDADOS JÁ COLETADOS DESTE CLIENTE:`;
+      if (existingLead.name) contextBlock += `\n- Nome: ${existingLead.name}`;
+      if (existingLead.intention) contextBlock += `\n- Intenção: ${existingLead.intention}`;
+      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse: ${existingLead.vehicleInterest}`;
+      if (existingLead.hasTrade) contextBlock += `\n- Tem troca: Sim`;
+      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm ? existingLead.tradeKm + " km" : ""}`;
+      if (existingLead.paymentMethod) contextBlock += `\n- Forma de pagamento: ${existingLead.paymentMethod}`;
+      if (existingLead.downPayment) contextBlock += `\n- Entrada: ${existingLead.downPayment}`;
+      contextBlock += `\n\nIMPORTANTE: Use essas informações para dar continuidade à conversa. NÃO pergunte novamente o que já foi respondido. Se o cliente já escolheu um veículo, continue a conversa sobre aquele veículo específico.`;
+    }
+  } catch (e) {
+    console.error("[AI] Failed to load lead context:", e);
+  }
+
+  // Build full system prompt with context
+  const fullSystemPrompt = contextBlock
+    ? `${systemPrompt}\n\n--- CONTEXTO DA CONVERSA ATUAL ---${contextBlock}`
+    : systemPrompt;
+
   // Build message history for context
   const llmMessages: LLMMessage[] = [
-    { role: "system", content: systemPrompt },
+    { role: "system", content: fullSystemPrompt },
   ];
 
-  // Add recent conversation history (last 20 messages)
-  const history = recentMessages.slice(-20);
+  // Add recent conversation history (last 30 messages for better context)
+  const history = recentMessages.slice(-30);
   for (const msg of history) {
     if (msg.senderType === "customer") {
       llmMessages.push({ role: "user", content: msg.content });
     } else if (msg.senderType === "bot") {
       llmMessages.push({ role: "assistant", content: msg.content });
+    } else if (msg.senderType === "agent") {
+      // Include agent messages so AI knows what the human agent said
+      llmMessages.push({ role: "assistant", content: `[Atendente humano]: ${msg.content}` });
     }
   }
 

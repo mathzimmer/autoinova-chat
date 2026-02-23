@@ -29,6 +29,8 @@ export const conversations = mysqlTable("conversations", {
   status: mysqlEnum("status", ["open", "pending", "resolved", "closed"]).default("open").notNull(),
   aiActive: boolean("aiActive").default(true).notNull(),
   assignedTo: int("assignedTo"),
+  contactEmail: varchar("contactEmail", { length: 320 }),
+  contactNotes: text("contactNotes"),
   unreadCount: int("unreadCount").default(0).notNull(),
   lastMessageAt: bigint("lastMessageAt", { mode: "number" }),
   lastMessagePreview: varchar("lastMessagePreview", { length: 500 }),

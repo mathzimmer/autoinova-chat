@@ -134,3 +134,11 @@
 
 ## Bugs
 - [x] IA retorna "instabilidade no momento" ao invés de buscar veículos no estoque quando cliente pergunta "Tem Corolla?" (CORRIGIDO: normalizeMessage não preservava tool_calls + IDs com caracteres inválidos)
+
+## Melhorias Solicitadas
+- [x] Corrigir rolagem da página de Configurações (overflow-y-auto + pb-12)
+- [x] Adicionar opção de editar contato na conversa (nome, email, notas)
+- [x] Adicionar campo para informações do contato (contactEmail + contactNotes no schema)
+- [x] Agente de IA com memória: lembrar nome do cliente (contextBlock no system prompt)
+- [x] Agente de IA com contexto: seguir lógica da conversa conforme interação (lead data + 30 msgs)
+- [x] Agente de IA entender escolha de veículo e continuar conversa sobre ele (vehicleInterest no contexto)

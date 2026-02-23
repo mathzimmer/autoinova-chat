@@ -71,6 +71,20 @@ const conversationRouter = router({
       return conv;
     }),
 
+  updateContact: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      contactName: z.string().optional(),
+      contactEmail: z.string().optional(),
+      contactNotes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      const conv = await updateConversation(id, data);
+      emitConversationUpdate(id, conv);
+      return conv;
+    }),
+
   markAsRead: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
