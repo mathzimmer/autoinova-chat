@@ -43,6 +43,13 @@
       "when": 1771812982012,
       "tag": "0005_faulty_lady_deathstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1771889509498,
+      "tag": "0006_cooing_sentinels",
+      "breakpoints": true
     }
   ]
 }

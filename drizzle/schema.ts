@@ -165,3 +165,89 @@ export const settings = mysqlTable("settings", {
 
 export type Setting = typeof settings.$inferSelect;
 export type InsertSetting = typeof settings.$inferInsert;
+
+
+/**
+ * Team Members table - represents agents/staff in the dealership
+ * Separate from Manus auth users to allow multiple team members per Manus account
+ */
+export const teamMembers = mysqlTable("teamMembers", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  email: varchar("email", { length: 320 }).notNull().unique(),
+  passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
+  cargo: mysqlEnum("cargo", ["admin", "gerente", "vendedor", "suporte"]).default("vendedor").notNull(),
+  status: mysqlEnum("memberStatus", ["ativo", "inativo"]).default("ativo").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TeamMember = typeof teamMembers.$inferSelect;
+export type InsertTeamMember = typeof teamMembers.$inferInsert;
+
+/**
+ * Conversation Assignments - tracks who is assigned to each conversation
+ */
+export const conversationAssignments = mysqlTable("conversationAssignments", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  assignedToId: int("assignedToId").notNull(),
+  assignedBy: int("assignedBy"),
+  assumedAt: timestamp("assumedAt"),
+  releasedAt: timestamp("releasedAt"),
+  status: mysqlEnum("assignmentStatus", ["active", "released", "transferred"]).default("active").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ConversationAssignment = typeof conversationAssignments.$inferSelect;
+export type InsertConversationAssignment = typeof conversationAssignments.$inferInsert;
+
+/**
+ * Activity Logs - tracks all actions by team members
+ */
+export const activityLogs = mysqlTable("activityLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  action: varchar("action", { length: 100 }).notNull(),
+  conversationId: int("conversationId"),
+  details: json("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ActivityLog = typeof activityLogs.$inferSelect;
+export type InsertActivityLog = typeof activityLogs.$inferInsert;
+
+/**
+ * Team Notifications - real-time notifications for team members
+ */
+export const teamNotifications = mysqlTable("teamNotifications", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  type: varchar("type", { length: 50 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  conversationId: int("conversationId"),
+  read: boolean("read").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type TeamNotification = typeof teamNotifications.$inferSelect;
+export type InsertTeamNotification = typeof teamNotifications.$inferInsert;
+
+/**
+ * Team Performance Metrics - tracks performance indicators per agent
+ */
+export const teamPerformance = mysqlTable("teamPerformance", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  totalConversations: int("totalConversations").default(0),
+  totalLeads: int("totalLeads").default(0),
+  convertedLeads: int("convertedLeads").default(0),
+  averageResponseTimeMs: int("averageResponseTimeMs").default(0),
+  closureRate: varchar("closureRate", { length: 10 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type TeamPerformance = typeof teamPerformance.$inferSelect;
+export type InsertTeamPerformance = typeof teamPerformance.$inferInsert;

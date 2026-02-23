@@ -268,3 +268,59 @@
 - [x] Permitir vincular veu00edculo específico ao lead como "veu00edculo de interesse"
 - [x] Atualizar API para suportar seleu00e7u00e3o de veu00edculo do estoque
 - [x] 67 testes passando
+## Feature - Rodada 17 (Sistema de Usuários + Atribuição de Conversas - Chatwoot-like)
+
+### Módulo 1 - Sistema de Usuários
+- [ ] Criar tabela de usuários com campos: id, nome, email, senha criptografada, cargo, status, criado_em
+- [ ] Implementar cargos: admin, gerente, vendedor, suporte
+- [ ] Implementar permissões por cargo
+- [ ] Autenticação segura com JWT/sessão
+- [ ] Logout e proteção de rotas
+
+### Módulo 2 - Atribuição de Conversas
+- [ ] Adicionar campo assigned_user_id na tabela conversations
+- [ ] Botão "Atribuir" na interface
+- [ ] Mostrar etiqueta "Atendente: João"
+- [ ] Permitir reatribuir e remover atribuição
+
+### Módulo 3 - Filtros por Responsável
+- [ ] Filtro "Minhas conversas"
+- [ ] Filtro "Não atribuídas"
+- [ ] Filtro "Todas" (apenas admin/gerente)
+
+### Módulo 4 - Bloqueio de IA ao Assumir
+- [ ] Desativar IA quando usuário assume conversa
+- [ ] Marcar conversa como humana
+- [ ] Registrar quem assumiu e timestamp
+
+### Módulo 5 - Indicador Visual de Atendente
+- [ ] Badge na lista: 🟢 João atendendo / 🤖 IA / ⚪ Sem responsável
+
+### Módulo 6 - Histórico de Ações
+- [ ] Criar tabela logs: id, user_id, ação, conversa_id, timestamp
+- [ ] Registrar: assumiu, transferiu, enviou mensagem, alterou status
+
+### Módulo 7 - Transferir Conversa
+- [ ] Botão "Transferir"
+- [ ] Escolher usuário e confirmar
+- [ ] Mensagem automática no chat
+
+### Módulo 8 - Modo Supervisor
+- [ ] Admins/gerentes entram em qualquer conversa
+- [ ] Assumir controle imediato
+
+### Módulo 9 - Notificações Internas
+- [ ] Notificação em tempo real ao atribuir
+- [ ] Contador de conversas novas
+- [ ] Som opcional
+
+### Módulo 10 - Painel de Administração
+- [ ] Tela de lista de usuários
+- [ ] Botão criar usuário
+- [ ] Botão editar
+- [ ] Botão desativar
+
+### Extra - Indicadores de Performance
+- [ ] Tempo médio de resposta por atendente
+- [ ] Taxa de fechamento
+- [ ] Quantidade de leads atendidos

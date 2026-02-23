@@ -8,6 +8,11 @@ import {
   aiLogs, InsertAiLog,
   vehicles,
   settings,
+  teamMembers, InsertTeamMember,
+  conversationAssignments,
+  activityLogs, InsertActivityLog,
+  teamNotifications,
+  teamPerformance,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
