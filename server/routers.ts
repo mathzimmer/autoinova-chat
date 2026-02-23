@@ -260,22 +260,45 @@ const webhookRouter = router({
       content: z.string(),
       messageType: z.enum(["text", "audio", "image", "document"]).default("text"),
       audioUrl: z.string().optional(),
+      mediaUrl: z.string().optional(),
       externalId: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       let messageContent = input.content;
+      let storedMediaUrl = input.mediaUrl || undefined;
+      let transcribedText: string | undefined;
 
-      // Handle audio transcription
-      if (input.messageType === "audio" && input.audioUrl) {
-        const transcription = await transcribeAudio({
-          audioUrl: input.audioUrl,
-          language: "pt",
-          prompt: "Transcrever mensagem de voz do cliente sobre veículos",
-        });
-        if ("text" in transcription) {
-          messageContent = transcription.text;
-        } else {
-          messageContent = "[Áudio não pôde ser transcrito]";
+      // Handle audio: transcribe + keep audio URL for playback
+      if (input.messageType === "audio") {
+        const audioSource = input.mediaUrl || input.audioUrl;
+        if (audioSource) {
+          storedMediaUrl = audioSource;
+          // Transcribe the audio
+          try {
+            const transcription = await transcribeAudio({
+              audioUrl: audioSource,
+              language: "pt",
+              prompt: "Transcrever mensagem de voz do cliente sobre veículos",
+            });
+            if ("text" in transcription) {
+              transcribedText = transcription.text;
+              messageContent = transcription.text;
+            } else {
+              messageContent = "[Áudio não pôde ser transcrito]";
+            }
+          } catch (err) {
+            console.error("[Webhook] Audio transcription failed:", err);
+            messageContent = "[Áudio não pôde ser transcrito]";
+          }
+        }
+      }
+
+      // Handle image: store URL for display and AI vision
+      if (input.messageType === "image" && input.mediaUrl) {
+        storedMediaUrl = input.mediaUrl;
+        // If no caption, set a descriptive content
+        if (!messageContent || messageContent === "[Imagem recebida]") {
+          messageContent = "[Imagem enviada pelo cliente]";
         }
       }
 
@@ -294,15 +317,21 @@ const webhookRouter = router({
 
       if (!conversation) throw new Error("Failed to create conversation");
 
+      // Build metadata with media info
+      const metadata: Record<string, unknown> = {};
+      if (storedMediaUrl) metadata.mediaUrl = storedMediaUrl;
+      if (transcribedText) metadata.transcribedText = transcribedText;
+      if (input.audioUrl) metadata.originalAudioUrl = input.audioUrl;
+
       // Save customer message
       const customerMsg = await createMessage({
         conversationId: conversation.id,
         content: messageContent,
         senderType: "customer",
         senderName: input.name || conversation.contactName || "Cliente",
-        messageType: input.messageType === "audio" ? "audio" : "text",
+        messageType: input.messageType,
         externalId: input.externalId,
-        metadata: input.audioUrl ? { originalAudioUrl: input.audioUrl } : null,
+        metadata: Object.keys(metadata).length > 0 ? metadata : null,
       });
 
       emitNewMessage(conversation.id, customerMsg);
@@ -311,8 +340,15 @@ const webhookRouter = router({
       if (conversation.aiActive) {
         emitTypingIndicator(conversation.id, true, "Auto Inova IA");
 
-        const recentMessages = await listMessages(conversation.id, 20);
-        const aiResult = await processAIMessage(conversation, recentMessages, messageContent);
+        const recentMessages = await listMessages(conversation.id, 30);
+        
+        // For image messages, pass the image URL to the AI for vision processing
+        let aiMessageContent = messageContent;
+        if (input.messageType === "image" && storedMediaUrl) {
+          aiMessageContent = `[IMAGEM: ${storedMediaUrl}] ${messageContent}`;
+        }
+
+        const aiResult = await processAIMessage(conversation, recentMessages, aiMessageContent);
 
         emitTypingIndicator(conversation.id, false, "Auto Inova IA");
 

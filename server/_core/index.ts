@@ -9,6 +9,7 @@ import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
+import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -52,6 +53,7 @@ async function startServer() {
       createContext,
     })
   );
+
   // Webhook endpoint for WhatsApp Cloud API (outside tRPC for compatibility)
   app.post("/api/webhook/whatsapp", async (req, res) => {
     try {
@@ -74,24 +76,55 @@ async function startServer() {
         const whatsappMessageId = msg.id;
 
         let content = "";
-        let messageType: "text" | "audio" = "text";
-        let audioUrl: string | undefined;
+        let messageType: "text" | "audio" | "image" | "document" = "text";
+        let mediaUrl: string | undefined;
+        let mediaMimeType: string | undefined;
 
         if (msg.type === "text") {
           content = msg.text?.body || "";
         } else if (msg.type === "audio") {
           messageType = "audio";
-          // Get the actual download URL from WhatsApp media ID
           const mediaId = msg.audio?.id;
+          mediaMimeType = msg.audio?.mime_type;
           if (mediaId) {
-            const mediaDownloadUrl = await getMediaUrl(mediaId);
-            audioUrl = mediaDownloadUrl || undefined;
+            // Download audio from WhatsApp and upload to S3
+            const s3Media = await processWhatsAppMedia(mediaId, "audio", mediaMimeType);
+            if (s3Media) {
+              mediaUrl = s3Media.url;
+              console.log(`[Webhook] Audio uploaded to S3: ${s3Media.url}`);
+            } else {
+              // Fallback: get direct WhatsApp URL for transcription
+              const directUrl = await getMediaUrl(mediaId);
+              mediaUrl = directUrl || undefined;
+            }
           }
           content = "[Mensagem de áudio]";
         } else if (msg.type === "image") {
-          content = msg.image?.caption || "[Imagem recebida]";
+          messageType = "image";
+          const mediaId = msg.image?.id;
+          mediaMimeType = msg.image?.mime_type;
+          const caption = msg.image?.caption || "";
+          if (mediaId) {
+            // Download image from WhatsApp and upload to S3
+            const s3Media = await processWhatsAppMedia(mediaId, "image", mediaMimeType);
+            if (s3Media) {
+              mediaUrl = s3Media.url;
+              console.log(`[Webhook] Image uploaded to S3: ${s3Media.url}`);
+            }
+          }
+          content = caption || "[Imagem recebida]";
         } else if (msg.type === "document") {
-          content = `[Documento: ${msg.document?.filename || "arquivo"}]`;
+          messageType = "document";
+          const mediaId = msg.document?.id;
+          mediaMimeType = msg.document?.mime_type;
+          const filename = msg.document?.filename || "arquivo";
+          if (mediaId) {
+            const s3Media = await processWhatsAppMedia(mediaId, "document", mediaMimeType);
+            if (s3Media) {
+              mediaUrl = s3Media.url;
+            }
+          }
+          content = `[Documento: ${filename}]`;
         } else if (msg.type === "location") {
           content = `[Localização: ${msg.location?.latitude}, ${msg.location?.longitude}]`;
         } else {
@@ -105,7 +138,14 @@ async function startServer() {
 
         // Use tRPC caller to process the message
         const caller = appRouter.createCaller({ user: null, req: req as any, res: res as any });
-        const result = await caller.webhook.receive({ phone, name, content, messageType, audioUrl, externalId: whatsappMessageId });
+        const result = await caller.webhook.receive({
+          phone,
+          name,
+          content,
+          messageType,
+          mediaUrl,
+          externalId: whatsappMessageId,
+        });
 
         // Send AI response back to WhatsApp
         if (result.aiResponse && isWhatsAppConfigured()) {
@@ -142,10 +182,18 @@ async function startServer() {
       const phone = body.phone || body.sender?.phone_number || "";
       const name = body.name || body.sender?.name || "Cliente";
       const content = body.content || body.message || "";
+      const mediaUrl = body.mediaUrl || body.media_url || undefined;
+      const messageType = body.messageType || body.message_type || "text";
 
-      if (phone && content) {
+      if (phone && (content || mediaUrl)) {
         const caller = appRouter.createCaller({ user: null, req: req as any, res: res as any });
-        const result = await caller.webhook.receive({ phone, name, content, messageType: "text" });
+        const result = await caller.webhook.receive({
+          phone,
+          name,
+          content: content || (messageType === "image" ? "[Imagem recebida]" : "[Mídia recebida]"),
+          messageType,
+          mediaUrl,
+        });
         return res.json(result);
       }
 

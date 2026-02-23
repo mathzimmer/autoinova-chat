@@ -3,8 +3,7 @@ import { useConversationSocket } from "@/hooks/useSocket";
 import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, Bot, User, Phone, ArrowLeft } from "lucide-react";
+import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -138,7 +137,7 @@ export default function ChatView({ conversationId, onBack }: Props) {
               <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "150ms" }} />
               <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: "300ms" }} />
             </div>
-            <span>{typingUser} está digitando...</span>
+            <span>{typingUser} est digitando...</span>
           </div>
         )}
       </div>
@@ -169,13 +168,26 @@ export default function ChatView({ conversationId, onBack }: Props) {
   );
 }
 
-function MessageBubble({ message }: { message: { id: number; content: string; senderType: string; senderName: string | null; messageType: string; createdAt: Date } }) {
+type MessageData = {
+  id: number;
+  content: string;
+  senderType: string;
+  senderName: string | null;
+  messageType: string;
+  metadata: unknown;
+  createdAt: Date;
+};
+
+function MessageBubble({ message }: { message: MessageData }) {
   const isCustomer = message.senderType === "customer";
   const isBot = message.senderType === "bot";
+  const meta = message.metadata as Record<string, unknown> | null;
+  const mediaUrl = meta?.mediaUrl as string | undefined;
+  const transcribedText = meta?.transcribedText as string | undefined;
 
   return (
     <div className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
-      <div className={`max-w-[75%] ${isCustomer ? "order-1" : "order-1"}`}>
+      <div className="max-w-[75%]">
         <div className="flex items-center gap-1.5 mb-1">
           {isBot && <Bot className="h-3 w-3 text-primary" />}
           {!isCustomer && !isBot && <User className="h-3 w-3 text-blue-400" />}
@@ -195,10 +207,174 @@ function MessageBubble({ message }: { message: { id: number; content: string; se
               : "bg-blue-500/15 text-foreground border border-blue-500/20 rounded-tr-sm"
           }`}
         >
-          {message.messageType === "audio" && (
-            <span className="text-xs text-muted-foreground block mb-1">🎤 Mensagem de áudio (transcrita)</span>
+          {/* Image message */}
+          {message.messageType === "image" && mediaUrl && (
+            <div className="mb-2">
+              <a href={mediaUrl} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={mediaUrl}
+                  alt="Imagem enviada"
+                  className="rounded-lg max-w-full max-h-64 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                  loading="lazy"
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    target.style.display = "none";
+                  }}
+                />
+              </a>
+              <div className="flex items-center gap-1 mt-1 text-xs text-muted-foreground">
+                <Image className="h-3 w-3" />
+                <span>Imagem</span>
+              </div>
+            </div>
           )}
-          <p className="whitespace-pre-wrap">{message.content}</p>
+
+          {/* Audio message with player */}
+          {message.messageType === "audio" && (
+            <div className="mb-2">
+              {mediaUrl ? (
+                <AudioPlayer url={mediaUrl} />
+              ) : (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Volume2 className="h-3.5 w-3.5" />
+                  <span>Mensagem de voz</span>
+                </div>
+              )}
+              {transcribedText && (
+                <div className="mt-2 pt-2 border-t border-border/50">
+                  <span className="text-[10px] text-muted-foreground block mb-0.5">Transcrição:</span>
+                  <p className="whitespace-pre-wrap text-xs italic opacity-80">{transcribedText}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Document message */}
+          {message.messageType === "document" && mediaUrl && (
+            <div className="mb-2">
+              <a
+                href={mediaUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 p-2 rounded-lg bg-background/50 hover:bg-background/80 transition-colors"
+              >
+                <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                <span className="text-xs text-primary underline truncate">Abrir documento</span>
+              </a>
+            </div>
+          )}
+
+          {/* Text content - hide generic placeholders for image/audio if we already show the media */}
+          {!(message.messageType === "image" && mediaUrl && (message.content === "[Imagem enviada pelo cliente]" || message.content === "[Imagem recebida]")) &&
+           !(message.messageType === "audio" && !transcribedText && (message.content === "[Mensagem de áudio]" || message.content === "[Áudio não pôde ser transcrito]")) && (
+            <p className="whitespace-pre-wrap">
+              {message.messageType === "audio" && transcribedText
+                ? "" // Already shown in transcription section above
+                : message.content
+              }
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AudioPlayer({ url }: { url: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onLoadedMetadata = () => setDuration(audio.duration);
+    const onEnded = () => setIsPlaying(false);
+    const onError = () => setError(true);
+
+    audio.addEventListener("timeupdate", onTimeUpdate);
+    audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("ended", onEnded);
+    audio.addEventListener("error", onError);
+
+    return () => {
+      audio.removeEventListener("timeupdate", onTimeUpdate);
+      audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("ended", onEnded);
+      audio.removeEventListener("error", onError);
+    };
+  }, []);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      audio.pause();
+    } else {
+      audio.play().catch(() => setError(true));
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const time = parseFloat(e.target.value);
+    audio.currentTime = time;
+    setCurrentTime(time);
+  };
+
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds)) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  if (error) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <Volume2 className="h-3.5 w-3.5" />
+        <a href={url} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+          Baixar áudio
+        </a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 min-w-[200px]">
+      <audio ref={audioRef} src={url} preload="metadata" />
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-8 w-8 shrink-0 rounded-full bg-primary/20 hover:bg-primary/30"
+        onClick={togglePlay}
+      >
+        {isPlaying ? (
+          <Pause className="h-3.5 w-3.5 text-primary" />
+        ) : (
+          <Play className="h-3.5 w-3.5 text-primary ml-0.5" />
+        )}
+      </Button>
+      <div className="flex-1 flex flex-col gap-0.5">
+        <input
+          type="range"
+          min={0}
+          max={duration || 0}
+          step={0.1}
+          value={currentTime}
+          onChange={handleSeek}
+          className="w-full h-1 rounded-full appearance-none bg-muted cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex justify-between text-[9px] text-muted-foreground">
+          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(duration)}</span>
         </div>
       </div>
     </div>

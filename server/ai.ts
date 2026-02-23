@@ -45,6 +45,13 @@ REGRAS OBRIGATÓRIAS - ATUALIZAÇÃO DO LEAD:
 - Quando o cliente informar forma de pagamento, chame atualizar_lead
 - Use atualizar_lead SEMPRE que houver informação nova, mesmo que parcial
 
+IMAGENS DO CLIENTE:
+- Quando o cliente enviar uma imagem, você consegue vê-la e analisá-la
+- Se a imagem for de um veículo (para troca ou avaliação), descreva o que você vê: marca, modelo, cor, estado aparente
+- Se for uma imagem do veículo de troca do cliente, atualize o lead com os dados visuais usando atualizar_lead
+- Se não conseguir identificar o conteúdo da imagem, pergunte ao cliente sobre o que é
+- NUNCA diga que não consegue ver imagens. Você PODE ver e analisar imagens.
+
 OUTRAS REGRAS:
 - Se o cliente pedir para falar com um humano, informe que vai transferir o atendimento
 - Não forneça valores exatos de financiamento, apenas estimativas gerais
@@ -231,7 +238,26 @@ export async function processAIMessage(
   const history = recentMessages.slice(-30);
   for (const msg of history) {
     if (msg.senderType === "customer") {
-      llmMessages.push({ role: "user", content: msg.content });
+      // Check if message has an image in metadata
+      const meta = msg.metadata as Record<string, unknown> | null;
+      const msgMediaUrl = meta?.mediaUrl as string | undefined;
+      
+      if (msg.messageType === "image" && msgMediaUrl) {
+        // Send image as multimodal content for vision
+        llmMessages.push({
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: msgMediaUrl, detail: "low" } },
+            { type: "text", text: msg.content || "[Imagem enviada pelo cliente]" },
+          ],
+        } as any);
+      } else if (msg.messageType === "audio" && msgMediaUrl) {
+        // For audio, include transcription text + note about audio
+        const transcribed = meta?.transcribedText as string || msg.content;
+        llmMessages.push({ role: "user", content: `[🎤 Mensagem de áudio - transcrição]: ${transcribed}` });
+      } else {
+        llmMessages.push({ role: "user", content: msg.content });
+      }
     } else if (msg.senderType === "bot") {
       llmMessages.push({ role: "assistant", content: msg.content });
     } else if (msg.senderType === "agent") {
@@ -239,8 +265,21 @@ export async function processAIMessage(
     }
   }
 
-  // Add current message
-  llmMessages.push({ role: "user", content: customerMessage });
+  // Add current message - check if it contains an image URL
+  const imageMatch = customerMessage.match(/\[IMAGEM: (https?:\/\/[^\]]+)\]\s*(.*)/);
+  if (imageMatch) {
+    const imageUrl = imageMatch[1];
+    const caption = imageMatch[2] || "[Imagem enviada pelo cliente]";
+    llmMessages.push({
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: imageUrl, detail: "low" } },
+        { type: "text", text: caption },
+      ],
+    } as any);
+  } else {
+    llmMessages.push({ role: "user", content: customerMessage });
+  }
 
   // Track lead data collected during this interaction
   let collectedLeadData: Record<string, unknown> | null = null;

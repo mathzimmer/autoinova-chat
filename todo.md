@@ -158,3 +158,14 @@
 - [x] Vincular lead ao veículo específico do estoque (vehicleId na tabela leads + schema atualizado)
 - [x] Tool atualizar_lead inclui vehicleId do estoque (usa [ID:X] da busca)
 - [x] 37 testes passando
+
+## Bugs e Melhorias - Rodada 4 (Imagens e Áudio)
+- [x] IA se perde quando cliente envia imagem — CORRIGIDO: visão multimodal (image_url detail:low)
+- [x] Cliente pode enviar fotos do veículo de troca — armazenadas no S3
+- [x] Armazenar imagens no S3 e vincular à conversa (metadata.mediaUrl)
+- [x] IA entende conteúdo da imagem (foto de carro, documento, etc.) via visão LLM
+- [x] Player de áudio funcional no chat com play/pause, seek e duração
+- [x] Armazenar áudio no S3 e exibir player + transcrição no chat
+- [x] Exibir imagens recebidas no chat (thumbnail clicável para abrir)
+- [x] Módulo media.ts para download do WhatsApp e upload para S3
+- [x] 37 testes passando
