@@ -404,3 +404,18 @@
 - [x] sendMedia mutation passa o buffer OGG convertido para sendAudioMessage
 - [x] Fallback para link hospedado se upload falhar
 - [x] 88 testes passando
+
+## Feature - Rodada 27 (Arquitetura de Prompt em 4 Camadas + Reativação Automática)
+- [x] Separação do prompt em 4 camadas: CORE (imutável), COMMERCIAL (imutável), PERSONALITY (editável), CONTEXT (dinâmico)
+- [x] CORE_PROMPT: regras de formato, prioridade, limpeza, áudio, imagens — protegido contra edição
+- [x] COMMERCIAL_PROMPT: busca de veículos, fluxo de qualificação — protegido contra edição
+- [x] DEFAULT_PERSONALITY_PROMPT: tom de voz, estratégia, dados da loja — editável pelo admin
+- [x] getPersonalityPrompt(): carrega do DB (ai_personality_prompt) com fallback para legado (ai_prompt)
+- [x] Migração automática: prompt legado monolítico é detectado e usado como personalidade
+- [x] processAIMessage() monta as 4 camadas na ordem correta com log de tamanho
+- [x] Reativação automática: conversa resolved/closed → status "open" + aiActive true quando cliente manda nova mensagem
+- [x] Contexto dinâmico inclui estado "REATIVADA" para IA cumprimentar pelo retorno
+- [x] Settings.tsx reescrito: mostra as 4 camadas com Núcleo e Motor Comercial em modo leitura (collapsible)
+- [x] Camada Personalidade editável com destaque visual (ring-1 ring-primary/20)
+- [x] settingsRouter atualizado: salva em "ai_personality_prompt", limpa legado na migração
+- [x] 88 testes passando

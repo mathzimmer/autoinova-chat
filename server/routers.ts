@@ -14,7 +14,7 @@ import {
   createActivityLog, listActivityLogs,
   createTeamNotification, listTeamNotifications, markNotificationsAsRead, getUnreadNotificationCount,
 } from "./db";
-import { processAIMessage, DEFAULT_SYSTEM_PROMPT } from "./ai";
+import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
@@ -511,6 +511,19 @@ const webhookRouter = router({
 
       if (!conversation) throw new Error("Failed to create conversation");
 
+      // === REATIVAÇÃO AUTOMÁTICA ===
+      // Se a conversa estava resolved/closed e o cliente mandou nova mensagem,
+      // reabrir automaticamente com IA ativa
+      if (conversation.status === "resolved" || conversation.status === "closed") {
+        console.log(`[Webhook] REATIVAÇÃO: Conversa ${conversation.id} (${conversation.phone}) estava ${conversation.status}. Reabrindo com IA ativa.`);
+        conversation = await updateConversation(conversation.id, {
+          status: "open",
+          aiActive: true,
+          assignedTo: null, // Remove atribuição anterior para IA atender primeiro
+          lastMessageAt: Date.now(),
+        }) || conversation;
+      }
+
       // Build metadata with media info
       const metadata: Record<string, unknown> = {};
       if (storedMediaUrl) metadata.mediaUrl = storedMediaUrl;
@@ -583,25 +596,38 @@ const webhookRouter = router({
 
 const settingsRouter = router({
   getPrompt: protectedProcedure.query(async () => {
-    const customPrompt = await getSetting("ai_prompt");
+    // Return the personality prompt (editable layer) and the immutable layers for display
+    const personalityPrompt = await getPersonalityPrompt();
+    const customPersonality = await getSetting("ai_personality_prompt");
+    const legacyPrompt = await getSetting("ai_prompt");
+    const isCustom = !!(customPersonality || legacyPrompt);
     return {
-      prompt: customPrompt || DEFAULT_SYSTEM_PROMPT,
-      isCustom: !!customPrompt,
-      defaultPrompt: DEFAULT_SYSTEM_PROMPT,
+      prompt: personalityPrompt,
+      isCustom,
+      defaultPrompt: DEFAULT_PERSONALITY_PROMPT,
+      corePrompt: CORE_PROMPT,
+      commercialPrompt: COMMERCIAL_PROMPT,
     };
   }),
 
   savePrompt: adminProcedure
     .input(z.object({ prompt: z.string().min(10) }))
     .mutation(async ({ input, ctx }) => {
-      await upsertSetting("ai_prompt", input.prompt, ctx.user.id);
+      // Save to the new personality-only key
+      await upsertSetting("ai_personality_prompt", input.prompt, ctx.user.id);
+      // Clear legacy prompt if it exists (migration)
+      const legacyPrompt = await getSetting("ai_prompt");
+      if (legacyPrompt) {
+        await upsertSetting("ai_prompt", "", ctx.user.id);
+      }
       return { success: true };
     }),
 
   resetPrompt: adminProcedure
     .mutation(async ({ ctx }) => {
+      await upsertSetting("ai_personality_prompt", "", ctx.user.id);
       await upsertSetting("ai_prompt", "", ctx.user.id);
-      return { success: true, defaultPrompt: DEFAULT_SYSTEM_PROMPT };
+      return { success: true, defaultPrompt: DEFAULT_PERSONALITY_PROMPT };
     }),
 
   getAll: protectedProcedure.query(async () => {

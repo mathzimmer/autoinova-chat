@@ -3,6 +3,105 @@ import { upsertLead, createAiLog, getSetting, getLeadByConversationId } from "./
 import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
+// ============================================================================
+// CAMADA 1: NÚCLEO (CORE) — IMUTÁVEL
+// Regras críticas de integridade do sistema. NUNCA podem ser alteradas pelo admin.
+// ============================================================================
+export const CORE_PROMPT = `=== REGRAS DO SISTEMA (IMUTÁVEIS) ===
+
+REGRA 1 - FORMATO DAS MENSAGENS:
+- Escreva como uma mensagem de WhatsApp normal, em texto corrido
+- PROIBIDO usar asteriscos (*), underlines (_), listas com traços (-) ou bullets
+- PROIBIDO usar formatação markdown de qualquer tipo
+- Separe informações com quebras de linha simples
+- Use emojis com moderação (máximo 1-2 por mensagem)
+- Mantenha respostas curtas (máximo 3 parágrafos curtos)
+
+REGRA 2 - PRIORIDADE DA CONVERSA RECENTE:
+- A ÚLTIMA MENSAGEM DO CLIENTE (marcada como [MENSAGEM ATUAL]) é a que define o que você deve responder.
+- Se a mensagem atual contradiz dados do lead ou do histórico, a mensagem atual SEMPRE vence.
+- Exemplo: lead diz "Sprinter" mas MENSAGEM ATUAL é "mudei de ideia, quero uma Hilux" → responda sobre Hilux.
+- Exemplo: lead diz "Fusca" como troca mas MENSAGEM ATUAL é "vendi o Fusca, tenho um Gol" → atualize para Gol.
+- Quando o cliente MUDA de veículo de interesse: chame atualizar_lead com veiculo_interesse novo E veiculo_id: null (para limpar o vínculo antigo), depois busque o novo veículo.
+- NUNCA continue falando de um veículo que o cliente acabou de descartar ou dizer que não quer mais.
+
+REGRA 3 - RESPOSTAS NUMÉRICAS:
+- Quando você apresentou uma lista numerada de veículos e o cliente responde com um número (ex: "2", "1", "a segunda"), ele está ESCOLHENDO aquela opção da lista
+- Responda sobre o veículo que ele escolheu, NÃO busque novamente
+- Chame atualizar_lead com o veículo escolhido
+
+REGRA 4 - ATUALIZAÇÃO DO LEAD:
+- Chame atualizar_lead SEMPRE que coletar informação nova
+- Se o cliente MUDAR de veículo de interesse: chame atualizar_lead com o novo veiculo_interesse E veiculo_id: null para limpar o vínculo anterior, DEPOIS busque o novo veículo
+- Se o cliente MUDAR dados da troca (vendeu o carro antigo, tem outro), atualize imediatamente com os novos dados
+- Se o cliente escolher um veículo da lista, passe o veiculo_id correspondente
+- Ao final de cada interação significativa, chame atualizar_lead com o campo "notas" contendo um resumo breve da conversa (ex: "Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar")
+- FLUXO DE MUDANÇA DE INTERESSE: 1) atualizar_lead com novo veiculo_interesse + veiculo_id: null → 2) buscar_veiculos pelo novo modelo → 3) apresentar resultados
+
+REGRA 5 - IMAGENS E FOTOS:
+- Quando o cliente enviar uma imagem, confirme o recebimento de forma natural
+- Use o contexto da conversa para entender (ex: se falou de troca, provavelmente é foto do carro de troca)
+- NUNCA diga "não consigo visualizar", "não posso ver a imagem" ou similar
+- Diga algo como "Recebi a foto! Vou encaminhar para nossa equipe avaliar."
+- PROIBIDO usar [FOTO], [IMAGEM], [IMAGE] ou qualquer marcação de imagem na resposta
+- As fotos dos veículos são enviadas automaticamente - NÃO mencione isso na resposta
+- PROIBIDO mencionar [ID:X] ou qualquer ID interno na resposta
+
+REGRA 6 - LIMPEZA DE RESPOSTA:
+- Remova qualquer [ID:X], [FOTO], [IMAGEM] ou marcação técnica da resposta antes de enviar
+- A resposta deve ser apenas texto natural e legível para o cliente
+
+REGRA 7 - ÁUDIO:
+- Áudios são transcritos automaticamente. Trate como texto normal.
+- NUNCA mencione que é áudio ou transcrição.`;
+
+// ============================================================================
+// CAMADA 2: MOTOR COMERCIAL — IMUTÁVEL
+// Processo estrutural de venda. Garante o fluxo comercial independente do tom.
+// ============================================================================
+export const COMMERCIAL_PROMPT = `=== MOTOR COMERCIAL (IMUTÁVEL) ===
+
+BUSCA DE VEÍCULOS:
+- Chame buscar_veiculos quando o cliente perguntar sobre um veículo, marca ou modelo específico
+- Chame buscar_veiculos quando o cliente quiser ver opções disponíveis
+- NÃO chame buscar_veiculos para: "ok", "sim", "tenho troca", "quero financiar", "obrigado", números de seleção
+- Se a busca retornar 1 resultado: apresente direto, sem perguntar preferências
+- Se a busca retornar 2-3 resultados: apresente todos
+- Se a busca retornar 4+ resultados: mostre os que foram retornados e pergunte se quer filtrar
+- REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
+- Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
+- PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta.
+
+FLUXO DE QUALIFICAÇÃO:
+- Confirmar disponibilidade do veículo quando solicitado
+- Perguntar sobre troca quando relevante (não forçar)
+- Perguntar sobre financiamento quando aplicável
+- Solicitar dados necessários conforme etapa da conversa
+- Se o cliente pedir para falar com humano, diga que vai transferir
+- Detectar frustração ou insatisfação e oferecer transferência para atendente humano`;
+
+// ============================================================================
+// CAMADA 3: PERSONALIDADE — EDITÁVEL PELO ADMIN
+// Tom de voz, estratégia comercial, informações da loja.
+// ============================================================================
+export const DEFAULT_PERSONALITY_PROMPT = `=== PERSONALIDADE E ESTRATÉGIA ===
+
+Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
+Seu papel é fazer atendimento de pré-venda pelo WhatsApp, ajudando clientes a encontrar o veículo ideal.
+
+TOM DE VOZ:
+- Consultivo e amigável, como um vendedor experiente
+- Direto ao ponto, sem enrolação
+- Profissional mas acessível
+
+INFORMAÇÕES DA LOJA:
+- WhatsApp: (51) 99478-2062
+- Endereço: Av Castro Alves, nº 1655, Sete de Setembro, Ivoti - RS`;
+
+// ============================================================================
+// O DEFAULT_SYSTEM_PROMPT legado é mantido para compatibilidade com prompts
+// já salvos no banco de dados (que são monolíticos).
+// ============================================================================
 export const DEFAULT_SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
 
 Seu papel é fazer atendimento de pré-venda pelo WhatsApp, ajudando clientes a encontrar o veículo ideal.
@@ -70,18 +169,45 @@ INFORMAÇÕES DA LOJA:
 - Se o cliente pedir para falar com humano, diga que vai transferir`;
 
 /**
- * Get the current system prompt - from database if customized, otherwise default.
+ * Build the full system prompt using the 4-layer architecture.
+ * 
+ * Order: CORE (immutable) → COMMERCIAL (immutable) → PERSONALITY (editable) → CONTEXT (dynamic)
+ * 
+ * The admin can only edit the PERSONALITY layer via the Settings page.
+ * If a legacy monolithic prompt exists in the DB (key: "ai_prompt"), it is migrated
+ * to the new "ai_personality_prompt" key on first read.
  */
-export async function getSystemPrompt(): Promise<string> {
+export async function getPersonalityPrompt(): Promise<string> {
   try {
-    const customPrompt = await getSetting("ai_prompt");
-    if (customPrompt && customPrompt.trim().length > 0) {
-      return customPrompt;
+    // First check for the new personality-only prompt
+    const personalityPrompt = await getSetting("ai_personality_prompt");
+    if (personalityPrompt && personalityPrompt.trim().length > 0) {
+      return personalityPrompt;
+    }
+
+    // Fallback: check for legacy monolithic prompt (old "ai_prompt" key)
+    // If it exists, the admin had customized the old prompt — we preserve their personality content
+    const legacyPrompt = await getSetting("ai_prompt");
+    if (legacyPrompt && legacyPrompt.trim().length > 0) {
+      // The legacy prompt is monolithic. We can't perfectly separate it,
+      // but we keep it as the personality layer for backward compatibility.
+      // The CORE and COMMERCIAL layers will be prepended automatically.
+      console.log("[AI] Legacy monolithic prompt detected. Using as personality layer.");
+      return legacyPrompt;
     }
   } catch (e) {
-    console.error("[AI] Failed to load custom prompt, using default:", e);
+    console.error("[AI] Failed to load personality prompt, using default:", e);
   }
-  return DEFAULT_SYSTEM_PROMPT;
+  return DEFAULT_PERSONALITY_PROMPT;
+}
+
+/**
+ * Get the current system prompt - for backward compatibility.
+ * Returns the full assembled prompt (all 4 layers minus context).
+ */
+export async function getSystemPrompt(): Promise<string> {
+  const personality = await getPersonalityPrompt();
+  return `${CORE_PROMPT}\n\n${COMMERCIAL_PROMPT}\n\n${personality}`;
 }
 
 // Keywords that indicate the customer is asking about a SPECIFIC vehicle
@@ -226,6 +352,11 @@ const TOOLS: Tool[] = [
 
 /**
  * Process a customer message through the AI agent and return the response.
+ * Uses the 4-layer prompt architecture:
+ * 1. CORE (immutable) - system rules
+ * 2. COMMERCIAL (immutable) - sales process
+ * 3. PERSONALITY (editable) - tone and strategy
+ * 4. CONTEXT (dynamic) - customer data and conversation state
  */
 export async function processAIMessage(
   conversation: Conversation,
@@ -234,11 +365,17 @@ export async function processAIMessage(
 ): Promise<{ response: string; leadData: Record<string, unknown> | null }> {
   const startTime = Date.now();
 
-  // Load the current system prompt (custom from DB or default)
-  const systemPrompt = await getSystemPrompt();
+  // === LAYER 1: CORE (immutable) ===
+  // Already defined as CORE_PROMPT constant
 
-  // Build contextual memory: customer info, lead data, conversation state
-  let contextBlock = "";
+  // === LAYER 2: COMMERCIAL (immutable) ===
+  // Already defined as COMMERCIAL_PROMPT constant
+
+  // === LAYER 3: PERSONALITY (editable from DB) ===
+  const personalityPrompt = await getPersonalityPrompt();
+
+  // === LAYER 4: CONTEXT (dynamic) ===
+  let contextBlock = "\n=== CONTEXTO DINÂMICO ===";
 
   // Customer identity
   const customerName = conversation.contactName || null;
@@ -246,6 +383,12 @@ export async function processAIMessage(
     contextBlock += `\nNOME DO CLIENTE: ${customerName}`;
   }
   contextBlock += `\nTELEFONE: ${conversation.phone}`;
+
+  // Conversation state
+  if (conversation.status === "resolved" || conversation.status === "closed") {
+    contextBlock += `\n\nESTADO DA CONVERSA: REATIVADA (cliente retornou após conversa encerrada)`;
+    contextBlock += `\nCumprimente o cliente pelo retorno e pergunte como pode ajudar novamente.`;
+  }
 
   // Contact notes from CRM
   if ((conversation as any).contactNotes) {
@@ -272,10 +415,10 @@ export async function processAIMessage(
     console.error("[AI] Failed to load lead context:", e);
   }
 
-  // Build full system prompt with context
-  const fullSystemPrompt = contextBlock
-    ? `${systemPrompt}\n\n--- CONTEXTO ---${contextBlock}`
-    : systemPrompt;
+  // === ASSEMBLE FULL PROMPT (4 layers in order) ===
+  const fullSystemPrompt = `${CORE_PROMPT}\n\n${COMMERCIAL_PROMPT}\n\n${personalityPrompt}\n\n${contextBlock}`;
+
+  console.log(`[AI] Prompt assembled: CORE(${CORE_PROMPT.length}ch) + COMMERCIAL(${COMMERCIAL_PROMPT.length}ch) + PERSONALITY(${personalityPrompt.length}ch) + CONTEXT(${contextBlock.length}ch) = ${fullSystemPrompt.length}ch total`);
 
   // Build message history for context
   const llmMessages: LLMMessage[] = [
