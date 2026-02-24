@@ -253,19 +253,28 @@ const messageRouter = router({
       // Send to WhatsApp
       if (isWhatsAppConfigured()) {
         const conv = await getConversationById(input.conversationId);
+        console.log(`[SendMedia] WhatsApp configured. Conv: ${conv?.id}, channel: ${conv?.channel}, phone: ${conv?.phone}`);
         if (conv && conv.channel === "whatsapp" && conv.phone) {
           if (input.mediaType === "image") {
-            sendImageMessage(conv.phone, mediaUrl, input.caption).catch((err) => {
+            console.log(`[SendMedia] Sending image to WhatsApp: ${conv.phone}, URL: ${mediaUrl}`);
+            sendImageMessage(conv.phone, mediaUrl, input.caption).then((result) => {
+              console.log(`[SendMedia] WhatsApp image result:`, JSON.stringify(result));
+            }).catch((err) => {
               console.error("[WhatsApp] Failed to send agent image:", err);
             });
           } else if (input.mediaType === "audio") {
             // Use converted ogg URL if available, otherwise try original
             const audioUrlForWhatsApp = whatsappAudioUrl || mediaUrl;
-            sendAudioMessage(conv.phone, audioUrlForWhatsApp).catch((err) => {
+            console.log(`[SendMedia] Sending audio to WhatsApp: ${conv.phone}, URL: ${audioUrlForWhatsApp}, converted: ${!!whatsappAudioUrl}`);
+            sendAudioMessage(conv.phone, audioUrlForWhatsApp).then((result) => {
+              console.log(`[SendMedia] WhatsApp audio result:`, JSON.stringify(result));
+            }).catch((err) => {
               console.error("[WhatsApp] Failed to send agent audio:", err);
             });
           }
         }
+      } else {
+        console.log(`[SendMedia] WhatsApp not configured, skipping delivery`);
       }
 
       return message;

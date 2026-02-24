@@ -357,3 +357,11 @@
 - [x] sendMedia mutation atualizada: detecta webm, converte para ogg, faz upload da versão convertida para WhatsApp
 - [x] ChatView reescrito: suporte a múltiplas fotos com grid de thumbnails, remoção individual, contador de envio
 - [x] 79 testes passando (12 novos testes para audioConverter)
+
+## Bugs - Rodada 22 (Envio de fotos e áudio não funciona)
+- [x] Envio de fotos pelo atendente não funciona - CORRIGIDO: handleImageSelect reescrito com Promise.all para leitura assíncrona confiável
+- [x] Envio de áudio pelo atendente não funciona - CORRIGIDO: ffmpeg-static movido de ignoredBuiltDependencies para onlyBuiltDependencies
+- [x] AudioPlayer mostrava "Infinity:NaN" - CORRIGIDO: tratamento de duration N/A em arquivos webm
+- [x] audioConverter.ts atualizado com fallback para ffmpeg do sistema
+- [x] Logs detalhados adicionados ao sendMedia para monitorar entregas WhatsApp
+- [x] 79 testes passando

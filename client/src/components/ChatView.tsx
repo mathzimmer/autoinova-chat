@@ -122,41 +122,52 @@ export default function ChatView({ conversationId, onBack }: Props) {
   };
 
   // --- Image handling (multiple) ---
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const newPreviews: ImagePreviewItem[] = [];
-    let errorCount = 0;
+    // Reset input immediately so same files can be selected again
+    const fileList = Array.from(files);
+    e.target.value = "";
 
-    Array.from(files).forEach((file) => {
+    let errorCount = 0;
+    const validFiles: File[] = [];
+
+    for (const file of fileList) {
       if (!file.type.startsWith("image/")) {
         errorCount++;
-        return;
+        continue;
       }
-
       if (file.size > MAX_FILE_SIZE) {
         toast.error(`${file.name}: tamanho máximo é 16MB.`);
-        return;
+        continue;
       }
-
-      const reader = new FileReader();
-      reader.onload = () => {
-        newPreviews.push({ file, dataUrl: reader.result as string });
-        // When all files are read, update state
-        if (newPreviews.length + errorCount === files.length) {
-          setImagePreviews((prev) => [...prev, ...newPreviews]);
-        }
-      };
-      reader.readAsDataURL(file);
-    });
+      validFiles.push(file);
+    }
 
     if (errorCount > 0) {
       toast.error(`${errorCount} arquivo(s) ignorado(s) — selecione apenas imagens.`);
     }
 
-    // Reset input so same files can be selected again
-    e.target.value = "";
+    if (validFiles.length === 0) return;
+
+    // Read all files in parallel with Promise.all
+    const readPromises = validFiles.map((file) => {
+      return new Promise<ImagePreviewItem>((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({ file, dataUrl: reader.result as string });
+        };
+        reader.onerror = () => {
+          // Fallback: create object URL instead
+          resolve({ file, dataUrl: URL.createObjectURL(file) });
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    const newPreviews = await Promise.all(readPromises);
+    setImagePreviews((prev) => [...prev, ...newPreviews]);
   };
 
   const handleRemoveImage = (index: number) => {
@@ -647,28 +658,52 @@ function AudioPlayer({ url }: { url: string }) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [error, setError] = useState(false);
+  const maxTimeRef = useRef(0); // Track max time seen for webm files without duration
 
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
-    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
-    const onLoadedMetadata = () => setDuration(audio.duration);
-    const onEnded = () => setIsPlaying(false);
+    const updateDuration = () => {
+      const d = audio.duration;
+      if (d && isFinite(d) && d > 0) {
+        setDuration(d);
+      }
+    };
+
+    const onTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+      // For webm files, duration may become available during playback
+      if (audio.currentTime > maxTimeRef.current) {
+        maxTimeRef.current = audio.currentTime;
+      }
+      updateDuration();
+    };
+    const onLoadedMetadata = () => updateDuration();
+    const onDurationChange = () => updateDuration();
+    const onEnded = () => {
+      setIsPlaying(false);
+      // When playback ends, we know the actual duration
+      if (maxTimeRef.current > 0 && duration === 0) {
+        setDuration(maxTimeRef.current);
+      }
+    };
     const onError = () => setError(true);
 
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoadedMetadata);
+    audio.addEventListener("durationchange", onDurationChange);
     audio.addEventListener("ended", onEnded);
     audio.addEventListener("error", onError);
 
     return () => {
       audio.removeEventListener("timeupdate", onTimeUpdate);
       audio.removeEventListener("loadedmetadata", onLoadedMetadata);
+      audio.removeEventListener("durationchange", onDurationChange);
       audio.removeEventListener("ended", onEnded);
       audio.removeEventListener("error", onError);
     };
-  }, []);
+  }, [duration]);
 
   const togglePlay = () => {
     const audio = audioRef.current;
@@ -691,11 +726,14 @@ function AudioPlayer({ url }: { url: string }) {
   };
 
   const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
+    if (!seconds || !isFinite(seconds) || isNaN(seconds)) return "0:00";
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
+
+  // Effective duration: use known duration, or max time seen during playback
+  const effectiveDuration = (duration > 0 && isFinite(duration)) ? duration : maxTimeRef.current;
 
   if (error) {
     return (
@@ -710,7 +748,7 @@ function AudioPlayer({ url }: { url: string }) {
 
   return (
     <div className="flex items-center gap-2 min-w-[200px]">
-      <audio ref={audioRef} src={url} preload="metadata" />
+      <audio ref={audioRef} src={url} preload="auto" />
       <Button
         variant="ghost"
         size="icon"
@@ -724,18 +762,26 @@ function AudioPlayer({ url }: { url: string }) {
         )}
       </Button>
       <div className="flex-1 flex flex-col gap-0.5">
-        <input
-          type="range"
-          min={0}
-          max={duration || 0}
-          step={0.1}
-          value={currentTime}
-          onChange={handleSeek}
-          className="w-full h-1 rounded-full appearance-none bg-muted cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
+        {effectiveDuration > 0 ? (
+          <input
+            type="range"
+            min={0}
+            max={effectiveDuration}
+            step={0.1}
+            value={currentTime}
+            onChange={handleSeek}
+            className="w-full h-1 rounded-full appearance-none bg-muted cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-2.5 [&::-webkit-slider-thumb]:w-2.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+          />
+        ) : (
+          <div className="w-full h-1 rounded-full bg-muted relative overflow-hidden">
+            {isPlaying && (
+              <div className="absolute inset-0 bg-primary/40 animate-pulse" />
+            )}
+          </div>
+        )}
         <div className="flex justify-between text-[9px] text-muted-foreground">
           <span>{formatTime(currentTime)}</span>
-          <span>{formatTime(duration)}</span>
+          <span>{effectiveDuration > 0 ? formatTime(effectiveDuration) : (isPlaying ? "" : "Áudio")}</span>
         </div>
       </div>
     </div>

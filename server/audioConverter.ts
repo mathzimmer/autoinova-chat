@@ -4,7 +4,11 @@
  * WhatsApp accepts: audio/aac, audio/mp4, audio/mpeg, audio/amr, audio/ogg
  * Browser MediaRecorder produces: audio/webm;codecs=opus
  * 
- * We use ffmpeg to convert from webm container to ogg container with opus codec.
+ * We use the system ffmpeg to convert from webm container to ogg container with opus codec.
+ * The system ffmpeg is available in the deploy environment.
+ * 
+ * If ffmpeg is not available, we fall back to sending the original webm file
+ * (which may not work with WhatsApp but at least won't crash).
  */
 
 import { execFile } from "child_process";
@@ -15,18 +19,33 @@ import path from "path";
 
 const execFileAsync = promisify(execFile);
 
-// Get ffmpeg binary path from ffmpeg-static package
+/**
+ * Get ffmpeg binary path - tries multiple locations
+ */
 function getFfmpegPath(): string {
+  // Try ffmpeg-static package first (dev environment)
   try {
-    // ffmpeg-static exports the path to the binary directly
     const ffmpegPath = require("ffmpeg-static") as string | null;
     if (ffmpegPath) return ffmpegPath;
   } catch {
-    // ffmpeg-static not available
+    // Not available
   }
-  
-  // Fallback to system ffmpeg
+
+  // Use system ffmpeg (available in deploy environment)
   return "ffmpeg";
+}
+
+/**
+ * Check if ffmpeg is available
+ */
+async function isFfmpegAvailable(): Promise<boolean> {
+  const ffmpegPath = getFfmpegPath();
+  try {
+    await execFileAsync(ffmpegPath, ["-version"], { timeout: 5000 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -35,16 +54,16 @@ function getFfmpegPath(): string {
  */
 export async function convertWebmToOgg(webmBuffer: Buffer): Promise<Buffer> {
   const ffmpegPath = getFfmpegPath();
-  
+
   // Create temp directory for conversion
   const tempDir = await mkdtemp(path.join(tmpdir(), "audio-convert-"));
   const inputPath = path.join(tempDir, "input.webm");
   const outputPath = path.join(tempDir, "output.ogg");
-  
+
   try {
     // Write input file
     await writeFile(inputPath, webmBuffer);
-    
+
     // Convert webm → ogg using ffmpeg
     // -c:a libopus = encode with opus codec
     // -b:a 48k = bitrate for voice
@@ -63,12 +82,12 @@ export async function convertWebmToOgg(webmBuffer: Buffer): Promise<Buffer> {
     ], {
       timeout: 30000, // 30s timeout
     });
-    
+
     // Read output file
     const oggBuffer = await readFile(outputPath);
-    
+
     console.log(`[AudioConverter] Converted webm (${webmBuffer.length} bytes) → ogg (${oggBuffer.length} bytes)`);
-    
+
     return oggBuffer;
   } finally {
     // Cleanup temp files
@@ -87,3 +106,5 @@ export function needsConversionForWhatsApp(mimeType: string): boolean {
   const whatsappAccepted = ["audio/aac", "audio/mp4", "audio/mpeg", "audio/amr", "audio/ogg"];
   return !whatsappAccepted.includes(baseMime);
 }
+
+export { isFfmpegAvailable };
