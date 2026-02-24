@@ -26,64 +26,80 @@ const execFileAsync = promisify(execFile);
 // ============================================================
 // OGG Container Builder (Pure JavaScript)
 // ============================================================
-// OGG format: sequence of pages, each with a header + segments
-// For Opus in OGG: OpusHead page, OpusTags page, then audio data pages
+// OGG format specification: https://www.xiph.org/ogg/doc/rfc3533.txt
+// Opus in OGG: https://tools.ietf.org/html/rfc7845
+//
+// Key insight: In OGG, each Opus frame is a separate "packet".
+// The segment table must encode each packet individually:
+// - Packets < 255 bytes: single segment entry with the packet size
+// - Packets >= 255 bytes: multiple 255-byte segments + final remainder segment
+// - A segment of exactly 255 means "packet continues in next segment"
+// - A segment < 255 (including 0) terminates the packet
 
 class OggPageBuilder {
   private serialNumber: number;
   private pageSequence: number = 0;
-  private granulePosition: bigint = BigInt(0);
 
   constructor(serialNumber?: number) {
     this.serialNumber = serialNumber ?? Math.floor(Math.random() * 0xFFFFFFFF);
   }
 
   /**
-   * Build an OGG page
+   * Build an OGG page containing one or more complete packets.
+   * Each packet is encoded separately in the segment table.
    */
-  buildPage(data: Buffer, flags: { bos?: boolean; eos?: boolean; granule?: bigint }): Buffer {
+  buildPage(packets: Buffer[], flags: { bos?: boolean; eos?: boolean; granule: bigint }): Buffer {
     const headerType = (flags.bos ? 0x02 : 0) | (flags.eos ? 0x04 : 0);
-    const granule = flags.granule ?? this.granulePosition;
 
-    // Calculate segment table
+    // Build segment table: each packet gets its own segments
     const segments: number[] = [];
-    let remaining = data.length;
-    while (remaining >= 255) {
-      segments.push(255);
-      remaining -= 255;
+    for (const packet of packets) {
+      let remaining = packet.length;
+      while (remaining >= 255) {
+        segments.push(255);
+        remaining -= 255;
+      }
+      // Terminal segment (< 255) marks end of packet
+      segments.push(remaining);
     }
-    segments.push(remaining);
 
+    if (segments.length > 255) {
+      // OGG page can have at most 255 segments
+      // This shouldn't happen with normal audio but let's be safe
+      throw new Error(`Too many segments (${segments.length}) for a single OGG page`);
+    }
+
+    const totalDataSize = packets.reduce((sum, p) => sum + p.length, 0);
     const headerSize = 27 + segments.length;
-    const page = Buffer.alloc(headerSize + data.length);
+    const page = Buffer.alloc(headerSize + totalDataSize);
 
-    // OGG page header
+    // OGG page header (27 bytes fixed)
     page.write("OggS", 0);                              // capture pattern
-    page[4] = 0;                                         // version
-    page[5] = headerType;                                // header type
-    page.writeBigUInt64LE(granule, 6);                   // granule position
-    page.writeUInt32LE(this.serialNumber, 14);           // serial number
-    page.writeUInt32LE(this.pageSequence++, 18);         // page sequence
-    page.writeUInt32LE(0, 22);                           // checksum (filled later)
-    page[26] = segments.length;                          // number of segments
+    page[4] = 0;                                         // stream structure version
+    page[5] = headerType;                                // header type flag
+    page.writeBigUInt64LE(flags.granule, 6);             // granule position (absolute)
+    page.writeUInt32LE(this.serialNumber, 14);           // bitstream serial number
+    page.writeUInt32LE(this.pageSequence++, 18);         // page sequence number
+    page.writeUInt32LE(0, 22);                           // CRC checksum (filled later)
+    page[26] = segments.length;                          // number of page segments
 
     // Segment table
     for (let i = 0; i < segments.length; i++) {
       page[27 + i] = segments[i];
     }
 
-    // Page data
-    data.copy(page, headerSize);
+    // Page body: concatenate all packets
+    let offset = headerSize;
+    for (const packet of packets) {
+      packet.copy(page, offset);
+      offset += packet.length;
+    }
 
-    // Calculate CRC32 checksum
+    // Calculate and write CRC32 checksum
     const crc = oggCrc32(page);
     page.writeUInt32LE(crc, 22);
 
     return page;
-  }
-
-  setGranulePosition(pos: bigint) {
-    this.granulePosition = pos;
   }
 }
 
@@ -109,31 +125,57 @@ function oggCrc32(data: Buffer): number {
 }
 
 /**
- * Build OpusHead header packet
+ * Extract the Opus CodecPrivate (OpusHead) from a WebM buffer.
+ * The CodecPrivate in WebM for Opus contains the OpusHead data.
+ * We try to find it by looking for the OpusHead magic in the WebM header area.
  */
-function buildOpusHead(channels: number = 1, sampleRate: number = 48000, preSkip: number = 3840): Buffer {
+function extractPreSkipFromWebm(webmBuffer: Buffer): number {
+  // Look for "OpusHead" in the first 1000 bytes of the WebM
+  const searchArea = webmBuffer.slice(0, Math.min(webmBuffer.length, 2000));
+  const magic = Buffer.from("OpusHead");
+  
+  for (let i = 0; i < searchArea.length - 19; i++) {
+    if (searchArea.compare(magic, 0, 8, i, i + 8) === 0) {
+      // Found OpusHead at position i
+      const preSkip = searchArea.readUInt16LE(i + 10);
+      const sampleRate = searchArea.readUInt32LE(i + 12);
+      const channels = searchArea[i + 9];
+      console.log(`[AudioConverter] Found OpusHead in WebM: channels=${channels}, preSkip=${preSkip}, sampleRate=${sampleRate}`);
+      return preSkip;
+    }
+  }
+  
+  // Default pre-skip for Opus (312 samples = 6.5ms at 48kHz is common)
+  console.log("[AudioConverter] OpusHead not found in WebM, using default preSkip=312");
+  return 312;
+}
+
+/**
+ * Build OpusHead header packet (RFC 7845 Section 5.1)
+ */
+function buildOpusHead(channels: number = 1, sampleRate: number = 48000, preSkip: number = 312): Buffer {
   const head = Buffer.alloc(19);
-  head.write("OpusHead", 0);       // Magic signature
-  head[8] = 1;                      // Version
-  head[9] = channels;               // Channel count
-  head.writeUInt16LE(preSkip, 10);  // Pre-skip
-  head.writeUInt32LE(sampleRate, 12); // Input sample rate
-  head.writeInt16LE(0, 16);         // Output gain
-  head[18] = 0;                     // Channel mapping family
+  head.write("OpusHead", 0);       // Magic signature (8 bytes)
+  head[8] = 1;                      // Version (must be 1)
+  head[9] = channels;               // Output channel count
+  head.writeUInt16LE(preSkip, 10);  // Pre-skip (samples at 48kHz)
+  head.writeUInt32LE(sampleRate, 12); // Input sample rate (informational)
+  head.writeInt16LE(0, 16);         // Output gain (Q7.8 in dB, 0 = no change)
+  head[18] = 0;                     // Channel mapping family (0 = mono/stereo)
   return head;
 }
 
 /**
- * Build OpusTags header packet
+ * Build OpusTags header packet (RFC 7845 Section 5.2)
  */
 function buildOpusTags(): Buffer {
-  const vendor = "AutoInovaChat";
+  const vendor = "Lavf61.1.100"; // Mimic ffmpeg vendor string for compatibility
   const vendorBuf = Buffer.from(vendor, "utf8");
   const tags = Buffer.alloc(8 + 4 + vendorBuf.length + 4);
-  tags.write("OpusTags", 0);
-  tags.writeUInt32LE(vendorBuf.length, 8);
-  vendorBuf.copy(tags, 12);
-  tags.writeUInt32LE(0, 12 + vendorBuf.length); // No user comments
+  tags.write("OpusTags", 0);                        // Magic signature (8 bytes)
+  tags.writeUInt32LE(vendorBuf.length, 8);           // Vendor string length
+  vendorBuf.copy(tags, 12);                          // Vendor string
+  tags.writeUInt32LE(0, 12 + vendorBuf.length);      // User comment list length (0)
   return tags;
 }
 
@@ -143,8 +185,8 @@ function buildOpusTags(): Buffer {
 async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> {
   return new Promise((resolve, reject) => {
     const frames: Buffer[] = [];
+    let resolved = false;
     
-    // Use prism-media's WebmDemuxer to extract raw Opus frames
     const demuxer = new prismMedia.opus.WebmDemuxer();
 
     demuxer.on("data", (chunk: Buffer) => {
@@ -152,14 +194,19 @@ async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> 
     });
 
     demuxer.on("end", () => {
-      resolve(frames);
+      if (!resolved) {
+        resolved = true;
+        resolve(frames);
+      }
     });
 
     demuxer.on("error", (err: Error) => {
-      reject(err);
+      if (!resolved) {
+        resolved = true;
+        reject(err);
+      }
     });
 
-    // Feed the WebM data
     const readable = new Readable({
       read() {
         this.push(webmBuffer);
@@ -169,9 +216,15 @@ async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> 
 
     readable.pipe(demuxer);
 
-    // Timeout after 10 seconds
     setTimeout(() => {
-      reject(new Error("WebM demuxing timed out"));
+      if (!resolved) {
+        resolved = true;
+        if (frames.length > 0) {
+          resolve(frames); // Return what we have
+        } else {
+          reject(new Error("WebM demuxing timed out"));
+        }
+      }
     }, 10000);
   });
 }
@@ -179,9 +232,8 @@ async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> 
 /**
  * Convert WebM/Opus to OGG/Opus using pure JavaScript (no ffmpeg)
  * 
- * This extracts Opus frames from the WebM container and re-packages them
- * into an OGG container. No re-encoding is needed since both containers
- * use the same Opus codec.
+ * Properly builds OGG pages with correct segment tables where each
+ * Opus frame is a separate packet, matching the format that ffmpeg produces.
  */
 async function convertWebmToOggPureJS(webmBuffer: Buffer): Promise<Buffer> {
   console.log(`[AudioConverter] Pure JS: Extracting Opus frames from WebM (${webmBuffer.length} bytes)`);
@@ -192,51 +244,60 @@ async function convertWebmToOggPureJS(webmBuffer: Buffer): Promise<Buffer> {
     throw new Error("No Opus frames found in WebM file");
   }
 
-  console.log(`[AudioConverter] Pure JS: Extracted ${frames.length} Opus frames`);
+  // Extract pre-skip from the original WebM's OpusHead
+  const preSkip = extractPreSkipFromWebm(webmBuffer);
+
+  console.log(`[AudioConverter] Pure JS: Extracted ${frames.length} Opus frames, preSkip=${preSkip}`);
 
   const ogg = new OggPageBuilder();
   const pages: Buffer[] = [];
 
-  // Page 1: OpusHead (BOS)
-  const opusHead = buildOpusHead(1, 48000);
-  pages.push(ogg.buildPage(opusHead, { bos: true, granule: BigInt(0) }));
+  // Page 0: OpusHead (BOS - Beginning of Stream)
+  // Must be on its own page with BOS flag
+  const opusHead = buildOpusHead(1, 48000, preSkip);
+  pages.push(ogg.buildPage([opusHead], { bos: true, granule: BigInt(0) }));
 
-  // Page 2: OpusTags
+  // Page 1: OpusTags
+  // Must be on its own page
   const opusTags = buildOpusTags();
-  ogg.setGranulePosition(BigInt(0));
-  pages.push(ogg.buildPage(opusTags, { granule: BigInt(0) }));
+  pages.push(ogg.buildPage([opusTags], { granule: BigInt(0) }));
 
-  // Audio pages: pack Opus frames
-  // Each Opus frame at 20ms = 960 samples at 48kHz
+  // Audio pages: each Opus frame is a separate packet
+  // Standard Opus frame duration is 20ms = 960 samples at 48kHz
   const SAMPLES_PER_FRAME = 960;
-  let granule = BigInt(0);
+  let granule = BigInt(preSkip); // Start from preSkip offset
   
-  // Pack multiple frames per page (up to ~4KB per page is typical)
-  let currentPageData: Buffer[] = [];
-  let currentPageSize = 0;
-  const MAX_PAGE_SIZE = 4000;
+  // Pack frames into pages, keeping each frame as a separate packet
+  // OGG allows up to 255 segments per page
+  // Each frame typically needs 1 segment (if < 255 bytes) or 2+ segments
+  let currentPackets: Buffer[] = [];
+  let currentSegmentCount = 0;
 
   for (let i = 0; i < frames.length; i++) {
-    currentPageData.push(frames[i]);
-    currentPageSize += frames[i].length;
-    granule += BigInt(SAMPLES_PER_FRAME);
-
-    const isLast = i === frames.length - 1;
+    const frame = frames[i];
+    // Calculate how many segments this frame needs
+    const frameSegments = Math.floor(frame.length / 255) + 1;
     
-    if (currentPageSize >= MAX_PAGE_SIZE || isLast) {
-      // Build a page with all accumulated frames
-      // For OGG, each segment in the segment table corresponds to one frame
-      // We need to concatenate frames and build proper segment table
-      const pageData = Buffer.concat(currentPageData);
-      ogg.setGranulePosition(granule);
-      pages.push(ogg.buildPage(pageData, { eos: isLast, granule }));
-      currentPageData = [];
-      currentPageSize = 0;
+    // Check if adding this frame would exceed 255 segments per page
+    if (currentSegmentCount + frameSegments > 255 || currentPackets.length >= 48) {
+      // Flush current page
+      pages.push(ogg.buildPage(currentPackets, { granule }));
+      currentPackets = [];
+      currentSegmentCount = 0;
     }
+
+    currentPackets.push(frame);
+    currentSegmentCount += frameSegments;
+    granule += BigInt(SAMPLES_PER_FRAME);
+  }
+
+  // Flush remaining packets as the last page (with EOS flag)
+  if (currentPackets.length > 0) {
+    pages.push(ogg.buildPage(currentPackets, { eos: true, granule }));
   }
 
   const result = Buffer.concat(pages);
-  console.log(`[AudioConverter] Pure JS: Created OGG file (${result.length} bytes) with ${frames.length} frames`);
+  console.log(`[AudioConverter] Pure JS: Created OGG file (${result.length} bytes) with ${frames.length} frames across ${pages.length} pages`);
   return result;
 }
 
@@ -327,7 +388,7 @@ async function convertWebmToOggFfmpeg(webmBuffer: Buffer): Promise<Buffer> {
 export async function convertWebmToOgg(webmBuffer: Buffer): Promise<Buffer> {
   console.log(`[AudioConverter] Starting conversion: webm (${webmBuffer.length} bytes) → ogg`);
 
-  // Method 1: Pure JavaScript (no external dependencies)
+  // Method 1: Pure JavaScript (no external dependencies needed at deploy)
   try {
     const oggBuffer = await convertWebmToOggPureJS(webmBuffer);
     

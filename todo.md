@@ -385,3 +385,12 @@
 - [x] FFmpeg mantido como fallback se Pure JS falhar
 - [x] prism-media adicionado como dependência
 - [x] 88 testes passando
+
+## Bugs - Rodada 25 (Áudio chega no WhatsApp mas não reproduz)
+- [x] Áudio OGG gerado pela conversão Pure JS não reproduz no WhatsApp do cliente
+- [x] Causa: PreSkip errado (3840 vs 312) e segment table incorreta (frames concatenados vs packets separados)
+- [x] Corrigido: PreSkip extraído do OpusHead original do WebM
+- [x] Corrigido: cada frame Opus é um packet separado no segment table
+- [x] Corrigido: vendor string compatível (Lavf61.1.100)
+- [x] OGG gerado validado pelo ffmpeg: Duration 2.01s, opus 48kHz mono
+- [x] 88 testes passando
