@@ -227,10 +227,95 @@ async function sendReaction(to: string, messageId: string, emoji: string): Promi
   }
 }
 
+/**
+ * Send an audio message to a WhatsApp number
+ */
+async function sendAudioMessage(to: string, audioUrl: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. Audio message not sent to:", to);
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  try {
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "audio",
+        audio: {
+          link: audioUrl,
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const messageId = response.data?.messages?.[0]?.id;
+    console.log(`[WhatsApp] Audio sent to ${to}, ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send audio to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
+ * Send a document message to a WhatsApp number
+ */
+async function sendDocumentMessage(to: string, documentUrl: string, filename?: string, caption?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  try {
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to: to,
+        type: "document",
+        document: {
+          link: documentUrl,
+          ...(filename && { filename }),
+          ...(caption && { caption }),
+        },
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const messageId = response.data?.messages?.[0]?.id;
+    console.log(`[WhatsApp] Document sent to ${to}, ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send document to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
 export {
   isConfigured,
   sendTextMessage,
   sendImageMessage,
+  sendAudioMessage,
+  sendDocumentMessage,
   markAsRead,
   getMediaUrl,
   downloadMedia,

@@ -1,22 +1,38 @@
 import { trpc } from "@/lib/trpc";
 import { useConversationSocket } from "@/hooks/useSocket";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause } from "lucide-react";
+import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 
 type Props = {
   conversationId: number;
   onBack?: () => void;
 };
 
+const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
+
 export default function ChatView({ conversationId, onBack }: Props) {
   const [newMessage, setNewMessage] = useState("");
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+
+  // Image preview state
+  const [imagePreview, setImagePreview] = useState<{ file: File; dataUrl: string } | null>(null);
+  const [imageCaption, setImageCaption] = useState("");
+
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const { data: conversation } = trpc.conversation.getById.useQuery(
     { id: conversationId },
@@ -31,6 +47,17 @@ export default function ChatView({ conversationId, onBack }: Props) {
       setNewMessage("");
       refetchMessages();
       inputRef.current?.focus();
+    },
+  });
+  const sendMediaMutation = trpc.message.sendMedia.useMutation({
+    onSuccess: () => {
+      refetchMessages();
+      setImagePreview(null);
+      setImageCaption("");
+      inputRef.current?.focus();
+    },
+    onError: (err) => {
+      toast.error("Erro ao enviar mídia: " + err.message);
     },
   });
   const markAsReadMutation = trpc.conversation.markAsRead.useMutation();
@@ -64,6 +91,18 @@ export default function ChatView({ conversationId, onBack }: Props) {
     markAsReadMutation.mutate({ id: conversationId });
   }, [conversationId]);
 
+  // Cleanup recording on unmount
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+    };
+  }, []);
+
   const handleSend = () => {
     if (!newMessage.trim()) return;
     sendMutation.mutate({
@@ -79,6 +118,152 @@ export default function ChatView({ conversationId, onBack }: Props) {
       handleSend();
     }
   };
+
+  // --- Image handling ---
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Selecione uma imagem (JPG, PNG, etc.)");
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("O tamanho máximo é 16MB.");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImagePreview({ file, dataUrl: reader.result as string });
+    };
+    reader.readAsDataURL(file);
+
+    // Reset input so same file can be selected again
+    e.target.value = "";
+  };
+
+  const handleSendImage = () => {
+    if (!imagePreview) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = (reader.result as string).split(",")[1]; // Remove data:image/...;base64, prefix
+      sendMediaMutation.mutate({
+        conversationId,
+        mediaType: "image",
+        base64Data: base64,
+        mimeType: imagePreview.file.type,
+        fileName: imagePreview.file.name,
+        caption: imageCaption || undefined,
+      });
+    };
+    reader.readAsDataURL(imagePreview.file);
+  };
+
+  const handleCancelImage = () => {
+    setImagePreview(null);
+    setImageCaption("");
+  };
+
+  // --- Audio recording ---
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm",
+      });
+
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        // Stop all tracks
+        stream.getTracks().forEach((track) => track.stop());
+
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+
+        if (audioBlob.size > MAX_FILE_SIZE) {
+          toast.error("O tamanho máximo é 16MB.");
+          return;
+        }
+
+        if (audioBlob.size < 1000) {
+          // Too short, ignore
+          return;
+        }
+
+        // Convert to base64 and send
+        const reader = new FileReader();
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(",")[1];
+          sendMediaMutation.mutate({
+            conversationId,
+            mediaType: "audio",
+            base64Data: base64,
+            mimeType: "audio/webm",
+            fileName: "voice-message.webm",
+          });
+        };
+        reader.readAsDataURL(audioBlob);
+      };
+
+      mediaRecorder.start(250); // Collect data every 250ms
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      toast.error("Verifique se o navegador tem permissão para acessar o microfone.");
+    }
+  }, [conversationId, sendMediaMutation]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.stop();
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingTime(0);
+  }, []);
+
+  const cancelRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = null;
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    audioChunksRef.current = [];
+    setIsRecording(false);
+    setRecordingTime(0);
+  }, []);
+
+  const formatRecordingTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const isSending = sendMutation.isPending || sendMediaMutation.isPending;
 
   return (
     <div className="flex flex-col h-full bg-background">
@@ -142,27 +327,140 @@ export default function ChatView({ conversationId, onBack }: Props) {
         )}
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border p-3 shrink-0">
-        <div className="flex gap-2">
-          <Input
-            ref={inputRef}
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Digite sua mensagem..."
-            className="flex-1 bg-input border-border"
-            disabled={sendMutation.isPending}
-          />
-          <Button
-            onClick={handleSend}
-            disabled={!newMessage.trim() || sendMutation.isPending}
-            size="icon"
-            className="bg-primary hover:bg-primary/90 shrink-0"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+      {/* Image Preview */}
+      {imagePreview && (
+        <div className="border-t border-border p-3 bg-secondary/30">
+          <div className="flex items-start gap-3">
+            <div className="relative">
+              <img
+                src={imagePreview.dataUrl}
+                alt="Preview"
+                className="h-20 w-20 object-cover rounded-lg border border-border"
+              />
+              <Button
+                variant="destructive"
+                size="icon"
+                className="absolute -top-2 -right-2 h-5 w-5 rounded-full"
+                onClick={handleCancelImage}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <div className="flex-1 flex flex-col gap-2">
+              <Input
+                value={imageCaption}
+                onChange={(e) => setImageCaption(e.target.value)}
+                placeholder="Legenda (opcional)..."
+                className="bg-input border-border text-sm"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendImage();
+                  }
+                }}
+              />
+              <Button
+                onClick={handleSendImage}
+                disabled={sendMediaMutation.isPending}
+                size="sm"
+                className="self-end bg-primary hover:bg-primary/90"
+              >
+                {sendMediaMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                ) : (
+                  <Send className="h-4 w-4 mr-1" />
+                )}
+                Enviar Imagem
+              </Button>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* Input Area */}
+      <div className="border-t border-border p-3 shrink-0">
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleImageSelect}
+        />
+
+        {isRecording ? (
+          /* Recording UI */
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={cancelRecording}
+              className="shrink-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+              title="Cancelar gravação"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+            <div className="flex-1 flex items-center gap-3 bg-destructive/5 rounded-lg px-4 py-2.5">
+              <div className="h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-sm font-medium text-destructive">
+                Gravando... {formatRecordingTime(recordingTime)}
+              </span>
+            </div>
+            <Button
+              onClick={stopRecording}
+              size="icon"
+              className="shrink-0 bg-primary hover:bg-primary/90"
+              title="Enviar áudio"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+        ) : (
+          /* Normal input UI */
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isSending}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              title="Enviar imagem"
+            >
+              <ImagePlus className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={startRecording}
+              disabled={isSending}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+              title="Gravar áudio"
+            >
+              <Mic className="h-5 w-5" />
+            </Button>
+            <Input
+              ref={inputRef}
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Digite sua mensagem..."
+              className="flex-1 bg-input border-border"
+              disabled={isSending}
+            />
+            <Button
+              onClick={handleSend}
+              disabled={!newMessage.trim() || isSending}
+              size="icon"
+              className="bg-primary hover:bg-primary/90 shrink-0"
+            >
+              {sendMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -265,8 +563,8 @@ function MessageBubble({ message }: { message: MessageData }) {
           )}
 
           {/* Text content - hide generic placeholders for image/audio if we already show the media */}
-          {!(message.messageType === "image" && mediaUrl && (message.content === "[Imagem enviada pelo cliente]" || message.content === "[Imagem recebida]")) &&
-           !(message.messageType === "audio" && !transcribedText && (message.content === "[Mensagem de áudio]" || message.content === "[Áudio não pôde ser transcrito]")) && (
+          {!(message.messageType === "image" && mediaUrl && (message.content === "[Imagem enviada pelo cliente]" || message.content === "[Imagem recebida]" || message.content === "[Imagem enviada]")) &&
+           !(message.messageType === "audio" && (message.content === "[Mensagem de áudio]" || message.content === "[Áudio não pôde ser transcrito]" || message.content === "[Mensagem de voz]")) && (
             <p className="whitespace-pre-wrap">
               {message.messageType === "audio" && transcribedText
                 ? "" // Already shown in transcription section above

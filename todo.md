@@ -338,3 +338,14 @@
 - [x] Mostrar agente/usuário vinculado no painel de Leads (badge com nome)
 - [x] Navegação adaptada por cargo (vendedor/suporte não veem Dashboard, Veículos, Equipe, Config)
 - [x] 67 testes passando
+
+## Feature - Rodada 20 (Envio de Fotos e Áudios no Chat) - IMPLEMENTADO
+- [x] Botão de upload de foto na interface de chat (ImagePlus icon)
+- [x] Upload de foto para S3 e envio via WhatsApp API (sendImageMessage)
+- [x] Botão de gravação de áudio na interface de chat (Mic icon)
+- [x] Gravação de áudio no navegador e envio via WhatsApp API (sendAudioMessage)
+- [x] Preview de foto antes de enviar (com legenda opcional)
+- [x] Indicador visual de gravação de áudio (timer + botão cancelar)
+- [x] Salvar mensagens de mídia no banco de dados (messageType: image/audio)
+- [x] Mutation sendMedia no messageRouter com upload S3
+- [x] 67 testes passando

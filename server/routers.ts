@@ -17,8 +17,10 @@ import {
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
-import { sendTextMessage, sendImageMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { storagePut } from "./storage";
 import { syncStock } from "./stockSync";
+import crypto from "crypto";
 import { getDb } from "./db";
 import { createTeamMember, updateTeamMember, deactivateTeamMember, hashPassword, authenticateTeamMember } from "./teamAuth";
 import { listTeamMembers as listTeamMembersAuth } from "./teamAuth";
@@ -182,6 +184,66 @@ const messageRouter = router({
           sendTextMessage(conv.phone, input.content).catch((err) => {
             console.error("[WhatsApp] Failed to send agent message:", err);
           });
+        }
+      }
+
+      return message;
+    }),
+
+  sendMedia: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      mediaType: z.enum(["image", "audio"]),
+      base64Data: z.string(), // base64 encoded file data
+      mimeType: z.string(),
+      fileName: z.string().optional(),
+      caption: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // When agent sends media, automatically pause AI
+      await updateConversation(input.conversationId, {
+        aiActive: false,
+        assignedTo: ctx.user.id,
+      });
+      emitConversationUpdate(input.conversationId, { aiActive: false, assignedTo: ctx.user.id });
+
+      // Upload to S3
+      const buffer = Buffer.from(input.base64Data, "base64");
+      const ext = input.mimeType.split("/")[1]?.split(";")[0] || "bin";
+      const randomSuffix = crypto.randomBytes(8).toString("hex");
+      const fileKey = `chat-media/${ctx.user.id}/${Date.now()}-${randomSuffix}.${ext}`;
+      
+      const { url: mediaUrl } = await storagePut(fileKey, buffer, input.mimeType);
+
+      // Save message to database
+      const content = input.mediaType === "image"
+        ? (input.caption || "[Imagem enviada]")
+        : "[Mensagem de voz]";
+
+      const message = await createMessage({
+        conversationId: input.conversationId,
+        content,
+        senderType: "agent",
+        senderName: ctx.user.name || "Atendente",
+        messageType: input.mediaType,
+        metadata: { mediaUrl, mimeType: input.mimeType, fileName: input.fileName },
+      });
+
+      emitNewMessage(input.conversationId, message);
+
+      // Send to WhatsApp
+      if (isWhatsAppConfigured()) {
+        const conv = await getConversationById(input.conversationId);
+        if (conv && conv.channel === "whatsapp" && conv.phone) {
+          if (input.mediaType === "image") {
+            sendImageMessage(conv.phone, mediaUrl, input.caption).catch((err) => {
+              console.error("[WhatsApp] Failed to send agent image:", err);
+            });
+          } else if (input.mediaType === "audio") {
+            sendAudioMessage(conv.phone, mediaUrl).catch((err) => {
+              console.error("[WhatsApp] Failed to send agent audio:", err);
+            });
+          }
         }
       }
 
