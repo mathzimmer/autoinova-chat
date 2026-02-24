@@ -376,3 +376,12 @@
 - [x] Função isWebmAudio() adicionada ao audioConverter
 - [x] audioConverter com verificação de magic bytes OggS no output
 - [x] 88 testes passando (21 testes de audioConverter)
+
+## Bugs - Rodada 24 (Áudio ainda não chega no WhatsApp do cliente)
+- [x] Áudio grava e aparece no chat do atendente mas NÃO chega no WhatsApp do cliente
+- [x] Causa raiz: ffmpeg não disponível no deploy, conversão falhava silenciosamente
+- [x] Solução: conversão Pure JS usando prism-media (WebmDemuxer) + OGG muxer manual
+- [x] Sem dependência de ffmpeg no deploy — conversão 100% JavaScript
+- [x] FFmpeg mantido como fallback se Pure JS falhar
+- [x] prism-media adicionado como dependência
+- [x] 88 testes passando
