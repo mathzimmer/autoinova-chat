@@ -15,6 +15,11 @@ type Props = {
 
 const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
 
+type ImagePreviewItem = {
+  file: File;
+  dataUrl: string;
+};
+
 export default function ChatView({ conversationId, onBack }: Props) {
   const [newMessage, setNewMessage] = useState("");
   const [typingUser, setTypingUser] = useState<string | null>(null);
@@ -22,10 +27,10 @@ export default function ChatView({ conversationId, onBack }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-
-  // Image preview state
-  const [imagePreview, setImagePreview] = useState<{ file: File; dataUrl: string } | null>(null);
+  // Image preview state - now supports multiple images
+  const [imagePreviews, setImagePreviews] = useState<ImagePreviewItem[]>([]);
   const [imageCaption, setImageCaption] = useState("");
+  const [sendingImageIndex, setSendingImageIndex] = useState(-1);
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -52,9 +57,6 @@ export default function ChatView({ conversationId, onBack }: Props) {
   const sendMediaMutation = trpc.message.sendMedia.useMutation({
     onSuccess: () => {
       refetchMessages();
-      setImagePreview(null);
-      setImageCaption("");
-      inputRef.current?.focus();
     },
     onError: (err) => {
       toast.error("Erro ao enviar mídia: " + err.message);
@@ -119,51 +121,80 @@ export default function ChatView({ conversationId, onBack }: Props) {
     }
   };
 
-  // --- Image handling ---
+  // --- Image handling (multiple) ---
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-    if (!file.type.startsWith("image/")) {
-      toast.error("Selecione uma imagem (JPG, PNG, etc.)");
-      return;
+    const newPreviews: ImagePreviewItem[] = [];
+    let errorCount = 0;
+
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        errorCount++;
+        return;
+      }
+
+      if (file.size > MAX_FILE_SIZE) {
+        toast.error(`${file.name}: tamanho máximo é 16MB.`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        newPreviews.push({ file, dataUrl: reader.result as string });
+        // When all files are read, update state
+        if (newPreviews.length + errorCount === files.length) {
+          setImagePreviews((prev) => [...prev, ...newPreviews]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+
+    if (errorCount > 0) {
+      toast.error(`${errorCount} arquivo(s) ignorado(s) — selecione apenas imagens.`);
     }
 
-    if (file.size > MAX_FILE_SIZE) {
-      toast.error("O tamanho máximo é 16MB.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      setImagePreview({ file, dataUrl: reader.result as string });
-    };
-    reader.readAsDataURL(file);
-
-    // Reset input so same file can be selected again
+    // Reset input so same files can be selected again
     e.target.value = "";
   };
 
-  const handleSendImage = () => {
-    if (!imagePreview) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const base64 = (reader.result as string).split(",")[1]; // Remove data:image/...;base64, prefix
-      sendMediaMutation.mutate({
-        conversationId,
-        mediaType: "image",
-        base64Data: base64,
-        mimeType: imagePreview.file.type,
-        fileName: imagePreview.file.name,
-        caption: imageCaption || undefined,
-      });
-    };
-    reader.readAsDataURL(imagePreview.file);
+  const handleRemoveImage = (index: number) => {
+    setImagePreviews((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleCancelImage = () => {
-    setImagePreview(null);
+  const handleSendImages = async () => {
+    if (imagePreviews.length === 0) return;
+
+    // Send images sequentially
+    for (let i = 0; i < imagePreviews.length; i++) {
+      setSendingImageIndex(i);
+      const preview = imagePreviews[i];
+
+      try {
+        const base64 = preview.dataUrl.split(",")[1]; // Remove data:image/...;base64, prefix
+        await sendMediaMutation.mutateAsync({
+          conversationId,
+          mediaType: "image",
+          base64Data: base64,
+          mimeType: preview.file.type,
+          fileName: preview.file.name,
+          caption: i === 0 ? (imageCaption || undefined) : undefined, // Caption only on first image
+        });
+      } catch {
+        // Error already handled by onError
+        break;
+      }
+    }
+
+    setSendingImageIndex(-1);
+    setImagePreviews([]);
+    setImageCaption("");
+    inputRef.current?.focus();
+  };
+
+  const handleCancelImages = () => {
+    setImagePreviews([]);
     setImageCaption("");
   };
 
@@ -203,6 +234,7 @@ export default function ChatView({ conversationId, onBack }: Props) {
         }
 
         // Convert to base64 and send
+        // The server will convert webm → ogg for WhatsApp compatibility
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
@@ -307,7 +339,6 @@ export default function ChatView({ conversationId, onBack }: Props) {
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
         {!msgs || msgs.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
-            <Bot className="h-12 w-12 mx-auto mb-4 opacity-20" />
             <p className="text-sm">Nenhuma mensagem ainda</p>
           </div>
         ) : (
@@ -327,50 +358,81 @@ export default function ChatView({ conversationId, onBack }: Props) {
         )}
       </div>
 
-      {/* Image Preview */}
-      {imagePreview && (
+      {/* Image Preview - Multiple images */}
+      {imagePreviews.length > 0 && (
         <div className="border-t border-border p-3 bg-secondary/30">
-          <div className="flex items-start gap-3">
-            <div className="relative">
-              <img
-                src={imagePreview.dataUrl}
-                alt="Preview"
-                className="h-20 w-20 object-cover rounded-lg border border-border"
-              />
-              <Button
-                variant="destructive"
-                size="icon"
-                className="absolute -top-2 -right-2 h-5 w-5 rounded-full"
-                onClick={handleCancelImage}
-              >
-                <X className="h-3 w-3" />
-              </Button>
+          <div className="flex flex-col gap-3">
+            {/* Image thumbnails grid */}
+            <div className="flex flex-wrap gap-2">
+              {imagePreviews.map((preview, index) => (
+                <div key={index} className="relative group">
+                  <img
+                    src={preview.dataUrl}
+                    alt={`Preview ${index + 1}`}
+                    className={`h-16 w-16 object-cover rounded-lg border border-border ${
+                      sendingImageIndex === index ? "opacity-50" : ""
+                    }`}
+                  />
+                  {sendingImageIndex === index && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                    </div>
+                  )}
+                  {sendingImageIndex < 0 && (
+                    <Button
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => handleRemoveImage(index)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  )}
+                </div>
+              ))}
             </div>
-            <div className="flex-1 flex flex-col gap-2">
+            {/* Caption + send */}
+            <div className="flex items-center gap-2">
               <Input
                 value={imageCaption}
                 onChange={(e) => setImageCaption(e.target.value)}
                 placeholder="Legenda (opcional)..."
-                className="bg-input border-border text-sm"
+                className="bg-input border-border text-sm flex-1"
+                disabled={sendingImageIndex >= 0}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
-                    handleSendImage();
+                    handleSendImages();
                   }
                 }}
               />
               <Button
-                onClick={handleSendImage}
-                disabled={sendMediaMutation.isPending}
-                size="sm"
-                className="self-end bg-primary hover:bg-primary/90"
+                variant="ghost"
+                size="icon"
+                onClick={handleCancelImages}
+                disabled={sendingImageIndex >= 0}
+                className="shrink-0 text-muted-foreground hover:text-destructive"
+                title="Cancelar"
               >
-                {sendMediaMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                <X className="h-4 w-4" />
+              </Button>
+              <Button
+                onClick={handleSendImages}
+                disabled={sendingImageIndex >= 0}
+                size="sm"
+                className="shrink-0 bg-primary hover:bg-primary/90"
+              >
+                {sendingImageIndex >= 0 ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                    {sendingImageIndex + 1}/{imagePreviews.length}
+                  </>
                 ) : (
-                  <Send className="h-4 w-4 mr-1" />
+                  <>
+                    <Send className="h-4 w-4 mr-1" />
+                    Enviar {imagePreviews.length > 1 ? `${imagePreviews.length} fotos` : "foto"}
+                  </>
                 )}
-                Enviar Imagem
               </Button>
             </div>
           </div>
@@ -379,11 +441,12 @@ export default function ChatView({ conversationId, onBack }: Props) {
 
       {/* Input Area */}
       <div className="border-t border-border p-3 shrink-0">
-        {/* Hidden file input */}
+        {/* Hidden file input - now accepts multiple */}
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
+          multiple
           className="hidden"
           onChange={handleImageSelect}
         />
@@ -424,7 +487,7 @@ export default function ChatView({ conversationId, onBack }: Props) {
               onClick={() => fileInputRef.current?.click()}
               disabled={isSending}
               className="shrink-0 text-muted-foreground hover:text-foreground"
-              title="Enviar imagem"
+              title="Enviar imagens"
             >
               <ImagePlus className="h-5 w-5" />
             </Button>

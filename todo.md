@@ -349,3 +349,11 @@
 - [x] Salvar mensagens de mídia no banco de dados (messageType: image/audio)
 - [x] Mutation sendMedia no messageRouter com upload S3
 - [x] 67 testes passando
+
+## Bugs - Rodada 21 (Áudio e Fotos)
+- [x] Áudio gravado pelo atendente não é entregue ao cliente via WhatsApp - CORRIGIDO: conversão webm→ogg no servidor via ffmpeg-static
+- [x] Campo de fotos deve permitir selecionar múltiplas fotos de uma vez - CORRIGIDO: input multiple + grid de previews + envio sequencial
+- [x] Módulo audioConverter.ts criado: convertWebmToOgg + needsConversionForWhatsApp
+- [x] sendMedia mutation atualizada: detecta webm, converte para ogg, faz upload da versão convertida para WhatsApp
+- [x] ChatView reescrito: suporte a múltiplas fotos com grid de thumbnails, remoção individual, contador de envio
+- [x] 79 testes passando (12 novos testes para audioConverter)

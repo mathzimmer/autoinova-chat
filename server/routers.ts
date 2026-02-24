@@ -19,6 +19,7 @@ import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./s
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
 import { storagePut } from "./storage";
+import { convertWebmToOgg, needsConversionForWhatsApp } from "./audioConverter";
 import { syncStock } from "./stockSync";
 import crypto from "crypto";
 import { getDb } from "./db";
@@ -208,12 +209,30 @@ const messageRouter = router({
       emitConversationUpdate(input.conversationId, { aiActive: false, assignedTo: ctx.user.id });
 
       // Upload to S3
-      const buffer = Buffer.from(input.base64Data, "base64");
-      const ext = input.mimeType.split("/")[1]?.split(";")[0] || "bin";
+      let buffer = Buffer.from(input.base64Data, "base64");
+      let uploadMimeType = input.mimeType;
+      let uploadExt = input.mimeType.split("/")[1]?.split(";")[0] || "bin";
+
+      // Convert audio for WhatsApp compatibility (webm → ogg)
+      let whatsappAudioUrl: string | null = null;
+      if (input.mediaType === "audio" && needsConversionForWhatsApp(input.mimeType)) {
+        try {
+          console.log(`[SendMedia] Converting audio from ${input.mimeType} to audio/ogg for WhatsApp`);
+          const oggBuffer = await convertWebmToOgg(buffer);
+          // Upload the converted ogg version for WhatsApp
+          const oggRandomSuffix = crypto.randomBytes(8).toString("hex");
+          const oggFileKey = `chat-media/${ctx.user.id}/${Date.now()}-${oggRandomSuffix}.ogg`;
+          const { url: oggUrl } = await storagePut(oggFileKey, oggBuffer, "audio/ogg");
+          whatsappAudioUrl = oggUrl;
+          console.log(`[SendMedia] Audio converted and uploaded: ${oggUrl}`);
+        } catch (err) {
+          console.error("[SendMedia] Audio conversion failed, will try sending original:", err);
+        }
+      }
+
       const randomSuffix = crypto.randomBytes(8).toString("hex");
-      const fileKey = `chat-media/${ctx.user.id}/${Date.now()}-${randomSuffix}.${ext}`;
-      
-      const { url: mediaUrl } = await storagePut(fileKey, buffer, input.mimeType);
+      const fileKey = `chat-media/${ctx.user.id}/${Date.now()}-${randomSuffix}.${uploadExt}`;
+      const { url: mediaUrl } = await storagePut(fileKey, buffer, uploadMimeType);
 
       // Save message to database
       const content = input.mediaType === "image"
@@ -240,7 +259,9 @@ const messageRouter = router({
               console.error("[WhatsApp] Failed to send agent image:", err);
             });
           } else if (input.mediaType === "audio") {
-            sendAudioMessage(conv.phone, mediaUrl).catch((err) => {
+            // Use converted ogg URL if available, otherwise try original
+            const audioUrlForWhatsApp = whatsappAudioUrl || mediaUrl;
+            sendAudioMessage(conv.phone, audioUrlForWhatsApp).catch((err) => {
               console.error("[WhatsApp] Failed to send agent audio:", err);
             });
           }
