@@ -365,3 +365,14 @@
 - [x] audioConverter.ts atualizado com fallback para ffmpeg do sistema
 - [x] Logs detalhados adicionados ao sendMedia para monitorar entregas WhatsApp
 - [x] 79 testes passando
+
+## Bugs - Rodada 23 (Áudio webm não chega no WhatsApp)
+- [x] Áudio webm nunca deve ser enviado ao WhatsApp — CORRIGIDO: bloqueio estrito com isWebmAudio()
+- [x] Conversão webm→ogg obrigatória antes de chamar sendAudioMessage — CORRIGIDO: se conversão falhar, envio é BLOQUEADO
+- [x] Se conversão falhar, registrar erro e NÃO enviar — CORRIGIDO: audioConversionFailed flag bloqueia envio
+- [x] Logs detalhados: formato original, formato convertido, URL final enviada — CORRIGIDO: logs em cada etapa
+- [x] Verificar se ffmpeg-static está funcionando no deploy — CORRIGIDO: onlyBuiltDependencies + fallback sistema
+- [x] Garantir que o MIME enviado ao WhatsApp seja audio/ogg — CORRIGIDO: só envia ogg convertido
+- [x] Função isWebmAudio() adicionada ao audioConverter
+- [x] audioConverter com verificação de magic bytes OggS no output
+- [x] 88 testes passando (21 testes de audioConverter)
