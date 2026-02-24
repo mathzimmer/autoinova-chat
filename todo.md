@@ -329,3 +329,12 @@
 - [x] Erro Select.Item com value="" - CORRIGIDO: usa value="__none__" com tratamento especial
 - [x] Revisados todos os Select.Item do projeto
 - [x] 67 testes passando
+
+## Feature - Rodada 19 (Login Team Members + Melhorias Leads)
+- [x] Login de team members com email/senha (/team-login)
+- [x] Usuários logados veem apenas conversas atribuídas (vendedor/suporte filtrado)
+- [x] Botão para excluir veículo vinculado ao lead (Trash2 icon)
+- [x] Mostrar veículo vinculado no painel de Leads (nome, ano, preço)
+- [x] Mostrar agente/usuário vinculado no painel de Leads (badge com nome)
+- [x] Navegação adaptada por cargo (vendedor/suporte não veem Dashboard, Veículos, Equipe, Config)
+- [x] 67 testes passando

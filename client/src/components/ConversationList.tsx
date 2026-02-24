@@ -16,13 +16,19 @@ type Props = {
 export default function ConversationList({ selectedId, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [agentFilter, setAgentFilter] = useState<"all" | "unassigned" | "ai">("all");
+  const [agentFilter, setAgentFilter] = useState<"all" | "mine" | "unassigned" | "ai">("all");
   const { data: conversations, refetch } = trpc.conversation.list.useQuery(
     { status: statusFilter, search: search || undefined },
     { refetchInterval: 10000 }
   );
   const { data: teamMembers } = trpc.team.list.useQuery();
+  const { data: teamMe } = trpc.teamAuth.me.useQuery();
   const { socket, connected } = useInboxSocket();
+
+  const isTeamMember = teamMe?.isTeamMember ?? false;
+  const myTeamMemberId = teamMe?.teamMember?.id;
+  const myCargo = teamMe?.teamMember?.cargo;
+  const isRestrictedRole = isTeamMember && (myCargo === "vendedor" || myCargo === "suporte");
 
   useEffect(() => {
     if (!socket) return;
@@ -31,17 +37,41 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
     return () => { socket.off("conversation_updated", handler); };
   }, [socket, refetch]);
 
+  // Set default filter for restricted roles
+  useEffect(() => {
+    if (isRestrictedRole && agentFilter === "all") {
+      setAgentFilter("mine");
+    }
+  }, [isRestrictedRole]);
+
   // Filter conversations by agent assignment
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
     let filtered = conversations;
-    if (agentFilter === "unassigned") {
-      filtered = filtered.filter((c) => !c.assignedTo);
-    } else if (agentFilter === "ai") {
-      filtered = filtered.filter((c) => c.aiActive);
+
+    // Restricted roles (vendedor/suporte) can only see their own conversations
+    if (isRestrictedRole && myTeamMemberId) {
+      if (agentFilter === "mine" || agentFilter === "all") {
+        filtered = filtered.filter((c) => c.assignedTo === myTeamMemberId);
+      } else if (agentFilter === "unassigned") {
+        // Vendedores can see unassigned to pick up
+        filtered = filtered.filter((c) => !c.assignedTo);
+      } else if (agentFilter === "ai") {
+        filtered = filtered.filter((c) => c.aiActive && !c.assignedTo);
+      }
+    } else {
+      // Admin/gerente/owner can see all
+      if (agentFilter === "mine" && myTeamMemberId) {
+        filtered = filtered.filter((c) => c.assignedTo === myTeamMemberId);
+      } else if (agentFilter === "unassigned") {
+        filtered = filtered.filter((c) => !c.assignedTo);
+      } else if (agentFilter === "ai") {
+        filtered = filtered.filter((c) => c.aiActive);
+      }
     }
+
     return filtered;
-  }, [conversations, agentFilter]);
+  }, [conversations, agentFilter, isRestrictedRole, myTeamMemberId]);
 
   // Get agent name by ID
   const getAgentName = (agentId: number | null) => {
@@ -57,11 +87,17 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
     { value: "resolved", label: "Resolvidas" },
   ];
 
-  const agentTabs = [
-    { value: "all", label: "Todas", icon: Users },
-    { value: "unassigned", label: "Sem agente", icon: Inbox },
-    { value: "ai", label: "IA ativa", icon: Bot },
-  ];
+  const agentTabs = isRestrictedRole
+    ? [
+        { value: "mine", label: "Minhas", icon: UserCheck },
+        { value: "unassigned", label: "Sem agente", icon: Inbox },
+      ]
+    : [
+        { value: "all", label: "Todas", icon: Users },
+        ...(isTeamMember ? [{ value: "mine" as const, label: "Minhas", icon: UserCheck }] : []),
+        { value: "unassigned", label: "Sem agente", icon: Inbox },
+        { value: "ai", label: "IA ativa", icon: Bot },
+      ];
 
   return (
     <div className="flex flex-col h-full bg-sidebar border-r border-border">
@@ -129,7 +165,11 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
           {filteredConversations.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="text-sm">Nenhuma conversa encontrada</p>
+              <p className="text-sm">
+                {isRestrictedRole && agentFilter === "mine"
+                  ? "Nenhuma conversa atribuída a você"
+                  : "Nenhuma conversa encontrada"}
+              </p>
             </div>
           ) : (
             filteredConversations.map((conv) => {
@@ -175,7 +215,7 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
                       </div>
                       <div className="flex items-center justify-between">
                         <p className="text-xs text-muted-foreground truncate pr-2">
-                          {conv.lastMessagePreview || "Sem mensagens"}
+                          {(conv.lastMessagePreview || "Sem mensagens").replace(/\{?\[?(FOTO|IMAGEM|IMAGE|ID:\d+)\]?\}?/gi, "").trim() || "Sem mensagens"}
                         </p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {conv.unreadCount > 0 && (

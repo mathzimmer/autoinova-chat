@@ -11,6 +11,7 @@ import Vehicles from "./pages/Vehicles";
 import Leads from "./pages/Leads";
 import Settings from "./pages/Settings";
 import Team from "./pages/Team";
+import TeamLogin from "./pages/TeamLogin";
 import AppLayout from "./components/AppLayout";
 
 function Router() {
@@ -47,6 +48,7 @@ function Router() {
           <Settings />
         </AppLayout>
       </Route>
+      <Route path="/team-login" component={TeamLogin} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

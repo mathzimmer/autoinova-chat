@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -414,9 +414,22 @@ export default function ConversationPanel({ conversationId }: Props) {
             {lead.vehicleInterest && <LeadField icon={<Car className="h-3.5 w-3.5" />} label="Veículo de Interesse" value={lead.vehicleInterest} />}
             {linkedVehicle && (
               <div className="p-2 rounded-md bg-primary/10 border border-primary/20">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Link2 className="h-3 w-3 text-primary" />
-                  <span className="text-[10px] text-primary uppercase tracking-wider font-semibold">Veículo Vinculado</span>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <Link2 className="h-3 w-3 text-primary" />
+                    <span className="text-[10px] text-primary uppercase tracking-wider font-semibold">Veículo Vinculado</span>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-5 w-5 p-0 text-destructive/60 hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => {
+                      updateLead.mutate({ conversationId, vehicleId: null as any });
+                    }}
+                    title="Remover veículo vinculado"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
                 </div>
                 <p className="text-sm text-card-foreground font-medium">{linkedVehicle.title || `${linkedVehicle.brand} ${linkedVehicle.model}`}</p>
                 <p className="text-xs text-muted-foreground">{linkedVehicle.year} | R$ {linkedVehicle.price?.toLocaleString("pt-BR")} | {linkedVehicle.mileage?.toLocaleString("pt-BR")} km</p>

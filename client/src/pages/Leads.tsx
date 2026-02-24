@@ -1,13 +1,34 @@
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Target, Phone, Car, CreditCard, ArrowLeftRight, Users, FileText } from "lucide-react";
+import { Target, Phone, Car, CreditCard, ArrowLeftRight, Users, FileText, UserCheck, ExternalLink } from "lucide-react";
 
 export default function Leads() {
   const [statusFilter, setStatusFilter] = useState("all");
   const { data: leads } = trpc.lead.list.useQuery({ status: statusFilter }, { refetchInterval: 15000 });
+  const { data: vehicles } = trpc.vehicle.list.useQuery();
+  const { data: teamMembers } = trpc.team.list.useQuery();
+  const { data: conversations } = trpc.conversation.list.useQuery({});
+
+  // Build lookup maps
+  const vehicleMap = useMemo(() => {
+    const map = new Map<number, any>();
+    vehicles?.forEach((v: any) => map.set(v.id, v));
+    return map;
+  }, [vehicles]);
+
+  const teamMemberMap = useMemo(() => {
+    const map = new Map<number, any>();
+    teamMembers?.forEach((m: any) => map.set(m.id, m));
+    return map;
+  }, [teamMembers]);
+
+  const conversationMap = useMemo(() => {
+    const map = new Map<number, any>();
+    conversations?.forEach((c: any) => map.set(c.id, c));
+    return map;
+  }, [conversations]);
 
   const statusTabs = [
     { value: "all", label: "Todos" },
@@ -73,67 +94,120 @@ export default function Leads() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {leads.map((lead) => (
-            <Card key={lead.id} className="bg-card border-border hover:border-primary/20 transition-colors">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-semibold text-card-foreground">
-                    {lead.name || lead.phone}
-                  </CardTitle>
-                  <Badge variant="outline" className={`text-[10px] ${statusColors[lead.status] || ""}`}>
-                    {statusLabels[lead.status] || lead.status}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Phone className="h-3 w-3" />
-                  <span>{lead.phone}</span>
-                </div>
-                {lead.intention && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Target className="h-3 w-3" />
-                    <span className="capitalize">{lead.intention}</span>
+          {leads.map((lead) => {
+            const linkedVehicle = lead.vehicleId ? vehicleMap.get(lead.vehicleId) : null;
+            const conversation = conversationMap.get(lead.conversationId);
+            const assignedAgent = conversation?.assignedTo ? teamMemberMap.get(conversation.assignedTo) : null;
+
+            return (
+              <Card key={lead.id} className="bg-card border-border hover:border-primary/20 transition-colors">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-sm font-semibold text-card-foreground">
+                      {lead.name || lead.phone}
+                    </CardTitle>
+                    <Badge variant="outline" className={`text-[10px] ${statusColors[lead.status] || ""}`}>
+                      {statusLabels[lead.status] || lead.status}
+                    </Badge>
                   </div>
-                )}
-                {lead.vehicleInterest && (
+                </CardHeader>
+                <CardContent className="space-y-2">
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Car className="h-3 w-3" />
-                    <span>{lead.vehicleInterest}</span>
+                    <Phone className="h-3 w-3" />
+                    <span>{lead.phone}</span>
                   </div>
-                )}
-                {lead.hasTrade && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <ArrowLeftRight className="h-3 w-3" />
-                    <span>Troca: {lead.tradeVehicle} {lead.tradeYear}</span>
-                  </div>
-                )}
-                {lead.paymentMethod && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <CreditCard className="h-3 w-3" />
-                    <span>{lead.paymentMethod} {lead.downPayment ? `- Entrada: ${lead.downPayment}` : ""}</span>
-                  </div>
-                )}
-                {(lead as any).notes && (
-                  <div className="mt-2 p-2 rounded-md bg-muted/50 border border-border">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <FileText className="h-3 w-3 text-muted-foreground" />
-                      <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Resumo</span>
+
+                  {/* Agente atribuído */}
+                  {assignedAgent && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <UserCheck className="h-3 w-3 text-blue-400" />
+                      <span className="text-blue-400 font-medium">{assignedAgent.name}</span>
+                      <Badge variant="outline" className="text-[9px] py-0 px-1 border-blue-500/30 text-blue-400">
+                        {assignedAgent.cargo}
+                      </Badge>
                     </div>
-                    <p className="text-xs text-card-foreground leading-relaxed whitespace-pre-wrap line-clamp-3">{(lead as any).notes}</p>
-                  </div>
-                )}
-                {lead.score !== null && lead.score !== undefined && lead.score > 0 && (
-                  <div className="mt-2 pt-2 border-t border-border">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Score</span>
-                      <span className="font-semibold text-primary">{lead.score}/100</span>
+                  )}
+
+                  {lead.intention && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Target className="h-3 w-3" />
+                      <span className="capitalize">{lead.intention}</span>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                  )}
+
+                  {lead.vehicleInterest && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Car className="h-3 w-3" />
+                      <span>{lead.vehicleInterest}</span>
+                    </div>
+                  )}
+
+                  {/* Veículo vinculado do estoque */}
+                  {linkedVehicle && (
+                    <div className="mt-1 p-2 rounded-md bg-primary/5 border border-primary/20">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <Car className="h-3 w-3 text-primary" />
+                        <span className="text-[10px] text-primary uppercase tracking-wider font-semibold">Veículo Vinculado</span>
+                      </div>
+                      <p className="text-xs text-card-foreground font-medium">
+                        {linkedVehicle.brand} {linkedVehicle.model}
+                      </p>
+                      <div className="flex items-center gap-2 mt-0.5 text-[10px] text-muted-foreground">
+                        <span>{linkedVehicle.year}</span>
+                        <span>·</span>
+                        <span>{linkedVehicle.color}</span>
+                        <span>·</span>
+                        <span className="text-primary font-semibold">
+                          R$ {linkedVehicle.price?.toLocaleString("pt-BR")}
+                        </span>
+                      </div>
+                      {linkedVehicle.url && (
+                        <a
+                          href={linkedVehicle.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-1 text-[10px] text-primary hover:underline mt-1"
+                        >
+                          <ExternalLink className="h-2.5 w-2.5" />
+                          Ver anúncio
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {lead.hasTrade && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <ArrowLeftRight className="h-3 w-3" />
+                      <span>Troca: {lead.tradeVehicle} {lead.tradeYear}</span>
+                    </div>
+                  )}
+                  {lead.paymentMethod && (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <CreditCard className="h-3 w-3" />
+                      <span>{lead.paymentMethod} {lead.downPayment ? `- Entrada: ${lead.downPayment}` : ""}</span>
+                    </div>
+                  )}
+                  {(lead as any).notes && (
+                    <div className="mt-2 p-2 rounded-md bg-muted/50 border border-border">
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <FileText className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">Resumo</span>
+                      </div>
+                      <p className="text-xs text-card-foreground leading-relaxed whitespace-pre-wrap line-clamp-3">{(lead as any).notes}</p>
+                    </div>
+                  )}
+                  {lead.score !== null && lead.score !== undefined && lead.score > 0 && (
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground">Score</span>
+                        <span className="font-semibold text-primary">{lead.score}/100</span>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
