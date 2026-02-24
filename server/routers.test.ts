@@ -219,11 +219,21 @@ describe("settings.getPrompt", () => {
     const { ctx } = createAuthContext();
     const caller = appRouter.createCaller(ctx);
     const result = await caller.settings.getPrompt();
-    expect(result).toHaveProperty("prompt");
-    expect(result).toHaveProperty("isCustom");
-    expect(result).toHaveProperty("defaultPrompt");
-    expect(typeof result.prompt).toBe("string");
-    expect(result.prompt.length).toBeGreaterThan(0);
+    expect(result).toHaveProperty("corePrompt");
+    expect(result).toHaveProperty("commercialPrompt");
+    expect(result).toHaveProperty("personalityPrompt");
+    expect(result).toHaveProperty("coreIsCustom");
+    expect(result).toHaveProperty("commercialIsCustom");
+    expect(result).toHaveProperty("personalityIsCustom");
+    expect(result).toHaveProperty("defaultCorePrompt");
+    expect(result).toHaveProperty("defaultCommercialPrompt");
+    expect(result).toHaveProperty("defaultPersonalityPrompt");
+    expect(typeof result.corePrompt).toBe("string");
+    expect(result.corePrompt.length).toBeGreaterThan(0);
+    expect(typeof result.commercialPrompt).toBe("string");
+    expect(result.commercialPrompt.length).toBeGreaterThan(0);
+    expect(typeof result.personalityPrompt).toBe("string");
+    expect(result.personalityPrompt.length).toBeGreaterThan(0);
   });
 });
 
@@ -232,7 +242,7 @@ describe("settings.savePrompt", () => {
     const { ctx } = createAuthContext("user");
     const caller = appRouter.createCaller(ctx);
     await expect(
-      caller.settings.savePrompt({ prompt: "Novo prompt de teste para o agente de IA" })
+      caller.settings.savePrompt({ layer: "personality", prompt: "Novo prompt de teste para o agente de IA" })
     ).rejects.toThrow();
   });
 
@@ -240,8 +250,15 @@ describe("settings.savePrompt", () => {
     const { ctx } = createAuthContext("admin");
     const caller = appRouter.createCaller(ctx);
     await expect(
-      caller.settings.savePrompt({ prompt: "curto" })
+      caller.settings.savePrompt({ layer: "personality", prompt: "curto" })
     ).rejects.toThrow();
+  });
+
+  it("accepts valid layer and prompt for admin", async () => {
+    const { ctx } = createAuthContext("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.settings.savePrompt({ layer: "core", prompt: "Regras do sistema atualizadas pelo admin com mais de 10 caracteres" });
+    expect(result.success).toBe(true);
   });
 });
 
@@ -249,6 +266,14 @@ describe("settings.resetPrompt", () => {
   it("requires admin role", async () => {
     const { ctx } = createAuthContext("user");
     const caller = appRouter.createCaller(ctx);
-    await expect(caller.settings.resetPrompt()).rejects.toThrow();
+    await expect(caller.settings.resetPrompt({ layer: "personality" })).rejects.toThrow();
+  });
+
+  it("resets a specific layer for admin", async () => {
+    const { ctx } = createAuthContext("admin");
+    const caller = appRouter.createCaller(ctx);
+    const result = await caller.settings.resetPrompt({ layer: "core" });
+    expect(result.success).toBe(true);
+    expect(result.defaultPrompt.length).toBeGreaterThan(0);
   });
 });

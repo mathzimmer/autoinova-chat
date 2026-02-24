@@ -14,7 +14,7 @@ import {
   createActivityLog, listActivityLogs,
   createTeamNotification, listTeamNotifications, markNotificationsAsRead, getUnreadNotificationCount,
 } from "./db";
-import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt } from "./ai";
+import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
@@ -596,38 +596,72 @@ const webhookRouter = router({
 
 const settingsRouter = router({
   getPrompt: protectedProcedure.query(async () => {
-    // Return the personality prompt (editable layer) and the immutable layers for display
+    // Return all layers (current values from DB or defaults)
+    const corePrompt = await getCorePrompt();
+    const commercialPrompt = await getCommercialPrompt();
     const personalityPrompt = await getPersonalityPrompt();
+
+    // Check which layers are customized
+    const customCore = await getSetting("ai_core_prompt");
+    const customCommercial = await getSetting("ai_commercial_prompt");
     const customPersonality = await getSetting("ai_personality_prompt");
     const legacyPrompt = await getSetting("ai_prompt");
-    const isCustom = !!(customPersonality || legacyPrompt);
+
     return {
-      prompt: personalityPrompt,
-      isCustom,
-      defaultPrompt: DEFAULT_PERSONALITY_PROMPT,
-      corePrompt: CORE_PROMPT,
-      commercialPrompt: COMMERCIAL_PROMPT,
+      corePrompt,
+      commercialPrompt,
+      personalityPrompt,
+      coreIsCustom: !!(customCore && customCore.trim()),
+      commercialIsCustom: !!(customCommercial && customCommercial.trim()),
+      personalityIsCustom: !!(customPersonality && customPersonality.trim()) || !!(legacyPrompt && legacyPrompt.trim()),
+      defaultCorePrompt: CORE_PROMPT,
+      defaultCommercialPrompt: COMMERCIAL_PROMPT,
+      defaultPersonalityPrompt: DEFAULT_PERSONALITY_PROMPT,
     };
   }),
 
   savePrompt: adminProcedure
-    .input(z.object({ prompt: z.string().min(10) }))
+    .input(z.object({
+      layer: z.enum(["core", "commercial", "personality"]),
+      prompt: z.string().min(10),
+    }))
     .mutation(async ({ input, ctx }) => {
-      // Save to the new personality-only key
-      await upsertSetting("ai_personality_prompt", input.prompt, ctx.user.id);
-      // Clear legacy prompt if it exists (migration)
-      const legacyPrompt = await getSetting("ai_prompt");
-      if (legacyPrompt) {
-        await upsertSetting("ai_prompt", "", ctx.user.id);
+      const keyMap: Record<string, string> = {
+        core: "ai_core_prompt",
+        commercial: "ai_commercial_prompt",
+        personality: "ai_personality_prompt",
+      };
+      await upsertSetting(keyMap[input.layer], input.prompt, ctx.user.id);
+      // Clear legacy prompt if saving personality (migration)
+      if (input.layer === "personality") {
+        const legacyPrompt = await getSetting("ai_prompt");
+        if (legacyPrompt) {
+          await upsertSetting("ai_prompt", "", ctx.user.id);
+        }
       }
       return { success: true };
     }),
 
   resetPrompt: adminProcedure
-    .mutation(async ({ ctx }) => {
-      await upsertSetting("ai_personality_prompt", "", ctx.user.id);
-      await upsertSetting("ai_prompt", "", ctx.user.id);
-      return { success: true, defaultPrompt: DEFAULT_PERSONALITY_PROMPT };
+    .input(z.object({
+      layer: z.enum(["core", "commercial", "personality"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const keyMap: Record<string, string> = {
+        core: "ai_core_prompt",
+        commercial: "ai_commercial_prompt",
+        personality: "ai_personality_prompt",
+      };
+      const defaultMap: Record<string, string> = {
+        core: CORE_PROMPT,
+        commercial: COMMERCIAL_PROMPT,
+        personality: DEFAULT_PERSONALITY_PROMPT,
+      };
+      await upsertSetting(keyMap[input.layer], "", ctx.user.id);
+      if (input.layer === "personality") {
+        await upsertSetting("ai_prompt", "", ctx.user.id);
+      }
+      return { success: true, defaultPrompt: defaultMap[input.layer] };
     }),
 
   getAll: protectedProcedure.query(async () => {

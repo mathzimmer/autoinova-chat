@@ -169,13 +169,38 @@ INFORMAÇÕES DA LOJA:
 - Se o cliente pedir para falar com humano, diga que vai transferir`;
 
 /**
- * Build the full system prompt using the 4-layer architecture.
- * 
- * Order: CORE (immutable) → COMMERCIAL (immutable) → PERSONALITY (editable) → CONTEXT (dynamic)
- * 
- * The admin can only edit the PERSONALITY layer via the Settings page.
- * If a legacy monolithic prompt exists in the DB (key: "ai_prompt"), it is migrated
- * to the new "ai_personality_prompt" key on first read.
+ * Load a prompt layer from the DB with fallback to the default constant.
+ * DB keys: "ai_core_prompt", "ai_commercial_prompt", "ai_personality_prompt"
+ */
+async function loadPromptLayer(dbKey: string, defaultValue: string): Promise<string> {
+  try {
+    const saved = await getSetting(dbKey);
+    if (saved && saved.trim().length > 0) {
+      return saved;
+    }
+  } catch (e) {
+    console.error(`[AI] Failed to load prompt layer ${dbKey}, using default:`, e);
+  }
+  return defaultValue;
+}
+
+/**
+ * Get the Core prompt (Layer 1). Loads from DB if admin customized, otherwise returns default.
+ */
+export async function getCorePrompt(): Promise<string> {
+  return loadPromptLayer("ai_core_prompt", CORE_PROMPT);
+}
+
+/**
+ * Get the Commercial prompt (Layer 2). Loads from DB if admin customized, otherwise returns default.
+ */
+export async function getCommercialPrompt(): Promise<string> {
+  return loadPromptLayer("ai_commercial_prompt", COMMERCIAL_PROMPT);
+}
+
+/**
+ * Get the Personality prompt (Layer 3). Loads from DB if admin customized, otherwise returns default.
+ * Also handles migration from legacy monolithic prompt.
  */
 export async function getPersonalityPrompt(): Promise<string> {
   try {
@@ -186,12 +211,8 @@ export async function getPersonalityPrompt(): Promise<string> {
     }
 
     // Fallback: check for legacy monolithic prompt (old "ai_prompt" key)
-    // If it exists, the admin had customized the old prompt — we preserve their personality content
     const legacyPrompt = await getSetting("ai_prompt");
     if (legacyPrompt && legacyPrompt.trim().length > 0) {
-      // The legacy prompt is monolithic. We can't perfectly separate it,
-      // but we keep it as the personality layer for backward compatibility.
-      // The CORE and COMMERCIAL layers will be prepended automatically.
       console.log("[AI] Legacy monolithic prompt detected. Using as personality layer.");
       return legacyPrompt;
     }
@@ -206,8 +227,10 @@ export async function getPersonalityPrompt(): Promise<string> {
  * Returns the full assembled prompt (all 4 layers minus context).
  */
 export async function getSystemPrompt(): Promise<string> {
+  const core = await getCorePrompt();
+  const commercial = await getCommercialPrompt();
   const personality = await getPersonalityPrompt();
-  return `${CORE_PROMPT}\n\n${COMMERCIAL_PROMPT}\n\n${personality}`;
+  return `${core}\n\n${commercial}\n\n${personality}`;
 }
 
 // Keywords that indicate the customer is asking about a SPECIFIC vehicle
@@ -365,11 +388,11 @@ export async function processAIMessage(
 ): Promise<{ response: string; leadData: Record<string, unknown> | null }> {
   const startTime = Date.now();
 
-  // === LAYER 1: CORE (immutable) ===
-  // Already defined as CORE_PROMPT constant
+  // === LAYER 1: CORE (editable from DB, with safe default) ===
+  const corePrompt = await getCorePrompt();
 
-  // === LAYER 2: COMMERCIAL (immutable) ===
-  // Already defined as COMMERCIAL_PROMPT constant
+  // === LAYER 2: COMMERCIAL (editable from DB, with safe default) ===
+  const commercialPrompt = await getCommercialPrompt();
 
   // === LAYER 3: PERSONALITY (editable from DB) ===
   const personalityPrompt = await getPersonalityPrompt();
@@ -416,9 +439,9 @@ export async function processAIMessage(
   }
 
   // === ASSEMBLE FULL PROMPT (4 layers in order) ===
-  const fullSystemPrompt = `${CORE_PROMPT}\n\n${COMMERCIAL_PROMPT}\n\n${personalityPrompt}\n\n${contextBlock}`;
+  const fullSystemPrompt = `${corePrompt}\n\n${commercialPrompt}\n\n${personalityPrompt}\n\n${contextBlock}`;
 
-  console.log(`[AI] Prompt assembled: CORE(${CORE_PROMPT.length}ch) + COMMERCIAL(${COMMERCIAL_PROMPT.length}ch) + PERSONALITY(${personalityPrompt.length}ch) + CONTEXT(${contextBlock.length}ch) = ${fullSystemPrompt.length}ch total`);
+  console.log(`[AI] Prompt assembled: CORE(${corePrompt.length}ch) + COMMERCIAL(${commercialPrompt.length}ch) + PERSONALITY(${personalityPrompt.length}ch) + CONTEXT(${contextBlock.length}ch) = ${fullSystemPrompt.length}ch total`);
 
   // Build message history for context
   const llmMessages: LLMMessage[] = [

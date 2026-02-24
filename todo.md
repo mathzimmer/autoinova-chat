@@ -419,3 +419,14 @@
 - [x] Camada Personalidade editável com destaque visual (ring-1 ring-primary/20)
 - [x] settingsRouter atualizado: salva em "ai_personality_prompt", limpa legado na migração
 - [x] 88 testes passando
+
+## Feature - Rodada 28 (Todas as camadas do prompt editáveis pelo admin)
+- [x] Tornar camada Núcleo editável pelo admin (salvar/carregar do DB via ai_core_prompt)
+- [x] Tornar camada Motor Comercial editável pelo admin (salvar/carregar do DB via ai_commercial_prompt)
+- [x] Manter camada Personalidade editável (já funciona via ai_personality_prompt)
+- [x] Atualizar Settings.tsx para mostrar todas as camadas como editáveis com textarea individual
+- [x] Botão "Restaurar padrão" individual para cada camada
+- [x] Atualizar routers.ts: savePrompt e resetPrompt aceitam layer (core/commercial/personality)
+- [x] Atualizar ai.ts: getCorePrompt() e getCommercialPrompt() carregam do DB com fallback
+- [x] Camada 4 (Contexto) permanece automática (apenas informativa)
+- [x] 90 testes passando (incluindo novos testes para camadas)
