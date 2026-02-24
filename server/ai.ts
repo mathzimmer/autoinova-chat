@@ -51,7 +51,16 @@ REGRA 6 - LIMPEZA DE RESPOSTA:
 - Remova qualquer [ID:X], [FOTO], [IMAGEM] ou marcação técnica da resposta antes de enviar
 - A resposta deve ser apenas texto natural e legível para o cliente
 
-REGRA 7 - ÁUDIO:
+REGRA 7 - PROIBIÇÃO ABSOLUTA DE INVENTAR VEÍCULOS:
+- VOCÊ SÓ PODE APRESENTAR veículos que foram retornados pela ferramenta buscar_veiculos
+- PROIBIDO inventar nomes de veículos, preços, quilometragens, cores, anos ou links
+- PROIBIDO criar URLs que não vieram da busca (ex: https://autoinovars.com.br/carros/...)
+- Se o cliente pedir mais opções, chame buscar_veiculos com pagina: 2 (ou 3, 4...) usando os MESMOS filtros
+- Se a busca retornar "Não há mais veículos", diga ao cliente que já mostrou todas as opções disponíveis
+- NUNCA diga "temos X opções" se não chamou buscar_veiculos primeiro
+- Cada veículo apresentado DEVE ter vindo de um resultado de buscar_veiculos
+
+REGRA 8 - ÁUDIO:
 - Áudios são transcritos automaticamente. Trate como texto normal.
 - NUNCA mencione que é áudio ou transcrição.`;
 
@@ -71,6 +80,11 @@ BUSCA DE VEÍCULOS:
 - REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
 - Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
 - PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta.
+
+PAGINAÇÃO DE RESULTADOS:
+- Quando o cliente pedir "mais opções", "ver os outros", "próxima página": chame buscar_veiculos com pagina: 2 (ou 3, 4...) e os MESMOS filtros da busca anterior
+- NUNCA invente veículos para completar uma lista. Se a busca retornar que não há mais, diga ao cliente que já mostrou todos
+- Cada página mostra até 10 veículos. Se o resultado diz "Restam mais X", informe ao cliente e ofereça ver mais
 
 FLUXO DE QUALIFICAÇÃO:
 - Confirmar disponibilidade do veículo quando solicitado
@@ -137,6 +151,17 @@ REGRA NÚMERO 4 - BUSCA DE VEÍCULOS:
 - REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
 - Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
 - PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta. O cliente recebe UMA mensagem com os resultados, não duas.
+- Quando o cliente pedir "mais opções", "ver os outros", "próxima página": chame buscar_veiculos com pagina: 2 (ou 3, 4...) e os MESMOS filtros da busca anterior
+- NUNCA invente veículos para completar uma lista. Se a busca retornar que não há mais, diga ao cliente que já mostrou todos
+
+REGRA NÚMERO 4B - PROIBIÇÃO ABSOLUTA DE INVENTAR VEÍCULOS:
+- VOCÊ SÓ PODE APRESENTAR veículos que foram retornados pela ferramenta buscar_veiculos
+- PROIBIDO inventar nomes de veículos, preços, quilometragens, cores, anos ou links
+- PROIBIDO criar URLs que não vieram da busca (ex: https://autoinovars.com.br/carros/...)
+- Se o cliente pedir mais opções, chame buscar_veiculos com pagina: 2 usando os MESMOS filtros
+- Se a busca retornar "Não há mais veículos", diga ao cliente que já mostrou todas as opções
+- NUNCA diga "temos X opções" se não chamou buscar_veiculos primeiro
+- Cada veículo apresentado DEVE ter vindo de um resultado de buscar_veiculos
 
 REGRA NÚMERO 5 - ATUALIZAÇÃO DO LEAD:
 - Chame atualizar_lead SEMPRE que coletar informação nova
@@ -326,6 +351,7 @@ const TOOLS: Tool[] = [
           ano_min: { type: "number", description: "Ano mínimo" },
           ano_max: { type: "number", description: "Ano máximo" },
           cor: { type: "string", description: "Cor do veículo" },
+          pagina: { type: "number", description: "Número da página (começa em 1). Use para ver mais resultados quando o cliente pedir 'mais opções'. OBRIGATÓRIO manter os mesmos filtros da busca anterior." },
         },
         required: [],
         additionalProperties: false,
@@ -563,6 +589,7 @@ export async function processAIMessage(
               yearMin: args.ano_min,
               yearMax: args.ano_max,
               color: args.cor,
+              pagina: args.pagina,
             });
             console.log(`[AI] buscar_veiculos: ${toolResult.length} chars`);
 

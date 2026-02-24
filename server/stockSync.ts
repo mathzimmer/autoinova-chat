@@ -243,6 +243,7 @@ async function searchVehiclesForAI(filters: {
   yearMin?: number;
   yearMax?: number;
   color?: string;
+  pagina?: number;
 }): Promise<string> {
   const db = await getDb();
   if (!db) return "Estoque indisponível no momento.";
@@ -314,8 +315,18 @@ async function searchVehiclesForAI(filters: {
     return "Nenhum veículo encontrado com esses critérios. Tente ampliar a busca.";
   }
 
-  // Limit to top 5 results for clearer presentation, sorted by price
-  const sorted = allVehicles.sort((a, b) => a.price - b.price).slice(0, 5);
+  // Sort by price
+  const allSorted = allVehicles.sort((a, b) => a.price - b.price);
+  
+  // Pagination: 10 per page
+  const PAGE_SIZE = 10;
+  const page = Math.max(1, filters.pagina || 1);
+  const startIndex = (page - 1) * PAGE_SIZE;
+  const sorted = allSorted.slice(startIndex, startIndex + PAGE_SIZE);
+  
+  if (sorted.length === 0) {
+    return `Não há mais veículos para mostrar. Já foram exibidos todos os ${allVehicles.length} veículos disponíveis com esses critérios.`;
+  }
 
   const vehicleList = sorted.map((v, i) => {
     const priceStr = v.promotionPrice && v.promotionPrice < v.price
@@ -325,12 +336,15 @@ async function searchVehiclesForAI(filters: {
     const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
     
     // Compact format to prevent AI from inventing details
-    return `Opção ${i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${priceStr} - ${v.url || ""}`;
+    return `Opção ${startIndex + i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${priceStr} - ${v.url || ""}`;
   }).join("\n");
 
-  const moreText = allVehicles.length > 5 ? `\n\n(Existem mais ${allVehicles.length - 5} veículos nessa faixa. Pergunte ao cliente se quer ver mais ou filtrar por marca/modelo.)` : "";
+  const remaining = allVehicles.length - (startIndex + sorted.length);
+  const moreText = remaining > 0 
+    ? `\n\n(Mostrando página ${page}. Restam mais ${remaining} veículos. Para ver mais, chame buscar_veiculos novamente com pagina: ${page + 1} e os MESMOS filtros.)` 
+    : `\n\n(Estes são TODOS os veículos disponíveis com esses critérios. Não há mais opções.)`;
 
-  return `RESULTADOS DA BUSCA (${allVehicles.length} veículos encontrados, mostrando ${sorted.length}):\n\nIMPORTANTE: Apresente EXATAMENTE os veículos abaixo. NÃO invente ou modifique nomes, preços ou links.\n\n${vehicleList}${moreText}`;
+  return `RESULTADOS DA BUSCA (${allVehicles.length} veículos no total, mostrando ${sorted.length} - página ${page}):\n\nIMPORTANTE: Apresente EXATAMENTE os veículos abaixo ao cliente. PROIBIDO inventar, modificar nomes, preços, links ou adicionar veículos que NÃO estão nesta lista. Se o cliente pedir mais opções, chame buscar_veiculos com pagina: ${page + 1}.\n\n${vehicleList}${moreText}`;
 }
 
 // Auto-sync interval (every 30 minutes)

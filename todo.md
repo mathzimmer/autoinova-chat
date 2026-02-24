@@ -430,3 +430,13 @@
 - [x] Atualizar ai.ts: getCorePrompt() e getCommercialPrompt() carregam do DB com fallback
 - [x] Camada 4 (Contexto) permanece automática (apenas informativa)
 - [x] 90 testes passando (incluindo novos testes para camadas)
+
+## Bugs - Rodada 29 (IA inventando veículos e links)
+- [x] IA inventa veículos que não existem no estoque - CORRIGIDO
+- [x] IA inventa links/URLs que não existem - CORRIGIDO
+- [x] Paginação adicionada: buscar_veiculos aceita pagina (1, 2, 3...) com 10 por página
+- [x] REGRA 7 (CORE): Proibição absoluta de inventar veículos adicionada
+- [x] PAGINAÇÃO (COMMERCIAL): Instruções para usar pagina: 2 quando cliente pedir mais
+- [x] DEFAULT_SYSTEM_PROMPT legado: Regra 4B anti-invenção adicionada
+- [x] searchVehiclesForAI: paginação com offset, 10 por página, mensagens claras
+- [x] 90 testes passando
