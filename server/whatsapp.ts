@@ -228,9 +228,97 @@ async function sendReaction(to: string, messageId: string, emoji: string): Promi
 }
 
 /**
- * Send an audio message to a WhatsApp number
+ * Build multipart/form-data body manually (no external dependency needed)
  */
-async function sendAudioMessage(to: string, audioUrl: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+function buildMultipartFormData(fields: Array<{ name: string; value: string | Buffer; filename?: string; contentType?: string }>): { body: Buffer; boundary: string } {
+  const boundary = `----WebKitFormBoundary${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`;
+  const parts: Buffer[] = [];
+
+  for (const field of fields) {
+    let header = `--${boundary}\r\n`;
+    if (field.filename) {
+      header += `Content-Disposition: form-data; name="${field.name}"; filename="${field.filename}"\r\n`;
+      header += `Content-Type: ${field.contentType || "application/octet-stream"}\r\n`;
+    } else {
+      header += `Content-Disposition: form-data; name="${field.name}"\r\n`;
+    }
+    header += `\r\n`;
+    parts.push(Buffer.from(header, "utf-8"));
+    parts.push(typeof field.value === "string" ? Buffer.from(field.value, "utf-8") : field.value);
+    parts.push(Buffer.from("\r\n", "utf-8"));
+  }
+
+  parts.push(Buffer.from(`--${boundary}--\r\n`, "utf-8"));
+  return { body: Buffer.concat(parts), boundary };
+}
+
+/**
+ * Upload media to WhatsApp's media API and get a media_id.
+ * This is the recommended approach instead of using hosted URLs (link).
+ * Uploaded media persists for 30 days.
+ */
+async function uploadMedia(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string } | null> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. Cannot upload media.");
+    return null;
+  }
+
+  try {
+    console.log(`[WhatsApp] Uploading media: ${filename} (${mimeType}, ${buffer.length} bytes)`);
+
+    const { body, boundary } = buildMultipartFormData([
+      { name: "messaging_product", value: "whatsapp" },
+      { name: "type", value: mimeType },
+      { name: "file", value: buffer, filename, contentType: mimeType },
+    ]);
+
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/media`,
+      body,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        },
+        maxContentLength: 16 * 1024 * 1024,
+        maxBodyLength: 16 * 1024 * 1024,
+      }
+    );
+
+    const mediaId = response.data?.id;
+    if (mediaId) {
+      console.log(`[WhatsApp] Media uploaded successfully. Media ID: ${mediaId}`);
+      return { mediaId };
+    } else {
+      console.error("[WhatsApp] Upload returned no media ID:", response.data);
+      return null;
+    }
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to upload media:`, errMsg);
+    if (error?.response?.data) {
+      console.error(`[WhatsApp] Upload error details:`, JSON.stringify(error.response.data));
+    }
+    return null;
+  }
+}
+
+/**
+ * Send an audio message to a WhatsApp number.
+ * 
+ * Strategy:
+ * 1. If audioBuffer is provided: upload to WhatsApp media API first, then send using media_id (recommended)
+ * 2. Fallback: send using hosted URL link (not recommended by WhatsApp)
+ * 
+ * The `voice: true` flag makes it appear as a voice message with waveform and auto-download.
+ */
+async function sendAudioMessage(
+  to: string, 
+  audioUrl: string, 
+  audioBuffer?: Buffer
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const { accessToken, phoneNumberId } = getConfig();
 
   if (!accessToken || !phoneNumberId) {
@@ -239,6 +327,35 @@ async function sendAudioMessage(to: string, audioUrl: string): Promise<{ success
   }
 
   try {
+    let audioPayload: any;
+
+    // Strategy 1: Upload to WhatsApp media API (recommended)
+    if (audioBuffer) {
+      console.log(`[WhatsApp] Attempting to upload audio to WhatsApp media API (${audioBuffer.length} bytes)`);
+      const uploadResult = await uploadMedia(audioBuffer, "audio/ogg", "voice-message.ogg");
+      
+      if (uploadResult) {
+        audioPayload = {
+          id: uploadResult.mediaId,
+          voice: true, // Display as voice message with waveform
+        };
+        console.log(`[WhatsApp] Using uploaded media ID: ${uploadResult.mediaId}`);
+      } else {
+        console.warn(`[WhatsApp] Upload failed, falling back to link method`);
+        audioPayload = {
+          link: audioUrl,
+          voice: true,
+        };
+      }
+    } else {
+      // Strategy 2: Use hosted URL (fallback)
+      console.log(`[WhatsApp] Using link method (no buffer provided): ${audioUrl}`);
+      audioPayload = {
+        link: audioUrl,
+        voice: true,
+      };
+    }
+
     const response = await axios.post(
       `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
       {
@@ -246,9 +363,7 @@ async function sendAudioMessage(to: string, audioUrl: string): Promise<{ success
         recipient_type: "individual",
         to: to,
         type: "audio",
-        audio: {
-          link: audioUrl,
-        },
+        audio: audioPayload,
       },
       {
         headers: {
@@ -264,6 +379,9 @@ async function sendAudioMessage(to: string, audioUrl: string): Promise<{ success
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;
     console.error(`[WhatsApp] Failed to send audio to ${to}:`, errMsg);
+    if (error?.response?.data) {
+      console.error(`[WhatsApp] Error details:`, JSON.stringify(error.response.data));
+    }
     return { success: false, error: errMsg };
   }
 }

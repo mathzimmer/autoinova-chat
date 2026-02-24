@@ -218,7 +218,10 @@ const messageRouter = router({
       // === AUDIO CONVERSION FOR WHATSAPP ===
       // RULE: NEVER send webm to WhatsApp. Always convert to ogg first.
       // If conversion fails, audio is NOT sent to WhatsApp (but still saved in chat).
+      // Strategy: Upload OGG directly to WhatsApp Media API (recommended by Meta)
+      // instead of using hosted URL links (which can be inaccessible).
       let whatsappAudioUrl: string | null = null;
+      let whatsappAudioBuffer: Buffer | null = null;
       let audioConversionFailed = false;
 
       if (input.mediaType === "audio" && needsConversionForWhatsApp(input.mimeType)) {
@@ -228,8 +231,9 @@ const messageRouter = router({
 
         try {
           const oggBuffer = await convertWebmToOgg(buffer);
+          whatsappAudioBuffer = oggBuffer;
           
-          // Upload the converted ogg version for WhatsApp
+          // Also upload to S3 for backup/reference
           const oggRandomSuffix = crypto.randomBytes(8).toString("hex");
           const oggFileKey = `chat-media/${ctx.user.id}/${Date.now()}-${oggRandomSuffix}.ogg`;
           const { url: oggUrl } = await storagePut(oggFileKey, oggBuffer, "audio/ogg");
@@ -238,12 +242,17 @@ const messageRouter = router({
           console.log(`[SendMedia] ✅ Audio converted successfully`);
           console.log(`[SendMedia]   Original: ${input.mimeType} (${buffer.length} bytes)`);
           console.log(`[SendMedia]   Converted: audio/ogg (${oggBuffer.length} bytes)`);
-          console.log(`[SendMedia]   URL for WhatsApp: ${oggUrl}`);
+          console.log(`[SendMedia]   S3 backup URL: ${oggUrl}`);
+          console.log(`[SendMedia]   Will upload directly to WhatsApp Media API`);
         } catch (err: any) {
           audioConversionFailed = true;
           console.error(`[SendMedia] ❌ Audio conversion FAILED: ${err.message}`);
           console.error(`[SendMedia] ❌ Audio will NOT be sent to WhatsApp (webm is not accepted)`);
         }
+      } else if (input.mediaType === "audio") {
+        // Audio is already in a WhatsApp-compatible format, keep the buffer for direct upload
+        whatsappAudioBuffer = buffer;
+        console.log(`[SendMedia] Audio already in compatible format: ${input.mimeType}`);
       }
 
       // Upload original file to S3 (for chat display in the CRM)
@@ -299,7 +308,8 @@ const messageRouter = router({
               console.log(`[SendMedia]   MIME: ${finalMime}`);
               console.log(`[SendMedia]   Was converted: ${!!whatsappAudioUrl}`);
 
-              sendAudioMessage(conv.phone, audioUrlForWhatsApp).then((result) => {
+              // Pass the buffer for direct upload to WhatsApp Media API (recommended)
+              sendAudioMessage(conv.phone, audioUrlForWhatsApp, whatsappAudioBuffer || undefined).then((result) => {
                 console.log(`[SendMedia] ✅ WhatsApp audio result:`, JSON.stringify(result));
               }).catch((err) => {
                 console.error(`[WhatsApp] ❌ Failed to send agent audio:`, err);

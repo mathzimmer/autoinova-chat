@@ -394,3 +394,13 @@
 - [x] Corrigido: vendor string compatível (Lavf61.1.100)
 - [x] OGG gerado validado pelo ffmpeg: Duration 2.01s, opus 48kHz mono
 - [x] 88 testes passando
+
+## Bugs - Rodada 26 (Áudio no WhatsApp diz "não disponível")
+- [x] Cliente recebe áudio no WhatsApp mas diz "não está mais disponível, peça para reenviar"
+- [x] Causa: WhatsApp não conseguia baixar o arquivo da URL do S3 (link hospedado)
+- [x] Solução: Upload direto para WhatsApp Media API (recomendado pela Meta)
+- [x] uploadMedia() criada em whatsapp.ts com multipart/form-data manual (sem dependência extra)
+- [x] sendAudioMessage agora aceita audioBuffer para upload direto + voice:true
+- [x] sendMedia mutation passa o buffer OGG convertido para sendAudioMessage
+- [x] Fallback para link hospedado se upload falhar
+- [x] 88 testes passando
