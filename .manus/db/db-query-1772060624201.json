@@ -1,0 +1,78 @@
+{
+  "query": "SELECT category, COUNT(*) as count FROM vehicles WHERE available = true GROUP BY category ORDER BY count DESC; SELECT transmission, COUNT(*) as count FROM vehicles WHERE available = true GROUP BY transmission ORDER BY count DESC;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT category, COUNT(*) as count FROM vehicles WHERE available = true GROUP BY category ORDER BY count DESC; SELECT transmission, COUNT(*) as count FROM vehicles WHERE available = true GROUP BY transmission ORDER BY count DESC;",
+  "rows": [
+    {
+      "category": "SUV / Utilitário Esportivo",
+      "count": "35"
+    },
+    {
+      "category": "Hatch",
+      "count": "20"
+    },
+    {
+      "category": "Picapes",
+      "count": "19"
+    },
+    {
+      "category": "Sedã",
+      "count": "18"
+    },
+    {
+      "category": "NULL",
+      "count": "3"
+    },
+    {
+      "category": "Esportiva",
+      "count": "3"
+    },
+    {
+      "category": "Wagon/Perua",
+      "count": "2"
+    },
+    {
+      "category": "Van/Utilitário",
+      "count": "2"
+    },
+    {
+      "category": "Street",
+      "count": "2"
+    },
+    {
+      "category": "Trail",
+      "count": "2"
+    },
+    {
+      "category": "Naked",
+      "count": "1"
+    },
+    {
+      "category": "Touring",
+      "count": "1"
+    },
+    {
+      "category": "Custom",
+      "count": "1"
+    },
+    {
+      "category": "transmission",
+      "count": "count"
+    },
+    {
+      "category": "automatic",
+      "count": "56"
+    },
+    {
+      "category": "manual",
+      "count": "52"
+    },
+    {
+      "category": "automatizado",
+      "count": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "category\tcount\nSUV / Utilitário Esportivo\t35\nHatch\t20\nPicapes\t19\nSedã\t18\nNULL\t3\nEsportiva\t3\nWagon/Perua\t2\nVan/Utilitário\t2\nStreet\t2\nTrail\t2\nNaked\t1\nTouring\t1\nCustom\t1\ntransmission\tcount\nautomatic\t56\nmanual\t52\nautomatizado\t1\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

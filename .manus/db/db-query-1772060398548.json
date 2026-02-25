@@ -1,0 +1,62 @@
+{
+  "query": "SELECT category, COUNT(*) as cnt FROM vehicles WHERE available = 1 GROUP BY category ORDER BY cnt DESC",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT category, COUNT(*) as cnt FROM vehicles WHERE available = 1 GROUP BY category ORDER BY cnt DESC",
+  "rows": [
+    {
+      "category": "SUV / Utilitário Esportivo",
+      "cnt": "35"
+    },
+    {
+      "category": "Hatch",
+      "cnt": "20"
+    },
+    {
+      "category": "Picapes",
+      "cnt": "19"
+    },
+    {
+      "category": "Sedã",
+      "cnt": "18"
+    },
+    {
+      "category": "NULL",
+      "cnt": "3"
+    },
+    {
+      "category": "Esportiva",
+      "cnt": "3"
+    },
+    {
+      "category": "Trail",
+      "cnt": "2"
+    },
+    {
+      "category": "Van/Utilitário",
+      "cnt": "2"
+    },
+    {
+      "category": "Street",
+      "cnt": "2"
+    },
+    {
+      "category": "Wagon/Perua",
+      "cnt": "2"
+    },
+    {
+      "category": "Touring",
+      "cnt": "1"
+    },
+    {
+      "category": "Custom",
+      "cnt": "1"
+    },
+    {
+      "category": "Naked",
+      "cnt": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "category\tcnt\nSUV / Utilitário Esportivo\t35\nHatch\t20\nPicapes\t19\nSedã\t18\nNULL\t3\nEsportiva\t3\nTrail\t2\nVan/Utilitário\t2\nStreet\t2\nWagon/Perua\t2\nTouring\t1\nCustom\t1\nNaked\t1\n",
+  "stderr": "",
+  "execution_time_ms": 56
+}

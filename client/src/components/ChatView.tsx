@@ -82,12 +82,46 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     };
   }, [socket, refetchMessages]);
 
-  // Auto-scroll to bottom
+  // Smart auto-scroll: only scroll to bottom if user is already near bottom
+  const [isNearBottom, setIsNearBottom] = useState(true);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const prevMsgCountRef = useRef(0);
+
+  // Track scroll position to detect manual scrolling
+  const handleScroll = useCallback(() => {
+    if (!scrollRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
+    const threshold = 100; // pixels from bottom
+    const nearBottom = scrollHeight - scrollTop - clientHeight < threshold;
+    setIsNearBottom(nearBottom);
+    if (nearBottom) {
+      setHasNewMessages(false);
+    }
+  }, []);
+
+  // Auto-scroll to bottom only when near bottom or on initial load
   useEffect(() => {
+    if (!msgs || !scrollRef.current) return;
+    const msgCount = msgs.length;
+    const isNewMessage = msgCount > prevMsgCountRef.current;
+    prevMsgCountRef.current = msgCount;
+
+    if (isNearBottom || !isNewMessage) {
+      // User is near bottom or this is initial load/same data - scroll to bottom
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    } else if (isNewMessage) {
+      // User scrolled up and new message arrived - show indicator
+      setHasNewMessages(true);
+    }
+  }, [msgs, isNearBottom]);
+
+  // Scroll to bottom when clicking the "new messages" indicator
+  const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setHasNewMessages(false);
     }
-  }, [msgs]);
+  }, []);
 
   // Mark as read on open
   useEffect(() => {
@@ -350,7 +384,8 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="relative flex-1">
+      <div ref={scrollRef} onScroll={handleScroll} className="absolute inset-0 overflow-y-auto p-4 space-y-3">
         {!msgs || msgs.length === 0 ? (
           <div className="text-center py-16 text-muted-foreground">
             <p className="text-sm">Nenhuma mensagem ainda</p>
@@ -370,6 +405,17 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             <span>{typingUser} est digitando...</span>
           </div>
         )}
+      </div>
+      {/* New messages indicator */}
+      {hasNewMessages && (
+        <button
+          onClick={scrollToBottom}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 bg-primary text-primary-foreground px-4 py-1.5 rounded-full text-xs font-medium shadow-lg hover:bg-primary/90 transition-all animate-in fade-in slide-in-from-bottom-2 flex items-center gap-1.5"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          Novas mensagens
+        </button>
+      )}
       </div>
 
       {/* Image Preview - Multiple images */}

@@ -331,16 +331,85 @@ async function searchVehiclesForAI(filters: {
     allVehicles = allVehicles.filter(v => v.price >= filters.minPrice!);
   }
   if (filters.category) {
-    const catLower = filters.category.toLowerCase();
-    allVehicles = allVehicles.filter(v => v.category?.toLowerCase().includes(catLower));
+    const catLower = filters.category.toLowerCase().trim();
+    // Map common user terms to actual DB category values
+    const categoryMap: Record<string, string[]> = {
+      // Picapes
+      "picape": ["picapes"],
+      "picapes": ["picapes"],
+      "picap": ["picapes"],
+      "camionete": ["picapes"],
+      "camioneta": ["picapes"],
+      "caminhonete": ["picapes"],
+      "pickup": ["picapes"],
+      "pick-up": ["picapes"],
+      "cabine dupla": ["picapes"],
+      // Hatch
+      "hatch": ["hatch"],
+      "hatchback": ["hatch"],
+      "compacto": ["hatch"],
+      // Sedan
+      "sedan": ["sedã", "sedan"],
+      "sedã": ["sedã", "sedan"],
+      "seda": ["sedã", "sedan"],
+      // SUV
+      "suv": ["suv / utilitário esportivo", "suv"],
+      "utilitario": ["suv / utilitário esportivo", "van/utilitário"],
+      "utilitário": ["suv / utilitário esportivo", "van/utilitário"],
+      // Van
+      "van": ["van/utilitário"],
+      // Wagon
+      "wagon": ["wagon/perua"],
+      "perua": ["wagon/perua"],
+      // Esportivo
+      "esportivo": ["esportiva"],
+      "esportiva": ["esportiva"],
+      "sport": ["esportiva"],
+    };
+    
+    const mappedCategories = categoryMap[catLower] || null;
+    if (mappedCategories) {
+      allVehicles = allVehicles.filter(v => {
+        const vCat = v.category?.toLowerCase() || "";
+        return mappedCategories.some(mc => vCat.includes(mc));
+      });
+      console.log(`[StockSync] Category mapped: "${catLower}" → [${mappedCategories.join(", ")}] → ${allVehicles.length} results`);
+    } else {
+      // Fallback: direct includes match
+      allVehicles = allVehicles.filter(v => v.category?.toLowerCase().includes(catLower));
+      console.log(`[StockSync] Category direct match: "${catLower}" → ${allVehicles.length} results`);
+    }
   }
   if (filters.fuel) {
     const fuelLower = filters.fuel.toLowerCase();
     allVehicles = allVehicles.filter(v => v.fuel?.toLowerCase().includes(fuelLower));
   }
   if (filters.transmission) {
-    const transLower = filters.transmission.toLowerCase();
-    allVehicles = allVehicles.filter(v => v.transmission?.toLowerCase().includes(transLower));
+    const transLower = filters.transmission.toLowerCase().trim();
+    // Map common user terms to actual DB transmission values
+    const transmissionMap: Record<string, string[]> = {
+      "automatico": ["automatic", "automatizado"],
+      "automático": ["automatic", "automatizado"],
+      "automatic": ["automatic", "automatizado"],
+      "auto": ["automatic", "automatizado"],
+      "automatizado": ["automatizado", "automatic"],
+      "manual": ["manual"],
+      "mecanico": ["manual"],
+      "mecânico": ["manual"],
+    };
+    
+    const mappedTransmissions = transmissionMap[transLower] || null;
+    if (mappedTransmissions) {
+      allVehicles = allVehicles.filter(v => {
+        const vTrans = v.transmission?.toLowerCase() || "";
+        return mappedTransmissions.some(mt => vTrans.includes(mt));
+      });
+      console.log(`[StockSync] Transmission mapped: "${transLower}" → [${mappedTransmissions.join(", ")}] → ${allVehicles.length} results`);
+    } else {
+      // Fallback: direct includes match
+      allVehicles = allVehicles.filter(v => v.transmission?.toLowerCase().includes(transLower));
+      console.log(`[StockSync] Transmission direct match: "${transLower}" → ${allVehicles.length} results`);
+    }
   }
   if (filters.maxMileage) {
     allVehicles = allVehicles.filter(v => v.mileage && v.mileage <= filters.maxMileage!);
@@ -398,7 +467,9 @@ async function searchVehiclesForAI(filters: {
     const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
     
     // Compact format to prevent AI from inventing details
-    return `Opção ${startIndex + i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${priceStr} - ${v.url || ""}`;
+    const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
+    const catStr = v.category || "";
+    return `Opção ${startIndex + i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${transStr} - ${catStr} - ${priceStr} - ${v.url || ""}`;
   }).join("\n");
 
   const remaining = allVehicles.length - (startIndex + sorted.length);

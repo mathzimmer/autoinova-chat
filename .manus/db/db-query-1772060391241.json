@@ -1,0 +1,61 @@
+{
+  "query": "SELECT DISTINCT category FROM vehicles WHERE available = 1 ORDER BY category; SELECT DISTINCT transmission FROM vehicles WHERE available = 1 ORDER BY transmission;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT DISTINCT category FROM vehicles WHERE available = 1 ORDER BY category; SELECT DISTINCT transmission FROM vehicles WHERE available = 1 ORDER BY transmission;",
+  "rows": [
+    {
+      "category": "NULL"
+    },
+    {
+      "category": "Custom"
+    },
+    {
+      "category": "Esportiva"
+    },
+    {
+      "category": "Hatch"
+    },
+    {
+      "category": "Naked"
+    },
+    {
+      "category": "Picapes"
+    },
+    {
+      "category": "Sedã"
+    },
+    {
+      "category": "Street"
+    },
+    {
+      "category": "SUV / Utilitário Esportivo"
+    },
+    {
+      "category": "Touring"
+    },
+    {
+      "category": "Trail"
+    },
+    {
+      "category": "Van/Utilitário"
+    },
+    {
+      "category": "Wagon/Perua"
+    },
+    {
+      "category": "transmission"
+    },
+    {
+      "category": "automatic"
+    },
+    {
+      "category": "automatizado"
+    },
+    {
+      "category": "manual"
+    }
+  ],
+  "messages": [],
+  "stdout": "category\nNULL\nCustom\nEsportiva\nHatch\nNaked\nPicapes\nSedã\nStreet\nSUV / Utilitário Esportivo\nTouring\nTrail\nVan/Utilitário\nWagon/Perua\ntransmission\nautomatic\nautomatizado\nmanual\n",
+  "stderr": "",
+  "execution_time_ms": 97
+}

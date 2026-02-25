@@ -96,6 +96,25 @@ PAGINAÇÃO DE RESULTADOS:
 - NUNCA invente veículos para completar uma lista. Se a busca retornar que não há mais, diga ao cliente que já mostrou todos
 - Cada página mostra até 10 veículos. Se o resultado diz "Restam mais X", informe ao cliente e ofereça ver mais
 
+FILTROS DE CATEGORIA E CÂMBIO (OBRIGATÓRIO):
+- Quando o cliente pedir por TIPO de veículo, use o parâmetro "categoria" na busca:
+  "picape", "camionete", "pickup" → categoria: "picape"
+  "hatch", "hatchback", "compacto" → categoria: "hatch"
+  "sedan", "sedã" → categoria: "sedan"
+  "suv", "utilitário" → categoria: "suv"
+  "van" → categoria: "van"
+  "perua", "wagon" → categoria: "wagon"
+- Quando o cliente pedir por TIPO DE CÂMBIO, use o parâmetro "cambio" na busca:
+  "automático", "câmbio automático" → cambio: "automatico"
+  "manual", "câmbio manual" → cambio: "manual"
+- EXEMPLOS DE USO CORRETO:
+  "picape até 80 mil" → buscar_veiculos(categoria: "picape", preco_max: 80000)
+  "carro hatch automático" → buscar_veiculos(categoria: "hatch", cambio: "automatico")
+  "sedan manual até 50 mil" → buscar_veiculos(categoria: "sedan", cambio: "manual", preco_max: 50000)
+  "suv diesel" → buscar_veiculos(categoria: "suv", combustivel: "diesel")
+  "hilux automática" → buscar_veiculos(modelo: "hilux", cambio: "automatico")
+- NUNCA ignore o tipo de veículo ou câmbio que o cliente pediu. Se ele pediu "picape", use categoria: "picape".
+
 FLUXO DE QUALIFICAÇÃO:
 - Confirmar disponibilidade do veículo quando solicitado
 - Perguntar sobre troca quando relevante (não forçar)
@@ -173,6 +192,16 @@ SIMPLIFICAÇÃO DA BUSCA:
 - PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta. O cliente recebe UMA mensagem com os resultados, não duas.
 - Quando o cliente pedir "mais opções", "ver os outros", "próxima página": chame buscar_veiculos com pagina: 2 (ou 3, 4...) e os MESMOS filtros da busca anterior
 - NUNCA invente veículos para completar uma lista. Se a busca retornar que não há mais, diga ao cliente que já mostrou todos
+
+FILTROS DE CATEGORIA E CÂMBIO:
+- "picape"/"camionete" → categoria: "picape"
+- "hatch" → categoria: "hatch"
+- "sedan"/"sedã" → categoria: "sedan"
+- "suv" → categoria: "suv"
+- "automático" → cambio: "automatico"
+- "manual" → cambio: "manual"
+- Exemplo: "picape até 80 mil" → buscar_veiculos(categoria: "picape", preco_max: 80000)
+- Exemplo: "hatch automático" → buscar_veiculos(categoria: "hatch", cambio: "automatico")
 
 REGRA NÚMERO 4B - PROIBIÇÃO ABSOLUTA DE INVENTAR VEÍCULOS:
 - VOCÊ SÓ PODE APRESENTAR veículos que foram retornados pela ferramenta buscar_veiculos
@@ -356,17 +385,17 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque REAL da Auto Inova. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. Cada resultado inclui [ID:X] para vincular ao lead.",
+      description: "Busca veículos disponíveis no estoque REAL da Auto Inova. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. IMPORTANTE: use 'categoria' para filtrar por tipo (picape, hatch, sedan, SUV) e 'cambio' para filtrar por transmissão (automatico, manual). Cada resultado inclui [ID:X] para vincular ao lead.",
       parameters: {
         type: "object",
         properties: {
           marca: { type: "string", description: "Marca do veículo (ex: Toyota, Honda, Volkswagen)" },
-          modelo: { type: "string", description: "Modelo do veículo (ex: Corolla, Civic, Gol)" },
+          modelo: { type: "string", description: "Modelo do veículo (ex: Corolla, Civic, Gol). Use termos simples e curtos." },
           preco_max: { type: "number", description: "Preço máximo em reais" },
           preco_min: { type: "number", description: "Preço mínimo em reais" },
-          categoria: { type: "string", description: "Categoria: SUV, Sedan, Hatch, Picapes, etc" },
+          categoria: { type: "string", description: "Tipo/categoria do veículo. Valores aceitos: picape, hatch, sedan, suv, van, wagon, esportivo. OBRIGATÓRIO quando o cliente pedir por tipo de veículo (ex: 'quero uma picape', 'carro hatch', 'sedan completo')." },
           combustivel: { type: "string", description: "Combustível: flex, gasolina, diesel, elétrico, híbrido" },
-          cambio: { type: "string", description: "Câmbio: manual ou automatico" },
+          cambio: { type: "string", description: "Câmbio/transmissão. Valores aceitos: automatico, manual. OBRIGATÓRIO quando o cliente mencionar tipo de câmbio (ex: 'automático', 'manual', 'câmbio automático')." },
           km_max: { type: "number", description: "Quilometragem máxima" },
           ano_min: { type: "number", description: "Ano mínimo" },
           ano_max: { type: "number", description: "Ano máximo" },

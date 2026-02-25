@@ -466,3 +466,17 @@
 - [x] Painel começa fechado, abre com animação slide-in-from-right
 - [x] panelToggle prop adicionada ao ChatView
 - [x] 90 testes passando
+
+## Bugs - Rodada 33 (Busca sem filtro de tipo/câmbio + scroll agressivo)
+- [x] Busca não filtra por tipo de veículo (picape, hatch, sedan, SUV, camionete, moto) - CORRIGIDO: mapeamento fuzzy de categorias (picape→Picapes, hatch→Hatch, sedan→Sedã, suv→SUV/Utilitário Esportivo, etc.)
+- [x] Busca não filtra por câmbio (automático/manual) - CORRIGIDO: mapeamento fuzzy de transmissão (automatico/automático→automatic+automatizado, manual→manual)
+- [x] Busca não filtra por tração (4x4, 4x2) - PARCIAL: tração é filtrada via keywords no model/version/title
+- [x] IA mostra Gol, Biz, Palio quando cliente pede picape - CORRIGIDO: tool description e prompt instruem uso obrigatório de categoria
+- [x] Atualizar tool buscar_veiculos com parâmetros tipo, cambio - CORRIGIDO: descrições detalhadas com valores aceitos e exemplos
+- [x] Atualizar searchVehiclesForAI para filtrar por esses campos - CORRIGIDO: categoryMap e transmissionMap com 20+ termos mapeados
+- [x] Prompt da IA atualizado com seção FILTROS DE CATEGORIA E CÂMBIO (OBRIGATÓRIO) com exemplos concretos
+- [x] Resultados da busca agora incluem tipo de câmbio e categoria em cada veículo
+- [x] Scroll automático volta para última mensagem quando usuário está lendo mensagens antigas - CORRIGIDO: smart auto-scroll
+- [x] Scroll deve ser automático só quando nova mensagem chega E usuário está no final do chat - CORRIGIDO: isNearBottom detection + hasNewMessages indicator
+- [x] Botão "Novas mensagens" aparece quando usuário está scrollado para cima e chega nova mensagem
+- [x] 107 testes passando (17 novos testes para filtros de categoria e transmissão)
