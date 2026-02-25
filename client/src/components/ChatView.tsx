@@ -11,6 +11,7 @@ import { toast } from "sonner";
 type Props = {
   conversationId: number;
   onBack?: () => void;
+  panelToggle?: React.ReactNode;
 };
 
 const MAX_FILE_SIZE = 16 * 1024 * 1024; // 16MB
@@ -20,7 +21,7 @@ type ImagePreviewItem = {
   dataUrl: string;
 };
 
-export default function ChatView({ conversationId, onBack }: Props) {
+export default function ChatView({ conversationId, onBack, panelToggle }: Props) {
   const [newMessage, setNewMessage] = useState("");
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -344,6 +345,8 @@ export default function ChatView({ conversationId, onBack }: Props) {
             )}
           </div>
         </div>
+        {/* Panel toggle button */}
+        {panelToggle}
       </div>
 
       {/* Messages */}

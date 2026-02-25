@@ -457,3 +457,12 @@
 - [x] SIMPLIFICAÇÃO DA BUSCA no prompt: instruções para IA usar termos simples
 - [x] Adicionados 15+ modelos clássicos à lista de keywords (belina, corcel, opala, etc)
 - [x] 90 testes passando
+
+## Feature - Rodada 32 (Scroll na conversa + Painel lateral retrátil)
+- [x] Área de conversa com rolagem automática conforme mensagens aumentam
+- [x] Scroll automático para a última mensagem (scrollTop = scrollHeight)
+- [x] Painel "Gerenciar Atendimento" retrátil com botão no header do chat
+- [x] Botão toggle PanelRightOpen/PanelRightClose com tooltip
+- [x] Painel começa fechado, abre com animação slide-in-from-right
+- [x] panelToggle prop adicionada ao ChatView
+- [x] 90 testes passando

@@ -2,11 +2,12 @@ import { useState } from "react";
 import ConversationList from "@/components/ConversationList";
 import ChatView from "@/components/ChatView";
 import ConversationPanel from "@/components/ConversationPanel";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function Inbox() {
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
-  const [showPanel, setShowPanel] = useState(true);
+  const [showPanel, setShowPanel] = useState(false);
 
   return (
     <div className="h-full flex overflow-hidden">
@@ -19,12 +20,30 @@ export default function Inbox() {
       </div>
 
       {/* Center: Chat */}
-      <div className={`flex-1 ${!selectedConversationId ? "hidden lg:flex" : "flex"} flex-col`}>
+      <div className={`flex-1 min-w-0 ${!selectedConversationId ? "hidden lg:flex" : "flex"} flex-col h-full`}>
         {selectedConversationId ? (
-          <ChatView
-            conversationId={selectedConversationId}
-            onBack={() => setSelectedConversationId(null)}
-          />
+          <div className="flex flex-col h-full">
+            {/* Chat area with toggle button in header */}
+            <ChatView
+              conversationId={selectedConversationId}
+              onBack={() => setSelectedConversationId(null)}
+              panelToggle={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowPanel(!showPanel)}
+                  className={`h-8 w-8 shrink-0 ${showPanel ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                  title={showPanel ? "Fechar painel" : "Abrir painel de controle"}
+                >
+                  {showPanel ? (
+                    <PanelRightClose className="h-4 w-4" />
+                  ) : (
+                    <PanelRightOpen className="h-4 w-4" />
+                  )}
+                </Button>
+              }
+            />
+          </div>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-background">
             <div className="text-center">
@@ -40,9 +59,9 @@ export default function Inbox() {
         )}
       </div>
 
-      {/* Right: Control Panel */}
+      {/* Right: Control Panel - Collapsible */}
       {selectedConversationId && showPanel && (
-        <div className="w-72 shrink-0 hidden xl:block">
+        <div className="w-80 shrink-0 border-l border-border animate-in slide-in-from-right duration-200">
           <ConversationPanel conversationId={selectedConversationId} />
         </div>
       )}
