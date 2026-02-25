@@ -663,6 +663,51 @@ export async function processAIMessage(
       }
     }
 
+    // === AUTO-SEARCH FIX ===
+    // If atualizar_lead was called with a new vehicle interest but buscar_veiculos was never called,
+    // force a vehicle search so the customer gets results instead of "vou buscar"
+    const toolCallHistory = llmMessages.filter((m: any) => m.role === 'assistant' && m.tool_calls);
+    const allToolCalls = toolCallHistory.flatMap((m: any) => m.tool_calls || []);
+    const calledAtualizar = allToolCalls.some((tc: any) => tc.function?.name === 'atualizar_lead');
+    const calledBuscar = allToolCalls.some((tc: any) => tc.function?.name === 'buscar_veiculos');
+    
+    // Find the new vehicle interest from atualizar_lead calls
+    let newVehicleInterest: string | null = null;
+    if (calledAtualizar && !calledBuscar) {
+      for (const tc of allToolCalls) {
+        if (tc.function?.name === 'atualizar_lead') {
+          try {
+            const args = JSON.parse(tc.function.arguments || '{}');
+            if (args.veiculo_interesse) {
+              newVehicleInterest = args.veiculo_interesse;
+            }
+          } catch {}
+        }
+      }
+    }
+    
+    if (newVehicleInterest && !calledBuscar) {
+      console.log(`[AI] AUTO-SEARCH: atualizar_lead set vehicle interest to "${newVehicleInterest}" but buscar_veiculos was never called. Forcing search.`);
+      
+      // Force a vehicle search for the new interest
+      const autoSearchResult = await searchVehiclesForAI({ model: newVehicleInterest });
+      console.log(`[AI] AUTO-SEARCH result: ${autoSearchResult.length} chars`);
+      
+      // Ask the LLM to present the results
+      llmMessages.push({
+        role: "user",
+        content: `[SISTEMA: Você atualizou o lead mas esqueceu de buscar o veículo. Aqui estão os resultados da busca automática para "${newVehicleInterest}". Apresente-os ao cliente AGORA em texto corrido, sem dizer "vou buscar":\n${autoSearchResult}]`,
+      } as any);
+      
+      try {
+        const autoResult = await invokeLLM({ messages: llmMessages, tools: TOOLS, tool_choice: "auto" });
+        assistantMessage = autoResult.choices?.[0]?.message || assistantMessage;
+        console.log(`[AI] AUTO-SEARCH: LLM presented results successfully.`);
+      } catch (autoErr) {
+        console.error(`[AI] AUTO-SEARCH: Failed to present results:`, autoErr);
+      }
+    }
+
     // Extract content
     let fullResponse = "";
     if (assistantMessage?.content) {
@@ -702,7 +747,7 @@ export async function processAIMessage(
 
     // Detect if response is just a "wait" message without actual vehicle data
     const waitPatterns = ["vou verificar", "só um momento", "vou buscar", "vou checar", "um momento", "aguarde", "deixa eu ver", "deixa eu buscar", "vou procurar", "vou pesquisar", "vou conferir"];
-    const isWaitResponse = waitPatterns.some(p => fullResponse.toLowerCase().includes(p)) && fullResponse.length < 200;
+    const isWaitResponse = waitPatterns.some(p => fullResponse.toLowerCase().includes(p)) && fullResponse.length < 300;
     if (isWaitResponse) {
       console.log(`[AI] Detected wait-only response: "${fullResponse.substring(0, 80)}...". Checking if tool results are available.`);
       // Check if we have vehicle search results in the message history to re-inject

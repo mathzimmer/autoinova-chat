@@ -440,3 +440,11 @@
 - [x] DEFAULT_SYSTEM_PROMPT legado: Regra 4B anti-invenção adicionada
 - [x] searchVehiclesForAI: paginação com offset, 10 por página, mensagens claras
 - [x] 90 testes passando
+
+## Bugs - Rodada 30 (IA não busca veículo quando cliente muda de interesse)
+- [x] IA diz "vou buscar" mas não chama buscar_veiculos quando cliente muda de veículo de interesse - CORRIGIDO
+- [x] Cenário: lead já qualificado até vendedor, cliente muda de carro, IA não busca - CORRIGIDO
+- [x] AUTO-SEARCH: após loop de tool calls, detecta se atualizar_lead foi chamado com novo veiculo_interesse sem buscar_veiculos
+- [x] Se detectado, força busca automática pelo novo veículo e injeta resultados para o LLM apresentar
+- [x] Detector de "wait response" expandido para 300 chars (antes 200)
+- [x] 90 testes passando
