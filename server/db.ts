@@ -13,6 +13,7 @@ import {
   activityLogs, InsertActivityLog,
   teamNotifications,
   teamPerformance,
+  aiDecisions, InsertAiDecision,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -197,6 +198,85 @@ export async function createAiLog(data: InsertAiLog) {
   const db = await getDb();
   if (!db) return;
   await db.insert(aiLogs).values(data);
+}
+
+// ─── AI Decision Queries ───────────────────────────────────────
+export async function createAiDecision(data: InsertAiDecision) {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.insert(aiDecisions).values(data);
+  } catch (err) {
+    console.error("[DB] Failed to create AI decision log:", err);
+  }
+}
+
+export async function createAiDecisionsBatch(decisions: InsertAiDecision[]) {
+  const db = await getDb();
+  if (!db || decisions.length === 0) return;
+  try {
+    await db.insert(aiDecisions).values(decisions);
+  } catch (err) {
+    console.error("[DB] Failed to batch create AI decision logs:", err);
+  }
+}
+
+export async function listAiDecisions(opts: { conversationId?: number; toolName?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { decisions: [], total: 0 };
+  const conditions: any[] = [eq(aiDecisions.conversationId, opts.conversationId ?? 0)];
+  let query = db.select().from(aiDecisions);
+  
+  const whereConditions: any[] = [];
+  if (opts.conversationId) whereConditions.push(eq(aiDecisions.conversationId, opts.conversationId));
+  if (opts.toolName) whereConditions.push(eq(aiDecisions.toolName, opts.toolName));
+  
+  const limit = opts.limit || 50;
+  const offset = opts.offset || 0;
+  
+  if (whereConditions.length > 0) {
+    const results = await db.select().from(aiDecisions).where(and(...whereConditions)).orderBy(desc(aiDecisions.createdAt)).limit(limit).offset(offset);
+    const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(aiDecisions).where(and(...whereConditions));
+    return { decisions: results, total: countResult[0]?.count || 0 };
+  }
+  
+  const results = await db.select().from(aiDecisions).orderBy(desc(aiDecisions.createdAt)).limit(limit).offset(offset);
+  const countResult = await db.select({ count: sql<number>`COUNT(*)` }).from(aiDecisions);
+  return { decisions: results, total: countResult[0]?.count || 0 };
+}
+
+export async function getAiDecisionsByConversation(conversationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiDecisions).where(eq(aiDecisions.conversationId, conversationId)).orderBy(desc(aiDecisions.createdAt)).limit(50);
+}
+
+export async function getAiDecisionStats() {
+  const db = await getDb();
+  if (!db) return { totalDecisions: 0, toolBreakdown: [], successRate: 0, avgResponseTime: 0 };
+  
+  const total = await db.select({ count: sql<number>`COUNT(*)` }).from(aiDecisions);
+  const breakdown = await db.select({
+    toolName: aiDecisions.toolName,
+    count: sql<number>`COUNT(*)`,
+    successCount: sql<number>`SUM(CASE WHEN ${aiDecisions.success} = true THEN 1 ELSE 0 END)`,
+    avgTime: sql<number>`COALESCE(AVG(${aiDecisions.responseTimeMs}), 0)`,
+  }).from(aiDecisions).groupBy(aiDecisions.toolName);
+  
+  const successTotal = await db.select({
+    successCount: sql<number>`SUM(CASE WHEN ${aiDecisions.success} = true THEN 1 ELSE 0 END)`,
+    avgTime: sql<number>`COALESCE(AVG(${aiDecisions.responseTimeMs}), 0)`,
+  }).from(aiDecisions);
+  
+  const totalCount = total[0]?.count || 0;
+  const successCount = successTotal[0]?.successCount || 0;
+  
+  return {
+    totalDecisions: totalCount,
+    toolBreakdown: breakdown,
+    successRate: totalCount > 0 ? Math.round((successCount / totalCount) * 100) : 0,
+    avgResponseTime: Math.round(successTotal[0]?.avgTime || 0),
+  };
 }
 
 export async function getAiStats() {

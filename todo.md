@@ -480,3 +480,17 @@
 - [x] Scroll deve ser automático só quando nova mensagem chega E usuário está no final do chat - CORRIGIDO: isNearBottom detection + hasNewMessages indicator
 - [x] Botão "Novas mensagens" aparece quando usuário está scrollado para cima e chega nova mensagem
 - [x] 107 testes passando (17 novos testes para filtros de categoria e transmissão)
+
+## Feature - Rodada 34 (Tabela de Decisões da IA - Auditoria)
+- [x] Criar tabela aiDecisions no schema com 17 colunas (conversationId, messageId, toolName, toolArgs, toolResultSummary, resultCount, success, errorMessage, responseTimeMs, promptTokens, completionTokens, totalTokens, model, customerMessage, aiResponse, createdAt)
+- [x] Migrar schema com pnpm db:push (migration 0007_ambiguous_kate_bishop.sql)
+- [x] Implementar logging automático de cada tool call no ai.ts (buscar_veiculos, atualizar_lead, rotear_para_vendedor, resumo_estoque)
+- [x] Registrar argumentos/filtros usados em cada busca de veículos (marca, modelo, categoria, câmbio, preço, km, ano, cor, combustível)
+- [x] Registrar resultado resumido (quantos veículos encontrados, texto truncado a 500 chars)
+- [x] Criar helpers createAiDecision(), createAiDecisionsBatch(), listAiDecisions(), getAiDecisionsByConversation(), getAiDecisionStats() em db.ts
+- [x] Criar endpoint tRPC aiDecision.list (admin, com filtros por conversa, tool, paginação), aiDecision.byConversation (protegido), aiDecision.stats (admin)
+- [x] Criar página Auditoria IA (/ai-audit) com cards de stats, distribuição por tool, tabela filtrável com paginação
+- [x] Adicionar ícone Brain na sidebar (admin only)
+- [ ] Exibir decisões da IA no painel lateral da conversa (histórico de tools chamadas) - PENDENTE para próxima rodada
+- [x] 15 testes para aiDecisions (schema, data structure, batch creation, result count extraction, UI mapping)
+- [x] 122 testes passando no total (9 arquivos de teste)

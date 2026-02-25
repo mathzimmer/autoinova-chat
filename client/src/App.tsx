@@ -13,6 +13,7 @@ import Settings from "./pages/Settings";
 import Team from "./pages/Team";
 import TeamLogin from "./pages/TeamLogin";
 import AppLayout from "./components/AppLayout";
+import AiAudit from "./pages/AiAudit";
 
 function Router() {
   return (
@@ -46,6 +47,11 @@ function Router() {
       <Route path={"/settings"}>
         <AppLayout>
           <Settings />
+        </AppLayout>
+      </Route>
+      <Route path={"/ai-audit"}>
+        <AppLayout>
+          <AiAudit />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />

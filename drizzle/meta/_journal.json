@@ -50,6 +50,13 @@
       "when": 1771889509498,
       "tag": "0006_cooing_sentinels",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1772061697128,
+      "tag": "0007_ambiguous_kate_bishop",
+      "breakpoints": true
     }
   ]
 }

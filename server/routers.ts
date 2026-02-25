@@ -13,6 +13,7 @@ import {
   getActiveTeamMembers, getTeamMemberById,
   createActivityLog, listActivityLogs,
   createTeamNotification, listTeamNotifications, markNotificationsAsRead, getUnreadNotificationCount,
+  listAiDecisions, getAiDecisionsByConversation, getAiDecisionStats,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -854,6 +855,36 @@ const activityRouter = router({
     }),
 });
 
+// ─── AI Decision Router ──────────────────────────────────────
+const aiDecisionRouter = router({
+  list: adminProcedure
+    .input(z.object({
+      conversationId: z.number().optional(),
+      toolName: z.string().optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return listAiDecisions({
+        conversationId: input?.conversationId,
+        toolName: input?.toolName,
+        limit: input?.limit || 50,
+        offset: input?.offset || 0,
+      });
+    }),
+
+  byConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      return getAiDecisionsByConversation(input.conversationId);
+    }),
+
+  stats: adminProcedure
+    .query(async () => {
+      return getAiDecisionStats();
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -875,6 +906,7 @@ export const appRouter = router({
   teamAuth: teamAuthRouter,
   notification: notificationRouter,
   activity: activityRouter,
+  aiDecision: aiDecisionRouter,
 });
 
 export type AppRouter = typeof appRouter;

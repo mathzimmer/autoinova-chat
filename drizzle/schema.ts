@@ -251,3 +251,30 @@ export const teamPerformance = mysqlTable("teamPerformance", {
 
 export type TeamPerformance = typeof teamPerformance.$inferSelect;
 export type InsertTeamPerformance = typeof teamPerformance.$inferInsert;
+
+/**
+ * AI Decisions table - tracks every tool call made by the AI agent for audit and improvement.
+ * Records which tool was called, what arguments/filters were used, the result summary, and timing.
+ */
+export const aiDecisions = mysqlTable("aiDecisions", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  messageId: int("messageId"),
+  toolName: varchar("toolName", { length: 100 }).notNull(),
+  toolArgs: json("toolArgs"),
+  toolResultSummary: text("toolResultSummary"),
+  resultCount: int("resultCount"),
+  success: boolean("success").default(true).notNull(),
+  errorMessage: text("errorMessage"),
+  responseTimeMs: int("responseTimeMs"),
+  promptTokens: int("promptTokens").default(0),
+  completionTokens: int("completionTokens").default(0),
+  totalTokens: int("totalTokens").default(0),
+  model: varchar("model", { length: 100 }),
+  customerMessage: text("customerMessage"),
+  aiResponse: text("aiResponse"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AiDecision = typeof aiDecisions.$inferSelect;
+export type InsertAiDecision = typeof aiDecisions.$inferInsert;

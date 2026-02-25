@@ -1,5 +1,5 @@
 import { invokeLLM, type Tool, type Message as LLMMessage } from "./_core/llm";
-import { upsertLead, createAiLog, getSetting, getLeadByConversationId } from "./db";
+import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, getLeadByConversationId } from "./db";
 import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
@@ -599,6 +599,18 @@ export async function processAIMessage(
 
     let assistantMessage = result.choices[0]?.message;
 
+    // Track all tool call decisions for audit
+    const toolDecisions: Array<{
+      toolName: string;
+      toolArgs: any;
+      toolResultSummary: string;
+      resultCount: number | null;
+      success: boolean;
+      errorMessage: string | null;
+      startTime: number;
+      endTime: number;
+    }> = [];
+
     // Handle tool calls (may need multiple rounds)
     let maxToolRounds = 5;
     while (assistantMessage?.tool_calls && assistantMessage.tool_calls.length > 0 && maxToolRounds > 0) {
@@ -621,10 +633,16 @@ export async function processAIMessage(
 
       for (const toolCall of sanitizedToolCalls) {
         let toolResult = "";
+        const toolStartTime = Date.now();
+        let toolSuccess = true;
+        let toolErrorMsg: string | null = null;
+        let toolResultCount: number | null = null;
+        let parsedArgs: any = {};
 
         try {
           if (toolCall.function.name === "buscar_veiculos") {
             const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
             console.log(`[AI] buscar_veiculos args:`, JSON.stringify(args));
             toolResult = await searchVehiclesForAI({
               brand: args.marca,
@@ -640,14 +658,19 @@ export async function processAIMessage(
               color: args.cor,
               pagina: args.pagina,
             });
-            console.log(`[AI] buscar_veiculos: ${toolResult.length} chars`);
+            // Extract result count from the response
+            const countMatch = toolResult.match(/(\d+)\s*(ve\u00edculos?|resultados?|encontrados?)/i);
+            toolResultCount = countMatch ? parseInt(countMatch[1]) : (toolResult.includes("Nenhum") ? 0 : null);
+            console.log(`[AI] buscar_veiculos: ${toolResult.length} chars, ~${toolResultCount} results`);
 
           } else if (toolCall.function.name === "resumo_estoque") {
+            parsedArgs = {};
             toolResult = await getStockSummaryForAI();
             console.log(`[AI] resumo_estoque: ${toolResult.length} chars`);
 
           } else if (toolCall.function.name === "atualizar_lead") {
             const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
             console.log(`[AI] atualizar_lead args:`, JSON.stringify(args));
 
             const leadUpdate: any = {
@@ -677,12 +700,31 @@ export async function processAIMessage(
             } catch (leadErr) {
               console.error("[AI] Failed to update lead:", leadErr);
               toolResult = "Erro ao atualizar lead.";
+              toolSuccess = false;
+              toolErrorMsg = leadErr instanceof Error ? leadErr.message : "Erro desconhecido";
             }
+          } else if (toolCall.function.name === "rotear_para_vendedor") {
+            parsedArgs = JSON.parse(toolCall.function.arguments || "{}");
+            toolResult = "Conversa encaminhada para vendedor.";
           }
         } catch (toolError) {
           console.error(`[AI] Tool ${toolCall.function.name} error:`, toolError);
           toolResult = `Erro: ${toolError instanceof Error ? toolError.message : "erro desconhecido"}`;
+          toolSuccess = false;
+          toolErrorMsg = toolError instanceof Error ? toolError.message : "erro desconhecido";
         }
+
+        // Track this decision
+        toolDecisions.push({
+          toolName: toolCall.function.name,
+          toolArgs: parsedArgs,
+          toolResultSummary: toolResult.substring(0, 500),
+          resultCount: toolResultCount,
+          success: toolSuccess,
+          errorMessage: toolErrorMsg,
+          startTime: toolStartTime,
+          endTime: Date.now(),
+        });
 
         llmMessages.push({
           role: "tool",
@@ -847,6 +889,32 @@ export async function processAIMessage(
       });
     } catch (logErr) {
       console.error("[AI] Failed to log AI interaction:", logErr);
+    }
+
+    // Log AI decisions (tool calls) for audit
+    if (toolDecisions.length > 0) {
+      try {
+        const decisionRecords = toolDecisions.map(d => ({
+          conversationId: conversation.id,
+          toolName: d.toolName,
+          toolArgs: d.toolArgs,
+          toolResultSummary: d.toolResultSummary,
+          resultCount: d.resultCount,
+          success: d.success,
+          errorMessage: d.errorMessage,
+          responseTimeMs: d.endTime - d.startTime,
+          promptTokens: usage?.prompt_tokens || 0,
+          completionTokens: usage?.completion_tokens || 0,
+          totalTokens: usage?.total_tokens || 0,
+          model: result.model || null,
+          customerMessage: customerMessage.substring(0, 500),
+          aiResponse: fullResponse.substring(0, 500),
+        }));
+        await createAiDecisionsBatch(decisionRecords);
+        console.log(`[AI] Logged ${decisionRecords.length} AI decision(s) for conversation ${conversation.id}`);
+      } catch (decisionLogErr) {
+        console.error("[AI] Failed to log AI decisions:", decisionLogErr);
+      }
     }
 
     console.log(`[AI] Response generated in ${responseTime}ms (${usage?.total_tokens || 0} tokens)`);

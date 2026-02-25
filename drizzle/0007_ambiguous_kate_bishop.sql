@@ -1,0 +1,20 @@
+CREATE TABLE `aiDecisions` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`conversationId` int NOT NULL,
+	`messageId` int,
+	`toolName` varchar(100) NOT NULL,
+	`toolArgs` json,
+	`toolResultSummary` text,
+	`resultCount` int,
+	`success` boolean NOT NULL DEFAULT true,
+	`errorMessage` text,
+	`responseTimeMs` int,
+	`promptTokens` int DEFAULT 0,
+	`completionTokens` int DEFAULT 0,
+	`totalTokens` int DEFAULT 0,
+	`model` varchar(100),
+	`customerMessage` text,
+	`aiResponse` text,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `aiDecisions_id` PRIMARY KEY(`id`)
+);
