@@ -253,14 +253,76 @@ async function searchVehiclesForAI(filters: {
     .from(vehicles)
     .where(eq(vehicles.available, true));
 
-  // Apply filters
+  // Apply filters with fuzzy keyword matching
+  // Helper: check if ANY keyword matches in ANY of the vehicle's text fields
+  function vehicleMatchesKeywords(v: any, keywords: string[]): boolean {
+    const searchableText = [
+      v.brand || "",
+      v.model || "",
+      v.version || "",
+      v.title || "",
+    ].join(" ").toLowerCase();
+    return keywords.every(kw => searchableText.includes(kw));
+  }
+
+  function vehicleMatchesAnyKeyword(v: any, keywords: string[]): boolean {
+    const searchableText = [
+      v.brand || "",
+      v.model || "",
+      v.version || "",
+      v.title || "",
+    ].join(" ").toLowerCase();
+    return keywords.some(kw => searchableText.includes(kw));
+  }
+
+  // Extract meaningful keywords from a search term (remove noise words, numbers like 1.8, version suffixes)
+  function extractKeywords(term: string): string[] {
+    return term
+      .toLowerCase()
+      .replace(/[/\\()\[\]{}]/g, " ")  // Replace special chars with spaces
+      .split(/\s+/)
+      .filter(w => w.length >= 2)  // At least 2 chars
+      .filter(w => !/^\d+[.,]?\d*$/.test(w))  // Remove pure numbers like "1.8", "1.6", "2019"
+      .filter(w => !["de", "do", "da", "em", "um", "uma", "para", "com", "por"].includes(w));  // Remove stop words
+  }
+
   if (filters.brand) {
-    const brandLower = filters.brand.toLowerCase();
-    allVehicles = allVehicles.filter(v => v.brand.toLowerCase().includes(brandLower));
+    const brandKeywords = extractKeywords(filters.brand);
+    if (brandKeywords.length > 0) {
+      // Try exact brand match first
+      const exactMatch = allVehicles.filter(v => v.brand.toLowerCase().includes(filters.brand!.toLowerCase()));
+      if (exactMatch.length > 0) {
+        allVehicles = exactMatch;
+      } else {
+        // Fallback: match any keyword in brand/model/title
+        allVehicles = allVehicles.filter(v => vehicleMatchesAnyKeyword(v, brandKeywords));
+      }
+    }
   }
   if (filters.model) {
-    const modelLower = filters.model.toLowerCase();
-    allVehicles = allVehicles.filter(v => v.model.toLowerCase().includes(modelLower));
+    const modelKeywords = extractKeywords(filters.model);
+    if (modelKeywords.length > 0) {
+      // Strategy 1: Try ALL keywords match (most specific)
+      let filtered = allVehicles.filter(v => vehicleMatchesKeywords(v, modelKeywords));
+      
+      // Strategy 2: Try the FIRST keyword only (usually the model name, e.g., "belina")
+      if (filtered.length === 0) {
+        filtered = allVehicles.filter(v => vehicleMatchesAnyKeyword(v, [modelKeywords[0]]));
+        console.log(`[StockSync] Fuzzy search: "${filters.model}" → first keyword "${modelKeywords[0]}" → ${filtered.length} results`);
+      }
+      
+      // Strategy 3: Try ANY keyword match (broadest)
+      if (filtered.length === 0 && modelKeywords.length > 1) {
+        filtered = allVehicles.filter(v => vehicleMatchesAnyKeyword(v, modelKeywords));
+        console.log(`[StockSync] Fuzzy search: "${filters.model}" → any keyword [${modelKeywords.join(", ")}] → ${filtered.length} results`);
+      }
+      
+      if (filtered.length > 0) {
+        allVehicles = filtered;
+      } else {
+        console.log(`[StockSync] No results for model "${filters.model}" with keywords [${modelKeywords.join(", ")}]`);
+      }
+    }
   }
   if (filters.maxPrice) {
     allVehicles = allVehicles.filter(v => v.price <= filters.maxPrice!);

@@ -448,3 +448,12 @@
 - [x] Se detectado, força busca automática pelo novo veículo e injeta resultados para o LLM apresentar
 - [x] Detector de "wait response" expandido para 300 chars (antes 200)
 - [x] 90 testes passando
+
+## Bugs - Rodada 31 (Busca de veículos muito específica)
+- [x] Busca não encontra veículos quando o texto é muito específico - CORRIGIDO
+- [x] Busca fuzzy por keywords: extrai palavras significativas, ignora números/versões
+- [x] Fallback progressivo: todas keywords → primeira keyword → qualquer keyword
+- [x] Busca em brand + model + version + title (antes só model)
+- [x] SIMPLIFICAÇÃO DA BUSCA no prompt: instruções para IA usar termos simples
+- [x] Adicionados 15+ modelos clássicos à lista de keywords (belina, corcel, opala, etc)
+- [x] 90 testes passando

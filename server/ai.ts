@@ -78,6 +78,16 @@ BUSCA DE VEÍCULOS:
 - Se a busca retornar 2-3 resultados: apresente todos
 - Se a busca retornar 4+ resultados: mostre os que foram retornados e pergunte se quer filtrar
 - REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
+
+SIMPLIFICAÇÃO DA BUSCA:
+- Ao chamar buscar_veiculos, use termos SIMPLES e CURTOS para marca e modelo
+- CORRETO: modelo: "belina", marca: "ford"
+- ERRADO: modelo: "Belina I L 1.8/1.6 1985/1985"
+- Se o cliente enviar um link ou nome completo com versão/ano, extraia apenas o NOME DO MODELO
+- Exemplos: "Ford Belina I L 1.8/1.6" → marca: "ford", modelo: "belina"
+- Exemplos: "Toyota Hilux SRV 2.8 Diesel 4x4" → marca: "toyota", modelo: "hilux"
+- Exemplos: "Chevrolet S10 High Country" → marca: "chevrolet", modelo: "s10"
+- Se não encontrar resultados, tente buscar apenas pelo modelo sem marca
 - Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
 - PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta.
 
@@ -149,6 +159,16 @@ REGRA NÚMERO 4 - BUSCA DE VEÍCULOS:
 - Se a busca retornar 2-3 resultados: apresente todos
 - Se a busca retornar 4+ resultados: mostre os que foram retornados e pergunte se quer filtrar
 - REGRA CRÍTICA: Copie EXATAMENTE o nome, preço e link de cada veículo retornado pela busca. NUNCA modifique, resuma ou invente veículos.
+
+SIMPLIFICAÇÃO DA BUSCA:
+- Ao chamar buscar_veiculos, use termos SIMPLES e CURTOS para marca e modelo
+- CORRETO: modelo: "belina", marca: "ford"
+- ERRADO: modelo: "Belina I L 1.8/1.6 1985/1985"
+- Se o cliente enviar um link ou nome completo com versão/ano, extraia apenas o NOME DO MODELO
+- Exemplos: "Ford Belina I L 1.8/1.6" → marca: "ford", modelo: "belina"
+- Exemplos: "Toyota Hilux SRV 2.8 Diesel 4x4" → marca: "toyota", modelo: "hilux"
+- Exemplos: "Chevrolet S10 High Country" → marca: "chevrolet", modelo: "s10"
+- Se não encontrar resultados, tente buscar apenas pelo modelo sem marca
 - Ao apresentar veículos, copie os dados da busca em texto corrido, um por linha, sem formatação especial
 - PROIBIDO responder com "vou verificar", "só um momento", "vou buscar" ou qualquer frase de espera. Quando chamar buscar_veiculos, SEMPRE inclua os resultados na mesma resposta. O cliente recebe UMA mensagem com os resultados, não duas.
 - Quando o cliente pedir "mais opções", "ver os outros", "próxima página": chame buscar_veiculos com pagina: 2 (ou 3, 4...) e os MESMOS filtros da busca anterior
@@ -271,7 +291,7 @@ const VEHICLE_MODEL_KEYWORDS = [
   "mercedes", "bmw", "audi", "volvo", "peugeot", "citroen", "kia",
   "caoa", "chery", "jac", "lifan", "byd", "gwm", "ram",
   "vectra", "astra", "celta", "classic", "meriva", "zafira", "blazer",
-  "fusca", "kombi", "brasilia", "variant", "passat",
+  "fusca", "kombi", "brasilia", "variant", "passat", "belina", "corcel", "del rey", "pampa", "maverick", "opala", "chevette", "monza", "kadett", "ipanema", "veraneio", "bonanza", "d-20", "d20",
   "fiesta", "focus", "ka", "ecosport", "territory",
   "fit", "city", "hrv", "wrv", "crv",
   "etios", "yaris", "camry", "sw4", "rav4",
