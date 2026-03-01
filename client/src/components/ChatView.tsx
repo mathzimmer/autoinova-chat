@@ -97,6 +97,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
       templateName: selectedTemplate,
       language: selectedTemplateObj?.language || "pt_BR",
       bodyParams: templateParams.filter(p => p.trim() !== ""),
+      conversationId,
     });
   };
 
@@ -789,10 +790,60 @@ function DeliveryStatusIcon({ status, deliveryError }: { status?: string | null;
 function MessageBubble({ message }: { message: MessageData }) {
   const isCustomer = message.senderType === "customer";
   const isBot = message.senderType === "bot";
-  const isSystem = message.senderType === "bot" && message.senderName === "Sistema";
   const meta = message.metadata as Record<string, unknown> | null;
+  const isTemplate = !!(meta?.isTemplate);
+  const isSystem = message.senderType === "bot" && message.senderName === "Sistema" && !isTemplate;
   const mediaUrl = meta?.mediaUrl as string | undefined;
   const transcribedText = meta?.transcribedText as string | undefined;
+
+  // Template messages — show as delivered outgoing messages with special styling
+  if (isTemplate) {
+    const templateName = (meta?.templateName as string) || "template";
+    const templateParams = (meta?.templateParams as string[]) || [];
+
+    // Delivery status label
+    const statusLabel = message.status === "read" ? "Lida" 
+      : message.status === "delivered" ? "Entregue" 
+      : message.status === "failed" ? "Falhou" 
+      : "Enviada";
+    const statusColor = message.status === "read" ? "text-blue-400"
+      : message.status === "delivered" ? "text-green-400"
+      : message.status === "failed" ? "text-red-400"
+      : "text-muted-foreground";
+
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[75%]">
+          <div className="flex items-center gap-1.5 mb-1 justify-end">
+            <FileText className="h-3 w-3 text-emerald-400" />
+            <span className="text-[10px] text-muted-foreground">Template</span>
+            <span className="text-[10px] text-muted-foreground">
+              {format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}
+            </span>
+            <DeliveryStatusIcon status={message.status} deliveryError={message.deliveryError} />
+          </div>
+          <div className="rounded-2xl px-4 py-3 text-sm leading-relaxed bg-emerald-500/15 text-foreground border border-emerald-500/25 rounded-tr-sm">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-xs font-semibold text-emerald-400">{templateName}</span>
+            </div>
+            {templateParams.length > 0 && (
+              <div className="text-xs text-muted-foreground mb-1.5">
+                {templateParams.map((p, i) => (
+                  <span key={i} className="inline-block bg-emerald-500/10 rounded px-1.5 py-0.5 mr-1 mb-0.5">{p}</span>
+                ))}
+              </div>
+            )}
+            <div className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-emerald-500/15">
+              <span className={`text-[10px] font-medium ${statusColor}`}>{statusLabel}</span>
+              {message.status !== "read" && message.status !== "failed" && (
+                <span className="text-[10px] text-muted-foreground/60">— Aguardando resposta do cliente</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // System messages (delivery errors, etc.)
   if (isSystem || message.messageType === "system") {

@@ -626,3 +626,19 @@
 - [x] Atualizar teste whatsapp.validate para usar o token correto — agora passa com System User Token
 - [x] Atualizar whatsapp.test.ts para testar prioridade de tokens (9 testes)
 - [x] 172 testes passando, 0 falhas
+
+## Rodada 41 - Monitoramento de Tokens + Templates na Conversa
+
+### Monitoramento de Tokens
+- [x] Job periódico que verifica saúde dos tokens (WhatsApp System User Token, Meta Ads Token)
+- [x] Verificação via chamada real à API (ex: GET /me ou /phone_numbers)
+- [x] Notificação ao admin via notifyOwner() quando token falha
+- [x] Banner visual no dashboard quando algum token está inválido
+- [x] Endpoint tRPC para verificar status dos tokens manualmente
+- [x] Log de cada verificação com resultado (ok/falha/erro)
+
+### Templates Enviados Visíveis na Conversa
+- [x] Ao enviar template, salvar como mensagem na conversa (role: assistant, tipo: template)
+- [x] Exibir template enviado no chat com formatação adequada (nome do template + parâmetros)
+- [x] Mostrar status de entrega do template (✓ enviado, ✓✓ entregue, ✓✓ azul lido)
+- [x] Indicar "Aguardando resposta do cliente" após envio do template

@@ -13,6 +13,7 @@ import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
 import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired } from "../db";
 import { startFollowUpJob } from "../followUp";
+import { startTokenMonitor } from "../tokenMonitor";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -72,6 +73,9 @@ async function startServer() {
 
   // Follow-up automático de leads frios (a cada 6h)
   startFollowUpJob();
+
+  // Monitoramento periódico de tokens (a cada 30 min)
+  startTokenMonitor();
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

@@ -1,15 +1,32 @@
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { MessageSquare, Users, Car, Bot, Clock, Zap, Target, TrendingUp } from "lucide-react";
+import { MessageSquare, Users, Car, Bot, Clock, Zap, Target, TrendingUp, AlertTriangle, CheckCircle2, RefreshCw, ShieldAlert } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 
 export default function Dashboard() {
   const { data: stats } = trpc.dashboard.stats.useQuery(undefined, { refetchInterval: 30000 });
   const { data: conversations } = trpc.conversation.list.useQuery({ status: "open" });
   const { data: leads } = trpc.lead.list.useQuery({ status: "all" });
+  const { data: tokenStatus, refetch: refetchTokens } = trpc.tokenHealth.status.useQuery(undefined, {
+    refetchInterval: 60000, // Refresh every minute
+  });
+  const checkTokensMutation = trpc.tokenHealth.check.useMutation({
+    onSuccess: () => {
+      refetchTokens();
+      toast.success("Verificação de tokens concluída");
+    },
+    onError: (err) => {
+      toast.error("Erro ao verificar tokens: " + err.message);
+    },
+  });
+
+  const failedTokens = tokenStatus?.filter((t: any) => t.status === "failed") || [];
+  const hasTokenIssues = failedTokens.length > 0;
 
   return (
     <div className="p-6 pb-16 space-y-6 max-w-7xl mx-auto">
@@ -17,6 +34,73 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
         <p className="text-sm text-muted-foreground mt-1">Visão geral do atendimento Auto Inova</p>
       </div>
+
+      {/* Token Health Alert Banner */}
+      {hasTokenIssues && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <ShieldAlert className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-red-400">Atenção: Token(s) com problema</p>
+              <div className="mt-2 space-y-1.5">
+                {failedTokens.map((t: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs text-red-300/90">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    <span className="font-medium">{t.name}</span>
+                    <span className="text-red-300/70">— {t.message}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-red-300/70 mt-2">
+                Acesse o Meta Business Manager para gerar novos tokens. Algumas funcionalidades podem estar indisponíveis.
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 border-red-500/30 text-red-400 hover:bg-red-500/10"
+              onClick={() => checkTokensMutation.mutate()}
+              disabled={checkTokensMutation.isPending}
+            >
+              {checkTokensMutation.isPending ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <><RefreshCw className="h-3.5 w-3.5 mr-1" /> Verificar</>
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Token Health Summary (when all OK) */}
+      {tokenStatus && tokenStatus.length > 0 && !hasTokenIssues && (
+        <div className="rounded-lg border border-green-500/20 bg-green-500/5 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+            <div className="flex-1 flex items-center gap-4">
+              {tokenStatus.map((t: any, i: number) => (
+                <span key={i} className="text-xs text-green-400/80">
+                  {t.name}: <span className="font-medium text-green-400">OK</span>
+                </span>
+              ))}
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="shrink-0 text-muted-foreground hover:text-foreground h-7 px-2"
+              onClick={() => checkTokensMutation.mutate()}
+              disabled={checkTokensMutation.isPending}
+              title="Verificar tokens agora"
+            >
+              {checkTokensMutation.isPending ? (
+                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
