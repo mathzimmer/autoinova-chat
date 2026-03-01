@@ -78,7 +78,7 @@ export async function metaPost(
   return data;
 }
 
-async function metaGet(
+export async function metaGet(
   endpoint: string,
   params: Record<string, string>,
   accessToken: string
@@ -486,6 +486,117 @@ export async function importAdsFromMeta(
     console.error("[MetaAds] Erro na importação:", e);
     throw e;
   }
+}
+
+// ─── Listar campanhas existentes ──────────────────────────────────────────────
+
+export async function listCampaigns(
+  accessToken: string,
+  adAccountId: string
+): Promise<Array<{ id: string; name: string; status: string; objective: string }>> {
+  const actId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+  const data = await metaGet(
+    `${actId}/campaigns`,
+    { fields: "id,name,status,objective", limit: "100" },
+    accessToken
+  ) as any;
+  return (data.data || []).map((c: any) => ({
+    id: c.id,
+    name: c.name || "Sem nome",
+    status: c.status || "UNKNOWN",
+    objective: c.objective || "UNKNOWN",
+  }));
+}
+
+// ─── Listar adsets de uma campanha ───────────────────────────────────────────
+
+export async function listAdSets(
+  accessToken: string,
+  campaignId: string
+): Promise<Array<{ id: string; name: string; status: string; dailyBudget: string }>> {
+  const data = await metaGet(
+    `${campaignId}/adsets`,
+    { fields: "id,name,status,daily_budget", limit: "100" },
+    accessToken
+  ) as any;
+  return (data.data || []).map((a: any) => ({
+    id: a.id,
+    name: a.name || "Sem nome",
+    status: a.status || "UNKNOWN",
+    dailyBudget: a.daily_budget || "0",
+  }));
+}
+
+// ─── Criar anúncio em adset existente (simplificado) ─────────────────────────
+
+export async function createAdInExistingAdSet(
+  config: MetaAdsConfig,
+  adSetId: string,
+  campaignId: string,
+  vehicle: {
+    brand: string; model: string; year: number;
+    price: number; mileage: number; transmission: string;
+    fuel: string; color: string; id: number; imageUrl: string;
+  },
+  texts: {
+    headline: string;
+    description: string;
+    primaryText: string;
+  },
+  selectedImageUrl?: string
+): Promise<{ adId: string; adCreativeId: string; imageHash: string }> {
+  const imgUrl = selectedImageUrl || vehicle.imageUrl;
+  if (!imgUrl) throw new Error("Veículo sem imagem");
+
+  const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
+  const waMsg = encodeURIComponent(
+    `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`
+  );
+  const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
+
+  // 1. Upload imagem
+  const imageHash = await uploadAdImage(config, imgUrl);
+
+  // 2. Criar criativo com textos personalizados
+  const creativeResult = await metaPost(
+    `act_${config.adAccountId}/adcreatives`,
+    {
+      name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
+      object_story_spec: {
+        page_id: config.pageId,
+        ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+        link_data: {
+          image_hash: imageHash,
+          link: whatsappLink,
+          message: texts.primaryText,
+          name: texts.headline,
+          description: texts.description,
+          call_to_action: {
+            type: "LEARN_MORE",
+            value: { link: whatsappLink },
+          },
+        },
+      },
+    },
+    config.accessToken
+  );
+  const adCreativeId = creativeResult.id as string;
+
+  // 3. Criar anúncio no adset existente (PAUSADO)
+  const adResult = await metaPost(
+    `act_${config.adAccountId}/ads`,
+    {
+      name: `Anúncio — ${vehicle.brand} ${vehicle.model} ${vehicle.year} #${vehicle.id}`,
+      adset_id: adSetId,
+      creative: { creative_id: adCreativeId },
+      status: "PAUSED",
+    },
+    config.accessToken
+  );
+  const adId = adResult.id as string;
+
+  console.log(`[MetaAds] ✅ Anúncio criado no adset existente: adId=${adId}, adSetId=${adSetId}`);
+  return { adId, adCreativeId, imageHash };
 }
 
 // ─── Config padrão — Serra Gaúcha ─────────────────────────────────────────────

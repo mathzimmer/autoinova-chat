@@ -642,3 +642,23 @@
 - [x] Exibir template enviado no chat com formatação adequada (nome do template + parâmetros)
 - [x] Mostrar status de entrega do template (✓ enviado, ✓✓ entregue, ✓✓ azul lido)
 - [x] Indicar "Aguardando resposta do cliente" após envio do template
+
+## Rodada 42 - Simplificação Meta Ads: Criar Anúncios em Campanha/AdSet Existente
+
+### Backend
+- [x] Endpoint para listar campanhas existentes na conta Meta Ads
+- [x] Endpoint para listar conjuntos de anúncios (adsets) de uma campanha
+- [x] Endpoint para gerar título e descrição via IA a partir de veículo do estoque
+- [x] Refatorar criação de anúncio: usar campanha e adset existentes (não criar novos)
+- [x] Upload de imagem do veículo para Meta e criação do criativo
+- [x] Criar anúncio dentro do adset selecionado (iniciar pausado)
+
+### Frontend
+- [x] Nova UI de criação de anúncio: selecionar campanha existente
+- [x] Selecionar conjunto de anúncios existente
+- [x] Selecionar veículo do estoque para anunciar
+- [x] Gerar título/descrição automaticamente via IA com botão
+- [x] Permitir editar título/descrição gerados antes de criar
+- [x] Upload/seleção de fotos do veículo para o anúncio
+- [x] Preview do anúncio antes de criar
+- [x] Simplificar página Meta Ads removendo fluxo de criação de campanha/adset

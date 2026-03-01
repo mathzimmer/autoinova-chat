@@ -40,10 +40,14 @@ import {
   uploadAdImage,
   createAd,
   metaPost,
+  metaGet,
   setAdStatus,
   getAdInsights,
   buildMetaConfig,
   importAdsFromMeta,
+  listCampaigns,
+  listAdSets,
+  createAdInExistingAdSet,
 } from "./metaAds";
 
 // ── Follow-Up imports ────────────────────────────────────────────────────────
@@ -1128,52 +1132,83 @@ const metaAdsRouter = router({
     return ads;
   }),
 
-  // Criar anúncio para um veículo
-  createAd: protectedProcedure
+  // Listar campanhas existentes da conta Meta
+  listCampaigns: protectedProcedure.query(async () => {
+    const config = buildMetaConfig();
+    if (!config.accessToken || !config.adAccountId) {
+      throw new Error("Meta Ads não configurado.");
+    }
+    return listCampaigns(config.accessToken, config.adAccountId);
+  }),
+
+  // Listar adsets de uma campanha
+  listAdSets: protectedProcedure
+    .input(z.object({ campaignId: z.string() }))
+    .query(async ({ input }) => {
+      const config = buildMetaConfig();
+      if (!config.accessToken) throw new Error("Meta Ads não configurado.");
+      return listAdSets(config.accessToken, input.campaignId);
+    }),
+
+  // Criar anúncio em adset existente (fluxo simplificado)
+  createAdInAdSet: protectedProcedure
     .input(z.object({
-      vehicleId:      z.number(),
-      campaignId:     z.string().optional(),
-      dailyBudgetBRL: z.number().min(5).max(1000).default(30),
+      vehicleId:    z.number(),
+      campaignId:   z.string(),
+      adSetId:      z.string(),
+      headline:     z.string(),
+      description:  z.string(),
+      primaryText:  z.string(),
+      selectedImageUrl: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const config = buildMetaConfig();
       if (!config.accessToken || !config.adAccountId || !config.pageId) {
-        throw new Error("Meta Ads não configurado. Adicione META_ADS_ACCESS_TOKEN, META_ADS_ACCOUNT_ID e META_ADS_PAGE_ID nas variáveis de ambiente.");
+        throw new Error("Meta Ads não configurado.");
       }
-      const result = await createAdForVehicle(
-        input.vehicleId,
-        input.campaignId ?? null,
-        config,
-        Math.round(input.dailyBudgetBRL * 100)
-      );
-      if (!result.success) throw new Error(result.error ?? "Falha ao criar anúncio");
-      return result;
-    }),
+      const db = await getDb();
+      if (!db) throw new Error("Database indisponível");
+      const { vehicles: vehiclesTable } = await import("../drizzle/schema");
+      const vehicleRows = await db.select().from(vehiclesTable).where(eq(vehiclesTable.id, input.vehicleId)).limit(1);
+      if (!vehicleRows.length) throw new Error("Veículo não encontrado");
+      const v = vehicleRows[0];
+      if (!v.imageUrl) throw new Error("Veículo sem imagem");
 
-  // Criar anúncios em lote
-  createBatch: protectedProcedure
-    .input(z.object({
-      vehicleIds:     z.array(z.number()).min(1).max(20),
-      campaignId:     z.string().optional(),
-      dailyBudgetBRL: z.number().min(5).max(1000).default(30),
-    }))
-    .mutation(async ({ input }) => {
-      const config = buildMetaConfig();
-      const budgetCents = Math.round(input.dailyBudgetBRL * 100);
-      let campaignId = input.campaignId;
-      if (!campaignId) {
-        campaignId = await createOrGetCampaign(
-          config,
-          `AutoInova — Lote ${new Date().toLocaleDateString("pt-BR")}`
-        );
-      }
-      const results: Array<{ vehicleId: number; success: boolean; adId?: string; error?: string }> = [];
-      for (const vehicleId of input.vehicleIds) {
-        const r = await createAdForVehicle(vehicleId, campaignId, config, budgetCents);
-        results.push({ vehicleId, success: r.success, adId: r.adId, error: r.error });
-        await new Promise(res => setTimeout(res, 1000));
-      }
-      return { campaignId, results };
+      const result = await createAdInExistingAdSet(
+        config,
+        input.adSetId,
+        input.campaignId,
+        {
+          brand: v.brand, model: v.model, year: v.year,
+          price: v.price, mileage: v.mileage ?? 0,
+          transmission: v.transmission ?? "manual",
+          fuel: v.fuel ?? "flex",
+          color: v.color ?? "",
+          id: v.id, imageUrl: v.imageUrl,
+        },
+        {
+          headline: input.headline,
+          description: input.description,
+          primaryText: input.primaryText,
+        },
+        input.selectedImageUrl
+      );
+
+      // Salvar no banco
+      await db.insert(metaAdsTable).values({
+        vehicleId: input.vehicleId,
+        campaignId: input.campaignId,
+        adSetId: input.adSetId,
+        adCreativeId: result.adCreativeId,
+        adId: result.adId,
+        imageHash: result.imageHash,
+        status: "paused",
+        dailyBudgetCents: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      return { success: true, adId: result.adId, campaignId: input.campaignId, adSetId: input.adSetId };
     }),
 
   // Ativar anúncio

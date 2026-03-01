@@ -1,4 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+
+// Mock fetch for API tests
+const mockFetch = vi.fn();
+vi.stubGlobal("fetch", mockFetch);
 
 /**
  * Tests for Meta Ads module — validates configuration, data structures,
@@ -122,6 +126,114 @@ describe("Meta Ads", () => {
       expect(result.error).toBe("Veículo sem imagem");
       expect(result.vehicleId).toBe(99);
     });
+  });
+});
+
+describe("Meta Ads - listCampaigns", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("should list campaigns from Meta API", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "123456", name: "Campanha Leads", status: "ACTIVE", objective: "OUTCOME_LEADS" },
+          { id: "789012", name: "Campanha Tr\u00e1fego", status: "PAUSED", objective: "OUTCOME_TRAFFIC" },
+        ],
+      }),
+    });
+
+    const { listCampaigns } = await import("./metaAds");
+    const campaigns = await listCampaigns("test-token", "12345");
+    expect(campaigns).toHaveLength(2);
+    expect(campaigns[0].id).toBe("123456");
+    expect(campaigns[0].status).toBe("ACTIVE");
+    expect(campaigns[1].status).toBe("PAUSED");
+  });
+
+  it("should handle empty campaigns list", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [] }),
+    });
+
+    const { listCampaigns } = await import("./metaAds");
+    const campaigns = await listCampaigns("test-token", "12345");
+    expect(campaigns).toHaveLength(0);
+  });
+
+  it("should throw on API error", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({ error: { message: "Invalid token" } }),
+    });
+
+    const { listCampaigns } = await import("./metaAds");
+    await expect(listCampaigns("bad-token", "12345")).rejects.toThrow("Invalid token");
+  });
+
+  it("should prepend act_ to account ID", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [] }),
+    });
+
+    const { listCampaigns } = await import("./metaAds");
+    await listCampaigns("token", "12345");
+    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("act_12345/campaigns");
+  });
+});
+
+describe("Meta Ads - listAdSets", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("should list adsets from a campaign", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: [
+          { id: "adset_1", name: "AdSet Leads RS", status: "ACTIVE", daily_budget: "3000" },
+          { id: "adset_2", name: "AdSet SP", status: "PAUSED", daily_budget: "5000" },
+        ],
+      }),
+    });
+
+    const { listAdSets } = await import("./metaAds");
+    const adSets = await listAdSets("test-token", "campaign_123");
+    expect(adSets).toHaveLength(2);
+    expect(adSets[0].id).toBe("adset_1");
+    expect(adSets[0].dailyBudget).toBe("3000");
+  });
+
+  it("should handle empty adsets", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [] }),
+    });
+
+    const { listAdSets } = await import("./metaAds");
+    const adSets = await listAdSets("test-token", "campaign_123");
+    expect(adSets).toHaveLength(0);
+  });
+});
+
+describe("Meta Ads - metaGet", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("should make GET request with params", async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ id: "1" }] }),
+    });
+
+    const { metaGet } = await import("./metaAds");
+    const result = await metaGet("act_123/campaigns", { fields: "id,name", limit: "10" }, "token");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const calledUrl = mockFetch.mock.calls[0][0] as string;
+    expect(calledUrl).toContain("act_123/campaigns");
+    expect(calledUrl).toContain("access_token=token");
+    expect(result).toEqual({ data: [{ id: "1" }] });
   });
 });
 

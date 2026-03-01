@@ -1,21 +1,19 @@
 /**
- * Página de Meta Ads — AutoInova Chat
- * Adicionar à navegação em AppLayout.tsx e ao roteador em App.tsx:
- *
- *   import MetaAdsPage from "./pages/MetaAds";
- *   <Route path="/meta-ads" element={<MetaAdsPage />} />
- *
- * E no menu lateral, adicionar item:
- *   { path: "/meta-ads", label: "Meta Ads", icon: <Megaphone /> }
+ * Página de Meta Ads — AutoInova Chat (Simplificada)
+ * Foco: criar anúncios dentro de campanhas e conjuntos de anúncios já existentes.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Play, Pause, RefreshCw, Megaphone, Plus, TrendingUp, Eye, MousePointer, Users, DollarSign, CheckSquare, Square, Sparkles, Wand2, Copy } from "lucide-react";
+import {
+  Loader2, Play, Pause, RefreshCw, Megaphone, Plus, TrendingUp,
+  Eye, MousePointer, Users, DollarSign, Sparkles, Wand2, Copy,
+  CheckCircle2, ChevronRight, ImageIcon, ArrowLeft, Search,
+} from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +35,17 @@ function statusLabel(s: string) {
   if (s === "archived") return "Arquivado";
   return s;
 }
+function metaStatusLabel(s: string) {
+  if (s === "ACTIVE") return "Ativo";
+  if (s === "PAUSED") return "Pausado";
+  if (s === "ARCHIVED") return "Arquivado";
+  return s;
+}
+function metaStatusColor(s: string) {
+  if (s === "ACTIVE") return "text-green-400";
+  if (s === "PAUSED") return "text-yellow-400";
+  return "text-gray-400";
+}
 
 // ─── Componente: Card de configuração ausente ─────────────────────────────────
 
@@ -48,23 +57,22 @@ function NotConfiguredBanner({ missingVars }: { missingVars: string[] }) {
         <div>
           <h3 className="font-bold text-yellow-300 text-base mb-1">Meta Ads não configurado</h3>
           <p className="text-sm text-yellow-200/70 mb-3">
-            Configure as seguintes variáveis de ambiente no seu servidor (Railway) para ativar a criação automática de anúncios:
+            Configure as seguintes variáveis de ambiente para ativar a criação de anúncios:
           </p>
           <div className="flex flex-col gap-1">
             {missingVars.map(v => (
               <code key={v} className="text-xs bg-black/30 text-yellow-300 px-2 py-1 rounded w-fit">{v}</code>
             ))}
           </div>
-          <p className="text-xs text-yellow-200/50 mt-3">
-            Veja o Guia de Implantação, Fase 5 — Meta Ads, para obter esses valores.
-          </p>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Componente: Modal de criar anúncio ──────────────────────────────────────
+// ─── Modal: Criar Anúncio (Fluxo Simplificado) ──────────────────────────────
+
+type CreateAdStep = "campaign" | "adset" | "vehicle" | "generating" | "review" | "publishing" | "done";
 
 function CreateAdModal({
   onClose,
@@ -73,379 +81,95 @@ function CreateAdModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [mode, setMode] = useState<"single" | "batch">("single");
-  const [selectedVehicleIds, setSelectedVehicleIds] = useState<number[]>([]);
-  const [budget, setBudget] = useState(30);
-  const [campaignId, setCampaignId] = useState("");
-  const [step, setStep] = useState<"select" | "confirm" | "loading" | "done">("select");
-  const [results, setResults] = useState<any[]>([]);
-
-  const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicle.list.useQuery();
-  const createMutation = trpc.metaAds.createAd.useMutation();
-  const batchMutation  = trpc.metaAds.createBatch.useMutation();
-
-  const availableVehicles = vehicles?.filter(v => v.available && v.imageUrl) ?? [];
-
-  function toggleVehicle(id: number) {
-    setSelectedVehicleIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
-  }
-
-  async function handleCreate() {
-    setStep("loading");
-    try {
-      if (mode === "single" && selectedVehicleIds.length === 1) {
-        const r = await createMutation.mutateAsync({
-          vehicleId: selectedVehicleIds[0],
-          dailyBudgetBRL: budget,
-          campaignId: campaignId || undefined,
-        });
-        setResults([{ vehicleId: selectedVehicleIds[0], success: true, adId: r.adId }]);
-      } else {
-        const r = await batchMutation.mutateAsync({
-          vehicleIds: selectedVehicleIds,
-          dailyBudgetBRL: budget,
-          campaignId: campaignId || undefined,
-        });
-        setResults(r.results);
-      }
-      setStep("done");
-      onCreated();
-    } catch (e: any) {
-      toast.error("Erro ao criar anúncio: " + e.message);
-      setStep("confirm");
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0f1520] border border-[#1e2d40] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[#1e2d40]">
-          <div>
-            <h2 className="font-bold text-lg text-white">Criar Anúncio no Meta Ads</h2>
-            <p className="text-sm text-gray-400">Facebook + Instagram — Geração de Leads</p>
-          </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6">
-          {step === "select" && (
-            <div className="space-y-5">
-              {/* Modo */}
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Modo</label>
-                <div className="flex gap-3">
-                  {[["single","Um veículo"],["batch","Vários veículos"]].map(([k,l]) => (
-                    <button key={k} onClick={() => { setMode(k as any); setSelectedVehicleIds([]); }}
-                      className={`flex-1 py-2 px-4 rounded-lg border text-sm font-medium transition-all ${mode === k ? "border-blue-500 bg-blue-500/15 text-blue-400" : "border-[#2a3040] text-gray-400"}`}>
-                      {l}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Selecionar veículos */}
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                  Veículos{mode === "batch" ? ` (${selectedVehicleIds.length} selecionados)` : ""}
-                </label>
-                {loadingVehicles ? (
-                  <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-400" /></div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto">
-                    {availableVehicles.map(v => {
-                      const selected = selectedVehicleIds.includes(v.id);
-                      return (
-                        <button key={v.id} onClick={() => {
-                          if (mode === "single") setSelectedVehicleIds([v.id]);
-                          else toggleVehicle(v.id);
-                        }}
-                          className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all ${selected ? "border-blue-500 bg-blue-500/15" : "border-[#2a3040] hover:border-[#3a4050]"}`}>
-                          {mode === "batch" && (
-                            selected
-                              ? <CheckSquare size={14} className="text-blue-400 shrink-0" />
-                              : <Square size={14} className="text-gray-500 shrink-0" />
-                          )}
-                          <img src={v.imageUrl!} alt={v.model} className="w-10 h-8 rounded object-cover shrink-0" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium text-white truncate">{v.brand} {v.model}</div>
-                            <div className="text-xs text-gray-400">{v.year} · {(v.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-                {availableVehicles.length === 0 && !loadingVehicles && (
-                  <p className="text-sm text-gray-500 text-center py-4">Nenhum veículo com imagem disponível</p>
-                )}
-              </div>
-
-              {/* Orçamento */}
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                  Orçamento diário: <span className="text-blue-400 font-bold">R$ {budget}</span>
-                </label>
-                <input type="range" min={5} max={200} step={5} value={budget}
-                  onChange={e => setBudget(parseInt(e.target.value))}
-                  className="w-full accent-blue-500" />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>R$ 5</span><span>R$ 200/dia</span>
-                </div>
-              </div>
-
-              {/* Campanha existente (opcional) */}
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                  ID da campanha existente <span className="text-gray-600">(opcional — deixe em branco para criar nova)</span>
-                </label>
-                <input value={campaignId} onChange={e => setCampaignId(e.target.value)}
-                  placeholder="12345678901234567"
-                  className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-blue-500 font-mono" />
-              </div>
-            </div>
-          )}
-
-          {step === "confirm" && (
-            <div className="space-y-4">
-              <div className="rounded-xl bg-blue-500/10 border border-blue-500/30 p-4">
-                <h3 className="font-bold text-blue-300 mb-3">Confirme a criação</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between"><span className="text-gray-400">Veículos</span><span className="text-white">{selectedVehicleIds.length}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Orçamento diário por anúncio</span><span className="text-white">R$ {budget}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Campanha</span><span className="text-white">{campaignId || "Nova campanha"}</span></div>
-                  <div className="flex justify-between"><span className="text-gray-400">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500">
-                Os anúncios serão criados <strong className="text-gray-300">pausados</strong>. Revise no Meta Ads Manager e ative manualmente quando estiver satisfeito com os criativos.
-              </p>
-            </div>
-          )}
-
-          {step === "loading" && (
-            <div className="flex flex-col items-center justify-center py-12 gap-4">
-              <Loader2 size={40} className="animate-spin text-blue-400" />
-              <p className="text-gray-300">Criando anúncios na Meta…</p>
-              <p className="text-xs text-gray-500 text-center max-w-xs">
-                Isso pode levar alguns segundos por veículo. Não feche esta janela.
-              </p>
-            </div>
-          )}
-
-          {step === "done" && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-green-500/10 border border-green-500/30">
-                <span className="text-3xl">✅</span>
-                <div>
-                  <div className="font-bold text-green-300">Anúncios criados!</div>
-                  <div className="text-sm text-green-200/70">Acesse o Meta Ads Manager para revisar e ativar.</div>
-                </div>
-              </div>
-              {results.map(r => (
-                <div key={r.vehicleId} className={`flex items-center gap-3 p-3 rounded-lg border text-sm ${r.success ? "border-green-500/20 bg-green-500/5" : "border-red-500/20 bg-red-500/5"}`}>
-                  <span>{r.success ? "✅" : "❌"}</span>
-                  <span className="text-gray-300">Veículo #{r.vehicleId}</span>
-                  {r.adId && <span className="text-xs text-gray-500 font-mono ml-auto">Ad: {r.adId}</span>}
-                  {r.error && <span className="text-xs text-red-400 ml-auto">{r.error}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex gap-3 p-6 border-t border-[#1e2d40]">
-          {step === "select" && (
-            <>
-              <Button variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
-              <Button onClick={() => setStep("confirm")}
-                disabled={selectedVehicleIds.length === 0}
-                className="flex-1 bg-blue-600 hover:bg-blue-700">
-                Continuar →
-              </Button>
-            </>
-          )}
-          {step === "confirm" && (
-            <>
-              <Button variant="outline" onClick={() => setStep("select")} className="flex-1">← Voltar</Button>
-              <Button onClick={handleCreate} className="flex-1 bg-blue-600 hover:bg-blue-700">
-                <Megaphone size={16} className="mr-2" /> Criar anúncios
-              </Button>
-            </>
-          )}
-          {step === "done" && (
-            <Button onClick={onClose} className="w-full">Fechar</Button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Componente: Card de anúncio ──────────────────────────────────────────────
-
-function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: () => void }) {
-  const activateMutation    = trpc.metaAds.activate.useMutation({ onSuccess: onRefresh });
-  const pauseMutation       = trpc.metaAds.pause.useMutation({ onSuccess: onRefresh });
-  const syncInsightsMutation = trpc.metaAds.syncInsights.useMutation({ onSuccess: onRefresh });
-  const cpl = ad.leads > 0 ? ad.spendCents / 100 / ad.leads : null;
-
-  // Determinar imagem e nome (suporta anúncios importados e do CRM)
-  const imageUrl = vehicle?.imageUrl || ad.thumbnailUrl;
-  const adTitle = vehicle
-    ? `${vehicle.brand} ${vehicle.model} ${vehicle.year}`
-    : (ad.adName || `Anúncio #${ad.adId?.slice(-6)}`);
-  const isImported = ad.source === "imported";
-
-  return (
-    <div className="bg-[#0f1520] border border-[#1e2d40] rounded-xl overflow-hidden">
-      {/* Imagem */}
-      <div className="relative h-36 bg-[#1a1f2e]">
-        {imageUrl ? (
-          <img src={imageUrl} alt={adTitle} className="w-full h-full object-cover" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Megaphone size={32} className="text-gray-600" />
-          </div>
-        )}
-        <div className="absolute top-2 right-2 flex gap-1">
-          {isImported && (
-            <span className="text-xs font-bold px-2 py-1 rounded-full border bg-blue-500/15 text-blue-400 border-blue-500/30">
-              Importado
-            </span>
-          )}
-          <span className={`text-xs font-bold px-2 py-1 rounded-full border ${statusColor(ad.status)}`}>
-            {statusLabel(ad.status)}
-          </span>
-        </div>
-      </div>
-
-      <div className="p-4">
-        {/* Nome */}
-        <h3 className="font-bold text-white text-sm mb-1 truncate" title={adTitle}>
-          {adTitle}
-        </h3>
-        <p className="text-xs text-gray-500 font-mono mb-3 truncate">Ad ID: {ad.adId}</p>
-
-        {/* Métricas */}
-        <div className="grid grid-cols-4 gap-2 mb-4">
-          {[
-            { icon: Eye,           label: "Impressões", value: fmtNum(ad.impressions) },
-            { icon: MousePointer,  label: "Cliques",    value: fmtNum(ad.clicks) },
-            { icon: Users,         label: "Leads",      value: fmtNum(ad.leads) },
-            { icon: DollarSign,    label: "Gasto",      value: fmtBRL(ad.spendCents) },
-          ].map(m => (
-            <div key={m.label} className="bg-[#1a1f2e] rounded-lg p-2 text-center">
-              <m.icon size={12} className="text-gray-500 mx-auto mb-1" />
-              <div className="text-sm font-bold text-white">{m.value}</div>
-              <div className="text-xs text-gray-500">{m.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* CPL */}
-        {cpl !== null && (
-          <div className="text-xs text-center text-gray-400 mb-3">
-            Custo por lead: <span className="font-bold text-white">{fmtBRL(cpl * 100)}</span>
-            {" · "} Orçamento: <span className="text-white">{fmtBRL(ad.dailyBudgetCents)}/dia</span>
-          </div>
-        )}
-
-        {/* Botões */}
-        <div className="flex gap-2">
-          {ad.status === "paused" ? (
-            <Button size="sm" onClick={() => activateMutation.mutate({ adId: ad.adId })}
-              disabled={activateMutation.isPending}
-              className="flex-1 bg-green-600 hover:bg-green-700 text-xs h-8">
-              {activateMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} className="mr-1" />}
-              Ativar
-            </Button>
-          ) : (
-            <Button size="sm" variant="outline" onClick={() => pauseMutation.mutate({ adId: ad.adId })}
-              disabled={pauseMutation.isPending}
-              className="flex-1 text-xs h-8">
-              {pauseMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Pause size={12} className="mr-1" />}
-              Pausar
-            </Button>
-          )}
-          <Button size="sm" variant="outline" onClick={() => syncInsightsMutation.mutate({ adId: ad.adId })}
-            disabled={syncInsightsMutation.isPending}
-            className="text-xs h-8 px-3">
-            {syncInsightsMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-          </Button>
-        </div>
-
-        {/* Última sync */}
-        {ad.lastInsightSync && (
-          <p className="text-xs text-gray-600 text-center mt-2">
-            Sync: {new Date(ad.lastInsightSync).toLocaleString("pt-BR")}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// ─── Modal: Criar anúncio com IA ────────────────────────────────────────────────
-
-function AiAdModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: () => void;
-}) {
+  const [step, setStep] = useState<CreateAdStep>("campaign");
+  const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const [selectedCampaignName, setSelectedCampaignName] = useState("");
+  const [selectedAdSetId, setSelectedAdSetId] = useState<string | null>(null);
+  const [selectedAdSetName, setSelectedAdSetName] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
-  const [budget, setBudget] = useState(30);
-  const [campaignId, setCampaignId] = useState("");
-  const [step, setStep] = useState<"select" | "generating" | "review" | "publishing" | "done">("select");
-  const [aiResult, setAiResult] = useState<{
-    headline: string;
-    description: string;
-    primaryText: string;
-    callToAction: string;
-    vehicle: { id: number; brand: string; model: string; year: number; price: number; imageUrl: string | null };
-  } | null>(null);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [vehicleSearch, setVehicleSearch] = useState("");
+
   const [editedTexts, setEditedTexts] = useState({ headline: "", description: "", primaryText: "" });
+  const [vehicleInfo, setVehicleInfo] = useState<{
+    id: number; brand: string; model: string; year: number; price: number; imageUrl: string | null;
+  } | null>(null);
 
-  const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicle.list.useQuery();
+  // Queries
+  const { data: campaigns, isLoading: loadingCampaigns } = trpc.metaAds.listCampaigns.useQuery(undefined, {
+    enabled: step === "campaign",
+  });
+  const { data: adSets, isLoading: loadingAdSets } = trpc.metaAds.listAdSets.useQuery(
+    { campaignId: selectedCampaignId! },
+    { enabled: step === "adset" && !!selectedCampaignId }
+  );
+  const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicle.list.useQuery(undefined, {
+    enabled: step === "vehicle",
+  });
+
   const generateMutation = trpc.metaAds.generateAdText.useMutation();
-  const createWithTextMutation = trpc.metaAds.createAdWithText.useMutation();
+  const createMutation = trpc.metaAds.createAdInAdSet.useMutation();
 
-  const availableVehicles = vehicles?.filter(v => v.available && v.imageUrl) ?? [];
+  const availableVehicles = useMemo(() => {
+    const list = vehicles?.filter(v => v.available && v.imageUrl) ?? [];
+    if (!vehicleSearch.trim()) return list;
+    const q = vehicleSearch.toLowerCase();
+    return list.filter(v =>
+      `${v.brand} ${v.model} ${v.year}`.toLowerCase().includes(q)
+    );
+  }, [vehicles, vehicleSearch]);
+
+  // Handlers
+  function selectCampaign(id: string, name: string) {
+    setSelectedCampaignId(id);
+    setSelectedCampaignName(name);
+    setStep("adset");
+  }
+
+  function selectAdSet(id: string, name: string) {
+    setSelectedAdSetId(id);
+    setSelectedAdSetName(name);
+    setStep("vehicle");
+  }
+
+  function selectVehicle(v: any) {
+    setSelectedVehicleId(v.id);
+    setSelectedImageUrl(v.imageUrl);
+    setVehicleInfo({
+      id: v.id, brand: v.brand, model: v.model, year: v.year, price: v.price, imageUrl: v.imageUrl,
+    });
+  }
 
   async function handleGenerate() {
     if (!selectedVehicleId) return;
     setStep("generating");
     try {
       const result = await generateMutation.mutateAsync({ vehicleId: selectedVehicleId });
-      setAiResult(result);
       setEditedTexts({
         headline: result.headline,
         description: result.description,
         primaryText: result.primaryText,
       });
+      setVehicleInfo(result.vehicle);
       setStep("review");
     } catch (e: any) {
       toast.error("Erro ao gerar texto: " + e.message);
-      setStep("select");
+      setStep("vehicle");
     }
   }
 
   async function handlePublish() {
-    if (!selectedVehicleId) return;
+    if (!selectedVehicleId || !selectedCampaignId || !selectedAdSetId) return;
     setStep("publishing");
     try {
-      await createWithTextMutation.mutateAsync({
+      await createMutation.mutateAsync({
         vehicleId: selectedVehicleId,
+        campaignId: selectedCampaignId,
+        adSetId: selectedAdSetId,
         headline: editedTexts.headline,
         description: editedTexts.description,
         primaryText: editedTexts.primaryText,
-        dailyBudgetBRL: budget,
-        campaignId: campaignId || undefined,
+        selectedImageUrl: selectedImageUrl || undefined,
       });
       setStep("done");
       onCreated();
@@ -453,6 +177,12 @@ function AiAdModal({
       toast.error("Erro ao criar anúncio: " + e.message);
       setStep("review");
     }
+  }
+
+  function goBack() {
+    if (step === "adset") setStep("campaign");
+    else if (step === "vehicle") setStep("adset");
+    else if (step === "review") setStep("vehicle");
   }
 
   function copyText(text: string) {
@@ -460,74 +190,208 @@ function AiAdModal({
     toast.success("Copiado!");
   }
 
+  // Step indicator
+  const steps = [
+    { key: "campaign", label: "Campanha" },
+    { key: "adset", label: "Conjunto" },
+    { key: "vehicle", label: "Veículo" },
+    { key: "review", label: "Revisar" },
+  ];
+  const currentStepIndex = steps.findIndex(s => s.key === step) ?? 0;
+
+  // Vehicle images for selection
+  const vehicleImages = useMemo(() => {
+    if (!selectedVehicleId || !vehicles) return [];
+    const v = vehicles.find(v => v.id === selectedVehicleId);
+    if (!v) return [];
+    const imgs: string[] = [];
+    if (v.imageUrl) imgs.push(v.imageUrl);
+    if (v.images && Array.isArray(v.images)) {
+      for (const img of v.images) {
+        const url = typeof img === "string" ? img : (img as any)?.url || (img as any)?.src;
+        if (url && !imgs.includes(url)) imgs.push(url);
+      }
+    }
+    return imgs.slice(0, 8);
+  }, [selectedVehicleId, vehicles]);
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-[#0f1520] border border-[#1e2d40] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[#1e2d40]">
+        <div className="flex items-center justify-between p-5 border-b border-[#1e2d40]">
           <div>
             <h2 className="font-bold text-lg text-white flex items-center gap-2">
               <Sparkles size={18} className="text-purple-400" />
-              Criar Anúncio com IA
+              Criar Anúncio
             </h2>
-            <p className="text-sm text-gray-400">A IA gera textos otimizados usando os dados do veículo</p>
+            <p className="text-sm text-gray-400 mt-0.5">Selecione campanha, conjunto e veículo</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl">✕</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-6">
-          {/* Step 1: Select vehicle */}
-          {step === "select" && (
-            <div className="space-y-5">
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Selecione o veículo</label>
-                {loadingVehicles ? (
-                  <div className="flex justify-center py-8"><Loader2 className="animate-spin text-gray-400" /></div>
-                ) : (
-                  <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto">
-                    {availableVehicles.map(v => {
-                      const selected = selectedVehicleId === v.id;
-                      return (
-                        <button key={v.id} onClick={() => setSelectedVehicleId(v.id)}
-                          className={`flex items-center gap-2 p-2 rounded-lg border text-left transition-all ${selected ? "border-purple-500 bg-purple-500/15" : "border-[#2a3040] hover:border-[#3a4050]"}`}>
-                          <img src={v.imageUrl!} alt={v.model} className="w-10 h-8 rounded object-cover shrink-0" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-medium text-white truncate">{v.brand} {v.model}</div>
-                            <div className="text-xs text-gray-400">{v.year} · {(v.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Budget */}
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                  Orçamento diário: <span className="text-purple-400 font-bold">R$ {budget}</span>
-                </label>
-                <input type="range" min={5} max={200} step={5} value={budget}
-                  onChange={e => setBudget(parseInt(e.target.value))}
-                  className="w-full accent-purple-500" />
-                <div className="flex justify-between text-xs text-gray-500 mt-1">
-                  <span>R$ 5</span><span>R$ 200/dia</span>
+        {/* Step indicator */}
+        {!["generating", "publishing", "done"].includes(step) && (
+          <div className="flex items-center gap-1 px-5 py-3 border-b border-[#1e2d40]/50">
+            {steps.map((s, i) => (
+              <div key={s.key} className="flex items-center gap-1">
+                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
+                  i < currentStepIndex ? "bg-green-500/15 text-green-400" :
+                  i === currentStepIndex ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40" :
+                  "bg-[#1a1f2e] text-gray-500"
+                }`}>
+                  {i < currentStepIndex ? <CheckCircle2 size={12} /> : <span className="w-3 text-center">{i + 1}</span>}
+                  <span>{s.label}</span>
                 </div>
+                {i < steps.length - 1 && <ChevronRight size={12} className="text-gray-600 mx-0.5" />}
               </div>
+            ))}
+          </div>
+        )}
 
-              {/* Campaign ID */}
-              <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                  ID da campanha <span className="text-gray-600">(opcional)</span>
-                </label>
-                <input value={campaignId} onChange={e => setCampaignId(e.target.value)}
-                  placeholder="Deixe em branco para criar nova"
-                  className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500 font-mono" />
-              </div>
+        <div className="flex-1 overflow-y-auto p-5">
+
+          {/* Step 1: Selecionar Campanha */}
+          {step === "campaign" && (
+            <div className="space-y-3">
+              <p className="text-sm text-gray-300 mb-4">Selecione a campanha onde o anúncio será criado:</p>
+              {loadingCampaigns ? (
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" /></div>
+              ) : !campaigns?.length ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Megaphone size={32} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">Nenhuma campanha encontrada na sua conta Meta.</p>
+                  <p className="text-xs text-gray-600 mt-1">Crie uma campanha no Meta Ads Manager primeiro.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {campaigns.map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => selectCampaign(c.id, c.name)}
+                      className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#2a3040] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-white text-sm truncate">{c.name}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-xs ${metaStatusColor(c.status)}`}>{metaStatusLabel(c.status)}</span>
+                          <span className="text-xs text-gray-600">·</span>
+                          <span className="text-xs text-gray-500">{c.objective}</span>
+                          <span className="text-xs text-gray-600">·</span>
+                          <span className="text-xs text-gray-600 font-mono">ID: {c.id}</span>
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="text-gray-600 group-hover:text-purple-400 shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Step 2: Generating */}
+          {/* Step 2: Selecionar AdSet */}
+          {step === "adset" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <div>
+                  <p className="text-sm text-gray-300">Selecione o conjunto de anúncios:</p>
+                  <p className="text-xs text-gray-500">Campanha: <span className="text-purple-300">{selectedCampaignName}</span></p>
+                </div>
+              </div>
+              {loadingAdSets ? (
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" /></div>
+              ) : !adSets?.length ? (
+                <div className="text-center py-12 text-gray-500">
+                  <Megaphone size={32} className="mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">Nenhum conjunto de anúncios encontrado nesta campanha.</p>
+                  <p className="text-xs text-gray-600 mt-1">Crie um conjunto de anúncios no Meta Ads Manager primeiro.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {adSets.map(a => (
+                    <button
+                      key={a.id}
+                      onClick={() => selectAdSet(a.id, a.name)}
+                      className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#2a3040] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-white text-sm truncate">{a.name}</div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-xs ${metaStatusColor(a.status)}`}>{metaStatusLabel(a.status)}</span>
+                          <span className="text-xs text-gray-600">·</span>
+                          <span className="text-xs text-gray-500">
+                            Orçamento: R$ {(parseInt(a.dailyBudget) / 100).toFixed(2)}/dia
+                          </span>
+                          <span className="text-xs text-gray-600">·</span>
+                          <span className="text-xs text-gray-600 font-mono">ID: {a.id}</span>
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="text-gray-600 group-hover:text-purple-400 shrink-0 ml-2" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Step 3: Selecionar Veículo */}
+          {step === "vehicle" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 mb-2">
+                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <div>
+                  <p className="text-sm text-gray-300">Selecione o veículo para anunciar:</p>
+                  <p className="text-xs text-gray-500">
+                    <span className="text-purple-300">{selectedCampaignName}</span>
+                    {" → "}
+                    <span className="text-purple-300">{selectedAdSetName}</span>
+                  </p>
+                </div>
+              </div>
+
+              {/* Search */}
+              <div className="relative">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                <input
+                  value={vehicleSearch}
+                  onChange={e => setVehicleSearch(e.target.value)}
+                  placeholder="Buscar veículo..."
+                  className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                />
+              </div>
+
+              {loadingVehicles ? (
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" /></div>
+              ) : (
+                <div className="grid grid-cols-2 gap-2 max-h-[340px] overflow-y-auto">
+                  {availableVehicles.map(v => {
+                    const selected = selectedVehicleId === v.id;
+                    return (
+                      <button key={v.id} onClick={() => selectVehicle(v)}
+                        className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${
+                          selected ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30" : "border-[#2a3040] hover:border-[#3a4050]"
+                        }`}>
+                        <img src={v.imageUrl!} alt={v.model} className="w-14 h-10 rounded-lg object-cover shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-medium text-white truncate">{v.brand} {v.model}</div>
+                          <div className="text-xs text-gray-400">{v.year}</div>
+                          <div className="text-xs text-purple-300 font-medium">
+                            {(v.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {availableVehicles.length === 0 && !loadingVehicles && (
+                <p className="text-sm text-gray-500 text-center py-4">Nenhum veículo com imagem disponível</p>
+              )}
+            </div>
+          )}
+
+          {/* Step: Gerando com IA */}
           {step === "generating" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <div className="relative">
@@ -541,19 +405,54 @@ function AiAdModal({
             </div>
           )}
 
-          {/* Step 3: Review AI-generated text */}
-          {step === "review" && aiResult && (
-            <div className="space-y-5">
+          {/* Step: Revisar e editar textos */}
+          {step === "review" && vehicleInfo && (
+            <div className="space-y-4">
+              {/* Breadcrumb */}
+              <div className="flex items-center gap-2 mb-1">
+                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <p className="text-xs text-gray-500">
+                  <span className="text-purple-300">{selectedCampaignName}</span>
+                  {" → "}
+                  <span className="text-purple-300">{selectedAdSetName}</span>
+                </p>
+              </div>
+
               {/* Vehicle preview */}
               <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30">
-                {aiResult.vehicle.imageUrl && (
-                  <img src={aiResult.vehicle.imageUrl} alt="" className="w-16 h-12 rounded-lg object-cover" />
+                {selectedImageUrl && (
+                  <img src={selectedImageUrl} alt="" className="w-16 h-12 rounded-lg object-cover" />
                 )}
                 <div>
-                  <div className="font-bold text-white text-sm">{aiResult.vehicle.brand} {aiResult.vehicle.model} {aiResult.vehicle.year}</div>
-                  <div className="text-xs text-gray-400">{(aiResult.vehicle.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}</div>
+                  <div className="font-bold text-white text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
+                  <div className="text-xs text-gray-400">
+                    {(vehicleInfo.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                  </div>
                 </div>
               </div>
+
+              {/* Image selection */}
+              {vehicleImages.length > 1 && (
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                    <ImageIcon size={12} className="inline mr-1" />
+                    Foto do anúncio
+                  </label>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {vehicleImages.map((img, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedImageUrl(img)}
+                        className={`shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
+                          selectedImageUrl === img ? "border-purple-500 ring-1 ring-purple-500/40" : "border-transparent hover:border-gray-600"
+                        }`}
+                      >
+                        <img src={img} alt={`Foto ${i + 1}`} className="w-16 h-12 object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Editable fields */}
               <div>
@@ -596,50 +495,64 @@ function AiAdModal({
                 />
               </div>
 
-              {/* Regenerate button */}
+              {/* Regenerate */}
               <button
                 onClick={handleGenerate}
                 className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1"
               >
-                <Wand2 size={12} /> Gerar novamente
+                <Wand2 size={12} /> Gerar novamente com IA
               </button>
 
-              {/* Budget summary */}
-              <div className="rounded-xl bg-[#1a1f2e] border border-[#2a3040] p-3 text-sm">
-                <div className="flex justify-between"><span className="text-gray-400">Orçamento diário</span><span className="text-white">R$ {budget}</span></div>
-                <div className="flex justify-between mt-1"><span className="text-gray-400">Campanha</span><span className="text-white">{campaignId || "Nova campanha"}</span></div>
-                <div className="flex justify-between mt-1"><span className="text-gray-400">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
+              {/* Summary */}
+              <div className="rounded-xl bg-[#1a1f2e] border border-[#2a3040] p-3 text-sm space-y-1.5">
+                <div className="flex justify-between"><span className="text-gray-400">Campanha</span><span className="text-white truncate ml-4 text-right">{selectedCampaignName}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Conjunto</span><span className="text-white truncate ml-4 text-right">{selectedAdSetName}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
               </div>
             </div>
           )}
 
-          {/* Step 4: Publishing */}
+          {/* Step: Publicando */}
           {step === "publishing" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <Loader2 size={40} className="animate-spin text-purple-400" />
-              <p className="text-gray-300">Publicando anúncio na Meta…</p>
+              <p className="text-gray-300">Criando anúncio na Meta…</p>
+              <p className="text-xs text-gray-500 text-center max-w-xs">
+                Fazendo upload da imagem, criando o criativo e o anúncio. Aguarde…
+              </p>
             </div>
           )}
 
-          {/* Step 5: Done */}
+          {/* Step: Concluído */}
           {step === "done" && (
             <div className="flex flex-col items-center justify-center py-12 gap-4">
               <div className="w-16 h-16 rounded-full bg-green-500/20 border border-green-500/40 flex items-center justify-center">
-                <CheckSquare size={28} className="text-green-400" />
+                <CheckCircle2 size={28} className="text-green-400" />
               </div>
               <div className="text-center">
                 <p className="font-bold text-green-300 text-lg">Anúncio criado com sucesso!</p>
-                <p className="text-sm text-gray-400 mt-1">O anúncio foi criado pausado. Revise no Meta Ads Manager e ative quando estiver pronto.</p>
+                <p className="text-sm text-gray-400 mt-1">O anúncio foi criado <strong className="text-yellow-400">pausado</strong> dentro do conjunto de anúncios selecionado.</p>
+                <p className="text-xs text-gray-500 mt-2">Revise no Meta Ads Manager e ative quando estiver pronto.</p>
               </div>
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 p-6 border-t border-[#1e2d40]">
-          {step === "select" && (
+        <div className="flex gap-3 p-5 border-t border-[#1e2d40]">
+          {step === "campaign" && (
+            <Button variant="outline" onClick={onClose} className="w-full">Cancelar</Button>
+          )}
+          {step === "adset" && (
+            <Button variant="outline" onClick={goBack} className="w-full">
+              <ArrowLeft size={14} className="mr-2" /> Voltar
+            </Button>
+          )}
+          {step === "vehicle" && (
             <>
-              <Button variant="outline" onClick={onClose} className="flex-1">Cancelar</Button>
+              <Button variant="outline" onClick={goBack} className="flex-1">
+                <ArrowLeft size={14} className="mr-2" /> Voltar
+              </Button>
               <Button onClick={handleGenerate}
                 disabled={!selectedVehicleId}
                 className="flex-1 bg-purple-600 hover:bg-purple-700">
@@ -649,9 +562,11 @@ function AiAdModal({
           )}
           {step === "review" && (
             <>
-              <Button variant="outline" onClick={() => setStep("select")} className="flex-1">← Voltar</Button>
+              <Button variant="outline" onClick={goBack} className="flex-1">
+                <ArrowLeft size={14} className="mr-2" /> Voltar
+              </Button>
               <Button onClick={handlePublish} className="flex-1 bg-purple-600 hover:bg-purple-700">
-                <Megaphone size={14} className="mr-2" /> Publicar anúncio
+                <Megaphone size={14} className="mr-2" /> Criar anúncio
               </Button>
             </>
           )}
@@ -664,11 +579,106 @@ function AiAdModal({
   );
 }
 
+// ─── Componente: Card de anúncio ──────────────────────────────────────────────
+
+function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: () => void }) {
+  const activateMutation    = trpc.metaAds.activate.useMutation({ onSuccess: onRefresh });
+  const pauseMutation       = trpc.metaAds.pause.useMutation({ onSuccess: onRefresh });
+  const syncInsightsMutation = trpc.metaAds.syncInsights.useMutation({ onSuccess: onRefresh });
+  const cpl = ad.leads > 0 ? ad.spendCents / 100 / ad.leads : null;
+
+  const imageUrl = vehicle?.imageUrl || ad.thumbnailUrl;
+  const adTitle = vehicle
+    ? `${vehicle.brand} ${vehicle.model} ${vehicle.year}`
+    : (ad.adName || `Anúncio #${ad.adId?.slice(-6)}`);
+  const isImported = ad.source === "imported";
+
+  return (
+    <div className="bg-[#0f1520] border border-[#1e2d40] rounded-xl overflow-hidden">
+      <div className="relative h-36 bg-[#1a1f2e]">
+        {imageUrl ? (
+          <img src={imageUrl} alt={adTitle} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Megaphone size={32} className="text-gray-600" />
+          </div>
+        )}
+        <div className="absolute top-2 right-2 flex gap-1">
+          {isImported && (
+            <span className="text-xs font-bold px-2 py-1 rounded-full border bg-blue-500/15 text-blue-400 border-blue-500/30">
+              Importado
+            </span>
+          )}
+          <span className={`text-xs font-bold px-2 py-1 rounded-full border ${statusColor(ad.status)}`}>
+            {statusLabel(ad.status)}
+          </span>
+        </div>
+      </div>
+
+      <div className="p-4">
+        <h3 className="font-bold text-white text-sm mb-1 truncate" title={adTitle}>
+          {adTitle}
+        </h3>
+        <p className="text-xs text-gray-500 font-mono mb-3 truncate">Ad ID: {ad.adId}</p>
+
+        <div className="grid grid-cols-4 gap-2 mb-4">
+          {[
+            { icon: Eye,           label: "Impressões", value: fmtNum(ad.impressions) },
+            { icon: MousePointer,  label: "Cliques",    value: fmtNum(ad.clicks) },
+            { icon: Users,         label: "Leads",      value: fmtNum(ad.leads) },
+            { icon: DollarSign,    label: "Gasto",      value: fmtBRL(ad.spendCents) },
+          ].map(m => (
+            <div key={m.label} className="bg-[#1a1f2e] rounded-lg p-2 text-center">
+              <m.icon size={12} className="text-gray-500 mx-auto mb-1" />
+              <div className="text-sm font-bold text-white">{m.value}</div>
+              <div className="text-xs text-gray-500">{m.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {cpl !== null && (
+          <div className="text-xs text-center text-gray-400 mb-3">
+            Custo por lead: <span className="font-bold text-white">{fmtBRL(cpl * 100)}</span>
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          {ad.status === "paused" ? (
+            <Button size="sm" onClick={() => activateMutation.mutate({ adId: ad.adId })}
+              disabled={activateMutation.isPending}
+              className="flex-1 bg-green-600 hover:bg-green-700 text-xs h-8">
+              {activateMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} className="mr-1" />}
+              Ativar
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" onClick={() => pauseMutation.mutate({ adId: ad.adId })}
+              disabled={pauseMutation.isPending}
+              className="flex-1 text-xs h-8">
+              {pauseMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Pause size={12} className="mr-1" />}
+              Pausar
+            </Button>
+          )}
+          <Button size="sm" variant="outline" onClick={() => syncInsightsMutation.mutate({ adId: ad.adId })}
+            disabled={syncInsightsMutation.isPending}
+            className="text-xs h-8 px-3">
+            {syncInsightsMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+          </Button>
+        </div>
+
+        {ad.lastInsightSync && (
+          <p className="text-xs text-gray-600 text-center mt-2">
+            Sync: {new Date(ad.lastInsightSync).toLocaleString("pt-BR")}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Página principal ─────────────────────────────────────────────────────────
 
 export default function MetaAdsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showAiModal, setShowAiModal] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "paused" | "imported">("all");
 
   const { data: configStatus } = trpc.metaAds.isConfigured.useQuery();
@@ -685,7 +695,6 @@ export default function MetaAdsPage() {
     onError: (e) => toast.error("Erro ao sincronizar: " + e.message),
   });
 
-  // Filtrar anúncios
   const filteredAds = (adsList ?? []).filter(row => {
     if (filter === "all") return true;
     if (filter === "active") return row.ad.status === "active";
@@ -694,7 +703,6 @@ export default function MetaAdsPage() {
     return true;
   });
 
-  // Totalizadores
   const totals = (adsList ?? []).reduce(
     (acc, row) => ({
       impressions: acc.impressions + (row.ad.impressions ?? 0),
@@ -719,26 +727,22 @@ export default function MetaAdsPage() {
               </div>
               Meta Ads
             </h1>
-            <p className="text-gray-400 text-sm mt-1">Crie e gerencie anúncios no Facebook e Instagram diretamente do CRM</p>
+            <p className="text-gray-400 text-sm mt-1">Crie anúncios em campanhas e conjuntos existentes com IA</p>
           </div>
           <div className="flex gap-3">
             <Button variant="outline" size="sm" onClick={() => syncAllMutation.mutate()}
               disabled={syncAllMutation.isPending}>
               {syncAllMutation.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
-              Sincronizar Meta
+              Sincronizar
             </Button>
             <Button onClick={() => setShowCreateModal(true)}
-              className="bg-blue-600 hover:bg-blue-700">
-              <Plus size={16} className="mr-2" /> Criar anúncio
-            </Button>
-            <Button onClick={() => setShowAiModal(true)}
               className="bg-purple-600 hover:bg-purple-700">
-              <Sparkles size={16} className="mr-2" /> Criar com IA
+              <Plus size={16} className="mr-2" /> Criar anúncio
             </Button>
           </div>
         </div>
 
-        {/* Banner de configuração ausente */}
+        {/* Not configured */}
         {configStatus && !configStatus.configured && (
           <NotConfiguredBanner missingVars={configStatus.missingVars} />
         )}
@@ -798,7 +802,7 @@ export default function MetaAdsPage() {
             <Megaphone size={48} className="opacity-20" />
             <div className="text-center">
               <p className="font-semibold text-gray-400">Nenhum anúncio encontrado</p>
-              <p className="text-sm">Clique em "Sincronizar Meta" para importar seus anúncios existentes, ou "Criar anúncio" para criar novos.</p>
+              <p className="text-sm">Clique em "Sincronizar" para importar seus anúncios existentes, ou "Criar anúncio" para criar novos.</p>
             </div>
           </div>
         ) : filteredAds.length === 0 ? (
@@ -825,14 +829,6 @@ export default function MetaAdsPage() {
         <CreateAdModal
           onClose={() => setShowCreateModal(false)}
           onCreated={() => { setShowCreateModal(false); refetch(); }}
-        />
-      )}
-
-      {/* AI Modal */}
-      {showAiModal && (
-        <AiAdModal
-          onClose={() => setShowAiModal(false)}
-          onCreated={() => { setShowAiModal(false); refetch(); }}
         />
       )}
     </div>
