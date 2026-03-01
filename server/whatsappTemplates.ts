@@ -1,14 +1,14 @@
 /**
  * WhatsApp Message Templates API — AutoInova Chat
  *
- * Handles sending pre-approved message templates via WhatsApp Business API.
+ * Handles listing and sending pre-approved message templates via WhatsApp Business API.
  * Templates are required for messages sent outside the 24-hour customer service window.
  *
- * Templates must be created and approved in the Meta Business Manager before use.
+ * Uses WHATSAPP_SYSTEM_USER_TOKEN (with whatsapp_business_management permission)
+ * and WHATSAPP_BUSINESS_ACCOUNT_ID (WABA ID) to access templates.
  */
 
 import axios from "axios";
-import { getConfig } from "./whatsapp";
 
 const WHATSAPP_API_URL = "https://graph.facebook.com/v21.0";
 
@@ -24,6 +24,7 @@ export type TemplateComponent = {
 };
 
 export type WhatsAppTemplate = {
+  id: string;
   name: string;
   language: string;
   status: string;
@@ -32,74 +33,78 @@ export type WhatsAppTemplate = {
     type: string;
     text?: string;
     format?: string;
+    example?: { body_text?: string[][] };
     buttons?: Array<{ type: string; text: string; url?: string; phone_number?: string }>;
   }>;
 };
+
+function getTemplateConfig() {
+  const systemUserToken = process.env.WHATSAPP_SYSTEM_USER_TOKEN;
+  const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+
+  return { systemUserToken, wabaId, phoneNumberId };
+}
+
+/**
+ * Check if WhatsApp Templates are properly configured
+ */
+export function isTemplatesConfigured(): { configured: boolean; missingVars: string[] } {
+  const { systemUserToken, wabaId } = getTemplateConfig();
+  const missingVars: string[] = [];
+
+  if (!systemUserToken) missingVars.push("WHATSAPP_SYSTEM_USER_TOKEN");
+  if (!wabaId) missingVars.push("WHATSAPP_BUSINESS_ACCOUNT_ID");
+
+  return { configured: missingVars.length === 0, missingVars };
+}
 
 /**
  * List all message templates for the WhatsApp Business Account
  */
 export async function listTemplates(): Promise<WhatsAppTemplate[]> {
-  const { accessToken } = getConfig();
-  const wabaid = process.env.META_ADS_ACCOUNT_ID; // WABA ID
+  const { systemUserToken, wabaId } = getTemplateConfig();
 
-  if (!accessToken || !wabaid) {
-    console.warn("[WhatsAppTemplates] Not configured.");
+  if (!systemUserToken || !wabaId) {
+    console.warn("[WhatsAppTemplates] Not configured. Need WHATSAPP_SYSTEM_USER_TOKEN and WHATSAPP_BUSINESS_ACCOUNT_ID.");
     return [];
   }
 
   try {
-    // Try using WHATSAPP_BUSINESS_ACCOUNT_ID first, fall back to phone number ID
-    const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-    if (!phoneNumberId) return [];
+    const allTemplates: WhatsAppTemplate[] = [];
+    let url: string | null = `${WHATSAPP_API_URL}/${wabaId}/message_templates`;
+    let params: Record<string, any> = { limit: 100 };
 
-    // Get WABA ID from phone number
-    const phoneRes = await axios.get(
-      `${WHATSAPP_API_URL}/${phoneNumberId}`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: { fields: "id,display_phone_number,verified_name" },
-      }
-    );
+    // Paginate through all templates
+    while (url) {
+      const response: any = await axios.get(url, {
+        headers: { Authorization: `Bearer ${systemUserToken}` },
+        params,
+      });
 
-    // List templates using the phone number's WABA
-    // We need to get the WABA ID first
-    const wabaRes = await axios.get(
-      `${WHATSAPP_API_URL}/${phoneNumberId}/whatsapp_business_profile`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
+      const templates = (response.data?.data || []) as WhatsAppTemplate[];
+      allTemplates.push(...templates);
 
-    // Alternative: try direct template listing via business account
-    // The WABA ID is typically available via META_ADS_ACCOUNT_ID or a separate env var
-    const businessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || process.env.META_ADS_PAGE_ID;
-    if (!businessAccountId) {
-      console.warn("[WhatsAppTemplates] No WABA ID available for template listing.");
-      return [];
+      // Check for next page
+      url = response.data?.paging?.next || null;
+      params = {}; // Next page URL already includes params
     }
 
-    const response = await axios.get(
-      `${WHATSAPP_API_URL}/${businessAccountId}/message_templates`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-        params: { limit: 100 },
-      }
-    );
-
-    const templates = (response.data?.data || []) as WhatsAppTemplate[];
-    console.log(`[WhatsAppTemplates] Found ${templates.length} templates`);
-    return templates;
+    console.log(`[WhatsAppTemplates] Found ${allTemplates.length} templates from WABA ${wabaId}`);
+    return allTemplates;
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;
-    console.error("[WhatsAppTemplates] Failed to list templates:", errMsg);
+    const errCode = error?.response?.data?.error?.code;
+    console.error(`[WhatsAppTemplates] Failed to list templates (code: ${errCode}):`, errMsg);
     return [];
   }
 }
 
 /**
- * Send a message using an approved WhatsApp template
+ * Send a message using an approved WhatsApp template.
  * This is required for messages sent outside the 24-hour customer service window.
+ *
+ * Uses the System User Token for sending (it has whatsapp_business_messaging permission).
  */
 export async function sendWhatsAppTemplate(
   to: string,
@@ -108,11 +113,11 @@ export async function sendWhatsAppTemplate(
   language: string = "pt_BR",
   headerParams?: string[],
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { accessToken, phoneNumberId } = getConfig();
+  const { systemUserToken, phoneNumberId } = getTemplateConfig();
 
-  if (!accessToken || !phoneNumberId) {
-    console.warn("[WhatsAppTemplates] Not configured.");
-    return { success: false, error: "WhatsApp API not configured" };
+  if (!systemUserToken || !phoneNumberId) {
+    console.warn("[WhatsAppTemplates] Not configured for sending.");
+    return { success: false, error: "WhatsApp Templates API not configured (need WHATSAPP_SYSTEM_USER_TOKEN and WHATSAPP_PHONE_NUMBER_ID)" };
   }
 
   try {
@@ -151,7 +156,7 @@ export async function sendWhatsAppTemplate(
       payload,
       {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${systemUserToken}`,
           "Content-Type": "application/json",
         },
       }

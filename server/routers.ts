@@ -54,7 +54,7 @@ import {
   runFollowUpJob,
   restartFollowUpJob,
 } from "./followUp";
-import { listTemplates, sendWhatsAppTemplate, isTemplateApproved } from "./whatsappTemplates";
+import { listTemplates, sendWhatsAppTemplate, isTemplateApproved, isTemplatesConfigured } from "./whatsappTemplates";
 import { invokeLLM } from "./_core/llm";
 
 /**
@@ -964,6 +964,11 @@ const followUpRouter = router({
 // ── WhatsApp Templates Router ─────────────────────────────────────────────────
 
 const whatsappTemplateRouter = router({
+  // Check if templates are configured
+  isConfigured: adminProcedure.query(() => {
+    return isTemplatesConfigured();
+  }),
+
   // List available templates
   list: adminProcedure.query(async () => {
     return listTemplates();

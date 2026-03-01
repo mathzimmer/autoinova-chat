@@ -561,3 +561,11 @@
   - AdCard atualizado para exibir thumbnails e nomes de anúncios importados
   - Filtros por status (Todos/Ativos/Pausados/Importados) adicionados
   - 144 testes passando (1 falha pré-existente em whatsapp.validate)
+
+## Bugs - Rodada 38 (Templates Meta não sincronizam no Follow-Up)
+- [x] Diagnosticar por que templates da Meta não estão sincronizando — token antigo sem permissão whatsapp_business_management
+- [x] Testar conectividade com WhatsApp Business API de templates — WABA ID: 1367492694331179 (Auto Inova Fixo)
+- [x] Corrigir a sincronização de templates — reescrito whatsappTemplates.ts para usar WHATSAPP_SYSTEM_USER_TOKEN + WHATSAPP_BUSINESS_ACCOUNT_ID
+- [x] Verificar no browser que templates aparecem corretamente — 2 templates (lead + hello_world) exibidos com badge Aprovado
+- [x] Adicionado endpoint isConfigured ao whatsappTemplateRouter
+- [x] 9 testes novos para whatsappTemplates (153 passando total)
