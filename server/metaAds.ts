@@ -580,30 +580,45 @@ export async function createAdInExistingAdSet(
     campaignObjective === "OUTCOME_LEADS";
 
   let objectStorySpec: any;
-  // Welcome message text must not exceed 300 chars total when serialized
-  const autofillContent = `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`;
-  // Truncate primaryText to fit within 300 char limit for the welcome message
-  const maxWelcomeText = 150; // keep short to stay under 300 chars when serialized
-  const welcomePrimaryText = texts.primaryText.length > maxWelcomeText
-    ? texts.primaryText.substring(0, maxWelcomeText - 3) + "..."
-    : texts.primaryText;
-  const welcomeMessageObj = {
-    type: "VISUAL_EDITOR",
-    version: 2,
-    landing_screen_type: "welcome_message",
-    media_type: "text",
-    text_format: {
-      customer_action_type: "autofill_message",
-      message: {
-        autofill_message: {
-          content: autofillContent
-        },
-        text: welcomePrimaryText
+  // Welcome message JSON total must not exceed 300 chars
+  function buildWelcomeMessage(): string {
+    // The JSON structure overhead is ~200 chars, leaving ~100 for content+text combined
+    const makeObj = (content: string, text: string) => ({
+      type: "VISUAL_EDITOR",
+      version: 2,
+      landing_screen_type: "welcome_message",
+      media_type: "text",
+      text_format: {
+        customer_action_type: "autofill_message",
+        message: {
+          autofill_message: { content },
+          text
+        }
+      }
+    });
+
+    // Try progressively shorter versions
+    const attempts = [
+      { content: `Olá! Tenho interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year}!`, text: `${vehicle.brand} ${vehicle.model}` },
+      { content: `Interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year}`, text: `${vehicle.brand}` },
+      { content: "Olá! Tenho interesse neste veículo!", text: vehicle.brand },
+      { content: "Olá! Tenho interesse!", text: "" },
+    ];
+
+    for (const a of attempts) {
+      const json = JSON.stringify(makeObj(a.content, a.text));
+      if (json.length <= 300) {
+        console.log(`[MetaAds] Welcome message length: ${json.length} chars`);
+        return json;
       }
     }
-  };
-  const welcomeMessage = JSON.stringify(welcomeMessageObj);
-  console.log(`[MetaAds] Welcome message length: ${welcomeMessage.length} chars`);
+
+    // Fallback mínimo absoluto
+    const fallback = JSON.stringify(makeObj("Olá!", ""));
+    console.log(`[MetaAds] Welcome message fallback length: ${fallback.length} chars`);
+    return fallback;
+  }
+  const welcomeMessage = buildWelcomeMessage();
 
   if (isCarousel && carouselHashes.length >= 2) {
     // Carrossel com legendas individuais
@@ -676,13 +691,15 @@ export async function createAdInExistingAdSet(
     console.log(`[MetaAds] Instagram User ID configurado: ${config.instagramActorId}`);
   }
 
-  // 3. Criar criativo com Advantage+ (standard_enhancements)
+  // 3. Criar criativo (standard_enhancements foi descontinuado pelo Meta)
+  // Usar recursos individuais do Advantage+ em vez de standard_enhancements
   const creativePayload: any = {
     name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}${isCarousel ? " (Carrossel)" : ""}`,
     object_story_spec: objectStorySpec,
     degrees_of_freedom_spec: {
       creative_features_spec: {
-        standard_enhancements: { enroll_status: "OPT_IN" },
+        image_enhancement: { enroll_status: "OPT_IN" },
+        text_optimizations: { enroll_status: "OPT_IN" },
       },
     },
   };

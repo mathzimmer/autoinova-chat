@@ -718,4 +718,4 @@
 ## Bug Fix - Invalid parameter ao criar anúncio
 
 - [x] Adicionar logging detalhado do payload enviado ao Meta Ads API
-- [x] Identificar e corrigir o parâmetro inválido (call_to_action nos child_attachments do carrossel)
+- [x] Identificar e corrigir o parâmetro inválido (standard_enhancements deprecated + welcome message > 300 chars) (call_to_action nos child_attachments do carrossel)
