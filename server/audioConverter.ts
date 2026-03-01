@@ -189,15 +189,21 @@ function extractOpusHeaderFromWebm(webmBuffer: Buffer): OpusHeaderInfo {
       // by the browser's MediaRecorder in most cases
       const effectiveChannels = validChannels ? Math.min(channels, 1) : 1;
       
+      // FIX (Rodada 46): PreSkip=0 faz o WhatsApp rejeitar o áudio como "não disponível".
+      // Browsers como Chrome podem reportar PreSkip=0 no OpusHead do WebM,
+      // mas o WhatsApp exige PreSkip >= 312 (6.5ms a 48kHz) para reproduzir.
+      // Se PreSkip for 0, usar o valor padrão de 312 que o ffmpeg/libopus usa.
+      const effectivePreSkip = preSkip === 0 ? 312 : preSkip;
+      
       console.log(`[AudioConverter] Found OpusHead at byte ${i}:`);
       console.log(`[AudioConverter]   Version: ${version}`);
       console.log(`[AudioConverter]   Channels (raw): ${channels} → using: ${effectiveChannels} (mono for WhatsApp)`);
-      console.log(`[AudioConverter]   PreSkip: ${preSkip} samples`);
+      console.log(`[AudioConverter]   PreSkip (raw): ${preSkip} → using: ${effectivePreSkip} (min 312 for WhatsApp)`);
       console.log(`[AudioConverter]   SampleRate: ${validSampleRate ? sampleRate : 48000} Hz`);
       
       return {
         channels: effectiveChannels,
-        preSkip,
+        preSkip: effectivePreSkip,
         sampleRate: validSampleRate ? sampleRate : 48000,
       };
     }

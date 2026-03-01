@@ -735,3 +735,10 @@
 - [x] Atualizar audioConverter.ts: forçar mono para WhatsApp, filtrar frames inválidos (<2 bytes), timeout 15s
 - [x] Verificar dependência prism-media instalada
 - [x] Rodar testes e verificar que tudo passa — 185 testes passando (13 arquivos)
+
+## Bug Fix - Rodada 46 (Áudio diz "não está mais disponível" no WhatsApp do cliente)
+
+- [x] Diagnosticar qual estratégia de envio está sendo usada em produção (media_id ou link)
+- [x] Identificar causa raiz: PreSkip=0 no OpusHead faz WhatsApp rejeitar o áudio como "não disponível"
+- [x] Corrigir: PreSkip mínimo de 312 quando browser reporta 0 (extractOpusHeaderFromWebm)
+- [x] Testar e validar — 185 testes passando, teste manual com ffmpeg OGG confirmou reprodução
