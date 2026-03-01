@@ -57,6 +57,13 @@
       "when": 1772061697128,
       "tag": "0007_ambiguous_kate_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1772375043931,
+      "tag": "0008_even_sinister_six",
+      "breakpoints": true
     }
   ]
 }

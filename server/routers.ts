@@ -29,6 +29,17 @@ import { listTeamMembers as listTeamMembersAuth } from "./teamAuth";
 import { sdk } from "./_core/sdk";
 import { ONE_YEAR_MS } from "@shared/const";
 
+// ── Meta Ads imports ──────────────────────────────────────────────────────────
+import { metaAds as metaAdsTable } from "../drizzle/schema";
+import { eq, desc } from "drizzle-orm";
+import {
+  createAdForVehicle,
+  createOrGetCampaign,
+  setAdStatus,
+  getAdInsights,
+  buildMetaConfig,
+} from "./metaAds";
+
 /**
  * Extract vehicle IDs from AI response and send their images
  */
@@ -885,6 +896,167 @@ const aiDecisionRouter = router({
     }),
 });
 
+// ── Meta Ads Router ──────────────────────────────────────────────────────────
+
+const metaAdsRouter = router({
+  // Verificar se Meta Ads está configurado
+  isConfigured: protectedProcedure.query(() => {
+    const missingVars = [
+      !process.env.META_ADS_ACCESS_TOKEN && "META_ADS_ACCESS_TOKEN",
+      !process.env.META_ADS_ACCOUNT_ID   && "META_ADS_ACCOUNT_ID",
+      !process.env.META_ADS_PAGE_ID      && "META_ADS_PAGE_ID",
+    ].filter(Boolean) as string[];
+    return { configured: missingVars.length === 0, missingVars };
+  }),
+
+  // Listar anúncios com dados do veículo
+  list: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const { vehicles: vehiclesTable } = await import("../drizzle/schema");
+    const ads = await db
+      .select({ ad: metaAdsTable, vehicle: vehiclesTable })
+      .from(metaAdsTable)
+      .leftJoin(vehiclesTable, eq(metaAdsTable.vehicleId, vehiclesTable.id))
+      .orderBy(desc(metaAdsTable.createdAt))
+      .limit(100);
+    return ads;
+  }),
+
+  // Criar anúncio para um veículo
+  createAd: protectedProcedure
+    .input(z.object({
+      vehicleId:      z.number(),
+      campaignId:     z.string().optional(),
+      dailyBudgetBRL: z.number().min(5).max(1000).default(30),
+    }))
+    .mutation(async ({ input }) => {
+      const config = buildMetaConfig();
+      if (!config.accessToken || !config.adAccountId || !config.pageId) {
+        throw new Error("Meta Ads não configurado. Adicione META_ADS_ACCESS_TOKEN, META_ADS_ACCOUNT_ID e META_ADS_PAGE_ID nas variáveis de ambiente.");
+      }
+      const result = await createAdForVehicle(
+        input.vehicleId,
+        input.campaignId ?? null,
+        config,
+        Math.round(input.dailyBudgetBRL * 100)
+      );
+      if (!result.success) throw new Error(result.error ?? "Falha ao criar anúncio");
+      return result;
+    }),
+
+  // Criar anúncios em lote
+  createBatch: protectedProcedure
+    .input(z.object({
+      vehicleIds:     z.array(z.number()).min(1).max(20),
+      campaignId:     z.string().optional(),
+      dailyBudgetBRL: z.number().min(5).max(1000).default(30),
+    }))
+    .mutation(async ({ input }) => {
+      const config = buildMetaConfig();
+      const budgetCents = Math.round(input.dailyBudgetBRL * 100);
+      let campaignId = input.campaignId;
+      if (!campaignId) {
+        campaignId = await createOrGetCampaign(
+          config,
+          `AutoInova — Lote ${new Date().toLocaleDateString("pt-BR")}`
+        );
+      }
+      const results: Array<{ vehicleId: number; success: boolean; adId?: string; error?: string }> = [];
+      for (const vehicleId of input.vehicleIds) {
+        const r = await createAdForVehicle(vehicleId, campaignId, config, budgetCents);
+        results.push({ vehicleId, success: r.success, adId: r.adId, error: r.error });
+        await new Promise(res => setTimeout(res, 1000));
+      }
+      return { campaignId, results };
+    }),
+
+  // Ativar anúncio
+  activate: protectedProcedure
+    .input(z.object({ adId: z.string() }))
+    .mutation(async ({ input }) => {
+      const config = buildMetaConfig();
+      const ok = await setAdStatus(input.adId, "ACTIVE", config.accessToken);
+      if (!ok) throw new Error("Falha ao ativar anúncio");
+      const db = await getDb();
+      if (db) {
+        await db.update(metaAdsTable)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(eq(metaAdsTable.adId, input.adId));
+      }
+      return { success: true };
+    }),
+
+  // Pausar anúncio
+  pause: protectedProcedure
+    .input(z.object({ adId: z.string() }))
+    .mutation(async ({ input }) => {
+      const config = buildMetaConfig();
+      const ok = await setAdStatus(input.adId, "PAUSED", config.accessToken);
+      if (!ok) throw new Error("Falha ao pausar anúncio");
+      const db = await getDb();
+      if (db) {
+        await db.update(metaAdsTable)
+          .set({ status: "paused", updatedAt: new Date() })
+          .where(eq(metaAdsTable.adId, input.adId));
+      }
+      return { success: true };
+    }),
+
+  // Sincronizar métricas de um anúncio
+  syncInsights: protectedProcedure
+    .input(z.object({ adId: z.string() }))
+    .mutation(async ({ input }) => {
+      const config = buildMetaConfig();
+      const insights = await getAdInsights(input.adId, config.accessToken);
+      if (!insights) throw new Error("Não foi possível obter métricas");
+      const db = await getDb();
+      if (db) {
+        await db.update(metaAdsTable)
+          .set({
+            impressions:     insights.impressions,
+            clicks:          insights.clicks,
+            leads:           insights.leads,
+            spendCents:      Math.round(insights.spend * 100),
+            lastInsightSync: new Date(),
+            updatedAt:       new Date(),
+          })
+          .where(eq(metaAdsTable.adId, input.adId));
+      }
+      return insights;
+    }),
+
+  // Sincronizar métricas de todos os anúncios ativos
+  syncAllInsights: protectedProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) throw new Error("Database indisponível");
+    const config = buildMetaConfig();
+    const activeAds = await db
+      .select({ adId: metaAdsTable.adId })
+      .from(metaAdsTable)
+      .where(eq(metaAdsTable.status, "active"));
+    let synced = 0;
+    for (const { adId } of activeAds) {
+      const insights = await getAdInsights(adId, config.accessToken);
+      if (insights) {
+        await db.update(metaAdsTable)
+          .set({
+            impressions:     insights.impressions,
+            clicks:          insights.clicks,
+            leads:           insights.leads,
+            spendCents:      Math.round(insights.spend * 100),
+            lastInsightSync: new Date(),
+            updatedAt:       new Date(),
+          })
+          .where(eq(metaAdsTable.adId, adId));
+        synced++;
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return { synced };
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -907,6 +1079,7 @@ export const appRouter = router({
   notification: notificationRouter,
   activity: activityRouter,
   aiDecision: aiDecisionRouter,
+  metaAds: metaAdsRouter,
 });
 
 export type AppRouter = typeof appRouter;

@@ -14,6 +14,7 @@ import Team from "./pages/Team";
 import TeamLogin from "./pages/TeamLogin";
 import AppLayout from "./components/AppLayout";
 import AiAudit from "./pages/AiAudit";
+import MetaAdsPage from "./pages/MetaAds";
 
 function Router() {
   return (
@@ -52,6 +53,11 @@ function Router() {
       <Route path={"/ai-audit"}>
         <AppLayout>
           <AiAudit />
+        </AppLayout>
+      </Route>
+      <Route path={"/meta-ads"}>
+        <AppLayout>
+          <MetaAdsPage />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />

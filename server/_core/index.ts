@@ -12,6 +12,7 @@ import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppCon
 import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
 import { getMessageByExternalId } from "../db";
+import { startFollowUpJob } from "../followUp";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,6 +33,30 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+// ─── Buscar dados completos do lead na Graph API do Meta ───────────────────────
+
+async function fetchMetaLeadData(leadgenId: string): Promise<any> {
+  const token = process.env.META_ADS_ACCESS_TOKEN;
+  if (!token) return null;
+  try {
+    const res = await fetch(
+      `https://graph.facebook.com/v21.0/${leadgenId}?access_token=${token}`
+    );
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizePhone(phone: string | undefined): string {
+  if (!phone) return "";
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) return digits;
+  if (digits.length === 11) return "55" + digits;
+  if (digits.length === 10) return "55" + digits;
+  return digits;
+}
+
 async function startServer() {
   const app = express();
   const server = createServer(app);
@@ -44,6 +69,9 @@ async function startServer() {
 
   // Start automatic stock synchronization (every 30 minutes)
   startAutoSync();
+
+  // Follow-up automático de leads frios (a cada 6h)
+  startFollowUpJob();
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
@@ -183,6 +211,83 @@ async function startServer() {
       return res.status(200).send(req.query["hub.challenge"]);
     }
     res.sendStatus(403);
+  });
+
+  // ─── Webhook Meta Ads Lead Forms (GET — verificação) ────────────────────────
+  app.get("/api/webhook/meta-ads", (req, res) => {
+    const token = process.env.META_ADS_VERIFY_TOKEN || "autoinova_ads_token";
+    if (
+      req.query["hub.mode"]         === "subscribe" &&
+      req.query["hub.verify_token"] === token
+    ) {
+      return res.status(200).send(req.query["hub.challenge"]);
+    }
+    res.sendStatus(403);
+  });
+
+  // ─── Webhook Meta Ads Lead Forms (POST — receber leads) ─────────────────────
+  app.post("/api/webhook/meta-ads", async (req, res) => {
+    // CRÍTICO: responder 200 imediatamente — Meta cancela se demorar > 5s
+    res.sendStatus(200);
+
+    try {
+      const entries = req.body?.entry || [];
+      for (const entry of entries) {
+        for (const change of (entry.changes || [])) {
+          if (change.field !== "leadgen") continue;
+          const leadgenId = change.value?.leadgen_id;
+          if (!leadgenId) continue;
+
+          console.log(`[MetaAds Lead] Novo lead recebido: leadgenId=${leadgenId}`);
+
+          // Buscar dados completos na Graph API do Meta
+          const leadData = await fetchMetaLeadData(leadgenId);
+          if (!leadData) {
+            console.error(`[MetaAds Lead] Não foi possível buscar dados do lead ${leadgenId}`);
+            continue;
+          }
+
+          const fields: Record<string, string> = {};
+          for (const f of (leadData.field_data || [])) {
+            fields[f.name] = f.values?.[0] || "";
+          }
+
+          console.log(`[MetaAds Lead] Campos recebidos:`, JSON.stringify(fields));
+
+          const rawPhone     = fields["phone_number"] || fields["telefone"] || fields["phone"] || "";
+          const name         = fields["full_name"]    || fields["nome"]     || fields["name"] || "Lead Ads";
+          const carInterest  = fields["carro_interesse"] || fields["veiculo"] || fields["vehicle"] || "";
+
+          const phone = normalizePhone(rawPhone);
+          if (!phone) {
+            console.error(`[MetaAds Lead] Lead sem telefone, ignorando.`);
+            continue;
+          }
+
+          const caller = appRouter.createCaller({ user: null, req: req as any, res: res as any });
+          const content = carInterest
+            ? `Olá! Vim pelo anúncio, tenho interesse em ${carInterest}. Pode me dar mais informações?`
+            : "Olá! Vi o anúncio da Auto Inova. Pode me dar mais informações sobre os veículos disponíveis?";
+
+          const result = await caller.webhook.receive({
+            phone,
+            name,
+            content,
+            messageType: "text",
+            externalId: `meta_ads_${leadgenId}`,
+          });
+
+          console.log(`[MetaAds Lead] ✅ Conversa criada: id=${result.conversationId}, phone=${phone}`);
+
+          if (result.aiResponse && isWhatsAppConfigured()) {
+            await sendTextMessage(phone, result.aiResponse);
+            console.log(`[MetaAds Lead] IA respondeu para ${phone}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[MetaAds Lead] Erro ao processar webhook:", error);
+    }
   });
 
   // Generic webhook endpoint (compatible with Chatwoot/n8n)

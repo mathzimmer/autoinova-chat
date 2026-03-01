@@ -278,3 +278,46 @@ export const aiDecisions = mysqlTable("aiDecisions", {
 
 export type AiDecision = typeof aiDecisions.$inferSelect;
 export type InsertAiDecision = typeof aiDecisions.$inferInsert;
+
+/**
+ * Meta Ads — armazena os IDs criados na API do Meta para cada veículo anunciado.
+ * Permite criar, monitorar, pausar e reativar anúncios direto do CRM.
+ */
+export const metaAds = mysqlTable("metaAds", {
+  id:               int("id").autoincrement().primaryKey(),
+  vehicleId:        int("vehicleId").notNull(),
+  campaignId:       varchar("campaignId", { length: 64 }).notNull(),
+  adSetId:          varchar("adSetId", { length: 64 }).notNull(),
+  adCreativeId:     varchar("adCreativeId", { length: 64 }).notNull(),
+  adId:             varchar("adId", { length: 64 }).notNull().unique(),
+  imageHash:        varchar("imageHash", { length: 64 }),
+  status:           mysqlEnum("adStatus", ["paused", "active", "archived"]).default("paused").notNull(),
+  dailyBudgetCents: int("dailyBudgetCents").default(3000).notNull(),
+  // Métricas cacheadas (atualizadas via syncInsights)
+  impressions:      int("impressions").default(0),
+  clicks:           int("clicks").default(0),
+  leads:            int("leads").default(0),
+  spendCents:       int("spendCents").default(0),
+  lastInsightSync:  timestamp("lastInsightSync"),
+  createdAt:        timestamp("createdAt").defaultNow().notNull(),
+  updatedAt:        timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type MetaAd = typeof metaAds.$inferSelect;
+export type InsertMetaAd = typeof metaAds.$inferInsert;
+
+/**
+ * Follow-up logs — rastreia mensagens de reengajamento enviadas automaticamente.
+ * O job cron verifica conversas inativas há 24h e dispara mensagens personalizadas.
+ */
+export const followUpLogs = mysqlTable("followUpLogs", {
+  id:             int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  phone:          varchar("phone", { length: 32 }).notNull(),
+  message:        text("message").notNull(),
+  sentAt:         timestamp("sentAt").defaultNow().notNull(),
+  attemptNumber:  int("attemptNumber").default(1).notNull(),
+});
+
+export type FollowUpLog = typeof followUpLogs.$inferSelect;
+export type InsertFollowUpLog = typeof followUpLogs.$inferInsert;

@@ -494,3 +494,18 @@
 - [ ] Exibir decisões da IA no painel lateral da conversa (histórico de tools chamadas) - PENDENTE para próxima rodada
 - [x] 15 testes para aiDecisions (schema, data structure, batch creation, result count extraction, UI mapping)
 - [x] 122 testes passando no total (9 arquivos de teste)
+
+## Feature - Rodada 35 (Meta Ads + Follow-Up Automático)
+- [x] Criar server/metaAds.ts (módulo de automação Meta Ads API v21.0)
+- [x] Criar server/followUp.ts (job de follow-up automático a cada 6h)
+- [x] Adicionar tabelas metaAds e followUpLogs ao schema
+- [x] Migrar schema com pnpm db:push (migration 0008_even_sinister_six.sql)
+- [x] Adicionar metaAdsRouter ao routers.ts (isConfigured, list, createAd, createBatch, activate, pause, syncInsights, syncAllInsights)
+- [x] Adicionar webhooks /api/webhook/meta-ads (GET + POST) ao index.ts
+- [x] Adicionar startFollowUpJob() ao index.ts
+- [x] Criar client/src/pages/MetaAds.tsx (página de gerenciamento de anúncios)
+- [x] Adicionar rota /meta-ads ao App.tsx
+- [x] Adicionar ícone Megaphone no sidebar do AppLayout.tsx
+- [x] Solicitar variáveis de ambiente Meta Ads
+- [x] Escrever testes para os novos módulos (20 testes: buildMetaConfig, env check, schema, phone normalization, follow-up)
+- [x] 141 testes passando (1 falha pré-existente em whatsapp.validate — PHONE_NUMBER_ID inválido, não relacionado)
