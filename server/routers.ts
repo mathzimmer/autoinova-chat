@@ -1488,7 +1488,7 @@ Retorne um JSON com:
             name: `Criativo IA — ${v.brand} ${v.model} #${v.id}`,
             object_story_spec: {
               page_id: config.pageId,
-              ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+              ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
               link_data: {
                 image_hash: imageHash,
                 link: whatsappLink,

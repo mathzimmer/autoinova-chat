@@ -675,10 +675,10 @@ export async function createAdInExistingAdSet(
     console.log(`[MetaAds] Usando formato link direto (objetivo: ${campaignObjective || "desconhecido"})`);
   }
 
-  // Adicionar instagram_actor_id ao object_story_spec se disponível
+  // Adicionar instagram_user_id ao object_story_spec se disponível (instagram_actor_id deprecated na v22.0)
   if (config.instagramActorId) {
-    objectStorySpec.instagram_actor_id = config.instagramActorId;
-    console.log(`[MetaAds] Instagram Actor ID configurado: ${config.instagramActorId}`);
+    objectStorySpec.instagram_user_id = config.instagramActorId;
+    console.log(`[MetaAds] Instagram User ID configurado: ${config.instagramActorId}`);
   }
 
   // 3. Criar criativo com Advantage+ (standard_enhancements)

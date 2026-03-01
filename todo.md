@@ -709,3 +709,8 @@
 - [x] Tentar criar criativo com instagram_actor_id
 - [x] Se falhar com erro #100 instagram_actor_id, recriar automaticamente sem Instagram
 - [x] Logar aviso quando fallback for acionado
+
+## Bug Fix - instagram_actor_id deprecated → instagram_user_id
+
+- [x] Substituir instagram_actor_id por instagram_user_id em todas as ocorrências do metaAds.ts
+- [x] Campo instagram_actor_id foi deprecated na v22.0 do Meta API
