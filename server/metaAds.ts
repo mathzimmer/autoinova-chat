@@ -211,7 +211,6 @@ export async function createAdCreative(
       name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
       object_story_spec: {
         page_id: config.pageId,
-        ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
         link_data: {
           image_hash: imageHash,
           link: whatsappLink,
@@ -564,7 +563,6 @@ export async function createAdInExistingAdSet(
       name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
       object_story_spec: {
         page_id: config.pageId,
-        ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
         link_data: {
           image_hash: imageHash,
           link: whatsappLink,

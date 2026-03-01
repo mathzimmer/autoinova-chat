@@ -662,3 +662,8 @@
 - [x] Upload/seleção de fotos do veículo para o anúncio
 - [x] Preview do anúncio antes de criar
 - [x] Simplificar página Meta Ads removendo fluxo de criação de campanha/adset
+
+## Bug Fix - instagram_actor_id inválido
+
+- [x] Tornar instagram_actor_id opcional na criação de anúncios (não enviar se inválido)
+- [x] Validar instagram_actor_id antes de incluir no object_story_spec
