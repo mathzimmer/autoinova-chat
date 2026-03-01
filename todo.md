@@ -617,3 +617,12 @@
 - [x] Toast de erro quando mensagem falha na entrega
 - [x] Toast específico para janela 24h expirada
 - [x] 169 testes passando (16 novos para delivery tracking)
+
+## Bugs - Rodada 40 (Token WhatsApp invalidado)
+- [x] WHATSAPP_ACCESS_TOKEN invalidado — sessão expirada por mudança de senha
+- [x] Testar se WHATSAPP_SYSTEM_USER_TOKEN pode enviar mensagens — SIM: permissões whatsapp_business_messaging + whatsapp_business_management, nunca expira
+- [x] Atualizar whatsapp.ts para usar WHATSAPP_SYSTEM_USER_TOKEN como token principal (getConfig prioriza SYS_TOKEN)
+- [x] Implementar fallback: se SYSTEM_USER_TOKEN não disponível, usa WHATSAPP_ACCESS_TOKEN com warning
+- [x] Atualizar teste whatsapp.validate para usar o token correto — agora passa com System User Token
+- [x] Atualizar whatsapp.test.ts para testar prioridade de tokens (9 testes)
+- [x] 172 testes passando, 0 falhas

@@ -14,9 +14,15 @@ import axios from "axios";
 const WHATSAPP_API_URL = "https://graph.facebook.com/v21.0";
 
 function getConfig() {
-  const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+  // Use WHATSAPP_SYSTEM_USER_TOKEN as primary (permanent, never expires)
+  // Fallback to WHATSAPP_ACCESS_TOKEN for backward compatibility
+  const accessToken = process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
+
+  if (!process.env.WHATSAPP_SYSTEM_USER_TOKEN && process.env.WHATSAPP_ACCESS_TOKEN) {
+    console.warn("[WhatsApp] Using WHATSAPP_ACCESS_TOKEN (may expire). Set WHATSAPP_SYSTEM_USER_TOKEN for a permanent token.");
+  }
 
   return { accessToken, phoneNumberId, verifyToken };
 }

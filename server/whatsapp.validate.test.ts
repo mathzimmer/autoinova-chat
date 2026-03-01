@@ -3,11 +3,13 @@ import axios from "axios";
 
 /**
  * Validates that the WhatsApp Business API credentials are correctly configured.
- * This test makes a lightweight API call to verify the access token and phone number ID.
+ * Uses WHATSAPP_SYSTEM_USER_TOKEN (permanent) as primary, with fallback to WHATSAPP_ACCESS_TOKEN.
  */
 describe("WhatsApp API credentials validation", () => {
-  it("should have WHATSAPP_ACCESS_TOKEN set", () => {
-    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  it("should have a valid WhatsApp token set (SYSTEM_USER_TOKEN or ACCESS_TOKEN)", () => {
+    const sysToken = process.env.WHATSAPP_SYSTEM_USER_TOKEN;
+    const accessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const token = sysToken || accessToken;
     expect(token).toBeDefined();
     expect(token).not.toBe("");
   });
@@ -25,7 +27,8 @@ describe("WhatsApp API credentials validation", () => {
   });
 
   it("should be able to reach WhatsApp Business API with valid credentials", async () => {
-    const token = process.env.WHATSAPP_ACCESS_TOKEN;
+    // Use SYSTEM_USER_TOKEN as primary (permanent, never expires)
+    const token = process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
     const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
 
     if (!token || !phoneId) {
@@ -50,12 +53,15 @@ describe("WhatsApp API credentials validation", () => {
       expect(response.data).toHaveProperty("id");
       console.log(`[WhatsApp] Validated phone number: ${response.data.display_phone_number || response.data.id}`);
     } catch (error: any) {
-      if (error.response?.status === 401 || error.response?.status === 190) {
+      const errCode = error.response?.status;
+      const errMsg = error.response?.data?.error?.message || error.message;
+      
+      if (errCode === 401 || errCode === 190 || errMsg?.includes("session has been invalidated")) {
         throw new Error(
-          "WhatsApp API credentials are INVALID. Please check your WHATSAPP_ACCESS_TOKEN."
+          "WhatsApp API credentials are INVALID. Please check your WHATSAPP_SYSTEM_USER_TOKEN or WHATSAPP_ACCESS_TOKEN."
         );
       }
-      if (error.response?.status === 400) {
+      if (errCode === 400) {
         throw new Error(
           "WhatsApp PHONE_NUMBER_ID is invalid. Please check your WHATSAPP_PHONE_NUMBER_ID."
         );
