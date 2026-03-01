@@ -1162,6 +1162,8 @@ const metaAdsRouter = router({
       selectedImageUrl: z.string().optional(),
       campaignObjective: z.string().optional(),
       carouselImageUrls: z.array(z.string()).optional(),
+      carouselCaptions: z.array(z.string()).optional(),
+      pixelId: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const config = buildMetaConfig();
@@ -1195,7 +1197,9 @@ const metaAdsRouter = router({
         },
         input.selectedImageUrl,
         input.campaignObjective,
-        input.carouselImageUrls
+        input.carouselImageUrls,
+        input.carouselCaptions,
+        input.pixelId
       );
 
       // Salvar no banco
@@ -1333,6 +1337,7 @@ const metaAdsRouter = router({
       targetAudience: z.string().optional(),
       highlights: z.string().optional(),
       extraInstructions: z.string().optional(),
+      numCarouselImages: z.number().optional(),
     }))
     .mutation(async ({ input }) => {
       const db = await getDb();
@@ -1392,7 +1397,8 @@ Retorne um JSON com:
   "headline": "Título curto e impactante (máx 40 caracteres)",
   "description": "Descrição curta para o card (máx 90 caracteres)",
   "primaryText": "Texto principal do anúncio (3-5 linhas, use emojis com moderação)",
-  "callToAction": "Frase de chamada para ação (1 linha)"
+  "callToAction": "Frase de chamada para ação (1 linha)"${input.numCarouselImages && input.numCarouselImages >= 2 ? `,
+  "carouselCaptions": ["Legenda curta para foto 1 (máx 40 chars)", "Legenda curta para foto 2", ... até ${input.numCarouselImages} legendas]` : ""}
 }`
           }
         ],
@@ -1408,8 +1414,9 @@ Retorne um JSON com:
                 description: { type: "string", description: "Descrição curta" },
                 primaryText: { type: "string", description: "Texto principal" },
                 callToAction: { type: "string", description: "Call to action" },
+                carouselCaptions: { type: "array", items: { type: "string" }, description: "Legendas para cada foto do carrossel" },
               },
-              required: ["headline", "description", "primaryText", "callToAction"],
+              required: ["headline", "description", "primaryText", "callToAction", "carouselCaptions"],
               additionalProperties: false,
             },
           },

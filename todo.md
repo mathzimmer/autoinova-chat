@@ -692,3 +692,14 @@
 - [x] Limitar welcome message a 300 caracteres em campanhas de Engajamento/WhatsApp
 - [x] Truncar texto principal quando usado como page_welcome_message
 - [x] Instruir IA a gerar texto principal mais curto para campanhas de mensagem
+
+## Rodada 44 - Meta Ads: Instagram, Pixel, Advantage+ e Legendas Carrossel
+
+- [x] Adicionar instagram_actor_id ao criativo para veicular no Instagram também
+- [x] Usar o META_ADS_INSTAGRAM_ID do env para o instagram_actor_id
+- [x] Adicionar rastreamento com Pixel do Facebook (ID: 587774608991001)
+- [x] Configurar tracking_specs no nível do anúncio com o Pixel
+- [x] Habilitar Advantage+ (enhancements) no anúncio
+- [x] Adicionar legendas individuais em cada foto do carrossel
+- [x] Frontend: campo para editar legenda de cada imagem do carrossel
+- [x] IA gerar legendas automáticas para cada foto do carrossel

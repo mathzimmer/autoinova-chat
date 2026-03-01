@@ -544,7 +544,9 @@ export async function createAdInExistingAdSet(
   },
   selectedImageUrl?: string,
   campaignObjective?: string,
-  carouselImageUrls?: string[]
+  carouselImageUrls?: string[],
+  carouselCaptions?: string[],
+  pixelId?: string
 ): Promise<{ adId: string; adCreativeId: string; imageHash: string }> {
   const imgUrl = selectedImageUrl || vehicle.imageUrl;
   if (!imgUrl) throw new Error("Veículo sem imagem");
@@ -604,12 +606,13 @@ export async function createAdInExistingAdSet(
   console.log(`[MetaAds] Welcome message length: ${welcomeMessage.length} chars`);
 
   if (isCarousel && carouselHashes.length >= 2) {
-    // Carrossel
+    // Carrossel com legendas individuais
     const childAttachments = carouselHashes.map((hash, i) => {
+      const caption = carouselCaptions && carouselCaptions[i] ? carouselCaptions[i] : "";
       const child: any = {
         image_hash: hash,
-        name: i === 0 ? texts.headline : `${vehicle.brand} ${vehicle.model} - Foto ${i + 1}`,
-        description: i === 0 ? texts.description : "",
+        name: caption || (i === 0 ? texts.headline : `${vehicle.brand} ${vehicle.model} - Foto ${i + 1}`),
+        description: i === 0 ? texts.description : caption,
       };
       if (isEngagementOrMessaging) {
         child.link = "https://api.whatsapp.com/send";
@@ -672,26 +675,51 @@ export async function createAdInExistingAdSet(
     console.log(`[MetaAds] Usando formato link direto (objetivo: ${campaignObjective || "desconhecido"})`);
   }
 
-  // 3. Criar criativo
+  // Adicionar instagram_actor_id ao object_story_spec se disponível
+  if (config.instagramActorId) {
+    objectStorySpec.instagram_actor_id = config.instagramActorId;
+    console.log(`[MetaAds] Instagram Actor ID configurado: ${config.instagramActorId}`);
+  }
+
+  // 3. Criar criativo com Advantage+ (standard_enhancements)
+  const creativePayload: any = {
+    name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}${isCarousel ? " (Carrossel)" : ""}`,
+    object_story_spec: objectStorySpec,
+    degrees_of_freedom_spec: {
+      creative_features_spec: {
+        standard_enhancements: { enroll_status: "OPT_IN" },
+      },
+    },
+  };
+
   const creativeResult = await metaPost(
     `act_${config.adAccountId}/adcreatives`,
-    {
-      name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}${isCarousel ? " (Carrossel)" : ""}`,
-      object_story_spec: objectStorySpec,
-    },
+    creativePayload,
     config.accessToken
   );
   const adCreativeId = creativeResult.id as string;
+  console.log(`[MetaAds] Criativo criado com Advantage+: ${adCreativeId}`);
 
-  // 3. Criar anúncio no adset existente (PAUSADO)
+  // 4. Criar anúncio no adset existente (PAUSADO) com rastreamento Pixel
+  const adPayload: any = {
+    name: `Anúncio — ${vehicle.brand} ${vehicle.model} ${vehicle.year} #${vehicle.id}`,
+    adset_id: adSetId,
+    creative: { creative_id: adCreativeId },
+    status: "PAUSED",
+  };
+
+  // Adicionar rastreamento com Pixel do Facebook
+  const trackingPixelId = pixelId || process.env.META_ADS_PIXEL_ID;
+  if (trackingPixelId) {
+    adPayload.tracking_specs = [
+      { action_type: ["offsite_conversion"], fb_pixel: [trackingPixelId] },
+    ];
+    console.log(`[MetaAds] Rastreamento Pixel configurado: ${trackingPixelId}`);
+  }
+
   const adResult = await metaPost(
     `act_${config.adAccountId}/ads`,
-    {
-      name: `Anúncio — ${vehicle.brand} ${vehicle.model} ${vehicle.year} #${vehicle.id}`,
-      adset_id: adSetId,
-      creative: { creative_id: adCreativeId },
-      status: "PAUSED",
-    },
+    adPayload,
     config.accessToken
   );
   const adId = adResult.id as string;

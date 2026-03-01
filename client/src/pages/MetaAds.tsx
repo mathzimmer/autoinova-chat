@@ -109,6 +109,7 @@ function CreateAdModal({
   // Carrossel
   const [adFormat, setAdFormat] = useState<"single" | "carousel">("single");
   const [carouselSelectedImages, setCarouselSelectedImages] = useState<string[]>([]);
+  const [carouselCaptions, setCarouselCaptions] = useState<string[]>([]);
 
   // IA customization
   const [aiStyle, setAiStyle] = useState<string>("persuasivo");
@@ -205,18 +206,24 @@ function CreateAdModal({
     if (!selectedVehicleId) return;
     setStep("generating");
     try {
+      const isCarousel = adFormat === "carousel" && carouselSelectedImages.length >= 2;
       const result = await generateMutation.mutateAsync({
         vehicleId: selectedVehicleId,
         style: aiStyle as any,
         targetAudience: targetAudience || undefined,
         highlights: highlights || undefined,
         extraInstructions: extraInstructions || undefined,
+        numCarouselImages: isCarousel ? carouselSelectedImages.length : undefined,
       });
       setEditedTexts({
         headline: result.headline,
         description: result.description,
         primaryText: result.primaryText,
       });
+      // Set carousel captions from IA
+      if (result.carouselCaptions && Array.isArray(result.carouselCaptions)) {
+        setCarouselCaptions(result.carouselCaptions);
+      }
       setVehicleInfo(result.vehicle);
       setStep("review");
     } catch (e: any) {
@@ -240,6 +247,8 @@ function CreateAdModal({
         selectedImageUrl: selectedImageUrl || undefined,
         campaignObjective: selectedCampaignObjective || undefined,
         carouselImageUrls: isCarousel ? carouselSelectedImages : undefined,
+        carouselCaptions: isCarousel ? carouselCaptions : undefined,
+        pixelId: "587774608991001",
       });
       setStep("done");
       onCreated();
@@ -719,6 +728,35 @@ function CreateAdModal({
                 />
               </div>
 
+              {/* Carousel captions */}
+              {adFormat === "carousel" && carouselSelectedImages.length >= 2 && (
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                    <LayoutGrid size={12} className="inline mr-1" />
+                    Legendas do carrossel
+                  </label>
+                  <div className="space-y-2">
+                    {carouselSelectedImages.map((img, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <img src={img} alt={`Foto ${i + 1}`} className="w-10 h-8 rounded object-cover shrink-0" />
+                        <span className="text-xs text-gray-500 shrink-0 w-4">{i + 1}</span>
+                        <input
+                          value={carouselCaptions[i] || ""}
+                          onChange={e => {
+                            const newCaptions = [...carouselCaptions];
+                            newCaptions[i] = e.target.value;
+                            setCarouselCaptions(newCaptions);
+                          }}
+                          placeholder={`Legenda da foto ${i + 1}...`}
+                          maxLength={40}
+                          className="flex-1 bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Regenerate */}
               <button
                 onClick={handleGenerate}
@@ -733,6 +771,9 @@ function CreateAdModal({
                 <div className="flex justify-between"><span className="text-gray-400">Conjunto</span><span className="text-white truncate ml-4 text-right">{selectedAdSetName}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">Formato</span><span className="text-white">{adFormat === "carousel" ? `Carrossel (${carouselSelectedImages.length} fotos)` : "Imagem única"}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">Estilo IA</span><span className="text-white">{AI_STYLES.find(s => s.value === aiStyle)?.emoji} {AI_STYLES.find(s => s.value === aiStyle)?.label}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Rastreamento</span><span className="text-green-400">Pixel AUTOINOVA IVOTI</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Advantage+</span><span className="text-green-400">Ativado</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Instagram</span><span className="text-green-400">Incluído</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
               </div>
             </div>
