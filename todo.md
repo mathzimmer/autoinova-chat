@@ -719,3 +719,10 @@
 
 - [x] Adicionar logging detalhado do payload enviado ao Meta Ads API
 - [x] Identificar e corrigir o parâmetro inválido (standard_enhancements deprecated + welcome message > 300 chars) (call_to_action nos child_attachments do carrossel)
+
+## Bug Fix - Rolagem da conversa volta automaticamente
+
+- [x] Detectar quando o usuário está rolando para cima (lendo mensagens anteriores)
+- [x] Não fazer auto-scroll quando o usuário não está no fundo da conversa
+- [x] Auto-scroll apenas quando: nova mensagem enviada pelo próprio usuário OU já estava no fundo
+- [x] Adicionar botão "Novas mensagens" para voltar ao fundo quando há mensagens novas

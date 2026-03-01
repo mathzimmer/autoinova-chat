@@ -143,6 +143,8 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const [isNearBottom, setIsNearBottom] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const prevMsgCountRef = useRef(0);
+  const isInitialLoadRef = useRef(true);
+  const userScrolledRef = useRef(false);
 
   // Track scroll position to detect manual scrolling
   const handleScroll = useCallback(() => {
@@ -151,32 +153,66 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     const threshold = 100; // pixels from bottom
     const nearBottom = scrollHeight - scrollTop - clientHeight < threshold;
     setIsNearBottom(nearBottom);
-    if (nearBottom) {
+    // Mark that user has manually scrolled away from bottom
+    if (!nearBottom) {
+      userScrolledRef.current = true;
+    } else {
+      userScrolledRef.current = false;
       setHasNewMessages(false);
     }
   }, []);
 
-  // Auto-scroll to bottom only when near bottom or on initial load
+  // Auto-scroll: only on initial load, when user sends a message, or when user is at bottom
   useEffect(() => {
     if (!msgs || !scrollRef.current) return;
     const msgCount = msgs.length;
     const isNewMessage = msgCount > prevMsgCountRef.current;
     prevMsgCountRef.current = msgCount;
 
-    if (isNearBottom || !isNewMessage) {
-      // User is near bottom or this is initial load/same data - scroll to bottom
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    } else if (isNewMessage) {
-      // User scrolled up and new message arrived - show indicator
+    // Initial load - scroll to bottom once
+    if (isInitialLoadRef.current && msgCount > 0) {
+      isInitialLoadRef.current = false;
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
+      return;
+    }
+
+    if (!isNewMessage) {
+      // No new messages (just a refetch with same data) - do NOT scroll
+      return;
+    }
+
+    // New message arrived
+    if (!userScrolledRef.current || isNearBottom) {
+      // User is at/near bottom - auto-scroll to show new message
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
+    } else {
+      // User scrolled up - show "new messages" indicator, do NOT scroll
       setHasNewMessages(true);
     }
   }, [msgs, isNearBottom]);
+
+  // Reset initial load flag when conversation changes
+  useEffect(() => {
+    isInitialLoadRef.current = true;
+    userScrolledRef.current = false;
+    prevMsgCountRef.current = 0;
+    setHasNewMessages(false);
+  }, [conversationId]);
 
   // Scroll to bottom when clicking the "new messages" indicator
   const scrollToBottom = useCallback(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       setHasNewMessages(false);
+      userScrolledRef.current = false;
     }
   }, []);
 
