@@ -667,3 +667,11 @@
 
 - [x] Tornar instagram_actor_id opcional na criação de anúncios (não enviar se inválido)
 - [x] Validar instagram_actor_id antes de incluir no object_story_spec
+
+## Bug Fix - Criativo incompatível com objetivo da campanha
+
+- [x] Detectar objetivo da campanha selecionada (Engajamento, Tráfego, Leads, etc.)
+- [x] Adaptar CTA e object_story_spec conforme o objetivo da campanha
+- [x] Para campanhas de Engajamento/Mensagens: usar WHATSAPP_MESSAGE CTA
+- [x] Para campanhas de Tráfego/Leads: usar LEARN_MORE com link
+- [x] Passar objetivo da campanha para o endpoint de criação de anúncio

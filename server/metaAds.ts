@@ -542,7 +542,8 @@ export async function createAdInExistingAdSet(
     description: string;
     primaryText: string;
   },
-  selectedImageUrl?: string
+  selectedImageUrl?: string,
+  campaignObjective?: string
 ): Promise<{ adId: string; adCreativeId: string; imageHash: string }> {
   const imgUrl = selectedImageUrl || vehicle.imageUrl;
   if (!imgUrl) throw new Error("Veículo sem imagem");
@@ -556,25 +557,72 @@ export async function createAdInExistingAdSet(
   // 1. Upload imagem
   const imageHash = await uploadAdImage(config, imgUrl);
 
-  // 2. Criar criativo com textos personalizados
+  // 2. Montar object_story_spec conforme objetivo da campanha
+  const isEngagementOrMessaging = campaignObjective === "OUTCOME_ENGAGEMENT" ||
+    campaignObjective === "OUTCOME_SALES" ||
+    campaignObjective === "OUTCOME_LEADS";
+
+  let objectStorySpec: any;
+
+  if (isEngagementOrMessaging) {
+    // Formato Click to WhatsApp: CTA = WHATSAPP_MESSAGE
+    const welcomeMessage = JSON.stringify({
+      type: "VISUAL_EDITOR",
+      version: 2,
+      landing_screen_type: "welcome_message",
+      media_type: "text",
+      text_format: {
+        customer_action_type: "autofill_message",
+        message: {
+          autofill_message: {
+            content: `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`
+          },
+          text: texts.primaryText
+        }
+      }
+    });
+
+    objectStorySpec = {
+      page_id: config.pageId,
+      link_data: {
+        image_hash: imageHash,
+        link: "https://api.whatsapp.com/send",
+        name: texts.headline,
+        call_to_action: {
+          type: "WHATSAPP_MESSAGE",
+          value: {
+            app_destination: "WHATSAPP"
+          }
+        },
+        page_welcome_message: welcomeMessage,
+      },
+    };
+    console.log(`[MetaAds] Usando formato Click to WhatsApp (objetivo: ${campaignObjective})`);
+  } else {
+    // Formato padrão com link direto (Tráfego)
+    objectStorySpec = {
+      page_id: config.pageId,
+      link_data: {
+        image_hash: imageHash,
+        link: whatsappLink,
+        message: texts.primaryText,
+        name: texts.headline,
+        description: texts.description,
+        call_to_action: {
+          type: "LEARN_MORE",
+          value: { link: whatsappLink },
+        },
+      },
+    };
+    console.log(`[MetaAds] Usando formato link direto (objetivo: ${campaignObjective || "desconhecido"})`);
+  }
+
+  // 3. Criar criativo com textos personalizados
   const creativeResult = await metaPost(
     `act_${config.adAccountId}/adcreatives`,
     {
       name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
-      object_story_spec: {
-        page_id: config.pageId,
-        link_data: {
-          image_hash: imageHash,
-          link: whatsappLink,
-          message: texts.primaryText,
-          name: texts.headline,
-          description: texts.description,
-          call_to_action: {
-            type: "LEARN_MORE",
-            value: { link: whatsappLink },
-          },
-        },
-      },
+      object_story_spec: objectStorySpec,
     },
     config.accessToken
   );

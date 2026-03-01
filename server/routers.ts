@@ -1160,6 +1160,7 @@ const metaAdsRouter = router({
       description:  z.string(),
       primaryText:  z.string(),
       selectedImageUrl: z.string().optional(),
+      campaignObjective: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const config = buildMetaConfig();
@@ -1191,7 +1192,8 @@ const metaAdsRouter = router({
           description: input.description,
           primaryText: input.primaryText,
         },
-        input.selectedImageUrl
+        input.selectedImageUrl,
+        input.campaignObjective
       );
 
       // Salvar no banco

@@ -84,6 +84,7 @@ function CreateAdModal({
   const [step, setStep] = useState<CreateAdStep>("campaign");
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
   const [selectedCampaignName, setSelectedCampaignName] = useState("");
+  const [selectedCampaignObjective, setSelectedCampaignObjective] = useState("");
   const [selectedAdSetId, setSelectedAdSetId] = useState<string | null>(null);
   const [selectedAdSetName, setSelectedAdSetName] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
@@ -120,9 +121,10 @@ function CreateAdModal({
   }, [vehicles, vehicleSearch]);
 
   // Handlers
-  function selectCampaign(id: string, name: string) {
+  function selectCampaign(id: string, name: string, objective: string) {
     setSelectedCampaignId(id);
     setSelectedCampaignName(name);
+    setSelectedCampaignObjective(objective);
     setStep("adset");
   }
 
@@ -170,6 +172,7 @@ function CreateAdModal({
         description: editedTexts.description,
         primaryText: editedTexts.primaryText,
         selectedImageUrl: selectedImageUrl || undefined,
+        campaignObjective: selectedCampaignObjective || undefined,
       });
       setStep("done");
       onCreated();
@@ -268,7 +271,7 @@ function CreateAdModal({
                   {campaigns.map(c => (
                     <button
                       key={c.id}
-                      onClick={() => selectCampaign(c.id, c.name)}
+                      onClick={() => selectCampaign(c.id, c.name, c.objective)}
                       className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#2a3040] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
                     >
                       <div className="min-w-0 flex-1">
