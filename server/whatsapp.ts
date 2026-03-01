@@ -260,8 +260,12 @@ function buildMultipartFormData(fields: Array<{ name: string; value: string | Bu
 
 /**
  * Upload media to WhatsApp's media API and get a media_id.
- * This is the recommended approach instead of using hosted URLs (link).
- * Uploaded media persists for 30 days.
+ * 
+ * FIXES APPLIED (Rodada 45):
+ * 1. MIME type agora é "audio/ogg; codecs=opus" — a API do WhatsApp exige o codec explícito
+ *    para mensagens de voz. Usar apenas "audio/ogg" faz a API rejeitar o arquivo silenciosamente.
+ * 2. Logs detalhados do erro para diagnóstico (código de erro Meta + mensagem completa).
+ * 3. Validação dos magic bytes OggS antes de fazer upload — garante que o buffer é um OGG válido.
  */
 async function uploadMedia(buffer: Buffer, mimeType: string, filename: string): Promise<{ mediaId: string } | null> {
   const { accessToken, phoneNumberId } = getConfig();
@@ -271,13 +275,32 @@ async function uploadMedia(buffer: Buffer, mimeType: string, filename: string): 
     return null;
   }
 
+  // FIX 1: Validar magic bytes OggS antes de enviar
+  // Se o buffer não começa com OggS (0x4F 0x67 0x67 0x53), é inválido e vai ser rejeitado
+  if (mimeType.includes("ogg") && buffer.length >= 4) {
+    const isValidOgg = buffer[0] === 0x4F && buffer[1] === 0x67 && buffer[2] === 0x67 && buffer[3] === 0x53;
+    if (!isValidOgg) {
+      console.error(`[WhatsApp] UPLOAD BLOCKED: Buffer does not have OGG magic bytes (OggS). First 4 bytes: ${buffer.slice(0, 4).toString("hex")}`);
+      return null;
+    }
+    console.log(`[WhatsApp] OGG magic bytes validated (OggS)`);
+  }
+
   try {
-    console.log(`[WhatsApp] Uploading media: ${filename} (${mimeType}, ${buffer.length} bytes)`);
+    // FIX 2: Usar "audio/ogg; codecs=opus" como MIME type no campo "type"
+    // A API do WhatsApp para voz (voice: true) requer o codec Opus explicitamente.
+    // Sem isso, o arquivo é aceito no upload mas falha na entrega ao destinatário.
+    const whatsappMimeType = mimeType === "audio/ogg" ? "audio/ogg; codecs=opus" : mimeType;
+    
+    console.log(`[WhatsApp] Uploading media to WhatsApp Media API:`);
+    console.log(`[WhatsApp]   Filename: ${filename}`);
+    console.log(`[WhatsApp]   MIME type: ${whatsappMimeType}`);
+    console.log(`[WhatsApp]   Size: ${buffer.length} bytes`);
 
     const { body, boundary } = buildMultipartFormData([
       { name: "messaging_product", value: "whatsapp" },
-      { name: "type", value: mimeType },
-      { name: "file", value: buffer, filename, contentType: mimeType },
+      { name: "type", value: whatsappMimeType },
+      { name: "file", value: buffer, filename, contentType: whatsappMimeType },
     ]);
 
     const response = await axios.post(
@@ -298,14 +321,20 @@ async function uploadMedia(buffer: Buffer, mimeType: string, filename: string): 
       console.log(`[WhatsApp] Media uploaded successfully. Media ID: ${mediaId}`);
       return { mediaId };
     } else {
-      console.error("[WhatsApp] Upload returned no media ID:", response.data);
+      console.error("[WhatsApp] Upload returned no media ID. Response:", JSON.stringify(response.data));
       return null;
     }
   } catch (error: any) {
+    // FIX 3: Logs detalhados com código de erro Meta para diagnóstico preciso
     const errMsg = error?.response?.data?.error?.message || error.message;
-    console.error(`[WhatsApp] Failed to upload media:`, errMsg);
+    const errCode = error?.response?.data?.error?.code;
+    const errSubcode = error?.response?.data?.error?.error_subcode;
+    const errType = error?.response?.data?.error?.type;
+    console.error(`[WhatsApp] Failed to upload media to WhatsApp Media API:`);
+    console.error(`[WhatsApp]   Error: ${errMsg}`);
+    if (errCode) console.error(`[WhatsApp]   Code: ${errCode}, Subcode: ${errSubcode}, Type: ${errType}`);
     if (error?.response?.data) {
-      console.error(`[WhatsApp] Upload error details:`, JSON.stringify(error.response.data));
+      console.error(`[WhatsApp]   Full error response:`, JSON.stringify(error.response.data));
     }
     return null;
   }
@@ -314,11 +343,17 @@ async function uploadMedia(buffer: Buffer, mimeType: string, filename: string): 
 /**
  * Send an audio message to a WhatsApp number.
  * 
- * Strategy:
- * 1. If audioBuffer is provided: upload to WhatsApp media API first, then send using media_id (recommended)
- * 2. Fallback: send using hosted URL link (not recommended by WhatsApp)
+ * FIXES APPLIED (Rodada 45):
+ * 1. Quando upload para WhatsApp Media API FALHA, NÃO usar "voice: true" com link.
+ *    "voice: true" com link falha porque o WhatsApp não consegue baixar a URL do Manus proxy
+ *    (pode ter expiração, autenticação, ou Content-Type incompatível).
+ *    Fallback agora usa "voice: false" (áudio normal, sem waveform) — funciona com link público.
+ * 2. Logs melhorados para saber qual estratégia foi usada.
  * 
- * The `voice: true` flag makes it appear as a voice message with waveform and auto-download.
+ * Estratégia:
+ * 1. Se audioBuffer fornecido: upload para WhatsApp Media API → enviar com media_id + voice: true
+ * 2. Se upload falhar: enviar com link + voice: false (áudio normal, sem waveform mas chega!)
+ * 3. Se sem buffer: enviar com link + voice: false
  */
 async function sendAudioMessage(
   to: string, 
@@ -334,33 +369,43 @@ async function sendAudioMessage(
 
   try {
     let audioPayload: any;
+    let strategy = "unknown";
 
-    // Strategy 1: Upload to WhatsApp media API (recommended)
     if (audioBuffer) {
-      console.log(`[WhatsApp] Attempting to upload audio to WhatsApp media API (${audioBuffer.length} bytes)`);
+      console.log(`[WhatsApp] Strategy 1: Upload to WhatsApp Media API (${audioBuffer.length} bytes)`);
       const uploadResult = await uploadMedia(audioBuffer, "audio/ogg", "voice-message.ogg");
       
       if (uploadResult) {
+        // Melhor estratégia: media_id + voice:true = mensagem de voz com waveform
         audioPayload = {
           id: uploadResult.mediaId,
-          voice: true, // Display as voice message with waveform
-        };
-        console.log(`[WhatsApp] Using uploaded media ID: ${uploadResult.mediaId}`);
-      } else {
-        console.warn(`[WhatsApp] Upload failed, falling back to link method`);
-        audioPayload = {
-          link: audioUrl,
           voice: true,
         };
+        strategy = "media_id+voice";
+        console.log(`[WhatsApp] Using Strategy 1 (media_id): ${uploadResult.mediaId}`);
+      } else {
+        // FIX: fallback usa voice:false com o link
+        // voice:true + link = o WhatsApp tenta baixar o arquivo da URL e pode falhar
+        // voice:false + link = entrega como áudio normal, sem waveform mas chega ao cliente
+        console.warn(`[WhatsApp] Upload to Media API failed. Falling back to Strategy 2 (link, no voice flag)`);
+        audioPayload = {
+          link: audioUrl,
+          // NÃO usar voice: true aqui — falha com URLs do Manus proxy
+          // voice: false é o comportamento padrão quando omitido
+        };
+        strategy = "link_no_voice";
+        console.log(`[WhatsApp] Using Strategy 2 (link): ${audioUrl}`);
       }
     } else {
-      // Strategy 2: Use hosted URL (fallback)
-      console.log(`[WhatsApp] Using link method (no buffer provided): ${audioUrl}`);
+      // Sem buffer: usar link sem voice flag
+      console.log(`[WhatsApp] Strategy 2 (link, no buffer): ${audioUrl}`);
       audioPayload = {
         link: audioUrl,
-        voice: true,
       };
+      strategy = "link_no_buffer";
     }
+
+    console.log(`[WhatsApp] Sending audio to ${to} via strategy: ${strategy}`);
 
     const response = await axios.post(
       `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
@@ -380,11 +425,12 @@ async function sendAudioMessage(
     );
 
     const messageId = response.data?.messages?.[0]?.id;
-    console.log(`[WhatsApp] Audio sent to ${to}, ID: ${messageId}`);
+    console.log(`[WhatsApp] Audio sent to ${to}, strategy=${strategy}, ID: ${messageId}`);
     return { success: true, messageId };
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;
-    console.error(`[WhatsApp] Failed to send audio to ${to}:`, errMsg);
+    const errCode = error?.response?.data?.error?.code;
+    console.error(`[WhatsApp] Failed to send audio to ${to}: ${errMsg} (code: ${errCode})`);
     if (error?.response?.data) {
       console.error(`[WhatsApp] Error details:`, JSON.stringify(error.response.data));
     }

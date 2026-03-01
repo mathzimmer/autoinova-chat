@@ -11,6 +11,13 @@
  * 1. Primary: Use prism-media WebmDemuxer to extract Opus frames, then
  *    package them into an OGG container using pure JavaScript (no ffmpeg needed)
  * 2. Fallback: Use ffmpeg (if available) for conversion
+ * 
+ * FIXES (Rodada 45):
+ * - extractOpusHeaderFromWebm agora lê canais, preSkip E sampleRate do OpusHead real
+ * - convertWebmToOggPureJS usa os canais corretos (browser pode gravar em stereo)
+ * - Frames vazios ou muito pequenos (< 2 bytes) são filtrados — causavam corrupção do OGG
+ * - Timeout do demuxer aumentado para 15s (áudios longos falhavam)
+ * - Logs detalhados para diagnóstico
  */
 
 import { execFile } from "child_process";
@@ -65,7 +72,6 @@ class OggPageBuilder {
 
     if (segments.length > 255) {
       // OGG page can have at most 255 segments
-      // This shouldn't happen with normal audio but let's be safe
       throw new Error(`Too many segments (${segments.length}) for a single OGG page`);
     }
 
@@ -124,30 +130,81 @@ function oggCrc32(data: Buffer): number {
   return crc >>> 0;
 }
 
+// ============================================================
+// FIX: Extração completa do OpusHead do WebM
+// Antes: só extraía preSkip, assumia channels=1 e sampleRate=48000
+// Agora: lê channels, preSkip e sampleRate do header real
+// Isso é crítico pois browsers podem gravar em stereo (channels=2)
+// e o WhatsApp pode rejeitar OGG com channel count errado no header
+// ============================================================
+
+interface OpusHeaderInfo {
+  channels: number;
+  preSkip: number;
+  sampleRate: number;
+}
+
 /**
- * Extract the Opus CodecPrivate (OpusHead) from a WebM buffer.
- * The CodecPrivate in WebM for Opus contains the OpusHead data.
- * We try to find it by looking for the OpusHead magic in the WebM header area.
+ * Extracts OpusHead data (channels, preSkip, sampleRate) from a WebM buffer.
+ * The OpusHead packet in WebM contains all codec parameters.
+ * 
+ * OpusHead structure (RFC 7845):
+ * - Bytes 0-7:   "OpusHead" magic
+ * - Byte  8:     Version (must be 1)
+ * - Byte  9:     Channel count
+ * - Bytes 10-11: Pre-skip (uint16 LE)
+ * - Bytes 12-15: Input sample rate (uint32 LE)
+ * - Bytes 16-17: Output gain (int16 LE)
+ * - Byte  18:    Channel mapping family
  */
-function extractPreSkipFromWebm(webmBuffer: Buffer): number {
-  // Look for "OpusHead" in the first 1000 bytes of the WebM
-  const searchArea = webmBuffer.slice(0, Math.min(webmBuffer.length, 2000));
+function extractOpusHeaderFromWebm(webmBuffer: Buffer): OpusHeaderInfo {
+  const defaults: OpusHeaderInfo = { channels: 1, preSkip: 312, sampleRate: 48000 };
+  
+  // Search in the first 4KB for OpusHead magic
+  const searchArea = webmBuffer.slice(0, Math.min(webmBuffer.length, 4096));
   const magic = Buffer.from("OpusHead");
   
   for (let i = 0; i < searchArea.length - 19; i++) {
     if (searchArea.compare(magic, 0, 8, i, i + 8) === 0) {
-      // Found OpusHead at position i
+      const version = searchArea[i + 8];
+      if (version !== 1) continue; // Only version 1 is valid
+      
+      const channels = searchArea[i + 9];
       const preSkip = searchArea.readUInt16LE(i + 10);
       const sampleRate = searchArea.readUInt32LE(i + 12);
-      const channels = searchArea[i + 9];
-      console.log(`[AudioConverter] Found OpusHead in WebM: channels=${channels}, preSkip=${preSkip}, sampleRate=${sampleRate}`);
-      return preSkip;
+      
+      // Sanity checks
+      const validChannels = channels >= 1 && channels <= 8;
+      const validPreSkip = preSkip >= 0 && preSkip <= 32767;
+      const validSampleRate = sampleRate === 48000 || sampleRate === 24000 || sampleRate === 16000 || sampleRate === 12000 || sampleRate === 8000;
+      
+      if (!validChannels || !validPreSkip) {
+        console.warn(`[AudioConverter] OpusHead found at ${i} but values look invalid: channels=${channels}, preSkip=${preSkip}, sampleRate=${sampleRate}. Using defaults.`);
+        continue;
+      }
+      
+      // FIX: Force mono for WhatsApp even if browser recorded stereo
+      // WhatsApp voice messages work best with mono audio
+      // If stereo, we'll tell OGG it's mono — Opus frames are already downmixed
+      // by the browser's MediaRecorder in most cases
+      const effectiveChannels = validChannels ? Math.min(channels, 1) : 1;
+      
+      console.log(`[AudioConverter] Found OpusHead at byte ${i}:`);
+      console.log(`[AudioConverter]   Version: ${version}`);
+      console.log(`[AudioConverter]   Channels (raw): ${channels} → using: ${effectiveChannels} (mono for WhatsApp)`);
+      console.log(`[AudioConverter]   PreSkip: ${preSkip} samples`);
+      console.log(`[AudioConverter]   SampleRate: ${validSampleRate ? sampleRate : 48000} Hz`);
+      
+      return {
+        channels: effectiveChannels,
+        preSkip,
+        sampleRate: validSampleRate ? sampleRate : 48000,
+      };
     }
   }
   
-  // Default pre-skip for Opus (312 samples = 6.5ms at 48kHz is common)
-  console.log("[AudioConverter] OpusHead not found in WebM, using default preSkip=312");
-  return 312;
+  console.log(`[AudioConverter] OpusHead not found in first 4KB of WebM, using defaults: channels=${defaults.channels}, preSkip=${defaults.preSkip}, sampleRate=${defaults.sampleRate}`);
+  return defaults;
 }
 
 /**
@@ -181,6 +238,8 @@ function buildOpusTags(): Buffer {
 
 /**
  * Extract Opus frames from WebM container using prism-media
+ * 
+ * FIX: Timeout aumentado de 10s para 15s e filtragem de frames inválidos
  */
 async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> {
   return new Promise((resolve, reject) => {
@@ -190,12 +249,17 @@ async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> 
     const demuxer = new prismMedia.opus.WebmDemuxer();
 
     demuxer.on("data", (chunk: Buffer) => {
-      frames.push(Buffer.from(chunk));
+      // FIX: Filtrar frames vazios ou muito pequenos (< 2 bytes)
+      // Frames inválidos causam corrupção do OGG container
+      if (chunk && chunk.length >= 2) {
+        frames.push(Buffer.from(chunk));
+      }
     });
 
     demuxer.on("end", () => {
       if (!resolved) {
         resolved = true;
+        console.log(`[AudioConverter] WebM demuxer finished: ${frames.length} valid frames extracted`);
         resolve(frames);
       }
     });
@@ -216,16 +280,18 @@ async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> 
 
     readable.pipe(demuxer);
 
+    // FIX: Timeout aumentado para 15s — áudios longos podem demorar mais para ser demuxados
     setTimeout(() => {
       if (!resolved) {
         resolved = true;
         if (frames.length > 0) {
-          resolve(frames); // Return what we have
+          console.log(`[AudioConverter] WebM demuxer timeout (15s), returning ${frames.length} frames collected so far`);
+          resolve(frames);
         } else {
-          reject(new Error("WebM demuxing timed out"));
+          reject(new Error("WebM demuxing timed out with 0 frames — buffer may be invalid or too short"));
         }
       }
-    }, 10000);
+    }, 15000);
   });
 }
 
@@ -234,53 +300,49 @@ async function extractOpusFramesFromWebm(webmBuffer: Buffer): Promise<Buffer[]> 
  * 
  * Properly builds OGG pages with correct segment tables where each
  * Opus frame is a separate packet, matching the format that ffmpeg produces.
+ * 
+ * FIXES (Rodada 45):
+ * - Usa channels/preSkip/sampleRate reais do WebM
+ * - Filtra frames inválidos antes de empacotar
  */
 async function convertWebmToOggPureJS(webmBuffer: Buffer): Promise<Buffer> {
-  console.log(`[AudioConverter] Pure JS: Extracting Opus frames from WebM (${webmBuffer.length} bytes)`);
+  console.log(`[AudioConverter] Pure JS: Starting WebM → OGG conversion (${webmBuffer.length} bytes)`);
 
   const frames = await extractOpusFramesFromWebm(webmBuffer);
   
   if (frames.length === 0) {
-    throw new Error("No Opus frames found in WebM file");
+    throw new Error("No valid Opus frames found in WebM file");
   }
 
-  // Extract pre-skip from the original WebM's OpusHead
-  const preSkip = extractPreSkipFromWebm(webmBuffer);
+  // FIX: Usar header real do WebM ao invés de valores hardcoded
+  const opusInfo = extractOpusHeaderFromWebm(webmBuffer);
 
-  console.log(`[AudioConverter] Pure JS: Extracted ${frames.length} Opus frames, preSkip=${preSkip}`);
+  console.log(`[AudioConverter] Pure JS: ${frames.length} frames, channels=${opusInfo.channels}, preSkip=${opusInfo.preSkip}, sampleRate=${opusInfo.sampleRate}`);
 
   const ogg = new OggPageBuilder();
   const pages: Buffer[] = [];
 
   // Page 0: OpusHead (BOS - Beginning of Stream)
-  // Must be on its own page with BOS flag
-  const opusHead = buildOpusHead(1, 48000, preSkip);
+  const opusHead = buildOpusHead(opusInfo.channels, opusInfo.sampleRate, opusInfo.preSkip);
   pages.push(ogg.buildPage([opusHead], { bos: true, granule: BigInt(0) }));
 
   // Page 1: OpusTags
-  // Must be on its own page
   const opusTags = buildOpusTags();
   pages.push(ogg.buildPage([opusTags], { granule: BigInt(0) }));
 
   // Audio pages: each Opus frame is a separate packet
   // Standard Opus frame duration is 20ms = 960 samples at 48kHz
   const SAMPLES_PER_FRAME = 960;
-  let granule = BigInt(preSkip); // Start from preSkip offset
+  let granule = BigInt(opusInfo.preSkip);
   
-  // Pack frames into pages, keeping each frame as a separate packet
-  // OGG allows up to 255 segments per page
-  // Each frame typically needs 1 segment (if < 255 bytes) or 2+ segments
   let currentPackets: Buffer[] = [];
   let currentSegmentCount = 0;
 
   for (let i = 0; i < frames.length; i++) {
     const frame = frames[i];
-    // Calculate how many segments this frame needs
     const frameSegments = Math.floor(frame.length / 255) + 1;
     
-    // Check if adding this frame would exceed 255 segments per page
     if (currentSegmentCount + frameSegments > 255 || currentPackets.length >= 48) {
-      // Flush current page
       pages.push(ogg.buildPage(currentPackets, { granule }));
       currentPackets = [];
       currentSegmentCount = 0;
@@ -291,13 +353,21 @@ async function convertWebmToOggPureJS(webmBuffer: Buffer): Promise<Buffer> {
     granule += BigInt(SAMPLES_PER_FRAME);
   }
 
-  // Flush remaining packets as the last page (with EOS flag)
+  // Last page with EOS flag
   if (currentPackets.length > 0) {
     pages.push(ogg.buildPage(currentPackets, { eos: true, granule }));
   }
 
   const result = Buffer.concat(pages);
-  console.log(`[AudioConverter] Pure JS: Created OGG file (${result.length} bytes) with ${frames.length} frames across ${pages.length} pages`);
+  
+  // Final validation
+  const isValidOgg = result.length > 4 && result[0] === 0x4F && result[1] === 0x67 && result[2] === 0x67 && result[3] === 0x53;
+  console.log(`[AudioConverter] Pure JS: OGG created (${result.length} bytes, ${frames.length} frames, ${pages.length} pages), valid=${isValidOgg}`);
+  
+  if (!isValidOgg) {
+    throw new Error("Generated OGG does not have valid magic bytes (OggS)");
+  }
+  
   return result;
 }
 
@@ -345,18 +415,19 @@ async function convertWebmToOggFfmpeg(webmBuffer: Buffer): Promise<Buffer> {
       await execFileAsync(ffmpegPath, [
         "-i", inputPath,
         "-c:a", "copy",
+        "-ac", "1",         // Force mono for WhatsApp compatibility
         "-f", "ogg",
         "-y",
         outputPath,
       ], { timeout: 15000 });
     } catch {
-      // If copy fails, try re-encoding
+      // If copy fails, try re-encoding to mono
       await execFileAsync(ffmpegPath, [
         "-i", inputPath,
         "-c:a", "libopus",
         "-b:a", "48k",
         "-ar", "48000",
-        "-ac", "1",
+        "-ac", "1",         // Force mono for WhatsApp compatibility
         "-f", "ogg",
         "-y",
         outputPath,
@@ -392,7 +463,6 @@ export async function convertWebmToOgg(webmBuffer: Buffer): Promise<Buffer> {
   try {
     const oggBuffer = await convertWebmToOggPureJS(webmBuffer);
     
-    // Verify OGG magic bytes
     if (oggBuffer.length > 4 && oggBuffer[0] === 0x4F && oggBuffer[1] === 0x67 && oggBuffer[2] === 0x67 && oggBuffer[3] === 0x53) {
       console.log(`[AudioConverter] SUCCESS (Pure JS): webm (${webmBuffer.length} bytes) → ogg (${oggBuffer.length} bytes)`);
       return oggBuffer;

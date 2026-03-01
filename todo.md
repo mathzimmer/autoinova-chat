@@ -726,3 +726,12 @@
 - [x] Não fazer auto-scroll quando o usuário não está no fundo da conversa
 - [x] Auto-scroll apenas quando: nova mensagem enviada pelo próprio usuário OU já estava no fundo
 - [x] Adicionar botão "Novas mensagens" para voltar ao fundo quando há mensagens novas
+
+## Bug Fix - Rodada 45 (Correção envio de áudio WhatsApp)
+
+- [x] Atualizar whatsapp.ts: uploadMedia com validação OGG magic bytes, MIME "audio/ogg; codecs=opus", multipart manual, logs detalhados
+- [x] Atualizar whatsapp.ts: sendAudioMessage com 3 estratégias (media_id+voice, link_no_voice fallback, link_no_buffer)
+- [x] Atualizar audioConverter.ts: extractOpusHeaderFromWebm lê channels/preSkip/sampleRate reais do OpusHead
+- [x] Atualizar audioConverter.ts: forçar mono para WhatsApp, filtrar frames inválidos (<2 bytes), timeout 15s
+- [x] Verificar dependência prism-media instalada
+- [x] Rodar testes e verificar que tudo passa — 185 testes passando (13 arquivos)
