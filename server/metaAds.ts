@@ -578,6 +578,13 @@ export async function createAdInExistingAdSet(
     campaignObjective === "OUTCOME_LEADS";
 
   let objectStorySpec: any;
+  // Welcome message text must not exceed 300 chars total when serialized
+  const autofillContent = `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`;
+  // Truncate primaryText to fit within 300 char limit for the welcome message
+  const maxWelcomeText = 150; // keep short to stay under 300 chars when serialized
+  const welcomePrimaryText = texts.primaryText.length > maxWelcomeText
+    ? texts.primaryText.substring(0, maxWelcomeText - 3) + "..."
+    : texts.primaryText;
   const welcomeMessageObj = {
     type: "VISUAL_EDITOR",
     version: 2,
@@ -587,13 +594,14 @@ export async function createAdInExistingAdSet(
       customer_action_type: "autofill_message",
       message: {
         autofill_message: {
-          content: `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`
+          content: autofillContent
         },
-        text: texts.primaryText
+        text: welcomePrimaryText
       }
     }
   };
   const welcomeMessage = JSON.stringify(welcomeMessageObj);
+  console.log(`[MetaAds] Welcome message length: ${welcomeMessage.length} chars`);
 
   if (isCarousel && carouselHashes.length >= 2) {
     // Carrossel

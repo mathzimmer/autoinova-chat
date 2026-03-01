@@ -686,3 +686,9 @@
 - [x] Mais personalizações da IA: tom, estilo, público-alvo, destaques
 - [x] Opção de regenerar textos com diferentes estilos
 - [x] Campo para instruções adicionais à IA
+
+## Bug Fix - Welcome message excede 300 caracteres
+
+- [x] Limitar welcome message a 300 caracteres em campanhas de Engajamento/WhatsApp
+- [x] Truncar texto principal quando usado como page_welcome_message
+- [x] Instruir IA a gerar texto principal mais curto para campanhas de mensagem
