@@ -509,3 +509,41 @@
 - [x] Solicitar variáveis de ambiente Meta Ads
 - [x] Escrever testes para os novos módulos (20 testes: buildMetaConfig, env check, schema, phone normalization, follow-up)
 - [x] 141 testes passando (1 falha pré-existente em whatsapp.validate — PHONE_NUMBER_ID inválido, não relacionado)
+
+## Feature - Rodada 36 (Follow-Up Panel + WhatsApp Templates + Meta Ads Métricas + IA Ads)
+
+### Painel de Follow-Up
+- [x] Criar página /follow-up com configurações do job (3 abas: Config, Histórico, Templates)
+- [x] Configurar intervalo entre tentativas (horas)
+- [x] Configurar número máximo de tentativas (1-10)
+- [x] Configurar tempo de inatividade mínimo (horas)
+- [x] Editar mensagens de cada tentativa (instruções para IA por tentativa)
+- [x] Ativar/desativar follow-up automático (switch)
+- [x] Exibir histórico de follow-ups enviados (tabela com paginação)
+- [x] Salvar configurações em settings do banco
+- [x] Botão "Executar agora" para rodar follow-up manualmente
+- [x] Cards de estatísticas (total, 24h, 7d, status)
+- [x] Ícone Zap na sidebar (/follow-up)
+
+### WhatsApp Message Templates (pós-24h)
+- [x] Criar módulo server/whatsappTemplates.ts para API de templates
+- [x] Listar templates aprovados da conta WhatsApp Business
+- [x] Enviar mensagem usando template aprovado (pós-24h)
+- [x] Integrar com follow-up: usar template quando janela 24h expirou (config useTemplateAfter24h)
+- [x] UI para selecionar template no painel de follow-up (aba Templates)
+
+### Meta Ads Métricas no Painel
+- [x] Sincronização de métricas (impressões, cliques, leads, gastos) via syncInsights/syncAllInsights
+- [x] Exibir métricas em cards totalizadores no topo (Ativos, Impressões, Cliques, Leads, Gasto)
+- [x] Exibir métricas por anúncio no card (CPL, impressões, cliques, leads, gasto)
+- [x] Botão "Sincronizar Métricas" manual (sync all)
+- [x] Botão sync individual por anúncio
+
+### Criação de Anúncios com IA
+- [x] Gerar texto do anúncio via LLM usando dados do veículo (generateAdText endpoint)
+- [x] Gerar headline e description otimizados para conversão (JSON schema com limites)
+- [x] Preview e edição do anúncio antes de criar (AiAdModal com campos editáveis)
+- [x] Opção de regenerar texto com IA (botão "Gerar novamente")
+- [x] Criar anúncio com texto gerado pela IA (createAdWithText endpoint)
+- [x] Botão "Criar com IA" (roxo) na página Meta Ads
+- [x] 141 testes passando (1 falha pré-existente em whatsapp.validate)

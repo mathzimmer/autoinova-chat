@@ -55,7 +55,7 @@ export type CreateAdResult = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function metaPost(
+export async function metaPost(
   endpoint: string,
   params: Record<string, unknown>,
   accessToken: string

@@ -35,10 +35,26 @@ import { eq, desc } from "drizzle-orm";
 import {
   createAdForVehicle,
   createOrGetCampaign,
+  createAdSet,
+  uploadAdImage,
+  createAd,
+  metaPost,
   setAdStatus,
   getAdInsights,
   buildMetaConfig,
 } from "./metaAds";
+
+// ── Follow-Up imports ────────────────────────────────────────────────────────
+import {
+  getFollowUpConfig,
+  saveFollowUpConfig,
+  getFollowUpHistory,
+  getFollowUpStats,
+  runFollowUpJob,
+  restartFollowUpJob,
+} from "./followUp";
+import { listTemplates, sendWhatsAppTemplate, isTemplateApproved } from "./whatsappTemplates";
+import { invokeLLM } from "./_core/llm";
 
 /**
  * Extract vehicle IDs from AI response and send their images
@@ -896,6 +912,90 @@ const aiDecisionRouter = router({
     }),
 });
 
+// ── Follow-Up Router ─────────────────────────────────────────────────────────
+
+const followUpRouter = router({
+  // Get current config
+  getConfig: adminProcedure.query(async () => {
+    return getFollowUpConfig();
+  }),
+
+  // Save config
+  saveConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean().optional(),
+      maxAttempts: z.number().min(1).max(10).optional(),
+      inactiveHours: z.number().min(1).max(168).optional(),
+      intervalHours: z.number().min(1).max(72).optional(),
+      maxPerRun: z.number().min(1).max(100).optional(),
+      useTemplateAfter24h: z.boolean().optional(),
+      templateName: z.string().optional(),
+      messages: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const config = await saveFollowUpConfig(input, ctx.user.id);
+      restartFollowUpJob();
+      return config;
+    }),
+
+  // Get history
+  history: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      return getFollowUpHistory(input?.limit ?? 50, input?.offset ?? 0);
+    }),
+
+  // Get stats
+  stats: adminProcedure.query(async () => {
+    return getFollowUpStats();
+  }),
+
+  // Run job manually
+  runNow: adminProcedure.mutation(async () => {
+    const result = await runFollowUpJob();
+    return result;
+  }),
+});
+
+// ── WhatsApp Templates Router ─────────────────────────────────────────────────
+
+const whatsappTemplateRouter = router({
+  // List available templates
+  list: adminProcedure.query(async () => {
+    return listTemplates();
+  }),
+
+  // Check if a template is approved
+  checkApproval: adminProcedure
+    .input(z.object({ templateName: z.string() }))
+    .query(async ({ input }) => {
+      const approved = await isTemplateApproved(input.templateName);
+      return { approved };
+    }),
+
+  // Send a template message manually
+  send: adminProcedure
+    .input(z.object({
+      phone: z.string(),
+      templateName: z.string(),
+      bodyParams: z.array(z.string()).default([]),
+      language: z.string().default("pt_BR"),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await sendWhatsAppTemplate(
+        input.phone,
+        input.templateName,
+        input.bodyParams,
+        input.language
+      );
+      if (!result.success) throw new Error(result.error ?? "Falha ao enviar template");
+      return result;
+    }),
+});
+
 // ── Meta Ads Router ──────────────────────────────────────────────────────────
 
 const metaAdsRouter = router({
@@ -1055,6 +1155,173 @@ const metaAdsRouter = router({
     }
     return { synced };
   }),
+
+  // Gerar texto do anúncio com IA
+  generateAdText: protectedProcedure
+    .input(z.object({ vehicleId: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database indisponível");
+      const { vehicles: vehiclesTable } = await import("../drizzle/schema");
+      const vehicleRows = await db.select().from(vehiclesTable).where(eq(vehiclesTable.id, input.vehicleId)).limit(1);
+      if (!vehicleRows.length) throw new Error("Veículo não encontrado");
+      const v = vehicleRows[0];
+
+      const fmtPrice = (v.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+      const fmtKm = (v.mileage ?? 0).toLocaleString("pt-BR");
+
+      const result = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `Você é um copywriter especializado em anúncios de veículos para Facebook e Instagram.
+Crie textos persuasivos, curtos e otimizados para conversão.
+Sempre retorne JSON válido.`
+          },
+          {
+            role: "user",
+            content: `Crie um anúncio para este veículo:
+
+Marca: ${v.brand}
+Modelo: ${v.model}
+Ano: ${v.year}
+Preço: ${fmtPrice}
+Quilometragem: ${fmtKm} km
+Câmbio: ${v.transmission || "N/I"}
+Combustível: ${v.fuel || "N/I"}
+Cor: ${v.color || "N/I"}
+Versão: ${v.version || "N/I"}
+
+Retorne um JSON com:
+{
+  "headline": "Título curto e impactante (máx 40 caracteres)",
+  "description": "Descrição curta para o card (máx 90 caracteres)",
+  "primaryText": "Texto principal do anúncio (3-5 linhas, use emojis com moderação)",
+  "callToAction": "Frase de chamada para ação (1 linha)"
+}`
+          }
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "ad_text",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                headline: { type: "string", description: "Título curto" },
+                description: { type: "string", description: "Descrição curta" },
+                primaryText: { type: "string", description: "Texto principal" },
+                callToAction: { type: "string", description: "Call to action" },
+              },
+              required: ["headline", "description", "primaryText", "callToAction"],
+              additionalProperties: false,
+            },
+          },
+        },
+      });
+
+      const content = result.choices[0]?.message?.content;
+      if (!content) throw new Error("IA não retornou conteúdo");
+      const contentStr = typeof content === "string" ? content : JSON.stringify(content);
+
+      try {
+        const parsed = JSON.parse(contentStr);
+        return {
+          ...parsed,
+          vehicle: {
+            id: v.id,
+            brand: v.brand,
+            model: v.model,
+            year: v.year,
+            price: v.price,
+            imageUrl: v.imageUrl,
+          },
+        };
+      } catch {
+        throw new Error("IA retornou formato inválido");
+      }
+    }),
+
+  // Criar anúncio com texto personalizado (gerado pela IA)
+  createAdWithText: protectedProcedure
+    .input(z.object({
+      vehicleId: z.number(),
+      headline: z.string(),
+      description: z.string(),
+      primaryText: z.string(),
+      dailyBudgetBRL: z.number().min(5).max(1000).default(30),
+      campaignId: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const config = buildMetaConfig();
+      if (!config.accessToken || !config.adAccountId || !config.pageId) {
+        throw new Error("Meta Ads não configurado.");
+      }
+
+      const db = await getDb();
+      if (!db) throw new Error("Database indisponível");
+      const { vehicles: vehiclesTable } = await import("../drizzle/schema");
+      const vehicleRows = await db.select().from(vehiclesTable).where(eq(vehiclesTable.id, input.vehicleId)).limit(1);
+      if (!vehicleRows.length) throw new Error("Veículo não encontrado");
+      const v = vehicleRows[0];
+      if (!v.imageUrl) throw new Error("Veículo sem imagem");
+
+      const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
+      const waMsg = encodeURIComponent(
+        `Olá! Vi o anúncio do ${v.brand} ${v.model} ${v.year} e tenho interesse!`
+      );
+      const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
+
+      const finalCampaignId = input.campaignId ?? (await createOrGetCampaign(config));
+      const budgetCents = Math.round(input.dailyBudgetBRL * 100);
+      const adSetId = await createAdSet(config, finalCampaignId, v, budgetCents);
+      const imageHash = await uploadAdImage(config, v.imageUrl);
+
+      // Create creative with custom AI text
+      const adCreativeId = await (async () => {
+        const result = await metaPost(
+          `act_${config.adAccountId}/adcreatives`,
+          {
+            name: `Criativo IA — ${v.brand} ${v.model} #${v.id}`,
+            object_story_spec: {
+              page_id: config.pageId,
+              ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+              link_data: {
+                image_hash: imageHash,
+                link: whatsappLink,
+                message: input.primaryText,
+                name: input.headline,
+                description: input.description,
+                call_to_action: {
+                  type: "LEARN_MORE",
+                  value: { link: whatsappLink },
+                },
+              },
+            },
+          },
+          config.accessToken
+        );
+        return result.id as string;
+      })();
+
+      const adId = await createAd(config, adSetId, adCreativeId, v);
+
+      await db.insert(metaAdsTable).values({
+        vehicleId: input.vehicleId,
+        campaignId: finalCampaignId,
+        adSetId,
+        adCreativeId,
+        adId,
+        imageHash,
+        status: "paused",
+        dailyBudgetCents: budgetCents,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      return { success: true, adId, campaignId: finalCampaignId };
+    }),
 });
 
 export const appRouter = router({
@@ -1080,6 +1347,8 @@ export const appRouter = router({
   activity: activityRouter,
   aiDecision: aiDecisionRouter,
   metaAds: metaAdsRouter,
+  followUp: followUpRouter,
+  whatsappTemplate: whatsappTemplateRouter,
 });
 
 export type AppRouter = typeof appRouter;

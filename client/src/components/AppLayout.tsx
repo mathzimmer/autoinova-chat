@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap } from "lucide-react";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 
@@ -28,6 +28,7 @@ const navItems: NavItem[] = [
   { icon: Users, label: "Leads", path: "/leads" },
   { icon: UsersRound, label: "Equipe", path: "/team", allowedCargos: ["admin", "gerente"] },
   { icon: Megaphone, label: "Meta Ads", path: "/meta-ads", allowedCargos: ["admin", "gerente"] },
+  { icon: Zap, label: "Follow-Up", path: "/follow-up", allowedCargos: ["admin", "gerente"] },
   { icon: Brain, label: "Auditoria IA", path: "/ai-audit", allowedCargos: ["admin"] },
   { icon: Settings, label: "Configurações", path: "/settings", allowedCargos: ["admin"] },
 ];
