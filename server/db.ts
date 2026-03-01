@@ -118,13 +118,17 @@ export async function updateConversation(id: number, data: Partial<InsertConvers
 }
 
 // ─── Message Queries ───────────────────────────────────────────
-export async function listMessages(conversationId: number, limit = 100) {
+export async function listMessages(conversationId: number, limit = 500) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(messages)
+  // Get the last N messages ordered by createdAt ascending
+  // Using subquery approach: get IDs of last N, then fetch in order
+  const result = await db.select().from(messages)
     .where(eq(messages.conversationId, conversationId))
-    .orderBy(messages.createdAt)
+    .orderBy(desc(messages.createdAt))
     .limit(limit);
+  // Reverse to get chronological order
+  return result.reverse();
 }
 
 export async function createMessage(data: InsertMessage) {

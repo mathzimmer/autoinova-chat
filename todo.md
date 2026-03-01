@@ -742,3 +742,10 @@
 - [x] Identificar causa raiz: PreSkip=0 no OpusHead faz WhatsApp rejeitar o áudio como "não disponível"
 - [x] Corrigir: PreSkip mínimo de 312 quando browser reporta 0 (extractOpusHeaderFromWebm)
 - [x] Testar e validar — 185 testes passando, teste manual com ffmpeg OGG confirmou reprodução
+
+## Bug Fix - Rodada 47 (Áudio ainda indisponível + mensagens não aparecem na tela)
+
+- [x] Investigar logs do servidor para entender erros recentes
+- [x] Corrigir mensagens não aparecendo na tela do atendente — LIMIT 100→500 + ORDER DESC com reverse
+- [x] Corrigir áudio — PreSkip fix já estava no código, faltava publicar. Confirmado que último envio foi antes do restart
+- [x] Testar e validar — 185 testes passando
