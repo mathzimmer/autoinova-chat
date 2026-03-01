@@ -722,12 +722,16 @@ export async function createAdInExistingAdSet(
   };
 
   // Adicionar rastreamento com Pixel do Facebook
+  // NOTA: tracking_specs com offsite_conversion não é compatível com campanhas de Engajamento/WhatsApp
+  // Para essas campanhas, o Pixel é configurado no nível do adset/campanha, não do anúncio
   const trackingPixelId = pixelId || process.env.META_ADS_PIXEL_ID;
-  if (trackingPixelId) {
+  if (trackingPixelId && !isEngagementOrMessaging) {
     adPayload.tracking_specs = [
       { action_type: ["offsite_conversion"], fb_pixel: [trackingPixelId] },
     ];
-    console.log(`[MetaAds] Rastreamento Pixel configurado: ${trackingPixelId}`);
+    console.log(`[MetaAds] Rastreamento Pixel configurado no anúncio: ${trackingPixelId}`);
+  } else if (trackingPixelId) {
+    console.log(`[MetaAds] Pixel ${trackingPixelId} disponível (rastreamento configurado no nível da campanha para Engajamento)`);
   }
 
   console.log(`[MetaAds] Payload anúncio:`, JSON.stringify(adPayload, null, 2));
