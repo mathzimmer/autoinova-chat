@@ -607,6 +607,8 @@ export async function createAdInExistingAdSet(
 
   if (isCarousel && carouselHashes.length >= 2) {
     // Carrossel com legendas individuais
+    // NOTA: child_attachments NÃO devem ter call_to_action nem link individuais
+    // para campanhas Click to WhatsApp — o CTA fica apenas no link_data pai
     const childAttachments = carouselHashes.map((hash, i) => {
       const caption = carouselCaptions && carouselCaptions[i] ? carouselCaptions[i] : "";
       const child: any = {
@@ -614,13 +616,6 @@ export async function createAdInExistingAdSet(
         name: caption || (i === 0 ? texts.headline : `${vehicle.brand} ${vehicle.model} - Foto ${i + 1}`),
         description: i === 0 ? texts.description : caption,
       };
-      if (isEngagementOrMessaging) {
-        child.link = "https://api.whatsapp.com/send";
-        child.call_to_action = { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } };
-      } else {
-        child.link = whatsappLink;
-        child.call_to_action = { type: "LEARN_MORE", value: { link: whatsappLink } };
-      }
       return child;
     });
 
@@ -692,6 +687,7 @@ export async function createAdInExistingAdSet(
     },
   };
 
+  console.log(`[MetaAds] Payload criativo:`, JSON.stringify(creativePayload, null, 2));
   const creativeResult = await metaPost(
     `act_${config.adAccountId}/adcreatives`,
     creativePayload,
@@ -717,6 +713,7 @@ export async function createAdInExistingAdSet(
     console.log(`[MetaAds] Rastreamento Pixel configurado: ${trackingPixelId}`);
   }
 
+  console.log(`[MetaAds] Payload anúncio:`, JSON.stringify(adPayload, null, 2));
   const adResult = await metaPost(
     `act_${config.adAccountId}/ads`,
     adPayload,

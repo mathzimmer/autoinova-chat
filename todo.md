@@ -714,3 +714,8 @@
 
 - [x] Substituir instagram_actor_id por instagram_user_id em todas as ocorrências do metaAds.ts
 - [x] Campo instagram_actor_id foi deprecated na v22.0 do Meta API
+
+## Bug Fix - Invalid parameter ao criar anúncio
+
+- [x] Adicionar logging detalhado do payload enviado ao Meta Ads API
+- [x] Identificar e corrigir o parâmetro inválido (call_to_action nos child_attachments do carrossel)
