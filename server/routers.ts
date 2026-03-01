@@ -14,6 +14,7 @@ import {
   createActivityLog, listActivityLogs,
   createTeamNotification, listTeamNotifications, markNotificationsAsRead, getUnreadNotificationCount,
   listAiDecisions, getAiDecisionsByConversation, getAiDecisionStats,
+  updateMessageExternalId, setWindowExpired,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -208,16 +209,55 @@ const messageRouter = router({
       emitNewMessage(input.conversationId, message);
 
       // Send message to WhatsApp if configured and conversation is from WhatsApp
+      let deliveryStatus: "sent" | "failed" | null = null;
+      let deliveryError: string | null = null;
+      let windowExpired = false;
+
       if (isWhatsAppConfigured()) {
         const conv = await getConversationById(input.conversationId);
         if (conv && conv.channel === "whatsapp" && conv.phone) {
-          sendTextMessage(conv.phone, input.content).catch((err) => {
+          try {
+            const sendResult = await sendTextMessage(conv.phone, input.content);
+            
+            if (sendResult.success && sendResult.messageId) {
+              // Save the wamid for delivery tracking
+              await updateMessageExternalId(message.id, sendResult.messageId);
+              deliveryStatus = "sent";
+            } else if (sendResult.error) {
+              deliveryError = sendResult.error;
+              deliveryStatus = "failed";
+              
+              // Detect 24h window expiry (error 131047)
+              const isWindowError = sendResult.error.includes('131047') || 
+                sendResult.error.includes('Re-engagement') ||
+                sendResult.error.includes('outside the allowed window');
+              
+              if (isWindowError) {
+                windowExpired = true;
+                await setWindowExpired(input.conversationId, true);
+                console.log(`[WhatsApp] 24h window expired for conversation ${input.conversationId}. Template required.`);
+              }
+              
+              // Update message status to failed
+              await createMessage({
+                conversationId: input.conversationId,
+                content: `⚠️ Mensagem não entregue: ${isWindowError ? 'Janela de 24h expirada. Use um template aprovado para reabrir a conversa.' : sendResult.error}`,
+                senderType: "bot",
+                senderName: "Sistema",
+                messageType: "system",
+              }).then(sysMsg => {
+                if (sysMsg) emitNewMessage(input.conversationId, sysMsg);
+              }).catch(() => {});
+            }
+          } catch (err: any) {
             console.error("[WhatsApp] Failed to send agent message:", err);
-          });
+            deliveryError = err.message || "Erro desconhecido";
+            deliveryStatus = "failed";
+          }
         }
       }
 
-      return message;
+      return { ...message, deliveryStatus, deliveryError, windowExpired };
     }),
 
   sendMedia: protectedProcedure
@@ -615,11 +655,11 @@ const webhookRouter = router({
             console.error("[Webhook] Error sending vehicle images:", err)
           );
 
-          return { conversationId: conversation.id, aiResponse: aiResult.response, leadData: aiResult.leadData };
+          return { conversationId: conversation.id, aiResponse: aiResult.response, leadData: aiResult.leadData, aiMessageId: botMsg?.id || null };
         }
       }
 
-      return { conversationId: conversation.id, aiResponse: null, leadData: null };
+      return { conversationId: conversation.id, aiResponse: null, leadData: null, aiMessageId: null };
     }),
 });
 

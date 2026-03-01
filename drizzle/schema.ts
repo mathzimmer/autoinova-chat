@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, bigint } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, bigint, tinyint } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -33,6 +33,8 @@ export const conversations = mysqlTable("conversations", {
   contactNotes: text("contactNotes"),
   unreadCount: int("unreadCount").default(0).notNull(),
   lastMessageAt: bigint("lastMessageAt", { mode: "number" }),
+  lastCustomerMessageAt: bigint("lastCustomerMessageAt", { mode: "number" }),
+  windowExpired: tinyint("windowExpired").default(0),
   lastMessagePreview: varchar("lastMessagePreview", { length: 500 }),
   metadata: json("metadata"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -56,6 +58,7 @@ export const messages = mysqlTable("messages", {
   status: mysqlEnum("messageStatus", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
   metadata: json("metadata"),
   externalId: varchar("externalId", { length: 255 }),
+  deliveryError: text("deliveryError"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

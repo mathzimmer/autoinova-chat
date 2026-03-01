@@ -3,7 +3,6 @@ import { useInboxSocket } from "@/hooks/useSocket";
 import { useEffect, useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Search, Bot, User, MessageSquare, Circle, UserCheck, Users, Inbox } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -54,13 +53,11 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
       if (agentFilter === "mine" || agentFilter === "all") {
         filtered = filtered.filter((c) => c.assignedTo === myTeamMemberId);
       } else if (agentFilter === "unassigned") {
-        // Vendedores can see unassigned to pick up
         filtered = filtered.filter((c) => !c.assignedTo);
       } else if (agentFilter === "ai") {
         filtered = filtered.filter((c) => c.aiActive && !c.assignedTo);
       }
     } else {
-      // Admin/gerente/owner can see all
       if (agentFilter === "mine" && myTeamMemberId) {
         filtered = filtered.filter((c) => c.assignedTo === myTeamMemberId);
       } else if (agentFilter === "unassigned") {
@@ -100,9 +97,9 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
       ];
 
   return (
-    <div className="flex flex-col h-full bg-sidebar border-r border-border">
-      {/* Header */}
-      <div className="p-4 border-b border-border">
+    <div className="flex flex-col h-full bg-sidebar border-r border-border overflow-hidden">
+      {/* Header - fixed height */}
+      <div className="shrink-0 p-4 pb-3 border-b border-border">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-sidebar-foreground flex items-center gap-2">
             <MessageSquare className="h-5 w-5 text-primary" />
@@ -124,44 +121,46 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
         </div>
       </div>
 
-      {/* Status Tabs */}
-      <div className="flex gap-1 p-2 px-4 border-b border-border">
-        {statusTabs.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setStatusFilter(tab.value)}
-            className={`px-2.5 py-1 text-xs rounded-md font-medium transition-colors ${
-              statusFilter === tab.value
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      {/* Filters - fixed height, no wrapping */}
+      <div className="shrink-0 border-b border-border">
+        {/* Status Tabs */}
+        <div className="flex px-3 py-1.5 gap-0.5">
+          {statusTabs.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setStatusFilter(tab.value)}
+              className={`h-7 px-2.5 text-xs rounded-md font-medium transition-colors whitespace-nowrap ${
+                statusFilter === tab.value
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        {/* Agent Filter Tabs */}
+        <div className="flex px-3 py-1.5 gap-0.5">
+          {agentTabs.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setAgentFilter(tab.value as any)}
+              className={`h-6 px-2 text-[10px] rounded font-medium transition-colors flex items-center gap-1 whitespace-nowrap ${
+                agentFilter === tab.value
+                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
+              }`}
+            >
+              <tab.icon className="h-3 w-3 shrink-0" />
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Agent Filter Tabs */}
-      <div className="flex gap-1 p-2 px-4 border-b border-border">
-        {agentTabs.map((tab) => (
-          <button
-            key={tab.value}
-            onClick={() => setAgentFilter(tab.value as any)}
-            className={`px-2 py-1 text-[10px] rounded-md font-medium transition-colors flex items-center gap-1 ${
-              agentFilter === tab.value
-                ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent border border-transparent"
-            }`}
-          >
-            <tab.icon className="h-3 w-3" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* Conversation List */}
-      <ScrollArea className="flex-1">
-        <div className="p-2">
+      {/* Conversation List - scrollable area takes remaining space */}
+      <div className="flex-1 overflow-y-auto overflow-x-hidden min-h-0">
+        <div className="p-1.5">
           {filteredConversations.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -178,13 +177,14 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
                 <button
                   key={conv.id}
                   onClick={() => onSelect(conv.id)}
-                  className={`w-full text-left p-3 rounded-lg mb-1 transition-all ${
+                  className={`w-full text-left px-3 py-2.5 rounded-lg mb-0.5 transition-all h-auto ${
                     selectedId === conv.id
                       ? "bg-accent border border-primary/30"
                       : "hover:bg-accent/50 border border-transparent"
                   }`}
                 >
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-center gap-3">
+                    {/* Avatar - fixed size */}
                     <div className="relative shrink-0">
                       <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center">
                         <span className="text-sm font-medium text-secondary-foreground">
@@ -202,34 +202,40 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
                         </div>
                       )}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
+
+                    {/* Content - flexible, truncated */}
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      {/* Row 1: Name + Time */}
+                      <div className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium text-foreground truncate">
                           {conv.contactName || conv.phone}
                         </span>
-                        {conv.lastMessageAt && (
-                          <span className="text-[10px] text-muted-foreground shrink-0 ml-2">
-                            {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false, locale: ptBR })}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <p className="text-xs text-muted-foreground truncate pr-2">
-                          {(conv.lastMessagePreview || "Sem mensagens").replace(/\{?\[?(FOTO|IMAGEM|IMAGE|ID:\d+)\]?\}?/gi, "").trim() || "Sem mensagens"}
-                        </p>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {conv.unreadCount > 0 && (
-                            <Badge variant="default" className="h-5 min-w-5 flex items-center justify-center text-[10px] px-1.5 bg-primary text-primary-foreground">
+                            <Badge variant="default" className="h-4 min-w-4 flex items-center justify-center text-[9px] px-1 bg-primary text-primary-foreground rounded-full">
                               {conv.unreadCount}
                             </Badge>
                           )}
                           <StatusDot status={conv.status} />
                         </div>
                       </div>
-                      {/* Agent indicator */}
+
+                      {/* Row 2: Preview + Time */}
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground truncate">
+                          {(conv.lastMessagePreview || "Sem mensagens").replace(/\{?\[?(FOTO|IMAGEM|IMAGE|ID:\d+)\]?\}?/gi, "").trim() || "Sem mensagens"}
+                        </p>
+                        {conv.lastMessageAt && (
+                          <span className="text-[10px] text-muted-foreground shrink-0">
+                            {formatDistanceToNow(new Date(conv.lastMessageAt), { addSuffix: false, locale: ptBR })}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Row 3: Agent (only if assigned) */}
                       {agentName && (
-                        <div className="flex items-center gap-1 mt-1">
-                          <UserCheck className="h-3 w-3 text-blue-400" />
+                        <div className="flex items-center gap-1 mt-0.5">
+                          <UserCheck className="h-3 w-3 text-blue-400 shrink-0" />
                           <span className="text-[10px] text-blue-400 font-medium truncate">{agentName}</span>
                         </div>
                       )}
@@ -240,7 +246,7 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
             })
           )}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
@@ -252,5 +258,5 @@ function StatusDot({ status }: { status: string }) {
     resolved: "bg-blue-500",
     closed: "bg-gray-500",
   };
-  return <div className={`h-2 w-2 rounded-full ${colors[status] || "bg-gray-500"}`} />;
+  return <div className={`h-2 w-2 rounded-full shrink-0 ${colors[status] || "bg-gray-500"}`} />;
 }

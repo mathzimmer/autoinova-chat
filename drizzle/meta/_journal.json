@@ -71,6 +71,13 @@
       "when": 1772381527376,
       "tag": "0009_remarkable_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1772385723412,
+      "tag": "0010_outgoing_zaladane",
+      "breakpoints": true
     }
   ]
 }

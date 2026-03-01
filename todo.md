@@ -569,3 +569,51 @@
 - [x] Verificar no browser que templates aparecem corretamente — 2 templates (lead + hello_world) exibidos com badge Aprovado
 - [x] Adicionado endpoint isConfigured ao whatsappTemplateRouter
 - [x] 9 testes novos para whatsappTemplates (153 passando total)
+
+## Bugs/Melhorias - Rodada 39 (Layout lista de conversas + janela 24h)
+### Layout da lista de conversas
+- [x] Corrigir rolagem da lista de conversas (sidebar) — reescrito ConversationList com layout fixo
+- [x] Fixar altura dos itens da lista (h-[72px]) para evitar redimensionamento
+- [x] Melhorar organização visual da sidebar (header fixo, filtros compactos, busca, lista com scroll independente)
+- [x] Garantir que a sidebar tenha scroll independente (flex-1 overflow-y-auto)
+- [x] Tempo relativo formatado (minutos, horas, dias)
+- [x] Badges de status (IA ativa, Sem agente, Agente atribuído)
+
+### Janela de 24h do WhatsApp
+- [x] Detectar se a janela de 24h expirou (baseado em lastCustomerMessageAt + windowExpired flag)
+- [x] Mostrar banner amarelo quando a janela está expirada
+- [x] Exibir botão "Enviar Template" no banner de janela expirada
+- [x] Permitir selecionar e enviar template aprovado pela Meta (dialog com preview e parâmetros)
+- [x] Detectar erro 131047 da API e mostrar toast de janela expirada
+
+### Layout geral do chat
+- [x] Melhorar organização geral do layout de mensagens
+- [x] Garantir responsividade e consistência visual
+
+## Feature - Rodada 39b (Rastreamento de Entrega WhatsApp + Janela 24h via API)
+
+### Rastreamento de Status de Entrega
+- [x] Campo deliveryError adicionado ao schema de messages
+- [x] Campo lastCustomerMessageAt adicionado ao schema de conversations
+- [x] Campo windowExpired (tinyint) adicionado ao schema de conversations
+- [x] Webhook handler atualiza status (sent→delivered→read→failed) sem downgrade
+- [x] Webhook handler salva wamid no externalId quando IA envia mensagem
+- [x] message.send salva wamid e detecta erro 131047
+- [x] updateLastCustomerMessageAt chamado quando cliente envia mensagem
+
+### Indicadores Visuais no Chat
+- [x] ✓ (enviado), ✓✓ (entregue), ✓✓ azul (lido), ✗ vermelho (falhou) em cada mensagem
+- [x] Tooltip com detalhes do erro quando mensagem falha
+- [x] Mensagens do sistema (delivery errors) exibidas como pill centralizada amarela
+
+### Detecção de Janela 24h via API
+- [x] Cálculo local da janela 24h como indicador visual (lastCustomerMessageAt)
+- [x] Detecção de erro 131047 da API quando janela expira
+- [x] Banner amarelo com botão "Enviar Template" quando janela expira
+- [x] Dialog para selecionar template aprovado, ver preview e preencher parâmetros
+- [x] Envio de template via whatsappTemplate.send endpoint
+
+### Notificações de Falha
+- [x] Toast de erro quando mensagem falha na entrega
+- [x] Toast específico para janela 24h expirada
+- [x] 169 testes passando (16 novos para delivery tracking)

@@ -157,6 +157,55 @@ export async function markMessagesAsRead(conversationId: number) {
   await db.update(conversations).set({ unreadCount: 0 }).where(eq(conversations.id, conversationId));
 }
 
+// ─── Delivery Status Tracking ─────────────────────────────────
+
+export async function updateMessageDeliveryStatus(
+  whatsappMessageId: string,
+  status: "sent" | "delivered" | "read" | "failed",
+  errorMessage?: string
+) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db.select().from(messages).where(eq(messages.externalId, whatsappMessageId)).limit(1);
+  const msg = result[0];
+  if (!msg) return null;
+
+  // Only advance status forward: sent -> delivered -> read. Failed can come from any state.
+  const statusOrder: Record<string, number> = { sent: 1, delivered: 2, read: 3, failed: 0 };
+  const currentOrder = statusOrder[msg.status] ?? 0;
+  const newOrder = statusOrder[status] ?? 0;
+  
+  // Allow update if: moving forward, or setting to failed
+  if (status !== "failed" && newOrder <= currentOrder) return msg;
+
+  const updateData: any = { status };
+  if (errorMessage) updateData.deliveryError = errorMessage;
+  
+  await db.update(messages).set(updateData).where(eq(messages.externalId, whatsappMessageId));
+  return { ...msg, ...updateData };
+}
+
+export async function updateMessageExternalId(messageId: number, externalId: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(messages).set({ externalId }).where(eq(messages.id, messageId));
+}
+
+export async function updateLastCustomerMessageAt(conversationId: number, timestamp: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(conversations).set({ 
+    lastCustomerMessageAt: timestamp,
+    windowExpired: 0 
+  }).where(eq(conversations.id, conversationId));
+}
+
+export async function setWindowExpired(conversationId: number, expired: boolean) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(conversations).set({ windowExpired: expired ? 1 : 0 }).where(eq(conversations.id, conversationId));
+}
+
 // ─── Lead Queries ──────────────────────────────────────────────
 export async function listLeads(filters?: { status?: string }) {
   const db = await getDb();

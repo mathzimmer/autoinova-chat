@@ -11,7 +11,7 @@ import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
-import { getMessageByExternalId } from "../db";
+import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired } from "../db";
 import { startFollowUpJob } from "../followUp";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -185,16 +185,75 @@ async function startServer() {
           externalId: whatsappMessageId,
         });
 
-        // Send AI response back to WhatsApp
+        // Update lastCustomerMessageAt for 24h window tracking
+        if (result.conversationId) {
+          await updateLastCustomerMessageAt(result.conversationId, Date.now());
+        }
+
+        // Send AI response back to WhatsApp and track delivery
         if (result.aiResponse && isWhatsAppConfigured()) {
-          await sendTextMessage(phone, result.aiResponse);
+          const sendResult = await sendTextMessage(phone, result.aiResponse);
+          
+          // Save the wamid of the sent message for delivery tracking
+          if (sendResult.success && sendResult.messageId && result.aiMessageId) {
+            await updateMessageExternalId(result.aiMessageId, sendResult.messageId);
+          }
+          
+          // Handle error 131047 (24h window expired)
+          if (!sendResult.success && sendResult.error) {
+            const isWindowExpired = sendResult.error.includes('131047') || 
+              sendResult.error.includes('Re-engagement') ||
+              sendResult.error.includes('outside the allowed window');
+            
+            if (isWindowExpired && result.conversationId) {
+              await setWindowExpired(result.conversationId, true);
+              console.log(`[WhatsApp] 24h window expired for conversation ${result.conversationId}. Template required.`);
+            }
+            
+            // Mark the AI message as failed
+            if (result.aiMessageId) {
+              await updateMessageDeliveryStatus(
+                sendResult.messageId || `local-${result.aiMessageId}`,
+                'failed',
+                sendResult.error
+              );
+            }
+          }
         }
       }
 
-      // Handle status updates (delivered, read, etc.)
-      if (body?.entry?.[0]?.changes?.[0]?.value?.statuses?.[0]) {
-        const status = body.entry[0].changes[0].value.statuses[0];
-        console.log(`[WhatsApp] Status update: ${status.id} -> ${status.status}`);
+      // Handle status updates (delivered, read, failed, etc.)
+      const statuses = body?.entry?.[0]?.changes?.[0]?.value?.statuses;
+      if (statuses && Array.isArray(statuses)) {
+        for (const statusUpdate of statuses) {
+          const wamid = statusUpdate.id;
+          const status = statusUpdate.status; // sent, delivered, read, failed
+          const errorCode = statusUpdate.errors?.[0]?.code;
+          const errorTitle = statusUpdate.errors?.[0]?.title;
+          const errorMessage = statusUpdate.errors?.[0]?.message;
+          
+          console.log(`[WhatsApp] Status update: ${wamid} -> ${status}${errorCode ? ` (error: ${errorCode} - ${errorTitle})` : ''}`);
+          
+          if (wamid && status) {
+            const validStatuses = ['sent', 'delivered', 'read', 'failed'] as const;
+            const mappedStatus = validStatuses.includes(status as any) ? status as typeof validStatuses[number] : null;
+            
+            if (mappedStatus) {
+              const errorDetail = errorCode ? `${errorCode}: ${errorTitle || errorMessage || 'Unknown error'}` : undefined;
+              await updateMessageDeliveryStatus(wamid, mappedStatus, errorDetail);
+              
+              // If error 131047, mark conversation window as expired
+              if (errorCode === 131047 || errorCode === '131047') {
+                // Find the message to get conversationId
+                const msg = await getMessageByExternalId(wamid);
+                if (msg) {
+                  await setWindowExpired(msg.conversationId, true);
+                  console.log(`[WhatsApp] Window expired for conversation ${msg.conversationId} (error 131047)`);
+                }
+              }
+            }
+          }
+        }
       }
 
       res.sendStatus(200);

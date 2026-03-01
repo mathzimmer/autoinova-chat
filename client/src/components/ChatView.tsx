@@ -1,9 +1,11 @@
 import { trpc } from "@/lib/trpc";
 import { useConversationSocket } from "@/hooks/useSocket";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2 } from "lucide-react";
+import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2, Clock, AlertTriangle, MessageSquareText, ChevronDown } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -48,11 +50,65 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     { conversationId },
     { refetchInterval: 5000 }
   );
-  const sendMutation = trpc.message.send.useMutation({
+  // 24h window detection
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [templateParams, setTemplateParams] = useState<string[]>([]);
+
+  const { data: templates } = trpc.whatsappTemplate.list.useQuery(undefined, {
+    enabled: showTemplateDialog,
+  });
+  const sendTemplateMutation = trpc.whatsappTemplate.send.useMutation({
     onSuccess: () => {
+      toast.success("Template enviado com sucesso! Janela de 24h reaberta.");
+      setShowTemplateDialog(false);
+      setSelectedTemplate("");
+      setTemplateParams([]);
+      refetchMessages();
+    },
+    onError: (err) => {
+      toast.error("Erro ao enviar template: " + err.message);
+    },
+  });
+
+  // Calculate if 24h window is expired based on conversation data
+  const isWindowExpired = useMemo(() => {
+    if (!conversation) return false;
+    // If server flagged it as expired
+    if ((conversation as any).windowExpired) return true;
+    // Calculate from lastCustomerMessageAt
+    const lastCustomerMsg = (conversation as any).lastCustomerMessageAt;
+    if (!lastCustomerMsg) return false;
+    const elapsed = Date.now() - Number(lastCustomerMsg);
+    const hours24 = 24 * 60 * 60 * 1000;
+    return elapsed > hours24;
+  }, [conversation]);
+
+  // Find the selected template object for param count
+  const selectedTemplateObj = useMemo(() => {
+    if (!templates || !selectedTemplate) return null;
+    return templates.find((t: any) => t.name === selectedTemplate) || null;
+  }, [templates, selectedTemplate]);
+
+  const handleSendTemplate = () => {
+    if (!selectedTemplate || !conversation?.phone) return;
+    sendTemplateMutation.mutate({
+      phone: conversation.phone,
+      templateName: selectedTemplate,
+      language: selectedTemplateObj?.language || "pt_BR",
+      bodyParams: templateParams.filter(p => p.trim() !== ""),
+    });
+  };
+
+  const sendMutation = trpc.message.send.useMutation({
+    onSuccess: (data: any) => {
       setNewMessage("");
       refetchMessages();
       inputRef.current?.focus();
+      // Check if window expired was detected
+      if (data?.windowExpired) {
+        toast.error("Janela de 24h expirada. Use um template aprovado para reabrir a conversa.");
+      }
     },
   });
   const sendMediaMutation = trpc.message.sendMedia.useMutation({
@@ -499,6 +555,93 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         </div>
       )}
 
+      {/* 24h Window Expired Banner */}
+      {isWindowExpired && (
+        <div className="border-t border-yellow-500/30 bg-yellow-500/10 px-4 py-3 shrink-0">
+          <div className="flex items-center gap-3">
+            <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-yellow-700 dark:text-yellow-300">Janela de 24h expirada</p>
+              <p className="text-xs text-yellow-600/80 dark:text-yellow-400/80">Para enviar mensagem, use um template aprovado pela Meta.</p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              className="shrink-0 border-yellow-500/50 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-500/20"
+              onClick={() => setShowTemplateDialog(true)}
+            >
+              <MessageSquareText className="h-4 w-4 mr-1.5" />
+              Enviar Template
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Template Send Dialog */}
+      <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Enviar Template WhatsApp</DialogTitle>
+            <DialogDescription>
+              Selecione um template aprovado pela Meta para reabrir a conversa.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Template</label>
+              <Select value={selectedTemplate} onValueChange={(val) => {
+                setSelectedTemplate(val);
+                setTemplateParams([]);
+              }}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates?.filter((t: any) => t.status === 'APPROVED').map((t: any) => (
+                    <SelectItem key={t.name} value={t.name}>
+                      {t.name} ({t.category})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedTemplateObj && (
+              <div className="bg-secondary/50 rounded-lg p-3">
+                <p className="text-xs text-muted-foreground mb-1">Preview:</p>
+                <p className="text-sm">{(selectedTemplateObj as any).components?.find((c: any) => c.type === 'BODY')?.text || selectedTemplateObj.name}</p>
+              </div>
+            )}
+            {((selectedTemplateObj as any)?.components?.find((c: any) => c.type === 'BODY')?.text || '')?.match(/\{\{\d+\}\}/g)?.map((_: string, i: number) => (
+              <div key={i}>
+                <label className="text-sm font-medium mb-1 block">Parâmetro {i + 1}</label>
+                <Input
+                  value={templateParams[i] || ""}
+                  onChange={(e) => {
+                    const newParams = [...templateParams];
+                    newParams[i] = e.target.value;
+                    setTemplateParams(newParams);
+                  }}
+                  placeholder={`Valor para {{${i + 1}}}`}
+                />
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>Cancelar</Button>
+            <Button
+              onClick={handleSendTemplate}
+              disabled={!selectedTemplate || sendTemplateMutation.isPending}
+            >
+              {sendTemplateMutation.isPending ? (
+                <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Enviando...</>
+              ) : (
+                <><Send className="h-4 w-4 mr-1" /> Enviar Template</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Input Area */}
       <div className="border-t border-border p-3 shrink-0">
         {/* Hidden file input - now accepts multiple */}
@@ -597,14 +740,70 @@ type MessageData = {
   messageType: string;
   metadata: unknown;
   createdAt: Date;
+  status?: string | null;
+  deliveryError?: string | null;
+  externalId?: string | null;
 };
+
+function DeliveryStatusIcon({ status, deliveryError }: { status?: string | null; deliveryError?: string | null }) {
+  if (!status) return null;
+  
+  switch (status) {
+    case 'sent':
+      return (
+        <span className="inline-flex items-center ml-1" title="Enviada">
+          <svg width="14" height="10" viewBox="0 0 16 12" fill="none" className="text-muted-foreground">
+            <path d="M1 6l4 4L14 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      );
+    case 'delivered':
+      return (
+        <span className="inline-flex items-center ml-1" title="Entregue">
+          <svg width="18" height="10" viewBox="0 0 20 12" fill="none" className="text-muted-foreground">
+            <path d="M1 6l4 4L14 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M6 6l4 4L19 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      );
+    case 'read':
+      return (
+        <span className="inline-flex items-center ml-1" title="Lida">
+          <svg width="18" height="10" viewBox="0 0 20 12" fill="none" className="text-blue-500">
+            <path d="M1 6l4 4L14 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M6 6l4 4L19 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </span>
+      );
+    case 'failed':
+      return (
+        <span className="inline-flex items-center ml-1" title={deliveryError || 'Falha na entrega'}>
+          <AlertTriangle className="h-3 w-3 text-destructive" />
+        </span>
+      );
+    default:
+      return null;
+  }
+}
 
 function MessageBubble({ message }: { message: MessageData }) {
   const isCustomer = message.senderType === "customer";
   const isBot = message.senderType === "bot";
+  const isSystem = message.senderType === "bot" && message.senderName === "Sistema";
   const meta = message.metadata as Record<string, unknown> | null;
   const mediaUrl = meta?.mediaUrl as string | undefined;
   const transcribedText = meta?.transcribedText as string | undefined;
+
+  // System messages (delivery errors, etc.)
+  if (isSystem || message.messageType === "system") {
+    return (
+      <div className="flex justify-center my-1">
+        <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-600 dark:text-yellow-400 text-xs px-3 py-1.5 rounded-full max-w-[85%] text-center">
+          {message.content}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex ${isCustomer ? "justify-start" : "justify-end"}`}>
@@ -618,6 +817,8 @@ function MessageBubble({ message }: { message: MessageData }) {
           <span className="text-[10px] text-muted-foreground">
             {format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}
           </span>
+          {/* Delivery status for outgoing messages */}
+          {!isCustomer && <DeliveryStatusIcon status={message.status} deliveryError={message.deliveryError} />}
         </div>
         <div
           className={`rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
