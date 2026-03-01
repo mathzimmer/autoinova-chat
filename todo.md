@@ -703,3 +703,9 @@
 - [x] Adicionar legendas individuais em cada foto do carrossel
 - [x] Frontend: campo para editar legenda de cada imagem do carrossel
 - [x] IA gerar legendas automáticas para cada foto do carrossel
+
+## Bug Fix - Instagram Actor ID fallback
+
+- [x] Tentar criar criativo com instagram_actor_id
+- [x] Se falhar com erro #100 instagram_actor_id, recriar automaticamente sem Instagram
+- [x] Logar aviso quando fallback for acionado
