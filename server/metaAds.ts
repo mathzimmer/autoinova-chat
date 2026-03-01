@@ -380,6 +380,114 @@ export async function getAdInsights(
   }
 }
 
+// ─── Importar anúncios existentes da conta Meta ────────────────────────────
+
+export async function importAdsFromMeta(
+  accessToken: string,
+  adAccountId: string
+): Promise<{ imported: number; updated: number; errors: number }> {
+  const db = await getDb();
+  if (!db) throw new Error("Database indisponível");
+
+  const actId = adAccountId.startsWith("act_") ? adAccountId : `act_${adAccountId}`;
+  let imported = 0, updated = 0, errors = 0;
+
+  try {
+    // 1. Buscar todos os anúncios da conta com dados básicos
+    const adsRes = await fetch(
+      `${META_BASE}/${actId}/ads?fields=id,name,status,adset_id,campaign_id,creative{id,name,thumbnail_url}&limit=100&access_token=${accessToken}`
+    );
+    const adsData = await adsRes.json() as any;
+    if (adsData.error) throw new Error(adsData.error.message);
+
+    const remoteAds = adsData.data || [];
+    console.log(`[MetaAds] Importando ${remoteAds.length} anúncios da conta Meta...`);
+
+    // 2. Buscar métricas de todos os anúncios (last_30d)
+    const insightsRes = await fetch(
+      `${META_BASE}/${actId}/insights?fields=ad_id,impressions,clicks,spend,actions&level=ad&date_preset=last_30d&limit=100&access_token=${accessToken}`
+    );
+    const insightsData = await insightsRes.json() as any;
+    const insightsMap = new Map<string, { impressions: number; clicks: number; leads: number; spend: number }>();
+    for (const d of (insightsData.data || [])) {
+      const leads = parseInt((d.actions || []).find((a: any) => a.action_type === "lead")?.value || "0");
+      insightsMap.set(d.ad_id, {
+        impressions: parseInt(d.impressions || "0"),
+        clicks: parseInt(d.clicks || "0"),
+        leads,
+        spend: parseFloat(d.spend || "0"),
+      });
+    }
+
+    // 3. Para cada anúncio remoto, inserir ou atualizar no banco
+    for (const ad of remoteAds) {
+      try {
+        const adId = ad.id;
+        const statusMap: Record<string, "active" | "paused" | "archived"> = {
+          ACTIVE: "active",
+          PAUSED: "paused",
+          ARCHIVED: "archived",
+          DELETED: "archived",
+        };
+        const status = statusMap[ad.status] || "paused";
+        const metrics = insightsMap.get(adId);
+        const thumbnailUrl = ad.creative?.thumbnail_url || null;
+
+        // Verificar se já existe no banco
+        const existing = await db.select({ id: metaAds.id }).from(metaAds).where(eq(metaAds.adId, adId)).limit(1);
+
+        if (existing.length > 0) {
+          // Atualizar status e métricas
+          await db.update(metaAds).set({
+            status,
+            adName: ad.name || null,
+            thumbnailUrl,
+            ...(metrics ? {
+              impressions: metrics.impressions,
+              clicks: metrics.clicks,
+              leads: metrics.leads,
+              spendCents: Math.round(metrics.spend * 100),
+              lastInsightSync: new Date(),
+            } : {}),
+            updatedAt: new Date(),
+          }).where(eq(metaAds.adId, adId));
+          updated++;
+        } else {
+          // Inserir novo anúncio importado
+          await db.insert(metaAds).values({
+            vehicleId: null as any,
+            campaignId: ad.campaign_id || "unknown",
+            adSetId: ad.adset_id || null,
+            adCreativeId: ad.creative?.id || null,
+            adId,
+            adName: ad.name || null,
+            thumbnailUrl,
+            status,
+            source: "imported",
+            dailyBudgetCents: 0,
+            impressions: metrics?.impressions || 0,
+            clicks: metrics?.clicks || 0,
+            leads: metrics?.leads || 0,
+            spendCents: metrics ? Math.round(metrics.spend * 100) : 0,
+            lastInsightSync: metrics ? new Date() : null,
+            createdAt: new Date(),
+          });
+          imported++;
+        }
+      } catch (e) {
+        console.error(`[MetaAds] Erro ao importar anúncio ${ad.id}:`, e);
+        errors++;
+      }
+    }
+
+    console.log(`[MetaAds] Importação concluída: ${imported} novos, ${updated} atualizados, ${errors} erros`);
+    return { imported, updated, errors };
+  } catch (e) {
+    console.error("[MetaAds] Erro na importação:", e);
+    throw e;
+  }
+}
+
 // ─── Config padrão — Serra Gaúcha ─────────────────────────────────────────────
 
 export function buildMetaConfig(overrides?: Partial<MetaAdsConfig>): MetaAdsConfig {

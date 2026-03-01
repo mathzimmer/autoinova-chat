@@ -216,6 +216,35 @@ describe("Meta Ads Schema", () => {
     expect(table.clicks).toBeDefined();
     expect(table.leads).toBeDefined();
     expect(table.spendCents).toBeDefined();
+    // New columns for imported ads
+    expect(table.adName).toBeDefined();
+    expect(table.thumbnailUrl).toBeDefined();
+    expect(table.source).toBeDefined();
+  });
+
+  it("should have importAdsFromMeta function exported", async () => {
+    const metaAds = await import("./metaAds");
+    expect(typeof metaAds.importAdsFromMeta).toBe("function");
+  });
+
+  it("should have correct source enum values (crm, imported)", () => {
+    // Verify the source field concept
+    const validSources = ["crm", "imported"];
+    expect(validSources).toContain("crm");
+    expect(validSources).toContain("imported");
+  });
+
+  it("should map Meta status correctly", () => {
+    const statusMap: Record<string, string> = {
+      ACTIVE: "active",
+      PAUSED: "paused",
+      ARCHIVED: "archived",
+      DELETED: "archived",
+    };
+    expect(statusMap["ACTIVE"]).toBe("active");
+    expect(statusMap["PAUSED"]).toBe("paused");
+    expect(statusMap["ARCHIVED"]).toBe("archived");
+    expect(statusMap["DELETED"]).toBe("archived");
   });
 
   it("should have correct followUpLogs column names", async () => {

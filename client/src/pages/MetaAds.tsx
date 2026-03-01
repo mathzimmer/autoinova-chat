@@ -293,14 +293,30 @@ function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: 
   const syncInsightsMutation = trpc.metaAds.syncInsights.useMutation({ onSuccess: onRefresh });
   const cpl = ad.leads > 0 ? ad.spendCents / 100 / ad.leads : null;
 
+  // Determinar imagem e nome (suporta anúncios importados e do CRM)
+  const imageUrl = vehicle?.imageUrl || ad.thumbnailUrl;
+  const adTitle = vehicle
+    ? `${vehicle.brand} ${vehicle.model} ${vehicle.year}`
+    : (ad.adName || `Anúncio #${ad.adId?.slice(-6)}`);
+  const isImported = ad.source === "imported";
+
   return (
     <div className="bg-[#0f1520] border border-[#1e2d40] rounded-xl overflow-hidden">
-      {/* Imagem do veículo */}
+      {/* Imagem */}
       <div className="relative h-36 bg-[#1a1f2e]">
-        {vehicle?.imageUrl && (
-          <img src={vehicle.imageUrl} alt={vehicle?.model} className="w-full h-full object-cover" />
+        {imageUrl ? (
+          <img src={imageUrl} alt={adTitle} className="w-full h-full object-cover" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <Megaphone size={32} className="text-gray-600" />
+          </div>
         )}
-        <div className="absolute top-2 right-2">
+        <div className="absolute top-2 right-2 flex gap-1">
+          {isImported && (
+            <span className="text-xs font-bold px-2 py-1 rounded-full border bg-blue-500/15 text-blue-400 border-blue-500/30">
+              Importado
+            </span>
+          )}
           <span className={`text-xs font-bold px-2 py-1 rounded-full border ${statusColor(ad.status)}`}>
             {statusLabel(ad.status)}
           </span>
@@ -308,11 +324,11 @@ function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: 
       </div>
 
       <div className="p-4">
-        {/* Nome do veículo */}
-        <h3 className="font-bold text-white text-sm mb-1">
-          {vehicle?.brand} {vehicle?.model} {vehicle?.year}
+        {/* Nome */}
+        <h3 className="font-bold text-white text-sm mb-1 truncate" title={adTitle}>
+          {adTitle}
         </h3>
-        <p className="text-xs text-gray-500 font-mono mb-3">Ad ID: {ad.adId}</p>
+        <p className="text-xs text-gray-500 font-mono mb-3 truncate">Ad ID: {ad.adId}</p>
 
         {/* Métricas */}
         <div className="grid grid-cols-4 gap-2 mb-4">
@@ -653,12 +669,29 @@ function AiAdModal({
 export default function MetaAdsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showAiModal, setShowAiModal] = useState(false);
+  const [filter, setFilter] = useState<"all" | "active" | "paused" | "imported">("all");
 
   const { data: configStatus } = trpc.metaAds.isConfigured.useQuery();
   const { data: adsList, isLoading, refetch } = trpc.metaAds.list.useQuery();
-  const syncAllMutation = trpc.metaAds.syncAllInsights.useMutation({
-    onSuccess: (r) => { toast.success(`${r.synced} anúncios sincronizados`); refetch(); },
-    onError:   (e) => toast.error("Erro ao sincronizar: " + e.message),
+  const syncAllMutation = trpc.metaAds.syncAll.useMutation({
+    onSuccess: (r) => {
+      const parts = [];
+      if (r.imported > 0) parts.push(`${r.imported} importados`);
+      if (r.updated > 0) parts.push(`${r.updated} atualizados`);
+      if (r.errors > 0) parts.push(`${r.errors} erros`);
+      toast.success(`Sincronização concluída: ${parts.join(", ") || "nenhuma alteração"}`);
+      refetch();
+    },
+    onError: (e) => toast.error("Erro ao sincronizar: " + e.message),
+  });
+
+  // Filtrar anúncios
+  const filteredAds = (adsList ?? []).filter(row => {
+    if (filter === "all") return true;
+    if (filter === "active") return row.ad.status === "active";
+    if (filter === "paused") return row.ad.status === "paused";
+    if (filter === "imported") return row.ad.source === "imported";
+    return true;
   });
 
   // Totalizadores
@@ -692,7 +725,7 @@ export default function MetaAdsPage() {
             <Button variant="outline" size="sm" onClick={() => syncAllMutation.mutate()}
               disabled={syncAllMutation.isPending}>
               {syncAllMutation.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
-              Sincronizar métricas
+              Sincronizar Meta
             </Button>
             <Button onClick={() => setShowCreateModal(true)}
               className="bg-blue-600 hover:bg-blue-700">
@@ -731,6 +764,30 @@ export default function MetaAdsPage() {
           </div>
         )}
 
+        {/* Filtros */}
+        {(adsList?.length ?? 0) > 0 && (
+          <div className="flex gap-2 mb-4">
+            {([
+              { key: "all", label: "Todos", count: adsList?.length ?? 0 },
+              { key: "active", label: "Ativos", count: adsList?.filter(r => r.ad.status === "active").length ?? 0 },
+              { key: "paused", label: "Pausados", count: adsList?.filter(r => r.ad.status === "paused").length ?? 0 },
+              { key: "imported", label: "Importados", count: adsList?.filter(r => r.ad.source === "imported").length ?? 0 },
+            ] as const).map(f => (
+              <button
+                key={f.key}
+                onClick={() => setFilter(f.key)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  filter === f.key
+                    ? "bg-blue-600 text-white"
+                    : "bg-[#1a1f2e] text-gray-400 hover:text-white hover:bg-[#252b3b]"
+                }`}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Lista de anúncios */}
         {isLoading ? (
           <div className="flex justify-center py-20">
@@ -740,13 +797,18 @@ export default function MetaAdsPage() {
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-gray-500">
             <Megaphone size={48} className="opacity-20" />
             <div className="text-center">
-              <p className="font-semibold text-gray-400">Nenhum anúncio criado ainda</p>
-              <p className="text-sm">Clique em "Criar anúncio" para anunciar seus veículos no Facebook e Instagram.</p>
+              <p className="font-semibold text-gray-400">Nenhum anúncio encontrado</p>
+              <p className="text-sm">Clique em "Sincronizar Meta" para importar seus anúncios existentes, ou "Criar anúncio" para criar novos.</p>
             </div>
+          </div>
+        ) : filteredAds.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-4 text-gray-500">
+            <Megaphone size={48} className="opacity-20" />
+            <p className="text-sm">Nenhum anúncio com este filtro.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {adsList!.map(row => (
+            {filteredAds.map(row => (
               <AdCard
                 key={row.ad.id}
                 ad={row.ad}

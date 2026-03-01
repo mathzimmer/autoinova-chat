@@ -547,3 +547,17 @@
 - [x] Criar anúncio com texto gerado pela IA (createAdWithText endpoint)
 - [x] Botão "Criar com IA" (roxo) na página Meta Ads
 - [x] 141 testes passando (1 falha pré-existente em whatsapp.validate)
+
+## Bugs/Melhorias - Rodada 37 (Verificação Integração Meta Ads)
+- [x] Verificar credenciais Meta Ads configuradas nos secrets — Token válido, conta "01- AutoInova -Nova" ACTIVE, moeda BRL
+- [x] Testar conectividade com Meta Ads API — 7 campanhas, 20+ anúncios, página "Auto Inova" (5.494 fãs)
+- [x] Importar anúncios existentes da conta de anúncios — 61 anúncios importados com thumbnails e métricas
+- [x] Sincronizar métricas dos anúncios já rodando na conta — 491.003 impressões, 13.730 cliques, 228 leads, R$ 4.062,57
+- [x] Verificar fluxo de criação de anúncios — AiAdModal e CreateAdModal funcionais
+- [x] Corrigir problemas encontrados:
+  - Schema atualizado: vehicleId agora nullable, adSetId/adCreativeId nullable, adName/thumbnailUrl/source adicionados
+  - Função importAdsFromMeta() criada para importar todos os anúncios da conta
+  - Endpoint syncAll combina importação + atualização de métricas
+  - AdCard atualizado para exibir thumbnails e nomes de anúncios importados
+  - Filtros por status (Todos/Ativos/Pausados/Importados) adicionados
+  - 144 testes passando (1 falha pré-existente em whatsapp.validate)

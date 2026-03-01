@@ -42,6 +42,7 @@ import {
   setAdStatus,
   getAdInsights,
   buildMetaConfig,
+  importAdsFromMeta,
 } from "./metaAds";
 
 // ── Follow-Up imports ────────────────────────────────────────────────────────
@@ -1154,6 +1155,31 @@ const metaAdsRouter = router({
       await new Promise(r => setTimeout(r, 500));
     }
     return { synced };
+  }),
+
+  // Importar anúncios existentes da conta Meta
+  importFromMeta: protectedProcedure.mutation(async () => {
+    const config = buildMetaConfig();
+    if (!config.accessToken || !config.adAccountId) {
+      throw new Error("Meta Ads não configurado. Adicione ACCESS_TOKEN e ACCOUNT_ID.");
+    }
+    const result = await importAdsFromMeta(config.accessToken, config.adAccountId);
+    return result;
+  }),
+
+  // Sincronizar tudo: importar + atualizar métricas
+  syncAll: protectedProcedure.mutation(async () => {
+    const config = buildMetaConfig();
+    if (!config.accessToken || !config.adAccountId) {
+      throw new Error("Meta Ads não configurado.");
+    }
+    // 1. Importar/atualizar anúncios da conta
+    const importResult = await importAdsFromMeta(config.accessToken, config.adAccountId);
+    return {
+      imported: importResult.imported,
+      updated: importResult.updated,
+      errors: importResult.errors,
+    };
   }),
 
   // Gerar texto do anúncio com IA

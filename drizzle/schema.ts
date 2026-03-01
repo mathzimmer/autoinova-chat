@@ -285,14 +285,17 @@ export type InsertAiDecision = typeof aiDecisions.$inferInsert;
  */
 export const metaAds = mysqlTable("metaAds", {
   id:               int("id").autoincrement().primaryKey(),
-  vehicleId:        int("vehicleId").notNull(),
+  vehicleId:        int("vehicleId"),  // nullable — anúncios importados podem não ter veículo vinculado
   campaignId:       varchar("campaignId", { length: 64 }).notNull(),
-  adSetId:          varchar("adSetId", { length: 64 }).notNull(),
-  adCreativeId:     varchar("adCreativeId", { length: 64 }).notNull(),
+  adSetId:          varchar("adSetId", { length: 64 }),
+  adCreativeId:     varchar("adCreativeId", { length: 64 }),
   adId:             varchar("adId", { length: 64 }).notNull().unique(),
+  adName:           varchar("adName", { length: 500 }),  // nome do anúncio na Meta
+  thumbnailUrl:     text("thumbnailUrl"),  // URL da thumbnail do criativo
   imageHash:        varchar("imageHash", { length: 64 }),
   status:           mysqlEnum("adStatus", ["paused", "active", "archived"]).default("paused").notNull(),
   dailyBudgetCents: int("dailyBudgetCents").default(3000).notNull(),
+  source:           mysqlEnum("adSource", ["crm", "imported"]).default("crm").notNull(),  // origem do anúncio
   // Métricas cacheadas (atualizadas via syncInsights)
   impressions:      int("impressions").default(0),
   clicks:           int("clicks").default(0),
