@@ -1,0 +1,45 @@
+{
+  "query": "SELECT id, brand, model, year, price FROM vehicles WHERE available = 1 ORDER BY price DESC LIMIT 5;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, brand, model, year, price FROM vehicles WHERE available = 1 ORDER BY price DESC LIMIT 5;",
+  "rows": [
+    {
+      "id": "14",
+      "brand": "BMW",
+      "model": "X5 XDRIVE 45e 3.0 M.Sport  Aut. (Híb.)",
+      "year": "2022",
+      "price": "389990"
+    },
+    {
+      "id": "15",
+      "brand": "Mercedes",
+      "model": "Sprinter 517 Chassi Longo T.B. Die. (E6)",
+      "year": "2025",
+      "price": "279990"
+    },
+    {
+      "id": "44",
+      "brand": "VolksWagen",
+      "model": "AMAROK Comfor. 3.0 V6 TDI 4x4 Dies. Aut.",
+      "year": "2025",
+      "price": "269990"
+    },
+    {
+      "id": "42",
+      "brand": "Ford",
+      "model": "Ranger XL 2.0 4x4 CD Diesel Mec. ",
+      "year": "2024",
+      "price": "210990"
+    },
+    {
+      "id": "25",
+      "brand": "Volvo",
+      "model": "XC 60 T-5 INSCRIPTION 2.0 AWD 5p",
+      "year": "2019",
+      "price": "172990"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbrand\tmodel\tyear\tprice\n14\tBMW\tX5 XDRIVE 45e 3.0 M.Sport  Aut. (Híb.)\t2022\t389990\n15\tMercedes\tSprinter 517 Chassi Longo T.B. Die. (E6)\t2025\t279990\n44\tVolksWagen\tAMAROK Comfor. 3.0 V6 TDI 4x4 Dies. Aut.\t2025\t269990\n42\tFord\tRanger XL 2.0 4x4 CD Diesel Mec. \t2024\t210990\n25\tVolvo\tXC 60 T-5 INSCRIPTION 2.0 AWD 5p\t2019\t172990\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}

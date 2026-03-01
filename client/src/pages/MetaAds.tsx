@@ -1,6 +1,7 @@
 /**
  * Página de Meta Ads — AutoInova Chat (Simplificada)
  * Foco: criar anúncios dentro de campanhas e conjuntos de anúncios já existentes.
+ * Suporte a carrossel e personalizações de IA.
  */
 
 import { useState, useMemo } from "react";
@@ -13,12 +14,16 @@ import {
   Loader2, Play, Pause, RefreshCw, Megaphone, Plus, TrendingUp,
   Eye, MousePointer, Users, DollarSign, Sparkles, Wand2, Copy,
   CheckCircle2, ChevronRight, ImageIcon, ArrowLeft, Search,
+  LayoutGrid, Image as ImageSingle, Settings2,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtBRL(cents: number) {
   return (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 2 });
+}
+function fmtPrice(price: number) {
+  return price.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 }
 function fmtNum(n: number | null | undefined) {
   return (n ?? 0).toLocaleString("pt-BR");
@@ -70,9 +75,19 @@ function NotConfiguredBanner({ missingVars }: { missingVars: string[] }) {
   );
 }
 
+// ─── Estilos de IA ───────────────────────────────────────────────────────────
+
+const AI_STYLES = [
+  { value: "persuasivo", label: "Persuasivo", emoji: "🎯", desc: "Gatilhos emocionais e desejo de compra" },
+  { value: "informativo", label: "Informativo", emoji: "📋", desc: "Dados técnicos e especificações" },
+  { value: "urgente", label: "Urgente", emoji: "⚡", desc: "Escassez e oportunidade única" },
+  { value: "premium", label: "Premium", emoji: "✨", desc: "Sofisticado, exclusividade e status" },
+  { value: "jovem", label: "Jovem", emoji: "🔥", desc: "Descontraído e moderno" },
+] as const;
+
 // ─── Modal: Criar Anúncio (Fluxo Simplificado) ──────────────────────────────
 
-type CreateAdStep = "campaign" | "adset" | "vehicle" | "generating" | "review" | "publishing" | "done";
+type CreateAdStep = "campaign" | "adset" | "vehicle" | "customize" | "generating" | "review" | "publishing" | "done";
 
 function CreateAdModal({
   onClose,
@@ -91,6 +106,17 @@ function CreateAdModal({
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [vehicleSearch, setVehicleSearch] = useState("");
 
+  // Carrossel
+  const [adFormat, setAdFormat] = useState<"single" | "carousel">("single");
+  const [carouselSelectedImages, setCarouselSelectedImages] = useState<string[]>([]);
+
+  // IA customization
+  const [aiStyle, setAiStyle] = useState<string>("persuasivo");
+  const [targetAudience, setTargetAudience] = useState("");
+  const [highlights, setHighlights] = useState("");
+  const [extraInstructions, setExtraInstructions] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
   const [editedTexts, setEditedTexts] = useState({ headline: "", description: "", primaryText: "" });
   const [vehicleInfo, setVehicleInfo] = useState<{
     id: number; brand: string; model: string; year: number; price: number; imageUrl: string | null;
@@ -105,7 +131,7 @@ function CreateAdModal({
     { enabled: step === "adset" && !!selectedCampaignId }
   );
   const { data: vehicles, isLoading: loadingVehicles } = trpc.vehicle.list.useQuery(undefined, {
-    enabled: step === "vehicle",
+    enabled: step === "vehicle" || step === "customize",
   });
 
   const generateMutation = trpc.metaAds.generateAdText.useMutation();
@@ -119,6 +145,22 @@ function CreateAdModal({
       `${v.brand} ${v.model} ${v.year}`.toLowerCase().includes(q)
     );
   }, [vehicles, vehicleSearch]);
+
+  // Vehicle images for selection
+  const vehicleImages = useMemo(() => {
+    if (!selectedVehicleId || !vehicles) return [];
+    const v = vehicles.find(v => v.id === selectedVehicleId);
+    if (!v) return [];
+    const imgs: string[] = [];
+    if (v.imageUrl) imgs.push(v.imageUrl);
+    if (v.images && Array.isArray(v.images)) {
+      for (const img of v.images) {
+        const url = typeof img === "string" ? img : (img as any)?.url || (img as any)?.src;
+        if (url && !imgs.includes(url)) imgs.push(url);
+      }
+    }
+    return imgs.slice(0, 10);
+  }, [selectedVehicleId, vehicles]);
 
   // Handlers
   function selectCampaign(id: string, name: string, objective: string) {
@@ -142,11 +184,34 @@ function CreateAdModal({
     });
   }
 
+  function toggleCarouselImage(url: string) {
+    setCarouselSelectedImages(prev => {
+      if (prev.includes(url)) return prev.filter(u => u !== url);
+      if (prev.length >= 10) { toast.error("Máximo de 10 imagens no carrossel"); return prev; }
+      return [...prev, url];
+    });
+  }
+
+  function goToCustomize() {
+    if (!selectedVehicleId) return;
+    // Pre-select first images for carousel
+    if (adFormat === "carousel" && carouselSelectedImages.length === 0) {
+      setCarouselSelectedImages(vehicleImages.slice(0, Math.min(5, vehicleImages.length)));
+    }
+    setStep("customize");
+  }
+
   async function handleGenerate() {
     if (!selectedVehicleId) return;
     setStep("generating");
     try {
-      const result = await generateMutation.mutateAsync({ vehicleId: selectedVehicleId });
+      const result = await generateMutation.mutateAsync({
+        vehicleId: selectedVehicleId,
+        style: aiStyle as any,
+        targetAudience: targetAudience || undefined,
+        highlights: highlights || undefined,
+        extraInstructions: extraInstructions || undefined,
+      });
       setEditedTexts({
         headline: result.headline,
         description: result.description,
@@ -156,7 +221,7 @@ function CreateAdModal({
       setStep("review");
     } catch (e: any) {
       toast.error("Erro ao gerar texto: " + e.message);
-      setStep("vehicle");
+      setStep("customize");
     }
   }
 
@@ -164,6 +229,7 @@ function CreateAdModal({
     if (!selectedVehicleId || !selectedCampaignId || !selectedAdSetId) return;
     setStep("publishing");
     try {
+      const isCarousel = adFormat === "carousel" && carouselSelectedImages.length >= 2;
       await createMutation.mutateAsync({
         vehicleId: selectedVehicleId,
         campaignId: selectedCampaignId,
@@ -173,6 +239,7 @@ function CreateAdModal({
         primaryText: editedTexts.primaryText,
         selectedImageUrl: selectedImageUrl || undefined,
         campaignObjective: selectedCampaignObjective || undefined,
+        carouselImageUrls: isCarousel ? carouselSelectedImages : undefined,
       });
       setStep("done");
       onCreated();
@@ -185,7 +252,8 @@ function CreateAdModal({
   function goBack() {
     if (step === "adset") setStep("campaign");
     else if (step === "vehicle") setStep("adset");
-    else if (step === "review") setStep("vehicle");
+    else if (step === "customize") setStep("vehicle");
+    else if (step === "review") setStep("customize");
   }
 
   function copyText(text: string) {
@@ -198,25 +266,11 @@ function CreateAdModal({
     { key: "campaign", label: "Campanha" },
     { key: "adset", label: "Conjunto" },
     { key: "vehicle", label: "Veículo" },
+    { key: "customize", label: "IA" },
     { key: "review", label: "Revisar" },
   ];
-  const currentStepIndex = steps.findIndex(s => s.key === step) ?? 0;
-
-  // Vehicle images for selection
-  const vehicleImages = useMemo(() => {
-    if (!selectedVehicleId || !vehicles) return [];
-    const v = vehicles.find(v => v.id === selectedVehicleId);
-    if (!v) return [];
-    const imgs: string[] = [];
-    if (v.imageUrl) imgs.push(v.imageUrl);
-    if (v.images && Array.isArray(v.images)) {
-      for (const img of v.images) {
-        const url = typeof img === "string" ? img : (img as any)?.url || (img as any)?.src;
-        if (url && !imgs.includes(url)) imgs.push(url);
-      }
-    }
-    return imgs.slice(0, 8);
-  }, [selectedVehicleId, vehicles]);
+  const stepKeys = ["campaign", "adset", "vehicle", "customize", "review"];
+  const currentStepIndex = stepKeys.indexOf(step);
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -235,9 +289,9 @@ function CreateAdModal({
 
         {/* Step indicator */}
         {!["generating", "publishing", "done"].includes(step) && (
-          <div className="flex items-center gap-1 px-5 py-3 border-b border-[#1e2d40]/50">
+          <div className="flex items-center gap-1 px-5 py-3 border-b border-[#1e2d40]/50 overflow-x-auto">
             {steps.map((s, i) => (
-              <div key={s.key} className="flex items-center gap-1">
+              <div key={s.key} className="flex items-center gap-1 shrink-0">
                 <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                   i < currentStepIndex ? "bg-green-500/15 text-green-400" :
                   i === currentStepIndex ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40" :
@@ -263,7 +317,7 @@ function CreateAdModal({
               ) : !campaigns?.length ? (
                 <div className="text-center py-12 text-gray-500">
                   <Megaphone size={32} className="mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">Nenhuma campanha encontrada na sua conta Meta.</p>
+                  <p className="text-sm">Nenhuma campanha encontrada na conta.</p>
                   <p className="text-xs text-gray-600 mt-1">Crie uma campanha no Meta Ads Manager primeiro.</p>
                 </div>
               ) : (
@@ -280,8 +334,6 @@ function CreateAdModal({
                           <span className={`text-xs ${metaStatusColor(c.status)}`}>{metaStatusLabel(c.status)}</span>
                           <span className="text-xs text-gray-600">·</span>
                           <span className="text-xs text-gray-500">{c.objective}</span>
-                          <span className="text-xs text-gray-600">·</span>
-                          <span className="text-xs text-gray-600 font-mono">ID: {c.id}</span>
                         </div>
                       </div>
                       <ChevronRight size={16} className="text-gray-600 group-hover:text-purple-400 shrink-0 ml-2" />
@@ -326,8 +378,6 @@ function CreateAdModal({
                           <span className="text-xs text-gray-500">
                             Orçamento: R$ {(parseInt(a.dailyBudget) / 100).toFixed(2)}/dia
                           </span>
-                          <span className="text-xs text-gray-600">·</span>
-                          <span className="text-xs text-gray-600 font-mono">ID: {a.id}</span>
                         </div>
                       </div>
                       <ChevronRight size={16} className="text-gray-600 group-hover:text-purple-400 shrink-0 ml-2" />
@@ -380,7 +430,7 @@ function CreateAdModal({
                           <div className="text-xs font-medium text-white truncate">{v.brand} {v.model}</div>
                           <div className="text-xs text-gray-400">{v.year}</div>
                           <div className="text-xs text-purple-300 font-medium">
-                            {(v.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
+                            {fmtPrice(v.price)}
                           </div>
                         </div>
                       </button>
@@ -394,6 +444,195 @@ function CreateAdModal({
             </div>
           )}
 
+          {/* Step 4: Personalizar IA e formato */}
+          {step === "customize" && vehicleInfo && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 mb-1">
+                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <p className="text-xs text-gray-500">
+                  <span className="text-purple-300">{selectedCampaignName}</span>
+                  {" → "}
+                  <span className="text-purple-300">{selectedAdSetName}</span>
+                </p>
+              </div>
+
+              {/* Vehicle preview */}
+              <div className="flex items-center gap-3 p-3 rounded-xl bg-purple-500/10 border border-purple-500/30">
+                {vehicleInfo.imageUrl && (
+                  <img src={vehicleInfo.imageUrl} alt="" className="w-14 h-10 rounded-lg object-cover" />
+                )}
+                <div>
+                  <div className="font-bold text-white text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
+                  <div className="text-xs text-gray-400">{fmtPrice(vehicleInfo.price)}</div>
+                </div>
+              </div>
+
+              {/* Formato do anúncio */}
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Formato do anúncio</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setAdFormat("single")}
+                    className={`flex items-center gap-2.5 p-3 rounded-xl border transition-all ${
+                      adFormat === "single"
+                        ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30"
+                        : "border-[#2a3040] hover:border-[#3a4050]"
+                    }`}
+                  >
+                    <ImageSingle size={18} className={adFormat === "single" ? "text-purple-400" : "text-gray-500"} />
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-white">Imagem única</div>
+                      <div className="text-xs text-gray-500">1 foto principal</div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setAdFormat("carousel")}
+                    disabled={vehicleImages.length < 2}
+                    className={`flex items-center gap-2.5 p-3 rounded-xl border transition-all ${
+                      adFormat === "carousel"
+                        ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30"
+                        : vehicleImages.length < 2
+                          ? "border-[#2a3040] opacity-40 cursor-not-allowed"
+                          : "border-[#2a3040] hover:border-[#3a4050]"
+                    }`}
+                  >
+                    <LayoutGrid size={18} className={adFormat === "carousel" ? "text-purple-400" : "text-gray-500"} />
+                    <div className="text-left">
+                      <div className="text-sm font-medium text-white">Carrossel</div>
+                      <div className="text-xs text-gray-500">
+                        {vehicleImages.length < 2 ? "Mín. 2 fotos" : `${vehicleImages.length} fotos disponíveis`}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Seleção de imagens - Imagem única */}
+              {adFormat === "single" && vehicleImages.length > 1 && (
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                    <ImageIcon size={12} className="inline mr-1" />
+                    Foto do anúncio
+                  </label>
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {vehicleImages.map((img, i) => (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedImageUrl(img)}
+                        className={`shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
+                          selectedImageUrl === img ? "border-purple-500 ring-1 ring-purple-500/40" : "border-transparent hover:border-gray-600"
+                        }`}
+                      >
+                        <img src={img} alt={`Foto ${i + 1}`} className="w-16 h-12 object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Seleção de imagens - Carrossel */}
+              {adFormat === "carousel" && (
+                <div>
+                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                    <LayoutGrid size={12} className="inline mr-1" />
+                    Fotos do carrossel ({carouselSelectedImages.length} selecionadas, mín. 2, máx. 10)
+                  </label>
+                  <div className="grid grid-cols-5 gap-2">
+                    {vehicleImages.map((img, i) => {
+                      const isSelected = carouselSelectedImages.includes(img);
+                      const idx = carouselSelectedImages.indexOf(img);
+                      return (
+                        <button
+                          key={i}
+                          onClick={() => toggleCarouselImage(img)}
+                          className={`relative rounded-lg overflow-hidden border-2 transition-all aspect-[4/3] ${
+                            isSelected ? "border-purple-500 ring-1 ring-purple-500/40" : "border-transparent hover:border-gray-600"
+                          }`}
+                        >
+                          <img src={img} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
+                          {isSelected && (
+                            <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                              {idx + 1}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Estilo da IA */}
+              <div>
+                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                  <Sparkles size={12} className="inline mr-1" />
+                  Estilo do texto
+                </label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {AI_STYLES.map(s => (
+                    <button
+                      key={s.value}
+                      onClick={() => setAiStyle(s.value)}
+                      className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-center transition-all ${
+                        aiStyle === s.value
+                          ? "border-purple-500 bg-purple-500/15"
+                          : "border-[#2a3040] hover:border-[#3a4050]"
+                      }`}
+                    >
+                      <span className="text-lg">{s.emoji}</span>
+                      <span className="text-xs font-medium text-white">{s.label}</span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  {AI_STYLES.find(s => s.value === aiStyle)?.desc}
+                </p>
+              </div>
+
+              {/* Opções avançadas */}
+              <button
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+              >
+                <Settings2 size={12} />
+                {showAdvanced ? "Ocultar opções avançadas" : "Opções avançadas"}
+                <ChevronRight size={12} className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`} />
+              </button>
+
+              {showAdvanced && (
+                <div className="space-y-3 pl-2 border-l-2 border-purple-500/20">
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Público-alvo (opcional)</label>
+                    <input
+                      value={targetAudience}
+                      onChange={e => setTargetAudience(e.target.value)}
+                      placeholder="Ex: Jovens profissionais, famílias, empresários..."
+                      className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Destaques a enfatizar (opcional)</label>
+                    <input
+                      value={highlights}
+                      onChange={e => setHighlights(e.target.value)}
+                      placeholder="Ex: Baixa quilometragem, único dono, revisões em dia..."
+                      className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 mb-1 block">Instruções extras para a IA (opcional)</label>
+                    <Textarea
+                      value={extraInstructions}
+                      onChange={e => setExtraInstructions(e.target.value)}
+                      placeholder="Ex: Mencionar financiamento disponível, não usar emojis, focar no conforto..."
+                      className="bg-[#1a1f2e] border-[#2a3040] text-white min-h-[60px] focus:border-purple-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Step: Gerando com IA */}
           {step === "generating" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
@@ -403,7 +642,7 @@ function CreateAdModal({
               </div>
               <p className="text-gray-300 font-medium">A IA está criando o anúncio…</p>
               <p className="text-xs text-gray-500 text-center max-w-xs">
-                Analisando dados do veículo e gerando textos otimizados para conversão.
+                Analisando dados do veículo e gerando textos otimizados no estilo "{AI_STYLES.find(s => s.value === aiStyle)?.label}".
               </p>
             </div>
           )}
@@ -426,36 +665,18 @@ function CreateAdModal({
                 {selectedImageUrl && (
                   <img src={selectedImageUrl} alt="" className="w-16 h-12 rounded-lg object-cover" />
                 )}
-                <div>
+                <div className="flex-1">
                   <div className="font-bold text-white text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
-                  <div className="text-xs text-gray-400">
-                    {(vehicleInfo.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}
-                  </div>
+                  <div className="text-xs text-gray-400">{fmtPrice(vehicleInfo.price)}</div>
                 </div>
+                <Badge variant="outline" className={adFormat === "carousel" ? "text-purple-300 border-purple-500/40" : "text-blue-300 border-blue-500/40"}>
+                  {adFormat === "carousel" ? (
+                    <><LayoutGrid size={10} className="mr-1" /> Carrossel ({carouselSelectedImages.length})</>
+                  ) : (
+                    <><ImageSingle size={10} className="mr-1" /> Imagem única</>
+                  )}
+                </Badge>
               </div>
-
-              {/* Image selection */}
-              {vehicleImages.length > 1 && (
-                <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
-                    <ImageIcon size={12} className="inline mr-1" />
-                    Foto do anúncio
-                  </label>
-                  <div className="flex gap-2 overflow-x-auto pb-1">
-                    {vehicleImages.map((img, i) => (
-                      <button
-                        key={i}
-                        onClick={() => setSelectedImageUrl(img)}
-                        className={`shrink-0 rounded-lg overflow-hidden border-2 transition-all ${
-                          selectedImageUrl === img ? "border-purple-500 ring-1 ring-purple-500/40" : "border-transparent hover:border-gray-600"
-                        }`}
-                      >
-                        <img src={img} alt={`Foto ${i + 1}`} className="w-16 h-12 object-cover" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Editable fields */}
               <div>
@@ -510,6 +731,8 @@ function CreateAdModal({
               <div className="rounded-xl bg-[#1a1f2e] border border-[#2a3040] p-3 text-sm space-y-1.5">
                 <div className="flex justify-between"><span className="text-gray-400">Campanha</span><span className="text-white truncate ml-4 text-right">{selectedCampaignName}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">Conjunto</span><span className="text-white truncate ml-4 text-right">{selectedAdSetName}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Formato</span><span className="text-white">{adFormat === "carousel" ? `Carrossel (${carouselSelectedImages.length} fotos)` : "Imagem única"}</span></div>
+                <div className="flex justify-between"><span className="text-gray-400">Estilo IA</span><span className="text-white">{AI_STYLES.find(s => s.value === aiStyle)?.emoji} {AI_STYLES.find(s => s.value === aiStyle)?.label}</span></div>
                 <div className="flex justify-between"><span className="text-gray-400">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
               </div>
             </div>
@@ -521,7 +744,10 @@ function CreateAdModal({
               <Loader2 size={40} className="animate-spin text-purple-400" />
               <p className="text-gray-300">Criando anúncio na Meta…</p>
               <p className="text-xs text-gray-500 text-center max-w-xs">
-                Fazendo upload da imagem, criando o criativo e o anúncio. Aguarde…
+                {adFormat === "carousel"
+                  ? `Fazendo upload de ${carouselSelectedImages.length} imagens, criando o carrossel e o anúncio. Aguarde…`
+                  : "Fazendo upload da imagem, criando o criativo e o anúncio. Aguarde…"
+                }
               </p>
             </div>
           )}
@@ -534,7 +760,9 @@ function CreateAdModal({
               </div>
               <div className="text-center">
                 <p className="font-bold text-green-300 text-lg">Anúncio criado com sucesso!</p>
-                <p className="text-sm text-gray-400 mt-1">O anúncio foi criado <strong className="text-yellow-400">pausado</strong> dentro do conjunto de anúncios selecionado.</p>
+                <p className="text-sm text-gray-400 mt-1">
+                  O anúncio {adFormat === "carousel" ? "em carrossel " : ""}foi criado <strong className="text-yellow-400">pausado</strong> dentro do conjunto de anúncios selecionado.
+                </p>
                 <p className="text-xs text-gray-500 mt-2">Revise no Meta Ads Manager e ative quando estiver pronto.</p>
               </div>
             </div>
@@ -556,8 +784,20 @@ function CreateAdModal({
               <Button variant="outline" onClick={goBack} className="flex-1">
                 <ArrowLeft size={14} className="mr-2" /> Voltar
               </Button>
-              <Button onClick={handleGenerate}
+              <Button onClick={goToCustomize}
                 disabled={!selectedVehicleId}
+                className="flex-1 bg-purple-600 hover:bg-purple-700">
+                Personalizar <ChevronRight size={14} className="ml-1" />
+              </Button>
+            </>
+          )}
+          {step === "customize" && (
+            <>
+              <Button variant="outline" onClick={goBack} className="flex-1">
+                <ArrowLeft size={14} className="mr-2" /> Voltar
+              </Button>
+              <Button onClick={handleGenerate}
+                disabled={adFormat === "carousel" && carouselSelectedImages.length < 2}
                 className="flex-1 bg-purple-600 hover:bg-purple-700">
                 <Sparkles size={14} className="mr-2" /> Gerar com IA
               </Button>

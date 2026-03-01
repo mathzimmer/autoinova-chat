@@ -675,3 +675,14 @@
 - [x] Para campanhas de Engajamento/Mensagens: usar WHATSAPP_MESSAGE CTA
 - [x] Para campanhas de Tráfego/Leads: usar LEARN_MORE com link
 - [x] Passar objetivo da campanha para o endpoint de criação de anúncio
+
+## Rodada 43 - Meta Ads: Preço, Carrossel e IA
+
+- [x] Corrigir exibição de preço dos veículos no módulo Meta Ads (valores em centavos vs reais)
+- [x] Mostrar preço formatado corretamente (ex: R$ 389.000 em vez de R$ 3.900)
+- [x] Suporte a anúncio carrossel: selecionar múltiplas fotos do veículo
+- [x] Backend: criar criativo carrossel no Meta Ads API
+- [x] Frontend: UI para selecionar múltiplas imagens para carrossel
+- [x] Mais personalizações da IA: tom, estilo, público-alvo, destaques
+- [x] Opção de regenerar textos com diferentes estilos
+- [x] Campo para instruções adicionais à IA

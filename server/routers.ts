@@ -1161,6 +1161,7 @@ const metaAdsRouter = router({
       primaryText:  z.string(),
       selectedImageUrl: z.string().optional(),
       campaignObjective: z.string().optional(),
+      carouselImageUrls: z.array(z.string()).optional(),
     }))
     .mutation(async ({ input }) => {
       const config = buildMetaConfig();
@@ -1193,7 +1194,8 @@ const metaAdsRouter = router({
           primaryText: input.primaryText,
         },
         input.selectedImageUrl,
-        input.campaignObjective
+        input.campaignObjective,
+        input.carouselImageUrls
       );
 
       // Salvar no banco
@@ -1325,7 +1327,13 @@ const metaAdsRouter = router({
 
   // Gerar texto do anúncio com IA
   generateAdText: protectedProcedure
-    .input(z.object({ vehicleId: z.number() }))
+    .input(z.object({
+      vehicleId: z.number(),
+      style: z.enum(["persuasivo", "informativo", "urgente", "premium", "jovem"]).optional().default("persuasivo"),
+      targetAudience: z.string().optional(),
+      highlights: z.string().optional(),
+      extraInstructions: z.string().optional(),
+    }))
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database indisponível");
@@ -1334,15 +1342,32 @@ const metaAdsRouter = router({
       if (!vehicleRows.length) throw new Error("Veículo não encontrado");
       const v = vehicleRows[0];
 
-      const fmtPrice = (v.price / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+      const fmtPrice = v.price.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
       const fmtKm = (v.mileage ?? 0).toLocaleString("pt-BR");
+
+      const styleGuides: Record<string, string> = {
+        persuasivo: "Tom persuasivo e envolvente, foque nos benefícios e no desejo de compra. Use gatilhos emocionais.",
+        informativo: "Tom informativo e direto, destaque especificações técnicas e dados concretos do veículo.",
+        urgente: "Tom de urgência e escassez, use frases como 'Última unidade', 'Oportunidade única', 'Não perca'.",
+        premium: "Tom sofisticado e elegante, foque na exclusividade, conforto e status do veículo.",
+        jovem: "Tom descontraído e moderno, use linguagem jovem e dinâmica, emojis com moderação.",
+      };
+
+      const styleInstruction = styleGuides[input.style] || styleGuides.persuasivo;
+      const audienceInstruction = input.targetAudience ? `\nPúblico-alvo: ${input.targetAudience}` : "";
+      const highlightsInstruction = input.highlights ? `\nDestaques a enfatizar: ${input.highlights}` : "";
+      const extraInstruction = input.extraInstructions ? `\nInstruções adicionais: ${input.extraInstructions}` : "";
+
+      // Get features if available
+      const featuresStr = v.features && Array.isArray(v.features) ? (v.features as string[]).slice(0, 10).join(", ") : "";
 
       const result = await invokeLLM({
         messages: [
           {
             role: "system",
             content: `Você é um copywriter especializado em anúncios de veículos para Facebook e Instagram.
-Crie textos persuasivos, curtos e otimizados para conversão.
+${styleInstruction}
+Crie textos otimizados para conversão.
 Sempre retorne JSON válido.`
           },
           {
@@ -1351,13 +1376,16 @@ Sempre retorne JSON válido.`
 
 Marca: ${v.brand}
 Modelo: ${v.model}
+Versão: ${v.version || "N/I"}
 Ano: ${v.year}
 Preço: ${fmtPrice}
 Quilometragem: ${fmtKm} km
 Câmbio: ${v.transmission || "N/I"}
 Combustível: ${v.fuel || "N/I"}
 Cor: ${v.color || "N/I"}
-Versão: ${v.version || "N/I"}
+Categoria: ${v.category || "N/I"}
+${featuresStr ? `Opcionais: ${featuresStr}` : ""}
+${v.description ? `Descrição: ${v.description.slice(0, 200)}` : ""}${audienceInstruction}${highlightsInstruction}${extraInstruction}
 
 Retorne um JSON com:
 {

@@ -543,7 +543,8 @@ export async function createAdInExistingAdSet(
     primaryText: string;
   },
   selectedImageUrl?: string,
-  campaignObjective?: string
+  campaignObjective?: string,
+  carouselImageUrls?: string[]
 ): Promise<{ adId: string; adCreativeId: string; imageHash: string }> {
   const imgUrl = selectedImageUrl || vehicle.imageUrl;
   if (!imgUrl) throw new Error("Veículo sem imagem");
@@ -554,8 +555,22 @@ export async function createAdInExistingAdSet(
   );
   const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
 
-  // 1. Upload imagem
-  const imageHash = await uploadAdImage(config, imgUrl);
+  const isCarousel = carouselImageUrls && carouselImageUrls.length >= 2;
+
+  // 1. Upload imagem(ns)
+  let imageHash: string;
+  let carouselHashes: string[] = [];
+  if (isCarousel) {
+    console.log(`[MetaAds] Uploading ${carouselImageUrls.length} images for carousel...`);
+    carouselHashes = [];
+    for (const url of carouselImageUrls.slice(0, 10)) {
+      const hash = await uploadAdImage(config, url);
+      carouselHashes.push(hash);
+    }
+    imageHash = carouselHashes[0];
+  } else {
+    imageHash = await uploadAdImage(config, imgUrl);
+  }
 
   // 2. Montar object_story_spec conforme objetivo da campanha
   const isEngagementOrMessaging = campaignObjective === "OUTCOME_ENGAGEMENT" ||
@@ -563,25 +578,59 @@ export async function createAdInExistingAdSet(
     campaignObjective === "OUTCOME_LEADS";
 
   let objectStorySpec: any;
-
-  if (isEngagementOrMessaging) {
-    // Formato Click to WhatsApp: CTA = WHATSAPP_MESSAGE
-    const welcomeMessage = JSON.stringify({
-      type: "VISUAL_EDITOR",
-      version: 2,
-      landing_screen_type: "welcome_message",
-      media_type: "text",
-      text_format: {
-        customer_action_type: "autofill_message",
-        message: {
-          autofill_message: {
-            content: `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`
-          },
-          text: texts.primaryText
-        }
+  const welcomeMessageObj = {
+    type: "VISUAL_EDITOR",
+    version: 2,
+    landing_screen_type: "welcome_message",
+    media_type: "text",
+    text_format: {
+      customer_action_type: "autofill_message",
+      message: {
+        autofill_message: {
+          content: `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`
+        },
+        text: texts.primaryText
       }
+    }
+  };
+  const welcomeMessage = JSON.stringify(welcomeMessageObj);
+
+  if (isCarousel && carouselHashes.length >= 2) {
+    // Carrossel
+    const childAttachments = carouselHashes.map((hash, i) => {
+      const child: any = {
+        image_hash: hash,
+        name: i === 0 ? texts.headline : `${vehicle.brand} ${vehicle.model} - Foto ${i + 1}`,
+        description: i === 0 ? texts.description : "",
+      };
+      if (isEngagementOrMessaging) {
+        child.link = "https://api.whatsapp.com/send";
+        child.call_to_action = { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } };
+      } else {
+        child.link = whatsappLink;
+        child.call_to_action = { type: "LEARN_MORE", value: { link: whatsappLink } };
+      }
+      return child;
     });
 
+    objectStorySpec = {
+      page_id: config.pageId,
+      link_data: {
+        message: texts.primaryText,
+        child_attachments: childAttachments,
+        multi_share_optimized: false,
+        ...(isEngagementOrMessaging ? {
+          link: "https://api.whatsapp.com/send",
+          call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } },
+          page_welcome_message: welcomeMessage,
+        } : {
+          link: whatsappLink,
+        }),
+      },
+    };
+    console.log(`[MetaAds] Usando formato CARROSSEL com ${carouselHashes.length} imagens (objetivo: ${campaignObjective})`);
+  } else if (isEngagementOrMessaging) {
+    // Imagem única - Click to WhatsApp
     objectStorySpec = {
       page_id: config.pageId,
       link_data: {
@@ -590,16 +639,14 @@ export async function createAdInExistingAdSet(
         name: texts.headline,
         call_to_action: {
           type: "WHATSAPP_MESSAGE",
-          value: {
-            app_destination: "WHATSAPP"
-          }
+          value: { app_destination: "WHATSAPP" }
         },
         page_welcome_message: welcomeMessage,
       },
     };
     console.log(`[MetaAds] Usando formato Click to WhatsApp (objetivo: ${campaignObjective})`);
   } else {
-    // Formato padrão com link direto (Tráfego)
+    // Imagem única - Link direto
     objectStorySpec = {
       page_id: config.pageId,
       link_data: {
@@ -617,11 +664,11 @@ export async function createAdInExistingAdSet(
     console.log(`[MetaAds] Usando formato link direto (objetivo: ${campaignObjective || "desconhecido"})`);
   }
 
-  // 3. Criar criativo com textos personalizados
+  // 3. Criar criativo
   const creativeResult = await metaPost(
     `act_${config.adAccountId}/adcreatives`,
     {
-      name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
+      name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}${isCarousel ? " (Carrossel)" : ""}`,
       object_story_spec: objectStorySpec,
     },
     config.accessToken

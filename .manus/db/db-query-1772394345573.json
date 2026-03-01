@@ -1,0 +1,100 @@
+{
+  "query": "SELECT id, brand, model, year, price, regularPrice, promotionPrice FROM vehicles WHERE available = 1 LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, brand, model, year, price, regularPrice, promotionPrice FROM vehicles WHERE available = 1 LIMIT 10;",
+  "rows": [
+    {
+      "id": "2",
+      "brand": "Hyundai",
+      "model": "HB20 Comf./C.Plus/C.Style 1.0 Flex 12V",
+      "year": "2015",
+      "price": "47990",
+      "regularPrice": "49990",
+      "promotionPrice": "47990"
+    },
+    {
+      "id": "3",
+      "brand": "Kia Motors",
+      "model": "Sportage EX 2.0 16V/ 2.0 16V Flex Aut.",
+      "year": "2019",
+      "price": "116990",
+      "regularPrice": "119990",
+      "promotionPrice": "116990"
+    },
+    {
+      "id": "5",
+      "brand": "Honda",
+      "model": "HR-V EX 1.8 Flexone 16V 5p Aut.",
+      "year": "2016",
+      "price": "79990",
+      "regularPrice": "81990",
+      "promotionPrice": "79990"
+    },
+    {
+      "id": "6",
+      "brand": "Hyundai",
+      "model": "ix35 GL 2.0 16V 2WD Flex Aut.",
+      "year": "2019",
+      "price": "88990",
+      "regularPrice": "90990",
+      "promotionPrice": "88990"
+    },
+    {
+      "id": "9",
+      "brand": "Chevrolet",
+      "model": "AGILE LTZ 1.4 MPFI 8V FlexPower 5p",
+      "year": "2013",
+      "price": "37990",
+      "regularPrice": "39990",
+      "promotionPrice": "37990"
+    },
+    {
+      "id": "12",
+      "brand": "Buggy",
+      "model": "Galgo",
+      "year": "1971",
+      "price": "40990",
+      "regularPrice": "40990",
+      "promotionPrice": "NULL"
+    },
+    {
+      "id": "14",
+      "brand": "BMW",
+      "model": "X5 XDRIVE 45e 3.0 M.Sport  Aut. (Híb.)",
+      "year": "2022",
+      "price": "389990",
+      "regularPrice": "399990",
+      "promotionPrice": "389990"
+    },
+    {
+      "id": "15",
+      "brand": "Mercedes",
+      "model": "Sprinter 517 Chassi Longo T.B. Die. (E6)",
+      "year": "2025",
+      "price": "279990",
+      "regularPrice": "289990",
+      "promotionPrice": "279990"
+    },
+    {
+      "id": "16",
+      "brand": "Toyota",
+      "model": "Hilux SW4 SRV D4-D 4x4 3.0 TDI Dies. Aut",
+      "year": "2010",
+      "price": "113990",
+      "regularPrice": "115990",
+      "promotionPrice": "113990"
+    },
+    {
+      "id": "18",
+      "brand": "Peugeot",
+      "model": "208 Allure 1.6 Flex 16V 5p Aut.",
+      "year": "2018",
+      "price": "59990",
+      "regularPrice": "62990",
+      "promotionPrice": "59990"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbrand\tmodel\tyear\tprice\tregularPrice\tpromotionPrice\n2\tHyundai\tHB20 Comf./C.Plus/C.Style 1.0 Flex 12V\t2015\t47990\t49990\t47990\n3\tKia Motors\tSportage EX 2.0 16V/ 2.0 16V Flex Aut.\t2019\t116990\t119990\t116990\n5\tHonda\tHR-V EX 1.8 Flexone 16V 5p Aut.\t2016\t79990\t81990\t79990\n6\tHyundai\tix35 GL 2.0 16V 2WD Flex Aut.\t2019\t88990\t90990\t88990\n9\tChevrolet\tAGILE LTZ 1.4 MPFI 8V FlexPower 5p\t2013\t37990\t39990\t37990\n12\tBuggy\tGalgo\t1971\t40990\t40990\tNULL\n14\tBMW\tX5 XDRIVE 45e 3.0 M.Sport  Aut. (Híb.)\t2022\t389990\t399990\t389990\n15\tMercedes\tSprinter 517 Chassi Longo T.B. Die. (E6)\t2025\t279990\t289990\t279990\n16\tToyota\tHilux SW4 SRV D4-D 4x4 3.0 TDI Dies. Aut\t2010\t113990\t115990\t113990\n18\tPeugeot\t208 Allure 1.6 Flex 16V 5p Aut.\t2018\t59990\t62990\t59990\n",
+  "stderr": "",
+  "execution_time_ms": 199
+}
