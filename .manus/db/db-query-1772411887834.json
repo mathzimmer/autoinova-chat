@@ -1,0 +1,30 @@
+{
+  "query": "SELECT * FROM teamMembers ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT * FROM teamMembers ORDER BY id;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Matheus Zimmer",
+      "email": "matheuszimmer@gmail.com",
+      "passwordHash": "58eba5c40c2da6edd9ac83abab5583d2:18545654ebef731772537a22bc342127aa1bc390298e00d357c20633dec89c15f17d1355f639eef461ea16b206d79fb7ac803d7b107ce6246c57c117860986f3",
+      "cargo": "admin",
+      "memberStatus": "ativo",
+      "createdAt": "2026-02-23 23:52:29",
+      "updatedAt": "2026-02-23 23:52:29"
+    },
+    {
+      "id": "2",
+      "name": "Sirlei Fritz",
+      "email": "sirleiautoinova@gmail.com",
+      "passwordHash": "9c908c14bd2651eb2b41dee7d9d13966:6fcf7fa422599168c02a13bebaede186aa8ed303922bc5c991371111cdd3d8ea3e33cd43a5573f385d4f1e75a480adbc79a97a3b754659d600b269b4f6e6012e",
+      "cargo": "vendedor",
+      "memberStatus": "ativo",
+      "createdAt": "2026-02-23 23:53:18",
+      "updatedAt": "2026-02-23 23:53:18"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tpasswordHash\tcargo\tmemberStatus\tcreatedAt\tupdatedAt\n1\tMatheus Zimmer\tmatheuszimmer@gmail.com\t58eba5c40c2da6edd9ac83abab5583d2:18545654ebef731772537a22bc342127aa1bc390298e00d357c20633dec89c15f17d1355f639eef461ea16b206d79fb7ac803d7b107ce6246c57c117860986f3\tadmin\tativo\t2026-02-23 23:52:29\t2026-02-23 23:52:29\n2\tSirlei Fritz\tsirleiautoinova@gmail.com\t9c908c14bd2651eb2b41dee7d9d13966:6fcf7fa422599168c02a13bebaede186aa8ed303922bc5c991371111cdd3d8ea3e33cd43a5573f385d4f1e75a480adbc79a97a3b754659d600b269b4f6e6012e\tvendedor\tativo\t2026-02-23 23:53:18\t2026-02-23 23:53:18\n",
+  "stderr": "",
+  "execution_time_ms": 53
+}

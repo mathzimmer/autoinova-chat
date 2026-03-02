@@ -1,0 +1,22 @@
+{
+  "query": "SELECT id, name, email, cargo FROM teamMembers ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, name, email, cargo FROM teamMembers ORDER BY id;",
+  "rows": [
+    {
+      "id": "1",
+      "name": "Matheus Zimmer",
+      "email": "matheuszimmer@gmail.com",
+      "cargo": "admin"
+    },
+    {
+      "id": "2",
+      "name": "Sirlei Fritz",
+      "email": "sirleiautoinova@gmail.com",
+      "cargo": "vendedor"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\temail\tcargo\n1\tMatheus Zimmer\tmatheuszimmer@gmail.com\tadmin\n2\tSirlei Fritz\tsirleiautoinova@gmail.com\tvendedor\n",
+  "stderr": "",
+  "execution_time_ms": 55
+}

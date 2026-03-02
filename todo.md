@@ -758,3 +758,11 @@
 - [x] Implementar vendorRouter com endpoints: me, myLeads, updateLeadStatus, addNote, updateLeadData, getWhatsappLink, createApiKey, listApiKeys, revokeApiKey
 - [x] Integrar vendor: vendorRouter no appRouter
 - [x] Rodar testes e validar — 192 testes passando (14 arquivos)
+
+## Feature - Rodada 49 (Gerenciamento de API Keys para vendedores)
+
+- [x] Consultar vendedores existentes no banco (teamMembers) — 2 vendedores: Matheus Zimmer (admin) e Sirlei Fritz (vendedor)
+- [x] Criar chaves API para cada vendedor — chaves criadas para ambos
+- [x] Criar página de gerenciamento de API Keys (VendorApiKeys.tsx) com criar/revogar/listar
+- [x] Integrar rota /vendor-keys no App.tsx + link na sidebar (Key icon, admin only)
+- [x] Rodar testes e validar — 192 testes passando (14 arquivos)

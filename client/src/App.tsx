@@ -16,6 +16,7 @@ import AppLayout from "./components/AppLayout";
 import AiAudit from "./pages/AiAudit";
 import MetaAdsPage from "./pages/MetaAds";
 import FollowUpPage from "./pages/FollowUp";
+import VendorApiKeys from "./pages/VendorApiKeys";
 
 function Router() {
   return (
@@ -61,9 +62,14 @@ function Router() {
           <MetaAdsPage />
         </AppLayout>
       </Route>
-      <Route path={"/follow-up"}>
+       <Route path="/follow-up">
         <AppLayout>
           <FollowUpPage />
+        </AppLayout>
+      </Route>
+      <Route path="/vendor-keys">
+        <AppLayout>
+          <VendorApiKeys />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />
