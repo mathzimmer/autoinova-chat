@@ -749,3 +749,12 @@
 - [x] Corrigir mensagens não aparecendo na tela do atendente — LIMIT 100→500 + ORDER DESC com reverse
 - [x] Corrigir áudio — PreSkip fix já estava no código, faltava publicar. Confirmado que último envio foi antes do restart
 - [x] Testar e validar — 185 testes passando
+
+## Feature - Rodada 48 (Mini CRM - API para vendedores externos via extensão Chrome)
+
+- [x] Adicionar tabela vendorApiKeys no drizzle/schema.ts
+- [x] Rodar pnpm db:push para criar a tabela
+- [x] Implementar getVendorByApiKey e vendorKeyProcedure no routers.ts
+- [x] Implementar vendorRouter com endpoints: me, myLeads, updateLeadStatus, addNote, updateLeadData, getWhatsappLink, createApiKey, listApiKeys, revokeApiKey
+- [x] Integrar vendor: vendorRouter no appRouter
+- [x] Rodar testes e validar — 192 testes passando (14 arquivos)

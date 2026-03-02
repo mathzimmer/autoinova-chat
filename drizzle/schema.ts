@@ -327,3 +327,21 @@ export const followUpLogs = mysqlTable("followUpLogs", {
 
 export type FollowUpLog = typeof followUpLogs.$inferSelect;
 export type InsertFollowUpLog = typeof followUpLogs.$inferInsert;
+
+/**
+ * Vendor API Keys — chaves de acesso para vendedores externos.
+ * Permite que vendedores usem uma extensão Chrome para acessar seus leads
+ * via API autenticada por chave fixa (X-Vendor-Key header).
+ */
+export const vendorApiKeys = mysqlTable("vendorApiKeys", {
+  id: int("id").autoincrement().primaryKey(),
+  teamMemberId: int("teamMemberId").notNull(),
+  apiKey: varchar("apiKey", { length: 64 }).notNull().unique(),
+  name: varchar("name", { length: 100 }),
+  active: boolean("active").default(true).notNull(),
+  lastUsedAt: timestamp("lastUsedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type VendorApiKey = typeof vendorApiKeys.$inferSelect;
+export type InsertVendorApiKey = typeof vendorApiKeys.$inferInsert;
