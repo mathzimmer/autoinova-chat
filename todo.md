@@ -766,3 +766,9 @@
 - [x] Criar página de gerenciamento de API Keys (VendorApiKeys.tsx) com criar/revogar/listar
 - [x] Integrar rota /vendor-keys no App.tsx + link na sidebar (Key icon, admin only)
 - [x] Rodar testes e validar — 192 testes passando (14 arquivos)
+
+## Bug Fix - Rodada 50 (Extensão Chrome não conecta - precisa de endpoints REST)
+
+- [x] Diagnóstico: extensão usa tRPC mas sem ?batch=1, servidor retorna objeto ao invés de array
+- [x] Corrigir extensão Chrome: adicionar ?batch=1 nas chamadas GET e POST (popup.js, content.js, background.js)
+- [x] Testar com curl e validar — endpoint vendor.me retorna dados corretos com batch=1
