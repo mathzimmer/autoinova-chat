@@ -18,18 +18,18 @@ export default function FollowUpPage() {
   const [activeTab, setActiveTab] = useState<"config" | "history" | "templates">("config");
 
   return (
-    <div className="min-h-screen bg-[#080c14]">
+    <div className="min-h-screen bg-background">
       <div className="max-w-6xl mx-auto p-6">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-amber-600/20 border border-amber-600/40 flex items-center justify-center">
                 <Zap size={20} className="text-amber-400" />
               </div>
               Follow-Up Automático
             </h1>
-            <p className="text-gray-400 text-sm mt-1">
+            <p className="text-muted-foreground text-sm mt-1">
               Configure o reengajamento automático de leads inativos via WhatsApp
             </p>
           </div>
@@ -49,7 +49,7 @@ export default function FollowUpPage() {
               onClick={() => setActiveTab(tab.id)}
               className={activeTab === tab.id
                 ? "bg-amber-600 hover:bg-amber-700"
-                : "border-[#1e2d40] text-gray-400 hover:text-white"
+                : "border-border text-muted-foreground hover:text-foreground"
               }
             >
               <tab.icon size={14} className="mr-2" />
@@ -118,7 +118,7 @@ function ConfigTab() {
   if (isLoading) {
     return (
       <div className="flex justify-center py-20">
-        <Loader2 size={32} className="animate-spin text-gray-400" />
+        <Loader2 size={32} className="animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -134,12 +134,12 @@ function ConfigTab() {
             { label: "Últimos 7 dias", value: stats.last7d, icon: History, color: "#a855f7" },
             { label: "Status", value: form.enabled ? "Ativo" : "Desativado", icon: form.enabled ? CheckCircle2 : AlertTriangle, color: form.enabled ? "#22c55e" : "#ef4444" },
           ].map(stat => (
-            <div key={stat.label} className="bg-[#0f1520] border border-[#1e2d40] rounded-xl p-4">
+            <div key={stat.label} className="bg-card border border-border rounded-xl p-4">
               <div className="flex items-center gap-2 mb-2">
                 <stat.icon size={14} style={{ color: stat.color }} />
-                <span className="text-xs text-gray-400">{stat.label}</span>
+                <span className="text-xs text-muted-foreground">{stat.label}</span>
               </div>
-              <div className="text-xl font-bold text-white">{stat.value}</div>
+              <div className="text-xl font-bold text-foreground">{stat.value}</div>
             </div>
           ))}
         </div>
@@ -147,15 +147,15 @@ function ConfigTab() {
 
       <div className="grid grid-cols-2 gap-6">
         {/* Main Settings */}
-        <Card className="bg-[#0f1520] border-[#1e2d40]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white text-lg">Configurações Gerais</CardTitle>
+            <CardTitle className="text-foreground text-lg">Configurações Gerais</CardTitle>
             <CardDescription>Defina quando e como o follow-up automático deve funcionar</CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-white">Follow-up ativo</Label>
+                <Label className="text-foreground">Follow-up ativo</Label>
                 <p className="text-xs text-gray-500">Ativar/desativar o envio automático</p>
               </div>
               <Switch
@@ -166,26 +166,26 @@ function ConfigTab() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-gray-300">Horas de inatividade</Label>
+                <Label className="text-muted-foreground">Horas de inatividade</Label>
                 <Input
                   type="number"
                   min={1}
                   max={168}
                   value={form.inactiveHours}
                   onChange={(e) => setForm(f => ({ ...f, inactiveHours: parseInt(e.target.value) || 24 }))}
-                  className="bg-[#0a0f1a] border-[#1e2d40] text-white mt-1"
+                  className="bg-muted border-border text-foreground mt-1"
                 />
                 <p className="text-xs text-gray-500 mt-1">Tempo sem resposta para acionar follow-up</p>
               </div>
               <div>
-                <Label className="text-gray-300">Intervalo entre execuções (h)</Label>
+                <Label className="text-muted-foreground">Intervalo entre execuções (h)</Label>
                 <Input
                   type="number"
                   min={1}
                   max={72}
                   value={form.intervalHours}
                   onChange={(e) => setForm(f => ({ ...f, intervalHours: parseInt(e.target.value) || 6 }))}
-                  className="bg-[#0a0f1a] border-[#1e2d40] text-white mt-1"
+                  className="bg-muted border-border text-foreground mt-1"
                 />
                 <p className="text-xs text-gray-500 mt-1">A cada quantas horas o job roda</p>
               </div>
@@ -193,32 +193,32 @@ function ConfigTab() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label className="text-gray-300">Máximo de tentativas</Label>
+                <Label className="text-muted-foreground">Máximo de tentativas</Label>
                 <Input
                   type="number"
                   min={1}
                   max={10}
                   value={form.maxAttempts}
                   onChange={(e) => setForm(f => ({ ...f, maxAttempts: parseInt(e.target.value) || 3 }))}
-                  className="bg-[#0a0f1a] border-[#1e2d40] text-white mt-1"
+                  className="bg-muted border-border text-foreground mt-1"
                 />
               </div>
               <div>
-                <Label className="text-gray-300">Máximo por execução</Label>
+                <Label className="text-muted-foreground">Máximo por execução</Label>
                 <Input
                   type="number"
                   min={1}
                   max={100}
                   value={form.maxPerRun}
                   onChange={(e) => setForm(f => ({ ...f, maxPerRun: parseInt(e.target.value) || 20 }))}
-                  className="bg-[#0a0f1a] border-[#1e2d40] text-white mt-1"
+                  className="bg-muted border-border text-foreground mt-1"
                 />
               </div>
             </div>
 
             <div className="flex items-center justify-between">
               <div>
-                <Label className="text-white">Usar template após 24h</Label>
+                <Label className="text-foreground">Usar template após 24h</Label>
                 <p className="text-xs text-gray-500">Enviar template aprovado pela Meta quando fora da janela de 24h</p>
               </div>
               <Switch
@@ -229,11 +229,11 @@ function ConfigTab() {
 
             {form.useTemplateAfter24h && (
               <div>
-                <Label className="text-gray-300">Nome do template</Label>
+                <Label className="text-muted-foreground">Nome do template</Label>
                 <Input
                   value={form.templateName}
                   onChange={(e) => setForm(f => ({ ...f, templateName: e.target.value }))}
-                  className="bg-[#0a0f1a] border-[#1e2d40] text-white mt-1"
+                  className="bg-muted border-border text-foreground mt-1"
                   placeholder="follow_up_reengajamento"
                 />
                 <p className="text-xs text-gray-500 mt-1">Nome exato do template aprovado no Meta Business Manager</p>
@@ -253,7 +253,7 @@ function ConfigTab() {
                 variant="outline"
                 onClick={() => runNowMutation.mutate()}
                 disabled={runNowMutation.isPending}
-                className="border-[#1e2d40] text-gray-300"
+                className="border-border text-muted-foreground"
               >
                 {runNowMutation.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : <Play size={14} className="mr-2" />}
                 Executar agora
@@ -263,9 +263,9 @@ function ConfigTab() {
         </Card>
 
         {/* Message Templates */}
-        <Card className="bg-[#0f1520] border-[#1e2d40]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white text-lg">Instruções por Tentativa</CardTitle>
+            <CardTitle className="text-foreground text-lg">Instruções por Tentativa</CardTitle>
             <CardDescription>
               A IA usará estas instruções para gerar mensagens personalizadas para cada tentativa de follow-up
             </CardDescription>
@@ -273,7 +273,7 @@ function ConfigTab() {
           <CardContent className="space-y-4">
             {form.messages.map((msg, idx) => (
               <div key={idx}>
-                <Label className="text-gray-300">
+                <Label className="text-muted-foreground">
                   <Badge variant="outline" className="mr-2 border-amber-600/40 text-amber-400">
                     Tentativa {idx + 1}
                   </Badge>
@@ -285,7 +285,7 @@ function ConfigTab() {
                     newMsgs[idx] = e.target.value;
                     setForm(f => ({ ...f, messages: newMsgs }));
                   }}
-                  className="bg-[#0a0f1a] border-[#1e2d40] text-white mt-2 min-h-[80px]"
+                  className="bg-muted border-border text-foreground mt-2 min-h-[80px]"
                   placeholder={`Instruções para a tentativa ${idx + 1}...`}
                 />
               </div>
@@ -296,7 +296,7 @@ function ConfigTab() {
                 variant="outline"
                 size="sm"
                 onClick={() => setForm(f => ({ ...f, messages: [...f.messages, ""] }))}
-                className="border-[#1e2d40] text-gray-400"
+                className="border-border text-muted-foreground"
                 disabled={form.messages.length >= 10}
               >
                 + Adicionar tentativa
@@ -337,7 +337,7 @@ function HistoryTab() {
   if (isLoading) {
     return (
       <div className="flex justify-center py-20">
-        <Loader2 size={32} className="animate-spin text-gray-400" />
+        <Loader2 size={32} className="animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -347,9 +347,9 @@ function HistoryTab() {
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <Card className="bg-[#0f1520] border-[#1e2d40]">
+    <Card className="bg-card border-border">
       <CardHeader>
-        <CardTitle className="text-white text-lg">Histórico de Follow-ups</CardTitle>
+        <CardTitle className="text-foreground text-lg">Histórico de Follow-ups</CardTitle>
         <CardDescription>{total} mensagens enviadas no total</CardDescription>
       </CardHeader>
       <CardContent>
@@ -363,26 +363,26 @@ function HistoryTab() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[#1e2d40]">
-                    <th className="text-left py-3 px-3 text-gray-400 font-medium">Contato</th>
-                    <th className="text-left py-3 px-3 text-gray-400 font-medium">Telefone</th>
-                    <th className="text-left py-3 px-3 text-gray-400 font-medium">Tentativa</th>
-                    <th className="text-left py-3 px-3 text-gray-400 font-medium">Mensagem</th>
-                    <th className="text-left py-3 px-3 text-gray-400 font-medium">Enviado em</th>
+                  <tr className="border-b border-border">
+                    <th className="text-left py-3 px-3 text-muted-foreground font-medium">Contato</th>
+                    <th className="text-left py-3 px-3 text-muted-foreground font-medium">Telefone</th>
+                    <th className="text-left py-3 px-3 text-muted-foreground font-medium">Tentativa</th>
+                    <th className="text-left py-3 px-3 text-muted-foreground font-medium">Mensagem</th>
+                    <th className="text-left py-3 px-3 text-muted-foreground font-medium">Enviado em</th>
                   </tr>
                 </thead>
                 <tbody>
                   {logs.map((log) => (
-                    <tr key={log.id} className="border-b border-[#1e2d40]/50 hover:bg-[#0a0f1a]">
-                      <td className="py-3 px-3 text-white">{log.contactName || "—"}</td>
-                      <td className="py-3 px-3 text-gray-300 font-mono text-xs">{log.phone}</td>
+                    <tr key={log.id} className="border-b border-border/50 hover:bg-muted">
+                      <td className="py-3 px-3 text-foreground">{log.contactName || "—"}</td>
+                      <td className="py-3 px-3 text-muted-foreground font-mono text-xs">{log.phone}</td>
                       <td className="py-3 px-3">
                         <Badge variant="outline" className="border-amber-600/40 text-amber-400">
                           #{log.attemptNumber}
                         </Badge>
                       </td>
-                      <td className="py-3 px-3 text-gray-300 max-w-xs truncate">{log.message}</td>
-                      <td className="py-3 px-3 text-gray-400 text-xs">
+                      <td className="py-3 px-3 text-muted-foreground max-w-xs truncate">{log.message}</td>
+                      <td className="py-3 px-3 text-muted-foreground text-xs">
                         {log.sentAt ? new Date(log.sentAt).toLocaleString("pt-BR") : "—"}
                       </td>
                     </tr>
@@ -402,7 +402,7 @@ function HistoryTab() {
                     size="sm"
                     disabled={page === 0}
                     onClick={() => setPage(p => p - 1)}
-                    className="border-[#1e2d40] text-gray-400"
+                    className="border-border text-muted-foreground"
                   >
                     <ChevronLeft size={14} />
                   </Button>
@@ -411,7 +411,7 @@ function HistoryTab() {
                     size="sm"
                     disabled={page >= totalPages - 1}
                     onClick={() => setPage(p => p + 1)}
-                    className="border-[#1e2d40] text-gray-400"
+                    className="border-border text-muted-foreground"
                   >
                     <ChevronRight size={14} />
                   </Button>
@@ -433,18 +433,18 @@ function TemplatesTab() {
   if (isLoading) {
     return (
       <div className="flex justify-center py-20">
-        <Loader2 size={32} className="animate-spin text-gray-400" />
+        <Loader2 size={32} className="animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      <Card className="bg-[#0f1520] border-[#1e2d40]">
+      <Card className="bg-card border-border">
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle className="text-white text-lg">Templates de Mensagem WhatsApp</CardTitle>
+              <CardTitle className="text-foreground text-lg">Templates de Mensagem WhatsApp</CardTitle>
               <CardDescription>
                 Templates aprovados pela Meta para envio fora da janela de 24h.
                 Gerencie seus templates no{" "}
@@ -462,7 +462,7 @@ function TemplatesTab() {
               variant="outline"
               size="sm"
               onClick={() => refetch()}
-              className="border-[#1e2d40] text-gray-400"
+              className="border-border text-muted-foreground"
             >
               <RefreshCw size={14} className="mr-2" />
               Atualizar
@@ -473,7 +473,7 @@ function TemplatesTab() {
           {!templates || templates.length === 0 ? (
             <div className="text-center py-12">
               <FileText size={48} className="mx-auto mb-3 text-gray-600 opacity-20" />
-              <p className="text-gray-400 font-medium">Nenhum template encontrado</p>
+              <p className="text-muted-foreground font-medium">Nenhum template encontrado</p>
               <p className="text-gray-500 text-sm mt-1">
                 Crie templates no Meta Business Manager e eles aparecerão aqui após aprovação.
               </p>
@@ -495,10 +495,10 @@ function TemplatesTab() {
               {templates.map((tpl, idx) => (
                 <div
                   key={idx}
-                  className="bg-[#0a0f1a] border border-[#1e2d40] rounded-lg p-4"
+                  className="bg-muted border border-border rounded-lg p-4"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-white font-medium">{tpl.name}</span>
+                    <span className="text-foreground font-medium">{tpl.name}</span>
                     <Badge
                       variant="outline"
                       className={
@@ -516,9 +516,9 @@ function TemplatesTab() {
                     Idioma: {tpl.language} · Categoria: {tpl.category}
                   </div>
                   {tpl.components?.map((comp, ci) => (
-                    <div key={ci} className="text-sm text-gray-300 mt-1">
+                    <div key={ci} className="text-sm text-muted-foreground mt-1">
                       {comp.type === "BODY" && comp.text && (
-                        <p className="bg-[#0f1520] rounded p-2 text-xs">{comp.text}</p>
+                        <p className="bg-card rounded p-2 text-xs">{comp.text}</p>
                       )}
                     </div>
                   ))}

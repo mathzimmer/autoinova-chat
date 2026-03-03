@@ -800,3 +800,13 @@
 - [x] Ajustar waMsg (link wa.me) com mesmo formato (ambas as funções: quickCreateAd e createAdInExistingAdSet)
 - [x] Ajustar greeting text para "Olá! Bem-vindo à Auto Inova! 👋"
 - [x] Testar e validar — 192 testes passando + regra IA atualizada para reconhecer IDX
+
+## Feature - Rodada 54 (Tema Claro / Light Mode)
+
+- [x] Analisar CSS atual e ThemeProvider
+- [x] Criar variáveis CSS para tema claro (:root) e escuro (.dark) com OKLCH
+- [x] Substituir cores hardcoded em MetaAds.tsx (~72 substituições) e FollowUp.tsx (~20 substituições)
+- [x] Adicionar botão de alternância Sol/Lua na sidebar do AppLayout
+- [x] Habilitar switchable no ThemeProvider (defaultTheme="dark", persistência via localStorage)
+- [x] Scrollbar adaptável ao tema (claro/escuro)
+- [x] Testar e validar — 192 testes passando, 0 erros TypeScript

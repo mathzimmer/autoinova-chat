@@ -9,7 +9,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const [location, setLocation] = useLocation();
+  const { theme, toggleTheme, switchable } = useTheme();
 
   // Check if this is a team member
   const teamMeQuery = trpc.teamAuth.me.useQuery(undefined, {
@@ -121,6 +123,23 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             );
           })}
         </div>
+
+        {/* Theme Toggle */}
+        {switchable && toggleTheme && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={toggleTheme}
+                className="h-10 w-10 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent transition-colors mb-2"
+              >
+                {theme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              {theme === "dark" ? "Tema Claro" : "Tema Escuro"}
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* User Menu */}
         <DropdownMenu>

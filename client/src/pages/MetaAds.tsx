@@ -31,7 +31,7 @@ function fmtNum(n: number | null | undefined) {
 function statusColor(s: string) {
   if (s === "active")   return "bg-green-500/15 text-green-400 border-green-500/30";
   if (s === "paused")   return "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
-  if (s === "archived") return "bg-gray-500/15 text-gray-400 border-gray-500/30";
+  if (s === "archived") return "bg-gray-500/15 text-muted-foreground border-gray-500/30";
   return "";
 }
 function statusLabel(s: string) {
@@ -49,7 +49,7 @@ function metaStatusLabel(s: string) {
 function metaStatusColor(s: string) {
   if (s === "ACTIVE") return "text-green-400";
   if (s === "PAUSED") return "text-yellow-400";
-  return "text-gray-400";
+  return "text-muted-foreground";
 }
 
 // ─── Componente: Card de configuração ausente ─────────────────────────────────
@@ -283,28 +283,28 @@ function CreateAdModal({
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-[#0f1520] border border-[#1e2d40] rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+      <div className="bg-card border border-border rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between p-5 border-b border-[#1e2d40]">
+        <div className="flex items-center justify-between p-5 border-b border-border">
           <div>
-            <h2 className="font-bold text-lg text-white flex items-center gap-2">
+            <h2 className="font-bold text-lg text-foreground flex items-center gap-2">
               <Sparkles size={18} className="text-purple-400" />
               Criar Anúncio
             </h2>
-            <p className="text-sm text-gray-400 mt-0.5">Selecione campanha, conjunto e veículo</p>
+            <p className="text-sm text-muted-foreground mt-0.5">Selecione campanha, conjunto e veículo</p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-white text-xl leading-none">✕</button>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground text-xl leading-none">✕</button>
         </div>
 
         {/* Step indicator */}
         {!["generating", "publishing", "done"].includes(step) && (
-          <div className="flex items-center gap-1 px-5 py-3 border-b border-[#1e2d40]/50 overflow-x-auto">
+          <div className="flex items-center gap-1 px-5 py-3 border-b border-border/50 overflow-x-auto">
             {steps.map((s, i) => (
               <div key={s.key} className="flex items-center gap-1 shrink-0">
                 <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all ${
                   i < currentStepIndex ? "bg-green-500/15 text-green-400" :
                   i === currentStepIndex ? "bg-purple-500/20 text-purple-300 ring-1 ring-purple-500/40" :
-                  "bg-[#1a1f2e] text-gray-500"
+                  "bg-muted text-muted-foreground"
                 }`}>
                   {i < currentStepIndex ? <CheckCircle2 size={12} /> : <span className="w-3 text-center">{i + 1}</span>}
                   <span>{s.label}</span>
@@ -320,9 +320,9 @@ function CreateAdModal({
           {/* Step 1: Selecionar Campanha */}
           {step === "campaign" && (
             <div className="space-y-3">
-              <p className="text-sm text-gray-300 mb-4">Selecione a campanha onde o anúncio será criado:</p>
+              <p className="text-sm text-muted-foreground mb-4">Selecione a campanha onde o anúncio será criado:</p>
               {loadingCampaigns ? (
-                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" /></div>
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
               ) : !campaigns?.length ? (
                 <div className="text-center py-12 text-gray-500">
                   <Megaphone size={32} className="mx-auto mb-3 opacity-30" />
@@ -335,10 +335,10 @@ function CreateAdModal({
                     <button
                       key={c.id}
                       onClick={() => selectCampaign(c.id, c.name, c.objective)}
-                      className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#2a3040] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
+                      className="w-full flex items-center justify-between p-3.5 rounded-xl border border-border hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-white text-sm truncate">{c.name}</div>
+                        <div className="font-medium text-foreground text-sm truncate">{c.name}</div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`text-xs ${metaStatusColor(c.status)}`}>{metaStatusLabel(c.status)}</span>
                           <span className="text-xs text-gray-600">·</span>
@@ -357,14 +357,14 @@ function CreateAdModal({
           {step === "adset" && (
             <div className="space-y-3">
               <div className="flex items-center gap-2 mb-2">
-                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <button onClick={goBack} className="text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /></button>
                 <div>
-                  <p className="text-sm text-gray-300">Selecione o conjunto de anúncios:</p>
+                  <p className="text-sm text-muted-foreground">Selecione o conjunto de anúncios:</p>
                   <p className="text-xs text-gray-500">Campanha: <span className="text-purple-300">{selectedCampaignName}</span></p>
                 </div>
               </div>
               {loadingAdSets ? (
-                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" /></div>
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
               ) : !adSets?.length ? (
                 <div className="text-center py-12 text-gray-500">
                   <Megaphone size={32} className="mx-auto mb-3 opacity-30" />
@@ -377,10 +377,10 @@ function CreateAdModal({
                     <button
                       key={a.id}
                       onClick={() => selectAdSet(a.id, a.name)}
-                      className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#2a3040] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
+                      className="w-full flex items-center justify-between p-3.5 rounded-xl border border-border hover:border-purple-500/50 hover:bg-purple-500/5 transition-all text-left group"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="font-medium text-white text-sm truncate">{a.name}</div>
+                        <div className="font-medium text-foreground text-sm truncate">{a.name}</div>
                         <div className="flex items-center gap-2 mt-1">
                           <span className={`text-xs ${metaStatusColor(a.status)}`}>{metaStatusLabel(a.status)}</span>
                           <span className="text-xs text-gray-600">·</span>
@@ -401,9 +401,9 @@ function CreateAdModal({
           {step === "vehicle" && (
             <div className="space-y-3">
               <div className="flex items-center gap-2 mb-2">
-                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <button onClick={goBack} className="text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /></button>
                 <div>
-                  <p className="text-sm text-gray-300">Selecione o veículo para anunciar:</p>
+                  <p className="text-sm text-muted-foreground">Selecione o veículo para anunciar:</p>
                   <p className="text-xs text-gray-500">
                     <span className="text-purple-300">{selectedCampaignName}</span>
                     {" → "}
@@ -419,12 +419,12 @@ function CreateAdModal({
                   value={vehicleSearch}
                   onChange={e => setVehicleSearch(e.target.value)}
                   placeholder="Buscar veículo..."
-                  className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg pl-9 pr-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                  className="w-full bg-muted border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-foreground outline-none focus:border-purple-500"
                 />
               </div>
 
               {loadingVehicles ? (
-                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-gray-400" /></div>
+                <div className="flex justify-center py-12"><Loader2 className="animate-spin text-muted-foreground" /></div>
               ) : (
                 <div className="grid grid-cols-2 gap-2 max-h-[340px] overflow-y-auto">
                   {availableVehicles.map(v => {
@@ -432,12 +432,12 @@ function CreateAdModal({
                     return (
                       <button key={v.id} onClick={() => selectVehicle(v)}
                         className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all ${
-                          selected ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30" : "border-[#2a3040] hover:border-[#3a4050]"
+                          selected ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30" : "border-border hover:border-muted-foreground/30"
                         }`}>
                         <img src={v.imageUrl!} alt={v.model} className="w-14 h-10 rounded-lg object-cover shrink-0" />
                         <div className="min-w-0">
-                          <div className="text-xs font-medium text-white truncate">{v.brand} {v.model}</div>
-                          <div className="text-xs text-gray-400">{v.year}</div>
+                          <div className="text-xs font-medium text-foreground truncate">{v.brand} {v.model}</div>
+                          <div className="text-xs text-muted-foreground">{v.year}</div>
                           <div className="text-xs text-purple-300 font-medium">
                             {fmtPrice(v.price)}
                           </div>
@@ -457,7 +457,7 @@ function CreateAdModal({
           {step === "customize" && vehicleInfo && (
             <div className="space-y-4">
               <div className="flex items-center gap-2 mb-1">
-                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <button onClick={goBack} className="text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /></button>
                 <p className="text-xs text-gray-500">
                   <span className="text-purple-300">{selectedCampaignName}</span>
                   {" → "}
@@ -471,26 +471,26 @@ function CreateAdModal({
                   <img src={vehicleInfo.imageUrl} alt="" className="w-14 h-10 rounded-lg object-cover" />
                 )}
                 <div>
-                  <div className="font-bold text-white text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
-                  <div className="text-xs text-gray-400">{fmtPrice(vehicleInfo.price)}</div>
+                  <div className="font-bold text-foreground text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
+                  <div className="text-xs text-muted-foreground">{fmtPrice(vehicleInfo.price)}</div>
                 </div>
               </div>
 
               {/* Formato do anúncio */}
               <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">Formato do anúncio</label>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">Formato do anúncio</label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => setAdFormat("single")}
                     className={`flex items-center gap-2.5 p-3 rounded-xl border transition-all ${
                       adFormat === "single"
                         ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30"
-                        : "border-[#2a3040] hover:border-[#3a4050]"
+                        : "border-border hover:border-muted-foreground/30"
                     }`}
                   >
                     <ImageSingle size={18} className={adFormat === "single" ? "text-purple-400" : "text-gray-500"} />
                     <div className="text-left">
-                      <div className="text-sm font-medium text-white">Imagem única</div>
+                      <div className="text-sm font-medium text-foreground">Imagem única</div>
                       <div className="text-xs text-gray-500">1 foto principal</div>
                     </div>
                   </button>
@@ -501,13 +501,13 @@ function CreateAdModal({
                       adFormat === "carousel"
                         ? "border-purple-500 bg-purple-500/15 ring-1 ring-purple-500/30"
                         : vehicleImages.length < 2
-                          ? "border-[#2a3040] opacity-40 cursor-not-allowed"
-                          : "border-[#2a3040] hover:border-[#3a4050]"
+                          ? "border-border opacity-40 cursor-not-allowed"
+                          : "border-border hover:border-muted-foreground/30"
                     }`}
                   >
                     <LayoutGrid size={18} className={adFormat === "carousel" ? "text-purple-400" : "text-gray-500"} />
                     <div className="text-left">
-                      <div className="text-sm font-medium text-white">Carrossel</div>
+                      <div className="text-sm font-medium text-foreground">Carrossel</div>
                       <div className="text-xs text-gray-500">
                         {vehicleImages.length < 2 ? "Mín. 2 fotos" : `${vehicleImages.length} fotos disponíveis`}
                       </div>
@@ -519,7 +519,7 @@ function CreateAdModal({
               {/* Seleção de imagens - Imagem única */}
               {adFormat === "single" && vehicleImages.length > 1 && (
                 <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
                     <ImageIcon size={12} className="inline mr-1" />
                     Foto do anúncio
                   </label>
@@ -542,7 +542,7 @@ function CreateAdModal({
               {/* Seleção de imagens - Carrossel */}
               {adFormat === "carousel" && (
                 <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
                     <LayoutGrid size={12} className="inline mr-1" />
                     Fotos do carrossel ({carouselSelectedImages.length} selecionadas, mín. 2, máx. 10)
                   </label>
@@ -560,7 +560,7 @@ function CreateAdModal({
                         >
                           <img src={img} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" />
                           {isSelected && (
-                            <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-white text-xs font-bold">
+                            <div className="absolute top-1 left-1 w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center text-foreground text-xs font-bold">
                               {idx + 1}
                             </div>
                           )}
@@ -573,7 +573,7 @@ function CreateAdModal({
 
               {/* Estilo da IA */}
               <div>
-                <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
                   <Sparkles size={12} className="inline mr-1" />
                   Estilo do texto
                 </label>
@@ -585,11 +585,11 @@ function CreateAdModal({
                       className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-center transition-all ${
                         aiStyle === s.value
                           ? "border-purple-500 bg-purple-500/15"
-                          : "border-[#2a3040] hover:border-[#3a4050]"
+                          : "border-border hover:border-muted-foreground/30"
                       }`}
                     >
                       <span className="text-lg">{s.emoji}</span>
-                      <span className="text-xs font-medium text-white">{s.label}</span>
+                      <span className="text-xs font-medium text-foreground">{s.label}</span>
                     </button>
                   ))}
                 </div>
@@ -601,7 +601,7 @@ function CreateAdModal({
               {/* Opções avançadas */}
               <button
                 onClick={() => setShowAdvanced(!showAdvanced)}
-                className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-300 transition-colors"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-muted-foreground transition-colors"
               >
                 <Settings2 size={12} />
                 {showAdvanced ? "Ocultar opções avançadas" : "Opções avançadas"}
@@ -611,30 +611,30 @@ function CreateAdModal({
               {showAdvanced && (
                 <div className="space-y-3 pl-2 border-l-2 border-purple-500/20">
                   <div>
-                    <label className="text-xs text-gray-400 mb-1 block">Público-alvo (opcional)</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Público-alvo (opcional)</label>
                     <input
                       value={targetAudience}
                       onChange={e => setTargetAudience(e.target.value)}
                       placeholder="Ex: Jovens profissionais, famílias, empresários..."
-                      className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-purple-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-400 mb-1 block">Destaques a enfatizar (opcional)</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Destaques a enfatizar (opcional)</label>
                     <input
                       value={highlights}
                       onChange={e => setHighlights(e.target.value)}
                       placeholder="Ex: Baixa quilometragem, único dono, revisões em dia..."
-                      className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                      className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-purple-500"
                     />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-400 mb-1 block">Instruções extras para a IA (opcional)</label>
+                    <label className="text-xs text-muted-foreground mb-1 block">Instruções extras para a IA (opcional)</label>
                     <Textarea
                       value={extraInstructions}
                       onChange={e => setExtraInstructions(e.target.value)}
                       placeholder="Ex: Mencionar financiamento disponível, não usar emojis, focar no conforto..."
-                      className="bg-[#1a1f2e] border-[#2a3040] text-white min-h-[60px] focus:border-purple-500"
+                      className="bg-muted border-border text-foreground min-h-[60px] focus:border-purple-500"
                     />
                   </div>
                 </div>
@@ -649,7 +649,7 @@ function CreateAdModal({
                 <Sparkles size={40} className="text-purple-400 animate-pulse" />
                 <Loader2 size={20} className="animate-spin text-purple-300 absolute -top-1 -right-1" />
               </div>
-              <p className="text-gray-300 font-medium">A IA está criando o anúncio…</p>
+              <p className="text-muted-foreground font-medium">A IA está criando o anúncio…</p>
               <p className="text-xs text-gray-500 text-center max-w-xs">
                 Analisando dados do veículo e gerando textos otimizados no estilo "{AI_STYLES.find(s => s.value === aiStyle)?.label}".
               </p>
@@ -661,7 +661,7 @@ function CreateAdModal({
             <div className="space-y-4">
               {/* Breadcrumb */}
               <div className="flex items-center gap-2 mb-1">
-                <button onClick={goBack} className="text-gray-400 hover:text-white"><ArrowLeft size={16} /></button>
+                <button onClick={goBack} className="text-muted-foreground hover:text-foreground"><ArrowLeft size={16} /></button>
                 <p className="text-xs text-gray-500">
                   <span className="text-purple-300">{selectedCampaignName}</span>
                   {" → "}
@@ -675,8 +675,8 @@ function CreateAdModal({
                   <img src={selectedImageUrl} alt="" className="w-16 h-12 rounded-lg object-cover" />
                 )}
                 <div className="flex-1">
-                  <div className="font-bold text-white text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
-                  <div className="text-xs text-gray-400">{fmtPrice(vehicleInfo.price)}</div>
+                  <div className="font-bold text-foreground text-sm">{vehicleInfo.brand} {vehicleInfo.model} {vehicleInfo.year}</div>
+                  <div className="text-xs text-muted-foreground">{fmtPrice(vehicleInfo.price)}</div>
                 </div>
                 <Badge variant="outline" className={adFormat === "carousel" ? "text-purple-300 border-purple-500/40" : "text-blue-300 border-blue-500/40"}>
                   {adFormat === "carousel" ? (
@@ -690,13 +690,13 @@ function CreateAdModal({
               {/* Editable fields */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-gray-400 uppercase tracking-wider">Título (headline)</label>
-                  <button onClick={() => copyText(editedTexts.headline)} className="text-gray-500 hover:text-gray-300"><Copy size={12} /></button>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Título (headline)</label>
+                  <button onClick={() => copyText(editedTexts.headline)} className="text-gray-500 hover:text-foreground"><Copy size={12} /></button>
                 </div>
                 <input
                   value={editedTexts.headline}
                   onChange={e => setEditedTexts(t => ({ ...t, headline: e.target.value }))}
-                  className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-purple-500"
                   maxLength={40}
                 />
                 <div className="text-xs text-gray-600 text-right mt-1">{editedTexts.headline.length}/40</div>
@@ -704,13 +704,13 @@ function CreateAdModal({
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-gray-400 uppercase tracking-wider">Descrição</label>
-                  <button onClick={() => copyText(editedTexts.description)} className="text-gray-500 hover:text-gray-300"><Copy size={12} /></button>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Descrição</label>
+                  <button onClick={() => copyText(editedTexts.description)} className="text-gray-500 hover:text-foreground"><Copy size={12} /></button>
                 </div>
                 <input
                   value={editedTexts.description}
                   onChange={e => setEditedTexts(t => ({ ...t, description: e.target.value }))}
-                  className="w-full bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-purple-500"
+                  className="w-full bg-muted border border-border rounded-lg px-3 py-2 text-sm text-foreground outline-none focus:border-purple-500"
                   maxLength={90}
                 />
                 <div className="text-xs text-gray-600 text-right mt-1">{editedTexts.description.length}/90</div>
@@ -718,20 +718,20 @@ function CreateAdModal({
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-gray-400 uppercase tracking-wider">Texto principal</label>
-                  <button onClick={() => copyText(editedTexts.primaryText)} className="text-gray-500 hover:text-gray-300"><Copy size={12} /></button>
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider">Texto principal</label>
+                  <button onClick={() => copyText(editedTexts.primaryText)} className="text-gray-500 hover:text-foreground"><Copy size={12} /></button>
                 </div>
                 <Textarea
                   value={editedTexts.primaryText}
                   onChange={e => setEditedTexts(t => ({ ...t, primaryText: e.target.value }))}
-                  className="bg-[#1a1f2e] border-[#2a3040] text-white min-h-[100px] focus:border-purple-500"
+                  className="bg-muted border-border text-foreground min-h-[100px] focus:border-purple-500"
                 />
               </div>
 
               {/* Carousel captions */}
               {adFormat === "carousel" && carouselSelectedImages.length >= 2 && (
                 <div>
-                  <label className="text-xs text-gray-400 uppercase tracking-wider mb-2 block">
+                  <label className="text-xs text-muted-foreground uppercase tracking-wider mb-2 block">
                     <LayoutGrid size={12} className="inline mr-1" />
                     Legendas do carrossel
                   </label>
@@ -749,7 +749,7 @@ function CreateAdModal({
                           }}
                           placeholder={`Legenda da foto ${i + 1}...`}
                           maxLength={40}
-                          className="flex-1 bg-[#1a1f2e] border border-[#2a3040] rounded-lg px-2.5 py-1.5 text-xs text-white outline-none focus:border-purple-500"
+                          className="flex-1 bg-muted border border-border rounded-lg px-2.5 py-1.5 text-xs text-foreground outline-none focus:border-purple-500"
                         />
                       </div>
                     ))}
@@ -766,15 +766,15 @@ function CreateAdModal({
               </button>
 
               {/* Summary */}
-              <div className="rounded-xl bg-[#1a1f2e] border border-[#2a3040] p-3 text-sm space-y-1.5">
-                <div className="flex justify-between"><span className="text-gray-400">Campanha</span><span className="text-white truncate ml-4 text-right">{selectedCampaignName}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Conjunto</span><span className="text-white truncate ml-4 text-right">{selectedAdSetName}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Formato</span><span className="text-white">{adFormat === "carousel" ? `Carrossel (${carouselSelectedImages.length} fotos)` : "Imagem única"}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Estilo IA</span><span className="text-white">{AI_STYLES.find(s => s.value === aiStyle)?.emoji} {AI_STYLES.find(s => s.value === aiStyle)?.label}</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Rastreamento</span><span className="text-green-400">Pixel AUTOINOVA IVOTI</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Advantage+</span><span className="text-green-400">Ativado</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Instagram</span><span className="text-green-400">Incluído</span></div>
-                <div className="flex justify-between"><span className="text-gray-400">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
+              <div className="rounded-xl bg-muted border border-border p-3 text-sm space-y-1.5">
+                <div className="flex justify-between"><span className="text-muted-foreground">Campanha</span><span className="text-foreground truncate ml-4 text-right">{selectedCampaignName}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Conjunto</span><span className="text-foreground truncate ml-4 text-right">{selectedAdSetName}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Formato</span><span className="text-foreground">{adFormat === "carousel" ? `Carrossel (${carouselSelectedImages.length} fotos)` : "Imagem única"}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Estilo IA</span><span className="text-foreground">{AI_STYLES.find(s => s.value === aiStyle)?.emoji} {AI_STYLES.find(s => s.value === aiStyle)?.label}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Rastreamento</span><span className="text-green-400">Pixel AUTOINOVA IVOTI</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Advantage+</span><span className="text-green-400">Ativado</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Instagram</span><span className="text-green-400">Incluído</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Status inicial</span><span className="text-yellow-400">⏸ Pausado</span></div>
               </div>
             </div>
           )}
@@ -783,7 +783,7 @@ function CreateAdModal({
           {step === "publishing" && (
             <div className="flex flex-col items-center justify-center py-16 gap-4">
               <Loader2 size={40} className="animate-spin text-purple-400" />
-              <p className="text-gray-300">Criando anúncio na Meta…</p>
+              <p className="text-muted-foreground">Criando anúncio na Meta…</p>
               <p className="text-xs text-gray-500 text-center max-w-xs">
                 {adFormat === "carousel"
                   ? `Fazendo upload de ${carouselSelectedImages.length} imagens, criando o carrossel e o anúncio. Aguarde…`
@@ -801,7 +801,7 @@ function CreateAdModal({
               </div>
               <div className="text-center">
                 <p className="font-bold text-green-300 text-lg">Anúncio criado com sucesso!</p>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   O anúncio {adFormat === "carousel" ? "em carrossel " : ""}foi criado <strong className="text-yellow-400">pausado</strong> dentro do conjunto de anúncios selecionado.
                 </p>
                 <p className="text-xs text-gray-500 mt-2">Revise no Meta Ads Manager e ative quando estiver pronto.</p>
@@ -811,7 +811,7 @@ function CreateAdModal({
         </div>
 
         {/* Footer */}
-        <div className="flex gap-3 p-5 border-t border-[#1e2d40]">
+        <div className="flex gap-3 p-5 border-t border-border">
           {step === "campaign" && (
             <Button variant="outline" onClick={onClose} className="w-full">Cancelar</Button>
           )}
@@ -878,8 +878,8 @@ function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: 
   const isImported = ad.source === "imported";
 
   return (
-    <div className="bg-[#0f1520] border border-[#1e2d40] rounded-xl overflow-hidden">
-      <div className="relative h-36 bg-[#1a1f2e]">
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="relative h-36 bg-muted">
         {imageUrl ? (
           <img src={imageUrl} alt={adTitle} className="w-full h-full object-cover" />
         ) : (
@@ -900,7 +900,7 @@ function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: 
       </div>
 
       <div className="p-4">
-        <h3 className="font-bold text-white text-sm mb-1 truncate" title={adTitle}>
+        <h3 className="font-bold text-foreground text-sm mb-1 truncate" title={adTitle}>
           {adTitle}
         </h3>
         <p className="text-xs text-gray-500 font-mono mb-3 truncate">Ad ID: {ad.adId}</p>
@@ -912,17 +912,17 @@ function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: 
             { icon: Users,         label: "Leads",      value: fmtNum(ad.leads) },
             { icon: DollarSign,    label: "Gasto",      value: fmtBRL(ad.spendCents) },
           ].map(m => (
-            <div key={m.label} className="bg-[#1a1f2e] rounded-lg p-2 text-center">
+            <div key={m.label} className="bg-muted rounded-lg p-2 text-center">
               <m.icon size={12} className="text-gray-500 mx-auto mb-1" />
-              <div className="text-sm font-bold text-white">{m.value}</div>
+              <div className="text-sm font-bold text-foreground">{m.value}</div>
               <div className="text-xs text-gray-500">{m.label}</div>
             </div>
           ))}
         </div>
 
         {cpl !== null && (
-          <div className="text-xs text-center text-gray-400 mb-3">
-            Custo por lead: <span className="font-bold text-white">{fmtBRL(cpl * 100)}</span>
+          <div className="text-xs text-center text-muted-foreground mb-3">
+            Custo por lead: <span className="font-bold text-foreground">{fmtBRL(cpl * 100)}</span>
           </div>
         )}
 
@@ -999,19 +999,19 @@ export default function MetaAdsPage() {
   );
 
   return (
-    <div className="h-full overflow-y-auto bg-[#080c12]">
+    <div className="h-full overflow-y-auto bg-background">
       <div className="max-w-6xl mx-auto p-6">
 
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl bg-blue-600/20 border border-blue-600/40 flex items-center justify-center">
                 <Megaphone size={20} className="text-blue-400" />
               </div>
               Meta Ads
             </h1>
-            <p className="text-gray-400 text-sm mt-1">Crie anúncios em campanhas e conjuntos existentes com IA</p>
+            <p className="text-muted-foreground text-sm mt-1">Crie anúncios em campanhas e conjuntos existentes com IA</p>
           </div>
           <div className="flex gap-3">
             <Button variant="outline" size="sm" onClick={() => syncAllMutation.mutate()}
@@ -1041,12 +1041,12 @@ export default function MetaAdsPage() {
               { label: "Leads",       value: fmtNum(totals.leads),       icon: Users,color: "#f59e0b" },
               { label: "Gasto total", value: fmtBRL(totals.spend),       icon: DollarSign, color: "#ef4444" },
             ].map(stat => (
-              <div key={stat.label} className="bg-[#0f1520] border border-[#1e2d40] rounded-xl p-4">
+              <div key={stat.label} className="bg-card border border-border rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <stat.icon size={14} style={{ color: stat.color }} />
-                  <span className="text-xs text-gray-400">{stat.label}</span>
+                  <span className="text-xs text-muted-foreground">{stat.label}</span>
                 </div>
-                <div className="text-xl font-bold text-white">{stat.value}</div>
+                <div className="text-xl font-bold text-foreground">{stat.value}</div>
               </div>
             ))}
           </div>
@@ -1066,8 +1066,8 @@ export default function MetaAdsPage() {
                 onClick={() => setFilter(f.key)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                   filter === f.key
-                    ? "bg-blue-600 text-white"
-                    : "bg-[#1a1f2e] text-gray-400 hover:text-white hover:bg-[#252b3b]"
+                    ? "bg-blue-600 text-foreground"
+                    : "bg-muted text-muted-foreground hover:text-foreground hover:bg-accent"
                 }`}
               >
                 {f.label} ({f.count})
@@ -1079,13 +1079,13 @@ export default function MetaAdsPage() {
         {/* Lista de anúncios */}
         {isLoading ? (
           <div className="flex justify-center py-20">
-            <Loader2 size={32} className="animate-spin text-gray-400" />
+            <Loader2 size={32} className="animate-spin text-muted-foreground" />
           </div>
         ) : (adsList?.length ?? 0) === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4 text-gray-500">
             <Megaphone size={48} className="opacity-20" />
             <div className="text-center">
-              <p className="font-semibold text-gray-400">Nenhum anúncio encontrado</p>
+              <p className="font-semibold text-muted-foreground">Nenhum anúncio encontrado</p>
               <p className="text-sm">Clique em "Sincronizar" para importar seus anúncios existentes, ou "Criar anúncio" para criar novos.</p>
             </div>
           </div>
