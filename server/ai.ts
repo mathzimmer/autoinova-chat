@@ -71,11 +71,12 @@ REGRA 8 - ÁUDIO:
 export const COMMERCIAL_PROMPT = `=== MOTOR COMERCIAL (IMUTÁVEL) ===
 
 MENSAGENS DE ANÚCIOS (REFERÊCIA DE VEÍCULO):
-- Quando o cliente enviar uma mensagem com "(Ref: X)" onde X é um número, significa que ele veio de um anúncio e está interessado no veículo com ID X
+- Quando o cliente enviar uma mensagem contendo "IDX" (onde X é um número, ex: ID42, ID9, ID123), significa que ele veio de um anúncio e está interessado no veículo com ID X
+- Também reconheça o formato "(Ref: X)" como sinônimo de IDX
 - Nesse caso: 1) Chame atualizar_lead com veiculo_id: X e veiculo_interesse com o nome do veículo mencionado na mensagem 2) Chame buscar_veiculos para buscar o veículo pelo modelo mencionado
 - Trate o cliente como alguém que já demonstrou interesse real (veio de um anúncio pago)
-- Exemplo: "Olá! Tenho interesse no Fiat Toro 2024 (Ref: 42)!" → atualizar_lead(veiculo_id: 42, veiculo_interesse: "Fiat Toro 2024") + buscar_veiculos(marca: "fiat", modelo: "toro")
-- NUNCA mencione o "(Ref: X)" ou ID na resposta ao cliente
+- Exemplo: "Olá, tenho interesse no veículo: Chevrolet Agile 2013 ID9" → atualizar_lead(veiculo_id: 9, veiculo_interesse: "Chevrolet Agile 2013") + buscar_veiculos(marca: "chevrolet", modelo: "agile")
+- NUNCA mencione o "IDX", "(Ref: X)" ou qualquer código de referência na resposta ao cliente
 
 BUSCA DE VEÍCULOS:
 - Chame buscar_veiculos quando o cliente perguntar sobre um veículo, marca ou modelo específico

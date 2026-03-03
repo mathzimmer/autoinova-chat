@@ -72,7 +72,9 @@ export async function metaPost(
   const data = await res.json() as any;
   if (!res.ok || data.error) {
     const msg = data.error?.message || `HTTP ${res.status}`;
+    const errorDetail = data.error ? JSON.stringify(data.error, null, 2) : 'No error details';
     console.error(`[MetaAds] POST ${endpoint} falhou:`, msg);
+    console.error(`[MetaAds] Error details:`, errorDetail);
     throw new Error(msg);
   }
   return data;
@@ -287,7 +289,7 @@ export async function createAdForVehicle(
 
     const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
     const waMsg = encodeURIComponent(
-      `Olá! Vi o anúncio do ${v.brand} ${v.model} ${v.year} e tenho interesse. Pode me dar mais informações?`
+      `Olá, tenho interesse no veículo: ${v.brand} ${v.model} ${v.year} ID${v.id}`
     );
     const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
 
@@ -553,7 +555,7 @@ export async function createAdInExistingAdSet(
 
   const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
   const waMsg = encodeURIComponent(
-    `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse! (Ref: ${vehicle.id})`
+    `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`
   );
   const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
 
@@ -599,11 +601,11 @@ export async function createAdInExistingAdSet(
 
     // Try progressively shorter versions
     const attempts = [
-      { content: `Olá! Tenho interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year} (Ref: ${vehicle.id})!`, text: `${vehicle.brand} ${vehicle.model}` },
-      { content: `Interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year} (Ref: ${vehicle.id})`, text: `${vehicle.brand}` },
-      { content: `Olá! Tenho interesse no ${vehicle.brand} ${vehicle.model} (Ref: ${vehicle.id})!`, text: `${vehicle.brand}` },
-      { content: "Olá! Tenho interesse neste veículo!", text: vehicle.brand },
-      { content: "Olá! Tenho interesse!", text: "" },
+      { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
+      { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá! Bem-vindo!` },
+      { content: `Interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá!` },
+      { content: "Olá, tenho interesse neste veículo!", text: vehicle.brand },
+      { content: "Olá, tenho interesse!", text: "" },
     ];
 
     for (const a of attempts) {

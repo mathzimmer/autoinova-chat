@@ -786,3 +786,17 @@
 - [x] Implementar mensagem pré-preenchida com nome do veículo e ID (Ref: X) no buildWelcomeMessage e waMsg
 - [x] Garantir que o agente de IA consiga extrair o veículo — regra MENSAGENS DE ANÚCIOS adicionada ao COMMERCIAL_PROMPT
 - [x] Testar e validar — 192 testes passando
+
+## Bug Fix - Rodada 53 (Modelo de mensagem com ID do carro não funciona nos anúncios)
+
+- [x] Investigar como buildWelcomeMessage e waMsg são construídos e passados ao Meta Ads API
+- [x] Identificar causa: anúncio foi criado com código antigo (antes do fix ser publicado) + erro temporário da Meta API
+- [x] Testado via curl: criativo com page_welcome_message personalizado funciona (ID: 26132689613085248)
+- [x] Melhorado logging de erros da Meta API (error details completo)
+
+## Ajuste - Rodada 53b (Mensagem pré-preenchida anúncios)
+
+- [x] Ajustar autofill para: "Olá, tenho interesse no veículo: [nome] [ID]"
+- [x] Ajustar waMsg (link wa.me) com mesmo formato (ambas as funções: quickCreateAd e createAdInExistingAdSet)
+- [x] Ajustar greeting text para "Olá! Bem-vindo à Auto Inova! 👋"
+- [x] Testar e validar — 192 testes passando + regra IA atualizada para reconhecer IDX
