@@ -819,3 +819,5 @@
 - [x] Garantir que áudios e imagens também sejam agrupados corretamente (messageType preservado)
 - [x] Adicionar campo ajustável de tempo de espera na página de Configurações (Slider 1-30s)
 - [x] Testar e validar — 192 testes passando, 0 erros TypeScript
+
+- [x] Bug: Respostas da IA não estão chegando ao cliente via WhatsApp após implementação do debounce — CORRIGIDO: faltava sendTextMessage no callback do debounce

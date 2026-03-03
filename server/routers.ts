@@ -106,6 +106,21 @@ async function initDebounce() {
 
         emitNewMessage(conversationId, botMsg);
 
+        // Enviar resposta via WhatsApp para o cliente
+        if (isWhatsAppConfigured() && conversation.channel === "whatsapp" && conversation.phone) {
+          try {
+            const sendResult = await sendTextMessage(conversation.phone, aiResult.response);
+            if (sendResult.success && sendResult.messageId) {
+              await updateMessageExternalId(botMsg.id, sendResult.messageId);
+              console.log(`[Debounce] Conversa ${conversationId}: resposta enviada via WhatsApp (wamid: ${sendResult.messageId})`);
+            } else {
+              console.error(`[Debounce] Conversa ${conversationId}: falha ao enviar via WhatsApp:`, sendResult.error);
+            }
+          } catch (whatsappErr) {
+            console.error(`[Debounce] Conversa ${conversationId}: erro ao enviar via WhatsApp:`, whatsappErr);
+          }
+        }
+
         // Send vehicle images asynchronously
         sendVehicleImages(conversation.phone, aiResult.response).catch(err =>
           console.error("[Debounce] Error sending vehicle images:", err)
