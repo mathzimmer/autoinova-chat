@@ -772,3 +772,17 @@
 - [x] Diagnóstico: extensão usa tRPC mas sem ?batch=1, servidor retorna objeto ao invés de array
 - [x] Corrigir extensão Chrome: adicionar ?batch=1 nas chamadas GET e POST (popup.js, content.js, background.js)
 - [x] Testar com curl e validar — endpoint vendor.me retorna dados corretos com batch=1
+
+## Bug Fix - Rodada 51 (Erro ao salvar no mini CRM da extensão Chrome)
+
+- [x] Investigar logs do servidor — endpoints funcionam via curl em dev e produção, problema é na extensão Chrome (CORS ou versão desatualizada)
+- [x] Endpoints vendor.updateLeadData, vendor.updateLeadStatus, vendor.addNote — funcionam corretamente
+- [x] Alterações feitas pela extensão reflitam no CRM principal — confirmado via curl
+- [ ] Pendente: usuário verificar console da extensão Chrome para erro exato
+
+## Feature - Rodada 52 (Mensagem pré-preenchida nos anúncios Meta Ads)
+
+- [x] Analisar o módulo de criação de anúncios e como o modelo de mensagem é configurado
+- [x] Implementar mensagem pré-preenchida com nome do veículo e ID (Ref: X) no buildWelcomeMessage e waMsg
+- [x] Garantir que o agente de IA consiga extrair o veículo — regra MENSAGENS DE ANÚCIOS adicionada ao COMMERCIAL_PROMPT
+- [x] Testar e validar — 192 testes passando

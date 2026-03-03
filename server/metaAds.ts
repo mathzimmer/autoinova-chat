@@ -553,7 +553,7 @@ export async function createAdInExistingAdSet(
 
   const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
   const waMsg = encodeURIComponent(
-    `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse!`
+    `Olá! Vi o anúncio do ${vehicle.brand} ${vehicle.model} ${vehicle.year} e tenho interesse! (Ref: ${vehicle.id})`
   );
   const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
 
@@ -599,8 +599,9 @@ export async function createAdInExistingAdSet(
 
     // Try progressively shorter versions
     const attempts = [
-      { content: `Olá! Tenho interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year}!`, text: `${vehicle.brand} ${vehicle.model}` },
-      { content: `Interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year}`, text: `${vehicle.brand}` },
+      { content: `Olá! Tenho interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year} (Ref: ${vehicle.id})!`, text: `${vehicle.brand} ${vehicle.model}` },
+      { content: `Interesse no ${vehicle.brand} ${vehicle.model} ${vehicle.year} (Ref: ${vehicle.id})`, text: `${vehicle.brand}` },
+      { content: `Olá! Tenho interesse no ${vehicle.brand} ${vehicle.model} (Ref: ${vehicle.id})!`, text: `${vehicle.brand}` },
       { content: "Olá! Tenho interesse neste veículo!", text: vehicle.brand },
       { content: "Olá! Tenho interesse!", text: "" },
     ];
