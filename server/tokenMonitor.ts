@@ -192,6 +192,12 @@ export function getLastCheckResults(): TokenStatus[] {
  * Start periodic token health monitoring
  */
 export function startTokenMonitor() {
+  // Limpa timer anterior para evitar duplicação (hot-reload)
+  if (checkTimer) {
+    clearInterval(checkTimer);
+    checkTimer = null;
+  }
+
   // Run first check after 10 seconds (let server start)
   setTimeout(() => {
     runTokenHealthCheck().catch(err => {

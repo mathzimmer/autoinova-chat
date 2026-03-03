@@ -484,6 +484,12 @@ async function searchVehiclesForAI(filters: {
 let syncInterval: NodeJS.Timeout | null = null;
 
 function startAutoSync(intervalMs: number = 30 * 60 * 1000) {
+  // Limpa interval anterior para evitar duplicação (hot-reload)
+  if (syncInterval) {
+    clearInterval(syncInterval);
+    syncInterval = null;
+  }
+
   // Initial sync after 5 seconds
   setTimeout(() => {
     syncStock().catch(err => console.error("[StockSync] Initial sync failed:", err.message));

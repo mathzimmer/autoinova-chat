@@ -821,3 +821,4 @@
 - [x] Testar e validar — 192 testes passando, 0 erros TypeScript
 
 - [x] Bug: Respostas da IA não estão chegando ao cliente via WhatsApp após implementação do debounce — CORRIGIDO: faltava sendTextMessage no callback do debounce
+- [x] Bug: Erro "Rate exceeded" ao acessar ambiente de produção — Rate limit temporário da infraestrutura (HTTP 429), resolvido automaticamente. Adicionada proteção contra intervalos duplicados no StockSync e TokenMonitor
