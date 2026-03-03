@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Settings as SettingsIcon, Bot, Save, RotateCcw, Info, CheckCircle2, AlertTriangle, Shield, ShoppingCart, Sparkles } from "lucide-react";
+import { Settings as SettingsIcon, Bot, Save, RotateCcw, Info, CheckCircle2, AlertTriangle, Shield, ShoppingCart, Sparkles, Timer, Loader2 } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 
 type LayerKey = "core" | "commercial" | "personality";
@@ -61,6 +62,90 @@ const LAYERS: LayerConfig[] = [
     placeholder: "Defina a personalidade e estratégia da IA...",
   },
 ];
+
+function DebounceConfig() {
+  const { data, isLoading } = trpc.settings.getDebounceDelay.useQuery();
+  const [localDelay, setLocalDelay] = useState(8);
+  const [hasChanges, setHasChanges] = useState(false);
+
+  const saveMutation = trpc.settings.saveDebounceDelay.useMutation({
+    onSuccess: (result) => {
+      setHasChanges(false);
+      toast.success(`Tempo de agrupamento atualizado para ${result.delayMs / 1000} segundos`);
+    },
+    onError: (err) => toast.error("Erro ao salvar: " + err.message),
+  });
+
+  useEffect(() => {
+    if (data) {
+      setLocalDelay(data.delayMs / 1000);
+    }
+  }, [data]);
+
+  const handleSliderChange = (value: number[]) => {
+    const newVal = value[0];
+    setLocalDelay(newVal);
+    setHasChanges(newVal !== (data?.delayMs ?? 8000) / 1000);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        Carregando...
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1">
+          <p className="text-sm font-medium text-card-foreground">
+            Esperar <span className="text-primary font-bold text-lg">{localDelay}</span> segundo{localDelay !== 1 ? "s" : ""} após a última mensagem
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Mínimo: 1s | Recomendado: 5-10s | Máximo: 30s
+          </p>
+        </div>
+        <Button
+          onClick={() => saveMutation.mutate({ delayMs: localDelay * 1000 })}
+          disabled={!hasChanges || saveMutation.isPending}
+          size="sm"
+          className="gap-1.5"
+        >
+          {saveMutation.isPending ? (
+            <><Loader2 className="h-4 w-4 animate-spin" /> Salvando...</>
+          ) : (
+            <><Save className="h-4 w-4" /> Salvar</>
+          )}
+        </Button>
+      </div>
+      <Slider
+        value={[localDelay]}
+        onValueChange={handleSliderChange}
+        min={1}
+        max={30}
+        step={1}
+        className="w-full"
+      />
+      <div className="flex justify-between text-[10px] text-muted-foreground">
+        <span>1s (rápido)</span>
+        <span>5s</span>
+        <span>10s</span>
+        <span>15s</span>
+        <span>20s</span>
+        <span>30s (lento)</span>
+      </div>
+      {hasChanges && (
+        <div className="flex items-center gap-1.5 text-xs text-yellow-500">
+          <AlertTriangle className="h-3 w-3" />
+          Alteração não salva
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Settings() {
   const { data: promptData, refetch, isLoading } = trpc.settings.getPrompt.useQuery();
@@ -344,6 +429,25 @@ export default function Settings() {
             </Card>
           );
         })}
+
+        {/* Debounce / Agrupamento de mensagens */}
+        <Card className="bg-card border-border ring-1 ring-primary/20">
+          <CardHeader className="pb-4">
+            <div className="flex items-center gap-2.5">
+              <Timer className="h-5 w-5 text-primary" />
+              <div>
+                <CardTitle className="text-card-foreground text-base">Tempo de Agrupamento de Mensagens</CardTitle>
+                <CardDescription className="mt-0.5 text-xs">
+                  Quando o cliente envia várias mensagens em sequência, a IA espera esse tempo após a última mensagem antes de responder.
+                  Isso evita respostas duplicadas e permite que a IA processe todas as mensagens de uma vez.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <DebounceConfig />
+          </CardContent>
+        </Card>
 
         {/* Layer 4: Context (Info only) */}
         <Card className="bg-card border-border">

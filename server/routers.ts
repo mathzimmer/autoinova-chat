@@ -23,6 +23,7 @@ import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as is
 import { storagePut } from "./storage";
 import { convertWebmToOgg, needsConversionForWhatsApp, isWebmAudio } from "./audioConverter";
 import { syncStock } from "./stockSync";
+import { addToDebounce, setDebounceCallback, cancelDebounce, setDebounceDelay, getDebounceDelay } from "./messageDebounce";
 import crypto from "crypto";
 import { getDb } from "./db";
 import { createTeamMember, updateTeamMember, deactivateTeamMember, hashPassword, authenticateTeamMember } from "./teamAuth";
@@ -62,6 +63,65 @@ import {
 import { listTemplates, sendWhatsAppTemplate, isTemplateApproved, isTemplatesConfigured } from "./whatsappTemplates";
 import { invokeLLM } from "./_core/llm";
 import { runTokenHealthCheck, getLastCheckResults } from "./tokenMonitor";
+
+/**
+ * Inicializa o debounce callback e carrega delay do banco
+ */
+async function initDebounce() {
+  // Carrega delay do banco de dados
+  try {
+    const savedDelay = await getSetting("debounce_delay_ms");
+    if (savedDelay) {
+      setDebounceDelay(parseInt(savedDelay, 10));
+    }
+  } catch (err) {
+    console.log("[Debounce] Usando delay padrão (8s)");
+  }
+
+  // Registra o callback que será chamado quando o debounce expirar
+  setDebounceCallback(async (conversationId, groupedContent, messages) => {
+    try {
+      const conversation = await getConversationById(conversationId);
+      if (!conversation || !conversation.aiActive) {
+        console.log(`[Debounce] Conversa ${conversationId}: IA desativada ou conversa não encontrada, ignorando`);
+        return;
+      }
+
+      console.log(`[Debounce] Conversa ${conversationId}: processando ${messages.length} mensagem(ns) agrupada(s)`);
+      emitTypingIndicator(conversationId, true, "Auto Inova IA");
+
+      const recentMessages = await listMessages(conversationId, 30);
+      const aiResult = await processAIMessage(conversation, recentMessages, groupedContent);
+
+      emitTypingIndicator(conversationId, false, "Auto Inova IA");
+
+      if (aiResult.response) {
+        const botMsg = await createMessage({
+          conversationId,
+          content: aiResult.response,
+          senderType: "bot",
+          senderName: "Auto Inova IA",
+          messageType: "text",
+        });
+
+        emitNewMessage(conversationId, botMsg);
+
+        // Send vehicle images asynchronously
+        sendVehicleImages(conversation.phone, aiResult.response).catch(err =>
+          console.error("[Debounce] Error sending vehicle images:", err)
+        );
+      }
+    } catch (err) {
+      console.error(`[Debounce] Erro ao processar conversa ${conversationId}:`, err);
+      emitTypingIndicator(conversationId, false, "Auto Inova IA");
+    }
+  });
+
+  console.log(`[Debounce] Sistema de agrupamento de mensagens inicializado (delay: ${getDebounceDelay()}ms)`);
+}
+
+// Inicializa o debounce ao carregar o módulo
+initDebounce().catch(err => console.error("[Debounce] Erro na inicialização:", err));
 
 /**
  * Extract vehicle IDs from AI response and send their images
@@ -628,40 +688,16 @@ const webhookRouter = router({
         }).catch(err => console.error("[Webhook] Error creating notification:", err));
       }
 
-      // Check if AI should respond
+      // Check if AI should respond — usa debounce para agrupar mensagens rápidas
       if (conversation.aiActive) {
-        emitTypingIndicator(conversation.id, true, "Auto Inova IA");
-
-        const recentMessages = await listMessages(conversation.id, 30);
-        
-        // For image messages, pass the image URL to the AI for vision processing
+        // Prepara o conteúdo para o debounce
         let aiMessageContent = messageContent;
         if (input.messageType === "image" && storedMediaUrl) {
           aiMessageContent = `[IMAGEM: ${storedMediaUrl}] ${messageContent}`;
         }
 
-        const aiResult = await processAIMessage(conversation, recentMessages, aiMessageContent);
-
-        emitTypingIndicator(conversation.id, false, "Auto Inova IA");
-
-        if (aiResult.response) {
-          const botMsg = await createMessage({
-            conversationId: conversation.id,
-            content: aiResult.response,
-            senderType: "bot",
-            senderName: "Auto Inova IA",
-            messageType: "text",
-          });
-
-          emitNewMessage(conversation.id, botMsg);
-
-          // Send vehicle images asynchronously (don't wait for completion)
-          sendVehicleImages(conversation.phone, aiResult.response).catch(err => 
-            console.error("[Webhook] Error sending vehicle images:", err)
-          );
-
-          return { conversationId: conversation.id, aiResponse: aiResult.response, leadData: aiResult.leadData, aiMessageId: botMsg?.id || null };
-        }
+        // Adiciona ao buffer de debounce (IA será chamada quando o timer expirar)
+        addToDebounce(conversation.id, aiMessageContent, input.messageType, storedMediaUrl);
       }
 
       return { conversationId: conversation.id, aiResponse: null, leadData: null, aiMessageId: null };
@@ -747,6 +783,19 @@ const settingsRouter = router({
     .mutation(async ({ input, ctx }) => {
       await upsertSetting(input.key, input.value, ctx.user.id);
       return { success: true };
+    }),
+
+  getDebounceDelay: protectedProcedure.query(async () => {
+    const saved = await getSetting("debounce_delay_ms");
+    return { delayMs: saved ? parseInt(saved, 10) : 8000 };
+  }),
+
+  saveDebounceDelay: adminProcedure
+    .input(z.object({ delayMs: z.number().min(1000).max(30000) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("debounce_delay_ms", String(input.delayMs), ctx.user.id);
+      setDebounceDelay(input.delayMs);
+      return { success: true, delayMs: input.delayMs };
     }),
 });
 

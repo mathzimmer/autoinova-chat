@@ -810,3 +810,12 @@
 - [x] Habilitar switchable no ThemeProvider (defaultTheme="dark", persistência via localStorage)
 - [x] Scrollbar adaptável ao tema (claro/escuro)
 - [x] Testar e validar — 192 testes passando, 0 erros TypeScript
+
+## Feature - Rodada 55 (Debounce/Agrupamento de Mensagens)
+
+- [x] Analisar o fluxo atual de processamento de mensagens recebidas no webhook
+- [x] Implementar sistema de debounce com timer por conversa (messageDebounce.ts)
+- [x] Agrupar mensagens recebidas no período de espera e processar como uma só
+- [x] Garantir que áudios e imagens também sejam agrupados corretamente (messageType preservado)
+- [x] Adicionar campo ajustável de tempo de espera na página de Configurações (Slider 1-30s)
+- [x] Testar e validar — 192 testes passando, 0 erros TypeScript
