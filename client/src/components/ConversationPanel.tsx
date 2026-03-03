@@ -307,8 +307,13 @@ export default function ConversationPanel({ conversationId }: Props) {
             <InfoRow icon={<Phone className="h-3.5 w-3.5" />} value={conversation.phone} />
             {conversation.contactName && <InfoRow icon={<UserCheck className="h-3.5 w-3.5" />} value={conversation.contactName} />}
             {(conversation as any).contactEmail && <InfoRow icon={<Mail className="h-3.5 w-3.5" />} value={(conversation as any).contactEmail} />}
-            <Badge variant="outline" className="text-xs">
-              {conversation.channel === "whatsapp" ? "WhatsApp" : conversation.channel}
+            <Badge variant="outline" className={`text-xs ${
+              conversation.channel === "instagram" ? "border-pink-500/50 text-pink-400" :
+              conversation.channel === "facebook" ? "border-blue-500/50 text-blue-400" :
+              "border-green-500/50 text-green-400"
+            }`}>
+              {conversation.channel === "instagram" ? "Instagram" :
+               conversation.channel === "facebook" ? "Facebook" : "WhatsApp"}
             </Badge>
             {(conversation as any).contactNotes && (
               <div className="mt-2 p-2 rounded-md bg-secondary/50">

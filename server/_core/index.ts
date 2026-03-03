@@ -11,9 +11,12 @@ import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
-import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired } from "../db";
+import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
 import { startFollowUpJob } from "../followUp";
 import { startTokenMonitor } from "../tokenMonitor";
+import { addToDebounce } from "../messageDebounce";
+import { emitNewMessage, emitConversationUpdate } from "../socket";
+import { getPlatformUserProfile } from "../instagramFacebook";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -350,6 +353,184 @@ async function startServer() {
       }
     } catch (error) {
       console.error("[MetaAds Lead] Erro ao processar webhook:", error);
+    }
+  });
+
+  // ─── Instagram & Facebook Messenger Webhook (GET — verificação) ─────────────
+  app.get("/api/webhook/instagram", (req, res) => {
+    const token = process.env.META_ADS_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
+    if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === token) {
+      console.log("[Instagram Webhook] Verification successful");
+      return res.status(200).send(req.query["hub.challenge"]);
+    }
+    res.sendStatus(403);
+  });
+
+  // ─── Instagram & Facebook Messenger Webhook (POST — receber mensagens) ──────
+  app.post("/api/webhook/instagram", async (req, res) => {
+    // Responder 200 imediatamente — Meta cancela se demorar > 5s
+    res.sendStatus(200);
+
+    try {
+      const body = req.body;
+      const objectType = body?.object; // "instagram" or "page"
+
+      if (objectType !== "instagram" && objectType !== "page") {
+        return; // Not a messaging webhook
+      }
+
+      const channel: "instagram" | "facebook" = objectType === "instagram" ? "instagram" : "facebook";
+
+      for (const entry of (body.entry || [])) {
+        for (const messagingEvent of (entry.messaging || [])) {
+          // Skip echo messages (sent by us)
+          if (messagingEvent.message?.is_echo) continue;
+          // Skip deleted messages
+          if (messagingEvent.message?.is_deleted) continue;
+
+          const senderId = messagingEvent.sender?.id;
+          const recipientId = messagingEvent.recipient?.id;
+          const messageId = messagingEvent.message?.mid;
+          const timestamp = messagingEvent.timestamp;
+
+          if (!senderId || !messageId) continue;
+
+          // Skip messages from our own page/account
+          const pageId = process.env.META_ADS_PAGE_ID;
+          const instagramId = process.env.META_ADS_INSTAGRAM_ID;
+          if (senderId === pageId || senderId === instagramId) continue;
+
+          // Deduplicate: skip if this message was already processed
+          const existing = await getMessageByExternalId(messageId);
+          if (existing) {
+            console.log(`[${channel}] Duplicate message detected (mid: ${messageId}), skipping`);
+            continue;
+          }
+
+          // Extract message content
+          let content = "";
+          let messageType: "text" | "image" | "audio" = "text";
+          let mediaUrl: string | undefined;
+
+          if (messagingEvent.message?.text) {
+            content = messagingEvent.message.text;
+          }
+
+          // Handle attachments
+          if (messagingEvent.message?.attachments) {
+            for (const attachment of messagingEvent.message.attachments) {
+              if (attachment.type === "image") {
+                messageType = "image";
+                mediaUrl = attachment.payload?.url;
+                if (!content) content = "[Imagem recebida]";
+              } else if (attachment.type === "audio") {
+                messageType = "audio";
+                mediaUrl = attachment.payload?.url;
+                if (!content) content = "[Mensagem de áudio]";
+              } else if (attachment.type === "video") {
+                if (!content) content = "[Vídeo recebido]";
+              } else if (attachment.type === "share" || attachment.type === "story_mention") {
+                if (!content) content = "[Compartilhamento recebido]";
+              } else if (attachment.type === "ig_reel" || attachment.type === "reel") {
+                if (!content) content = "[Reel compartilhado]";
+              } else {
+                if (!content) content = `[${attachment.type} recebido]`;
+              }
+            }
+          }
+
+          // Handle postbacks (button clicks)
+          if (messagingEvent.postback?.payload) {
+            content = messagingEvent.postback.payload;
+          }
+
+          if (!content) continue;
+
+          console.log(`[${channel}] Message from ${senderId}: ${content.substring(0, 100)}`);
+
+          // Get user profile for name
+          let contactName = "Cliente";
+          try {
+            const profile = await getPlatformUserProfile(senderId, channel);
+            if (profile?.name) contactName = profile.name;
+          } catch (err) {
+            console.warn(`[${channel}] Could not fetch profile for ${senderId}`);
+          }
+
+          // Find or create conversation by platformUserId
+          let conversation = await getConversationByPlatformUserId(senderId, channel);
+          if (!conversation) {
+            conversation = await createConversation({
+              phone: `${channel}_${senderId}`, // Use platform prefix + ID as phone placeholder
+              contactName,
+              channel,
+              platformUserId: senderId,
+              status: "open",
+              aiActive: true,
+              lastMessageAt: Date.now(),
+            });
+            console.log(`[${channel}] New conversation created for ${contactName} (${senderId})`);
+          }
+
+          if (!conversation) continue;
+
+          // Reactivate if resolved/closed
+          if (conversation.status === "resolved" || conversation.status === "closed") {
+            console.log(`[${channel}] REATIVAÇÃO: Conversa ${conversation.id} estava ${conversation.status}. Reabrindo.`);
+            conversation = await updateConversation(conversation.id, {
+              status: "open",
+              aiActive: true,
+              assignedTo: null,
+              lastMessageAt: Date.now(),
+            }) || conversation;
+          }
+
+          // Build metadata
+          const metadata: Record<string, unknown> = { platform: channel, platformUserId: senderId };
+          if (mediaUrl) metadata.mediaUrl = mediaUrl;
+
+          // Save customer message
+          const customerMsg = await createMessage({
+            conversationId: conversation.id,
+            content,
+            senderType: "customer",
+            senderName: contactName,
+            messageType,
+            externalId: messageId,
+            metadata,
+          });
+
+          emitNewMessage(conversation.id, customerMsg);
+
+          // Update conversation metadata
+          await updateConversation(conversation.id, {
+            lastMessageAt: Date.now(),
+            contactName: contactName !== "Cliente" ? contactName : conversation.contactName,
+          });
+
+          // Notify assigned agent if AI is off
+          if (conversation.assignedTo && !conversation.aiActive) {
+            createTeamNotification({
+              userId: conversation.assignedTo,
+              type: "new_message",
+              title: `Nova mensagem (${channel === "instagram" ? "Instagram" : "Facebook"})`,
+              message: `${contactName}: ${content.substring(0, 100)}`,
+              conversationId: conversation.id,
+            }).catch(err => console.error(`[${channel}] Error creating notification:`, err));
+          }
+
+          // AI debounce if active
+          if (conversation.aiActive) {
+            let aiContent = content;
+            if (messageType === "image" && mediaUrl) {
+              aiContent = `[IMAGEM: ${mediaUrl}] ${content}`;
+            }
+            addToDebounce(conversation.id, aiContent, messageType, mediaUrl);
+          }
+        }
+      }
+    } catch (error) {
+      console.error("[Instagram/Facebook Webhook] Error:", error);
     }
   });
 

@@ -822,3 +822,11 @@
 
 - [x] Bug: Respostas da IA não estão chegando ao cliente via WhatsApp após implementação do debounce — CORRIGIDO: faltava sendTextMessage no callback do debounce
 - [x] Bug: Erro "Rate exceeded" ao acessar ambiente de produção — Rate limit temporário da infraestrutura (HTTP 429), resolvido automaticamente. Adicionada proteção contra intervalos duplicados no StockSync e TokenMonitor
+- [x] Integração Instagram Messaging - receber e enviar mensagens do Instagram Direct
+- [x] Integração Facebook Messenger - receber e enviar mensagens do Messenger
+- [x] Atualizar schema do banco para suportar campo de plataforma (whatsapp/instagram/facebook)
+- [x] Webhook unificado para Instagram e Facebook (/api/webhook/instagram)
+- [x] Ícones visuais de plataforma (WhatsApp/Instagram/Facebook) na lista de conversas
+- [x] Ícones visuais de plataforma no painel de chat (header + badge de canal)
+- [x] Envio de respostas pela plataforma correta (Instagram/Facebook/WhatsApp) — debounce + agente
+- [x] 199 testes passando, 0 erros TypeScript

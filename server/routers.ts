@@ -4,7 +4,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import {
-  listConversations, getConversationById, createConversation, updateConversation, getConversationByPhone,
+  listConversations, getConversationById, createConversation, updateConversation, getConversationByPhone, getConversationByPlatformUserId,
   listMessages, createMessage, markMessagesAsRead,
   listLeads, getLeadByConversationId, upsertLead,
   getDashboardStats, getAiStats,
@@ -20,6 +20,7 @@ import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CO
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { sendPlatformMessage, sendPlatformImage, isInstagramConfigured, isFacebookConfigured, getPlatformUserProfile } from "./instagramFacebook";
 import { storagePut } from "./storage";
 import { convertWebmToOgg, needsConversionForWhatsApp, isWebmAudio } from "./audioConverter";
 import { syncStock } from "./stockSync";
@@ -106,25 +107,38 @@ async function initDebounce() {
 
         emitNewMessage(conversationId, botMsg);
 
-        // Enviar resposta via WhatsApp para o cliente
-        if (isWhatsAppConfigured() && conversation.channel === "whatsapp" && conversation.phone) {
-          try {
-            const sendResult = await sendTextMessage(conversation.phone, aiResult.response);
-            if (sendResult.success && sendResult.messageId) {
-              await updateMessageExternalId(botMsg.id, sendResult.messageId);
-              console.log(`[Debounce] Conversa ${conversationId}: resposta enviada via WhatsApp (wamid: ${sendResult.messageId})`);
-            } else {
-              console.error(`[Debounce] Conversa ${conversationId}: falha ao enviar via WhatsApp:`, sendResult.error);
-            }
-          } catch (whatsappErr) {
-            console.error(`[Debounce] Conversa ${conversationId}: erro ao enviar via WhatsApp:`, whatsappErr);
+        // Enviar resposta via plataforma correta
+        try {
+          let sendResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No platform configured" };
+
+          if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+            sendResult = await sendTextMessage(conversation.phone, aiResult.response);
+          } else if (conversation.channel === "instagram" && isInstagramConfigured() && conversation.platformUserId) {
+            sendResult = await sendPlatformMessage("instagram", conversation.platformUserId, aiResult.response);
+          } else if (conversation.channel === "facebook" && isFacebookConfigured() && conversation.platformUserId) {
+            sendResult = await sendPlatformMessage("facebook", conversation.platformUserId, aiResult.response);
           }
+
+          if (sendResult.success && sendResult.messageId) {
+            await updateMessageExternalId(botMsg.id, sendResult.messageId);
+            console.log(`[Debounce] Conversa ${conversationId}: resposta enviada via ${conversation.channel} (id: ${sendResult.messageId})`);
+          } else if (sendResult.error) {
+            console.error(`[Debounce] Conversa ${conversationId}: falha ao enviar via ${conversation.channel}:`, sendResult.error);
+          }
+        } catch (platformErr) {
+          console.error(`[Debounce] Conversa ${conversationId}: erro ao enviar via ${conversation.channel}:`, platformErr);
         }
 
-        // Send vehicle images asynchronously
-        sendVehicleImages(conversation.phone, aiResult.response).catch(err =>
-          console.error("[Debounce] Error sending vehicle images:", err)
-        );
+        // Send vehicle images asynchronously (WhatsApp only for now, IG/FB have different image handling)
+        if (conversation.channel === "whatsapp" && conversation.phone) {
+          sendVehicleImages(conversation.phone, aiResult.response).catch(err =>
+            console.error("[Debounce] Error sending vehicle images:", err)
+          );
+        } else if ((conversation.channel === "instagram" || conversation.channel === "facebook") && conversation.platformUserId) {
+          sendPlatformVehicleImages(conversation.channel, conversation.platformUserId, aiResult.response).catch(err =>
+            console.error("[Debounce] Error sending platform vehicle images:", err)
+          );
+        }
       }
     } catch (err) {
       console.error(`[Debounce] Erro ao processar conversa ${conversationId}:`, err);
@@ -173,6 +187,38 @@ async function sendVehicleImages(conversationPhone: string, aiResponse: string) 
     }
   } catch (err) {
     console.error("[Webhook] Failed to send vehicle images:", err);
+  }
+}
+
+/**
+ * Send vehicle images via Instagram or Facebook
+ */
+async function sendPlatformVehicleImages(platform: "instagram" | "facebook", recipientId: string, aiResponse: string) {
+  const idMatches = aiResponse.match(/\[ID:(\d+)\]/g);
+  if (!idMatches || idMatches.length === 0) return;
+
+  const vehicleIds = Array.from(new Set(idMatches.map(m => parseInt(m.match(/\d+/)![0]))));
+  const db = await getDb();
+  if (!db) return;
+
+  const vehiclesTable = (await import("../drizzle/schema")).vehicles;
+  const { inArray } = await import("drizzle-orm");
+
+  try {
+    const vehicleRecords = await db
+      .select()
+      .from(vehiclesTable)
+      .where(inArray(vehiclesTable.id, vehicleIds))
+      .limit(5);
+
+    for (const vehicle of vehicleRecords) {
+      if (!vehicle.imageUrl) continue;
+      const caption = `${vehicle.title || `${vehicle.brand} ${vehicle.model}`} (${vehicle.year})`;
+      await sendPlatformImage(platform, recipientId, vehicle.imageUrl, caption);
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } catch (err) {
+    console.error(`[${platform}] Failed to send vehicle images:`, err);
   }
 }
 
@@ -288,26 +334,33 @@ const messageRouter = router({
 
       emitNewMessage(input.conversationId, message);
 
-      // Send message to WhatsApp if configured and conversation is from WhatsApp
+      // Send message to the correct platform
       let deliveryStatus: "sent" | "failed" | null = null;
       let deliveryError: string | null = null;
       let windowExpired = false;
 
-      if (isWhatsAppConfigured()) {
-        const conv = await getConversationById(input.conversationId);
-        if (conv && conv.channel === "whatsapp" && conv.phone) {
-          try {
-            const sendResult = await sendTextMessage(conv.phone, input.content);
-            
-            if (sendResult.success && sendResult.messageId) {
-              // Save the wamid for delivery tracking
-              await updateMessageExternalId(message.id, sendResult.messageId);
-              deliveryStatus = "sent";
-            } else if (sendResult.error) {
-              deliveryError = sendResult.error;
-              deliveryStatus = "failed";
-              
-              // Detect 24h window expiry (error 131047)
+      const conv = await getConversationById(input.conversationId);
+      if (conv) {
+        try {
+          let sendResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No platform" };
+
+          if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
+            sendResult = await sendTextMessage(conv.phone, input.content);
+          } else if (conv.channel === "instagram" && isInstagramConfigured() && conv.platformUserId) {
+            sendResult = await sendPlatformMessage("instagram", conv.platformUserId, input.content);
+          } else if (conv.channel === "facebook" && isFacebookConfigured() && conv.platformUserId) {
+            sendResult = await sendPlatformMessage("facebook", conv.platformUserId, input.content);
+          }
+
+          if (sendResult.success && sendResult.messageId) {
+            await updateMessageExternalId(message.id, sendResult.messageId);
+            deliveryStatus = "sent";
+          } else if (sendResult.error) {
+            deliveryError = sendResult.error;
+            deliveryStatus = "failed";
+
+            // Detect 24h window expiry (WhatsApp only)
+            if (conv.channel === "whatsapp") {
               const isWindowError = sendResult.error.includes('131047') || 
                 sendResult.error.includes('Re-engagement') ||
                 sendResult.error.includes('outside the allowed window');
@@ -317,23 +370,23 @@ const messageRouter = router({
                 await setWindowExpired(input.conversationId, true);
                 console.log(`[WhatsApp] 24h window expired for conversation ${input.conversationId}. Template required.`);
               }
-              
-              // Update message status to failed
-              await createMessage({
-                conversationId: input.conversationId,
-                content: `⚠️ Mensagem não entregue: ${isWindowError ? 'Janela de 24h expirada. Use um template aprovado para reabrir a conversa.' : sendResult.error}`,
-                senderType: "bot",
-                senderName: "Sistema",
-                messageType: "system",
-              }).then(sysMsg => {
-                if (sysMsg) emitNewMessage(input.conversationId, sysMsg);
-              }).catch(() => {});
             }
-          } catch (err: any) {
-            console.error("[WhatsApp] Failed to send agent message:", err);
-            deliveryError = err.message || "Erro desconhecido";
-            deliveryStatus = "failed";
+
+            // System message about delivery failure
+            await createMessage({
+              conversationId: input.conversationId,
+              content: `\u26a0\ufe0f Mensagem não entregue: ${deliveryError}`,
+              senderType: "bot",
+              senderName: "Sistema",
+              messageType: "system",
+            }).then(sysMsg => {
+              if (sysMsg) emitNewMessage(input.conversationId, sysMsg);
+            }).catch(() => {});
           }
+        } catch (err: any) {
+          console.error(`[${conv.channel}] Failed to send agent message:`, err);
+          deliveryError = err.message || "Erro desconhecido";
+          deliveryStatus = "failed";
         }
       }
 

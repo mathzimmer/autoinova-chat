@@ -102,6 +102,15 @@ export async function getConversationByPhone(phone: string) {
   return result[0];
 }
 
+export async function getConversationByPlatformUserId(platformUserId: string, channel: "instagram" | "facebook") {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(conversations)
+    .where(and(eq(conversations.platformUserId, platformUserId), eq(conversations.channel, channel)))
+    .limit(1);
+  return result[0];
+}
+
 export async function createConversation(data: InsertConversation) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
