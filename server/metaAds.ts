@@ -228,11 +228,9 @@ export async function createAdCreative(
       name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
       object_story_spec: {
         page_id: config.pageId,
-        // FIX 3: instagram_actor_id dentro do object_story_spec (v21.0)
-        ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+        ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
         link_data: {
           image_hash: imageHash,
-          // FIX 2: link com número real da Auto Inova, sem parâmetros (o Meta adiciona automaticamente)
           link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
           name: headline,
           description,
@@ -240,7 +238,6 @@ export async function createAdCreative(
             type: "WHATSAPP_MESSAGE",
             value: { app_destination: "WHATSAPP" },
           },
-          // FIX 1: objeto direto, não string JSON
           page_welcome_message: buildWelcomeMessageObject(),
         },
       },
@@ -630,8 +627,7 @@ export async function createAdInExistingAdSet(
 
     objectStorySpec = {
       page_id: config.pageId,
-      // FIX 3: instagram_actor_id dentro do object_story_spec (v21.0)
-      ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+      ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
       link_data: {
         message: texts.primaryText,
         child_attachments: childAttachments,
@@ -652,11 +648,9 @@ export async function createAdInExistingAdSet(
   } else if (isEngagementOrMessaging) {
     objectStorySpec = {
       page_id: config.pageId,
-      // FIX 3: instagram_actor_id dentro do object_story_spec (v21.0)
-      ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+      ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
       link_data: {
         image_hash: imageHash,
-        // FIX 2: número real no link
         link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
         name: texts.headline,
         call_to_action: {
@@ -672,7 +666,7 @@ export async function createAdInExistingAdSet(
   } else {
     objectStorySpec = {
       page_id: config.pageId,
-      ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
+      ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
       link_data: {
         image_hash: imageHash,
         link: whatsappLink,

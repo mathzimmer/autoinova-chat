@@ -835,4 +835,4 @@
 - [x] Bug: Nome e foto do perfil do Instagram não aparecem na conversa — CORRIGIDO: adicionado campo contactPhoto no schema + busca de perfil no webhook + exibição no frontend
 - [ ] Bug: Envio Instagram retorna "An unknown error has occurred" mesmo após fix do endpoint
 - [x] Bug: Links dos anúncios do Instagram não abrem conversa corretamente — CORRIGIDO: todas as funções de criação de anúncio agora usam WHATSAPP_MESSAGE com page_welcome_message em vez de LEARN_MORE com link wa.me
-- [ ] Bug: Erro "instagram_actor_id must be a valid Instagram account id" ao criar anúncio após mudança no GitHub
+- [x] Bug: Erro "instagram_actor_id must be a valid Instagram account id" — CORRIGIDO: campo depreciado na v22.0, substituído por instagram_user_id em todas as funções de criação de anúncio
