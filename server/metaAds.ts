@@ -765,7 +765,3 @@ export function buildMetaConfig(overrides?: Partial<MetaAdsConfig>): MetaAdsConf
     ...overrides,
   };
 }
-    },
-    ...overrides,
-  };
-}
