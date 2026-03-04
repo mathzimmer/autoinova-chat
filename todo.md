@@ -838,3 +838,7 @@
 - [x] Bug: Erro "instagram_actor_id must be a valid Instagram account id" — CORRIGIDO: campo depreciado na v22.0, substituído por instagram_user_id em todas as funções de criação de anúncio
 - [x] Bug: Link WhatsApp não funciona em anúncios carrossel — CORRIGIDO: cada child_attachment agora tem link e call_to_action individuais para Click to WhatsApp + link principal mudado para api.whatsapp.com/send
 - [x] Bug: Descrição não aparece em anúncios de foto única — CORRIGIDO: adicionados campos message (primaryText) e description em todas as funções de criação de anúncio (createAdCreative, createAdInExistingAdSet, createAdWithText)
+- [x] Usar REGULAR_PRICE como preço principal quando disponível — campo `price` agora = REGULAR_PRICE || PRICE
+- [x] Agente de IA envia REGULAR_PRICE ao cliente — formato: "R$ 112.990 (promoção: R$ 108.990)" quando há desconto
+- [x] Módulo de anúncios usa REGULAR_PRICE no texto do anúncio — usa v.price que agora é REGULAR_PRICE
+- [x] Sincronização de estoque importa ambos os preços (regular e promoção) — já funcionava, agora price = regularPrice

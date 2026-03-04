@@ -71,9 +71,11 @@ async function fetchExternalStock(): Promise<ExternalVehicle[]> {
  * Map external vehicle data to our database schema
  */
 function mapExternalToDb(ext: ExternalVehicle): Omit<InsertVehicle, "id" | "createdAt" | "updatedAt"> {
-  const price = Math.round(parseFloat(ext.PRICE || "0"));
+  const rawPrice = Math.round(parseFloat(ext.PRICE || "0"));
   const regularPrice = ext.PRICES?.REGULAR_PRICE ? Math.round(parseFloat(ext.PRICES.REGULAR_PRICE)) : null;
   const promotionPrice = ext.PRICES?.PROMOTION_PRICE ? Math.round(parseFloat(ext.PRICES.PROMOTION_PRICE)) : null;
+  // Use REGULAR_PRICE as the main price when available, fallback to raw PRICE
+  const price = regularPrice || rawPrice;
 
   // Map gear values
   let transmission = ext.gear || "manual";
@@ -460,8 +462,9 @@ async function searchVehiclesForAI(filters: {
   }
 
   const vehicleList = sorted.map((v, i) => {
+    // price = REGULAR_PRICE (preço principal), promotionPrice = PROMOTION_PRICE (preço com desconto)
     const priceStr = v.promotionPrice && v.promotionPrice < v.price
-      ? `De R$ ${v.regularPrice?.toLocaleString("pt-BR") || v.price.toLocaleString("pt-BR")} por R$ ${v.promotionPrice.toLocaleString("pt-BR")}`
+      ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
       : `R$ ${v.price.toLocaleString("pt-BR")}`;
     
     const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
