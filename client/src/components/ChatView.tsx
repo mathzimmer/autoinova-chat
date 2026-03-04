@@ -445,10 +445,24 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             <ArrowLeft className="h-4 w-4" />
           </Button>
         )}
-        <div className="relative h-9 w-9 rounded-full bg-secondary flex items-center justify-center shrink-0">
-          <span className="text-sm font-medium text-secondary-foreground">
-            {(conversation?.contactName || conversation?.phone || "?").charAt(0).toUpperCase()}
-          </span>
+        <div className="relative shrink-0">
+          {conversation?.contactPhoto ? (
+            <img
+              src={conversation.contactPhoto}
+              alt={conversation.contactName || ""}
+              className="h-9 w-9 rounded-full object-cover"
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                target.nextElementSibling?.classList.remove('hidden');
+              }}
+            />
+          ) : null}
+          <div className={`h-9 w-9 rounded-full bg-secondary flex items-center justify-center ${conversation?.contactPhoto ? 'hidden' : ''}`}>
+            <span className="text-sm font-medium text-secondary-foreground">
+              {(conversation?.contactName || conversation?.phone || "?").charAt(0).toUpperCase()}
+            </span>
+          </div>
           {/* Platform badge */}
           {conversation?.channel === "instagram" && (
             <div className="absolute -top-0.5 -left-0.5 h-4 w-4 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" }}>

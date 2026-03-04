@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, phone, contactName, contactPhoto, channel, platformUserId, status FROM conversations WHERE channel IN ('instagram', 'facebook') LIMIT 10;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, phone, contactName, contactPhoto, channel, platformUserId, status FROM conversations WHERE channel IN ('instagram', 'facebook') LIMIT 10;",
+  "rows": [
+    {
+      "id": "480002",
+      "phone": "instagram_3987585024864899",
+      "contactName": "Cliente",
+      "contactPhoto": "NULL",
+      "channel": "instagram",
+      "platformUserId": "3987585024864899",
+      "status": "open"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphone\tcontactName\tcontactPhoto\tchannel\tplatformUserId\tstatus\n480002\tinstagram_3987585024864899\tCliente\tNULL\tinstagram\t3987585024864899\topen\n",
+  "stderr": "",
+  "execution_time_ms": 137
+}

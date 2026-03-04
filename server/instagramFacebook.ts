@@ -2,10 +2,13 @@
  * Instagram & Facebook Messenger Integration
  * 
  * Handles sending messages via Instagram Direct and Facebook Messenger
- * using the Meta Graph API (Messenger Platform).
+ * using the Meta Graph API (Messenger Platform Send API).
  * 
- * Both Instagram and Facebook use the same Send API endpoint:
- * POST https://graph.facebook.com/v21.0/{PAGE_ID}/messages
+ * IMPORTANT: The correct endpoint is POST /{PAGE_ID}/messages (NOT /me/messages)
+ * The access_token must be a Page Access Token with MESSAGE task permission.
+ * 
+ * For Instagram: uses the Facebook Page ID linked to the Instagram account
+ * For Facebook: uses the Facebook Page ID directly
  * 
  * Required env vars:
  * - META_ADS_ACCESS_TOKEN: Page Access Token (same used for ads)
@@ -37,7 +40,7 @@ export function isFacebookConfigured(): boolean {
 
 /**
  * Send a text message via Instagram Direct
- * Uses the Messenger Platform Send API with IGSID (Instagram-scoped ID)
+ * Uses POST /{PAGE_ID}/messages with IGSID (Instagram-scoped ID) as recipient
  */
 export async function sendInstagramMessage(
   recipientId: string,
@@ -52,16 +55,15 @@ export async function sendInstagramMessage(
 
   try {
     const response = await axios.post(
-      `${GRAPH_API_URL}/me/messages`,
+      `${GRAPH_API_URL}/${pageId}/messages`,
       {
         recipient: { id: recipientId },
+        messaging_type: "RESPONSE",
         message: { text },
       },
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        params: { access_token: accessToken },
+        headers: { "Content-Type": "application/json" },
       }
     );
 
@@ -69,15 +71,17 @@ export async function sendInstagramMessage(
     console.log(`[Instagram] Message sent to ${recipientId}, ID: ${messageId}`);
     return { success: true, messageId };
   } catch (error: any) {
-    const errMsg = error?.response?.data?.error?.message || error.message;
-    console.error(`[Instagram] Failed to send message to ${recipientId}:`, errMsg);
+    const errData = error?.response?.data?.error;
+    const errMsg = errData?.message || error.message;
+    const errCode = errData?.code;
+    console.error(`[Instagram] Failed to send message to ${recipientId}: [${errCode}] ${errMsg}`);
     return { success: false, error: errMsg };
   }
 }
 
 /**
  * Send a text message via Facebook Messenger
- * Uses the Messenger Platform Send API with PSID (Page-scoped ID)
+ * Uses POST /{PAGE_ID}/messages with PSID (Page-scoped ID) as recipient
  */
 export async function sendFacebookMessage(
   recipientId: string,
@@ -92,16 +96,15 @@ export async function sendFacebookMessage(
 
   try {
     const response = await axios.post(
-      `${GRAPH_API_URL}/me/messages`,
+      `${GRAPH_API_URL}/${pageId}/messages`,
       {
         recipient: { id: recipientId },
+        messaging_type: "RESPONSE",
         message: { text },
       },
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        params: { access_token: accessToken },
+        headers: { "Content-Type": "application/json" },
       }
     );
 
@@ -109,8 +112,10 @@ export async function sendFacebookMessage(
     console.log(`[Facebook] Message sent to ${recipientId}, ID: ${messageId}`);
     return { success: true, messageId };
   } catch (error: any) {
-    const errMsg = error?.response?.data?.error?.message || error.message;
-    console.error(`[Facebook] Failed to send message to ${recipientId}:`, errMsg);
+    const errData = error?.response?.data?.error;
+    const errMsg = errData?.message || error.message;
+    const errCode = errData?.code;
+    console.error(`[Facebook] Failed to send message to ${recipientId}: [${errCode}] ${errMsg}`);
     return { success: false, error: errMsg };
   }
 }
@@ -123,29 +128,28 @@ export async function sendInstagramImage(
   imageUrl: string,
   caption?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { accessToken } = getConfig();
+  const { accessToken, pageId } = getConfig();
 
-  if (!accessToken) {
+  if (!accessToken || !pageId) {
     return { success: false, error: "Instagram API not configured" };
   }
 
   try {
     const response = await axios.post(
-      `${GRAPH_API_URL}/me/messages`,
+      `${GRAPH_API_URL}/${pageId}/messages`,
       {
         recipient: { id: recipientId },
+        messaging_type: "RESPONSE",
         message: {
           attachment: {
             type: "image",
-            payload: { url: imageUrl },
+            payload: { url: imageUrl, is_reusable: true },
           },
         },
       },
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        params: { access_token: accessToken },
+        headers: { "Content-Type": "application/json" },
       }
     );
 
@@ -159,7 +163,8 @@ export async function sendInstagramImage(
 
     return { success: true, messageId };
   } catch (error: any) {
-    const errMsg = error?.response?.data?.error?.message || error.message;
+    const errData = error?.response?.data?.error;
+    const errMsg = errData?.message || error.message;
     console.error(`[Instagram] Failed to send image to ${recipientId}:`, errMsg);
     return { success: false, error: errMsg };
   }
@@ -173,29 +178,28 @@ export async function sendFacebookImage(
   imageUrl: string,
   caption?: string
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { accessToken } = getConfig();
+  const { accessToken, pageId } = getConfig();
 
-  if (!accessToken) {
+  if (!accessToken || !pageId) {
     return { success: false, error: "Facebook Messenger API not configured" };
   }
 
   try {
     const response = await axios.post(
-      `${GRAPH_API_URL}/me/messages`,
+      `${GRAPH_API_URL}/${pageId}/messages`,
       {
         recipient: { id: recipientId },
+        messaging_type: "RESPONSE",
         message: {
           attachment: {
             type: "image",
-            payload: { url: imageUrl },
+            payload: { url: imageUrl, is_reusable: true },
           },
         },
       },
       {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        params: { access_token: accessToken },
+        headers: { "Content-Type": "application/json" },
       }
     );
 
@@ -208,7 +212,8 @@ export async function sendFacebookImage(
 
     return { success: true, messageId };
   } catch (error: any) {
-    const errMsg = error?.response?.data?.error?.message || error.message;
+    const errData = error?.response?.data?.error;
+    const errMsg = errData?.message || error.message;
     console.error(`[Facebook] Failed to send image to ${recipientId}:`, errMsg);
     return { success: false, error: errMsg };
   }
@@ -247,6 +252,8 @@ export async function sendPlatformImage(
 
 /**
  * Get user profile from Instagram/Facebook
+ * For Instagram: GET /{IGSID}?fields=name,profile_pic using Page Access Token
+ * For Facebook: GET /{PSID}?fields=first_name,last_name,profile_pic using Page Access Token
  */
 export async function getPlatformUserProfile(
   userId: string,
@@ -261,7 +268,10 @@ export async function getPlatformUserProfile(
       : "first_name,last_name,profile_pic";
     
     const response = await axios.get(
-      `${GRAPH_API_URL}/${userId}?fields=${fields}&access_token=${accessToken}`
+      `${GRAPH_API_URL}/${userId}`,
+      {
+        params: { fields, access_token: accessToken },
+      }
     );
 
     if (platform === "instagram") {
@@ -278,7 +288,11 @@ export async function getPlatformUserProfile(
       };
     }
   } catch (error: any) {
-    console.error(`[${platform}] Failed to get user profile for ${userId}:`, error.message);
+    const errData = error?.response?.data?.error;
+    const errMsg = errData?.message || error.message;
+    const errCode = errData?.code;
+    console.error(`[${platform}] Failed to get user profile for ${userId}: [${errCode}] ${errMsg}`);
+    // Don't fail the whole flow if profile fetch fails
     return null;
   }
 }

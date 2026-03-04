@@ -25,6 +25,7 @@ export const conversations = mysqlTable("conversations", {
   id: int("id").autoincrement().primaryKey(),
   phone: varchar("phone", { length: 32 }).notNull(),
   contactName: varchar("contactName", { length: 255 }),
+  contactPhoto: varchar("contactPhoto", { length: 512 }),
   channel: mysqlEnum("channel", ["whatsapp", "instagram", "facebook", "web", "webhook"]).default("whatsapp").notNull(),
   platformUserId: varchar("platformUserId", { length: 255 }),
   status: mysqlEnum("status", ["open", "pending", "resolved", "closed"]).default("open").notNull(),

@@ -1,0 +1,1 @@
+ALTER TABLE `conversations` ADD `contactPhoto` varchar(512);

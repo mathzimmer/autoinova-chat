@@ -831,3 +831,5 @@
 - [x] Envio de respostas pela plataforma correta (Instagram/Facebook/WhatsApp) — debounce + agente
 - [x] 199 testes passando, 0 erros TypeScript
 - [x] Bug: Webhook Instagram/Facebook falha na validação do Meta App Dashboard — CORRIGIDO: aceita múltiplos verify tokens (META_ADS_VERIFY_TOKEN, WHATSAPP_VERIFY_TOKEN, default)
+- [x] Bug: Envio de mensagem Instagram falha com erro "Object with ID 'me' does not exist" — CORRIGIDO: mudado de /me/messages para /{PAGE_ID}/messages + messaging_type + access_token como query param
+- [x] Bug: Nome e foto do perfil do Instagram não aparecem na conversa — CORRIGIDO: adicionado campo contactPhoto no schema + busca de perfil no webhook + exibição no frontend

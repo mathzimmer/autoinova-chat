@@ -456,11 +456,14 @@ async function startServer() {
 
           console.log(`[${channel}] Message from ${senderId}: ${content.substring(0, 100)}`);
 
-          // Get user profile for name
+          // Get user profile for name and photo
           let contactName = "Cliente";
+          let contactPhoto: string | undefined;
           try {
             const profile = await getPlatformUserProfile(senderId, channel);
             if (profile?.name) contactName = profile.name;
+            if (profile?.profilePic) contactPhoto = profile.profilePic;
+            console.log(`[${channel}] Profile fetched for ${senderId}: name=${contactName}, hasPhoto=${!!contactPhoto}`);
           } catch (err) {
             console.warn(`[${channel}] Could not fetch profile for ${senderId}`);
           }
@@ -471,6 +474,7 @@ async function startServer() {
             conversation = await createConversation({
               phone: `${channel}_${senderId}`, // Use platform prefix + ID as phone placeholder
               contactName,
+              contactPhoto,
               channel,
               platformUserId: senderId,
               status: "open",
@@ -478,6 +482,9 @@ async function startServer() {
               lastMessageAt: Date.now(),
             });
             console.log(`[${channel}] New conversation created for ${contactName} (${senderId})`);
+          } else if (contactPhoto && !conversation.contactPhoto) {
+            // Update photo if we got it now but didn't have it before
+            await updateConversation(conversation.id, { contactPhoto });
           }
 
           if (!conversation) continue;

@@ -186,7 +186,20 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
                   <div className="flex items-center gap-3">
                     {/* Avatar - fixed size with platform icon */}
                     <div className="relative shrink-0">
-                      <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center">
+                      {conv.contactPhoto ? (
+                        <img
+                          src={conv.contactPhoto}
+                          alt={conv.contactName || ""}
+                          className="h-10 w-10 rounded-full object-cover"
+                          onError={(e) => {
+                            // Fallback to initials if image fails
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            target.nextElementSibling?.classList.remove('hidden');
+                          }}
+                        />
+                      ) : null}
+                      <div className={`h-10 w-10 rounded-full bg-secondary flex items-center justify-center ${conv.contactPhoto ? 'hidden' : ''}`}>
                         <span className="text-sm font-medium text-secondary-foreground">
                           {(conv.contactName || conv.phone || "?").charAt(0).toUpperCase()}
                         </span>
