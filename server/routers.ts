@@ -1586,18 +1586,32 @@ Retorne um JSON com:
       const v = vehicleRows[0];
       if (!v.imageUrl) throw new Error("Veículo sem imagem");
 
-      const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
-      const waMsg = encodeURIComponent(
-        `Olá! Vi o anúncio do ${v.brand} ${v.model} ${v.year} e tenho interesse!`
-      );
-      const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
-
       const finalCampaignId = input.campaignId ?? (await createOrGetCampaign(config));
       const budgetCents = Math.round(input.dailyBudgetBRL * 100);
       const adSetId = await createAdSet(config, finalCampaignId, v, budgetCents);
       const imageHash = await uploadAdImage(config, v.imageUrl);
 
-      // Create creative with custom AI text
+      // Build welcome message for Click to WhatsApp
+      function buildWelcomeMsg(): string {
+        const makeObj = (content: string, text: string) => ({
+          type: "VISUAL_EDITOR", version: 2,
+          landing_screen_type: "welcome_message", media_type: "text",
+          text_format: { customer_action_type: "autofill_message",
+            message: { autofill_message: { content }, text } }
+        });
+        const attempts = [
+          { content: `Olá! Vi o anúncio do ${v.brand} ${v.model} ${v.year} e tenho interesse!`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
+          { content: `Interesse no ${v.brand} ${v.model} ${v.year}`, text: `Olá!` },
+          { content: "Olá, tenho interesse!", text: "" },
+        ];
+        for (const a of attempts) {
+          const json = JSON.stringify(makeObj(a.content, a.text));
+          if (json.length <= 300) return json;
+        }
+        return JSON.stringify(makeObj("Olá!", ""));
+      }
+
+      // Create creative with Click to WhatsApp (instead of LEARN_MORE)
       const adCreativeId = await (async () => {
         const result = await metaPost(
           `act_${config.adAccountId}/adcreatives`,
@@ -1608,14 +1622,13 @@ Retorne um JSON com:
               ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
               link_data: {
                 image_hash: imageHash,
-                link: whatsappLink,
-                message: input.primaryText,
+                link: "https://api.whatsapp.com/send",
                 name: input.headline,
-                description: input.description,
                 call_to_action: {
-                  type: "LEARN_MORE",
-                  value: { link: whatsappLink },
+                  type: "WHATSAPP_MESSAGE",
+                  value: { app_destination: "WHATSAPP" },
                 },
+                page_welcome_message: buildWelcomeMsg(),
               },
             },
           },

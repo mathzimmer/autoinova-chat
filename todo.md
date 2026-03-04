@@ -833,3 +833,5 @@
 - [x] Bug: Webhook Instagram/Facebook falha na validação do Meta App Dashboard — CORRIGIDO: aceita múltiplos verify tokens (META_ADS_VERIFY_TOKEN, WHATSAPP_VERIFY_TOKEN, default)
 - [x] Bug: Envio de mensagem Instagram falha com erro "Object with ID 'me' does not exist" — CORRIGIDO: mudado de /me/messages para /{PAGE_ID}/messages + messaging_type + access_token como query param
 - [x] Bug: Nome e foto do perfil do Instagram não aparecem na conversa — CORRIGIDO: adicionado campo contactPhoto no schema + busca de perfil no webhook + exibição no frontend
+- [ ] Bug: Envio Instagram retorna "An unknown error has occurred" mesmo após fix do endpoint
+- [x] Bug: Links dos anúncios do Instagram não abrem conversa corretamente — CORRIGIDO: todas as funções de criação de anúncio agora usam WHATSAPP_MESSAGE com page_welcome_message em vez de LEARN_MORE com link wa.me

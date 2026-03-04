@@ -196,16 +196,38 @@ export async function createAdCreative(
   });
   const fmtKm = vehicle.mileage.toLocaleString("pt-BR");
 
-  const adMessage =
-    `🚗 ${vehicle.brand} ${vehicle.model} ${vehicle.year}\n` +
-    `💰 ${fmtPrice}\n` +
-    `📍 ${fmtKm} km · ${vehicle.transmission} · ${vehicle.fuel} · ${vehicle.color}\n\n` +
-    `Clique em "Saiba Mais" e fale com a gente agora pelo WhatsApp!`;
-
   const headline = `${vehicle.brand} ${vehicle.model} ${vehicle.year} — ${fmtPrice}`;
   const description = `${fmtKm} km · ${vehicle.transmission} · ${vehicle.color}`;
 
-  console.log(`[MetaAds] Criando criativo para ${vehicle.brand} ${vehicle.model}`);
+  // Build welcome message for Click to WhatsApp
+  function buildCreativeWelcomeMessage(): string {
+    const makeObj = (content: string, text: string) => ({
+      type: "VISUAL_EDITOR",
+      version: 2,
+      landing_screen_type: "welcome_message",
+      media_type: "text",
+      text_format: {
+        customer_action_type: "autofill_message",
+        message: {
+          autofill_message: { content },
+          text
+        }
+      }
+    });
+    const attempts = [
+      { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
+      { content: `Interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá!` },
+      { content: "Olá, tenho interesse neste veículo!", text: vehicle.brand },
+      { content: "Olá, tenho interesse!", text: "" },
+    ];
+    for (const a of attempts) {
+      const json = JSON.stringify(makeObj(a.content, a.text));
+      if (json.length <= 300) return json;
+    }
+    return JSON.stringify(makeObj("Olá!", ""));
+  }
+
+  console.log(`[MetaAds] Criando criativo Click to WhatsApp para ${vehicle.brand} ${vehicle.model}`);
 
   const result = await metaPost(
     `act_${config.adAccountId}/adcreatives`,
@@ -213,28 +235,23 @@ export async function createAdCreative(
       name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
       object_story_spec: {
         page_id: config.pageId,
+        ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
         link_data: {
           image_hash: imageHash,
-          link: whatsappLink,
-          message: adMessage,
+          link: "https://api.whatsapp.com/send",
           name: headline,
-          description: description,
           call_to_action: {
-            type: "LEARN_MORE",
-            value: { link: whatsappLink },
+            type: "WHATSAPP_MESSAGE",
+            value: { app_destination: "WHATSAPP" },
           },
-        },
-      },
-      degrees_of_freedom_spec: {
-        creative_features_spec: {
-          standard_enhancements: { enroll_status: "OPT_IN" },
+          page_welcome_message: buildCreativeWelcomeMessage(),
         },
       },
     },
     config.accessToken
   );
 
-  console.log(`[MetaAds] Criativo criado: ${result.id}`);
+  console.log(`[MetaAds] Criativo criado (Click to WhatsApp): ${result.id}`);
   return result.id as string;
 }
 
