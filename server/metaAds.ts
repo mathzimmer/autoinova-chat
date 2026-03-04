@@ -10,7 +10,7 @@ const META_API_VERSION = "v21.0";
 const META_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
 // Número fixo da Auto Inova (WhatsApp Business)
-const AUTOINOVA_WHATSAPP = "5551319190811";
+const AUTOINOVA_WHATSAPP = "555131919081";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
