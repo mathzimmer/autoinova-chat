@@ -836,3 +836,5 @@
 - [ ] Bug: Envio Instagram retorna "An unknown error has occurred" mesmo após fix do endpoint
 - [x] Bug: Links dos anúncios do Instagram não abrem conversa corretamente — CORRIGIDO: todas as funções de criação de anúncio agora usam WHATSAPP_MESSAGE com page_welcome_message em vez de LEARN_MORE com link wa.me
 - [x] Bug: Erro "instagram_actor_id must be a valid Instagram account id" — CORRIGIDO: campo depreciado na v22.0, substituído por instagram_user_id em todas as funções de criação de anúncio
+- [x] Bug: Link WhatsApp não funciona em anúncios carrossel — CORRIGIDO: cada child_attachment agora tem link e call_to_action individuais para Click to WhatsApp + link principal mudado para api.whatsapp.com/send
+- [x] Bug: Descrição não aparece em anúncios de foto única — CORRIGIDO: adicionados campos message (primaryText) e description em todas as funções de criação de anúncio (createAdCreative, createAdInExistingAdSet, createAdWithText)

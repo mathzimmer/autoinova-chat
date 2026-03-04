@@ -231,7 +231,8 @@ export async function createAdCreative(
         ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
         link_data: {
           image_hash: imageHash,
-          link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
+          link: `https://api.whatsapp.com/send`,
+          message: description,
           name: headline,
           description,
           call_to_action: {
@@ -622,6 +623,13 @@ export async function createAdInExistingAdSet(
         image_hash: hash,
         name: caption || (i === 0 ? texts.headline : `${vehicle.brand} ${vehicle.model} - Foto ${i + 1}`),
         description: i === 0 ? texts.description : caption,
+        // Cada child_attachment precisa de link e call_to_action para Click to WhatsApp funcionar
+        ...(isEngagementOrMessaging ? {
+          link: `https://api.whatsapp.com/send`,
+          call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } },
+        } : {
+          link: whatsappLink,
+        }),
       };
     });
 
@@ -633,10 +641,8 @@ export async function createAdInExistingAdSet(
         child_attachments: childAttachments,
         multi_share_optimized: false,
         ...(isEngagementOrMessaging ? {
-          // FIX 2: número real no link
-          link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
+          link: `https://api.whatsapp.com/send`,
           call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } },
-          // FIX 1: objeto, não string
           page_welcome_message: buildWelcomeMessageObject(),
         } : {
           link: whatsappLink,
@@ -651,13 +657,14 @@ export async function createAdInExistingAdSet(
       ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
       link_data: {
         image_hash: imageHash,
-        link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
+        link: `https://api.whatsapp.com/send`,
+        message: texts.primaryText,
         name: texts.headline,
+        description: texts.description,
         call_to_action: {
           type: "WHATSAPP_MESSAGE",
           value: { app_destination: "WHATSAPP" },
         },
-        // FIX 1: objeto, não string
         page_welcome_message: buildWelcomeMessageObject(),
       },
     };

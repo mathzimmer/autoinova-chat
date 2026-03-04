@@ -1623,7 +1623,9 @@ Retorne um JSON com:
               link_data: {
                 image_hash: imageHash,
                 link: "https://api.whatsapp.com/send",
+                message: input.primaryText,
                 name: input.headline,
+                description: input.description,
                 call_to_action: {
                   type: "WHATSAPP_MESSAGE",
                   value: { app_destination: "WHATSAPP" },
