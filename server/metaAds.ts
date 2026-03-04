@@ -1,18 +1,6 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// ARQUIVO: server/metaAds.ts  (ARQUIVO NOVO — criar do zero)
+// ARQUIVO: server/metaAds.ts
 // ═══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Meta Ads Automation — AutoInova Chat
- * Cria automaticamente anúncios no Facebook/Instagram a partir do estoque.
- *
- * Fluxo de 5 passos via Marketing API v21.0:
- *   1. Criar Campanha (OUTCOME_LEADS)
- *   2. Criar AdSet (segmentação, orçamento, duração)
- *   3. Upload da imagem do veículo
- *   4. Criar Criativo (texto gerado automaticamente)
- *   5. Criar Anúncio (sempre começa PAUSADO para revisão)
- */
 
 import { getDb } from "./db";
 import { vehicles, metaAds } from "../drizzle/schema";
@@ -21,11 +9,14 @@ import { eq } from "drizzle-orm";
 const META_API_VERSION = "v21.0";
 const META_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 
+// Número fixo da Auto Inova (WhatsApp Business)
+const AUTOINOVA_WHATSAPP = "5551319190811";
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 export type MetaAdsConfig = {
   accessToken: string;
-  adAccountId: string;       // Só números, sem "act_"
+  adAccountId: string;
   pageId: string;
   instagramActorId?: string;
   defaultBudgetCents: number;
@@ -72,9 +63,8 @@ export async function metaPost(
   const data = await res.json() as any;
   if (!res.ok || data.error) {
     const msg = data.error?.message || `HTTP ${res.status}`;
-    const errorDetail = data.error ? JSON.stringify(data.error, null, 2) : 'No error details';
     console.error(`[MetaAds] POST ${endpoint} falhou:`, msg);
-    console.error(`[MetaAds] Error details:`, errorDetail);
+    console.error(`[MetaAds] Error details:`, data.error ? JSON.stringify(data.error, null, 2) : "No error details");
     throw new Error(msg);
   }
   return data;
@@ -199,8 +189,8 @@ export async function createAdCreative(
   const headline = `${vehicle.brand} ${vehicle.model} ${vehicle.year} — ${fmtPrice}`;
   const description = `${fmtKm} km · ${vehicle.transmission} · ${vehicle.color}`;
 
-  // Build welcome message for Click to WhatsApp
-  function buildCreativeWelcomeMessage(): string {
+  // FIX 1: retorna objeto (não string) para evitar double-encode no JSON.stringify do metaPost
+  function buildWelcomeMessageObject() {
     const makeObj = (content: string, text: string) => ({
       type: "VISUAL_EDITOR",
       version: 2,
@@ -210,21 +200,24 @@ export async function createAdCreative(
         customer_action_type: "autofill_message",
         message: {
           autofill_message: { content },
-          text
-        }
-      }
+          text,
+        },
+      },
     });
+
     const attempts = [
       { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
       { content: `Interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá!` },
       { content: "Olá, tenho interesse neste veículo!", text: vehicle.brand },
       { content: "Olá, tenho interesse!", text: "" },
     ];
+
     for (const a of attempts) {
-      const json = JSON.stringify(makeObj(a.content, a.text));
-      if (json.length <= 300) return json;
+      if (JSON.stringify(makeObj(a.content, a.text)).length <= 300) {
+        return makeObj(a.content, a.text);
+      }
     }
-    return JSON.stringify(makeObj("Olá!", ""));
+    return makeObj("Olá!", "");
   }
 
   console.log(`[MetaAds] Criando criativo Click to WhatsApp para ${vehicle.brand} ${vehicle.model}`);
@@ -235,16 +228,20 @@ export async function createAdCreative(
       name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
       object_story_spec: {
         page_id: config.pageId,
-        ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
+        // FIX 3: instagram_actor_id dentro do object_story_spec (v21.0)
+        ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
         link_data: {
           image_hash: imageHash,
-          link: "https://api.whatsapp.com/send",
+          // FIX 2: link com número real da Auto Inova, sem parâmetros (o Meta adiciona automaticamente)
+          link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
           name: headline,
+          description,
           call_to_action: {
             type: "WHATSAPP_MESSAGE",
             value: { app_destination: "WHATSAPP" },
           },
-          page_welcome_message: buildCreativeWelcomeMessage(),
+          // FIX 1: objeto direto, não string JSON
+          page_welcome_message: buildWelcomeMessageObject(),
         },
       },
     },
@@ -272,7 +269,7 @@ export async function createAd(
       name,
       adset_id: adSetId,
       creative: { creative_id: adCreativeId },
-      status: "PAUSED", // SEMPRE pausado ao criar — revisar antes de ativar
+      status: "PAUSED",
     },
     config.accessToken
   );
@@ -304,11 +301,10 @@ export async function createAdForVehicle(
 
     if (!v.imageUrl) return { success: false, error: "Veículo sem imagem — obrigatório para anúncio", vehicleId };
 
-    const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
     const waMsg = encodeURIComponent(
       `Olá, tenho interesse no veículo: ${v.brand} ${v.model} ${v.year} ID${v.id}`
     );
-    const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
+    const whatsappLink = `https://wa.me/${AUTOINOVA_WHATSAPP}?text=${waMsg}`;
 
     const finalCampaignId = campaignId ?? (await createOrGetCampaign(config));
     const adSetId       = await createAdSet(config, finalCampaignId, v, budgetCents);
@@ -411,7 +407,6 @@ export async function importAdsFromMeta(
   let imported = 0, updated = 0, errors = 0;
 
   try {
-    // 1. Buscar todos os anúncios da conta com dados básicos
     const adsRes = await fetch(
       `${META_BASE}/${actId}/ads?fields=id,name,status,adset_id,campaign_id,creative{id,name,thumbnail_url}&limit=100&access_token=${accessToken}`
     );
@@ -421,7 +416,6 @@ export async function importAdsFromMeta(
     const remoteAds = adsData.data || [];
     console.log(`[MetaAds] Importando ${remoteAds.length} anúncios da conta Meta...`);
 
-    // 2. Buscar métricas de todos os anúncios (last_30d)
     const insightsRes = await fetch(
       `${META_BASE}/${actId}/insights?fields=ad_id,impressions,clicks,spend,actions&level=ad&date_preset=last_30d&limit=100&access_token=${accessToken}`
     );
@@ -437,7 +431,6 @@ export async function importAdsFromMeta(
       });
     }
 
-    // 3. Para cada anúncio remoto, inserir ou atualizar no banco
     for (const ad of remoteAds) {
       try {
         const adId = ad.id;
@@ -451,11 +444,9 @@ export async function importAdsFromMeta(
         const metrics = insightsMap.get(adId);
         const thumbnailUrl = ad.creative?.thumbnail_url || null;
 
-        // Verificar se já existe no banco
         const existing = await db.select({ id: metaAds.id }).from(metaAds).where(eq(metaAds.adId, adId)).limit(1);
 
         if (existing.length > 0) {
-          // Atualizar status e métricas
           await db.update(metaAds).set({
             status,
             adName: ad.name || null,
@@ -471,7 +462,6 @@ export async function importAdsFromMeta(
           }).where(eq(metaAds.adId, adId));
           updated++;
         } else {
-          // Inserir novo anúncio importado
           await db.insert(metaAds).values({
             vehicleId: null as any,
             campaignId: ad.campaign_id || "unknown",
@@ -545,7 +535,7 @@ export async function listAdSets(
   }));
 }
 
-// ─── Criar anúncio em adset existente (simplificado) ─────────────────────────
+// ─── Criar anúncio em adset existente ────────────────────────────────────────
 
 export async function createAdInExistingAdSet(
   config: MetaAdsConfig,
@@ -570,38 +560,32 @@ export async function createAdInExistingAdSet(
   const imgUrl = selectedImageUrl || vehicle.imageUrl;
   if (!imgUrl) throw new Error("Veículo sem imagem");
 
-  const phone = process.env.WHATSAPP_PHONE_NUMBER || "5551994782062";
   const waMsg = encodeURIComponent(
     `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`
   );
-  const whatsappLink = `https://wa.me/${phone}?text=${waMsg}`;
+  // FIX 2: sempre usar o número fixo da Auto Inova
+  const whatsappLink = `https://wa.me/${AUTOINOVA_WHATSAPP}?text=${waMsg}`;
 
   const isCarousel = carouselImageUrls && carouselImageUrls.length >= 2;
 
-  // 1. Upload imagem(ns)
   let imageHash: string;
   let carouselHashes: string[] = [];
   if (isCarousel) {
     console.log(`[MetaAds] Uploading ${carouselImageUrls.length} images for carousel...`);
-    carouselHashes = [];
     for (const url of carouselImageUrls.slice(0, 10)) {
-      const hash = await uploadAdImage(config, url);
-      carouselHashes.push(hash);
+      carouselHashes.push(await uploadAdImage(config, url));
     }
     imageHash = carouselHashes[0];
   } else {
     imageHash = await uploadAdImage(config, imgUrl);
   }
 
-  // 2. Montar object_story_spec conforme objetivo da campanha
   const isEngagementOrMessaging = campaignObjective === "OUTCOME_ENGAGEMENT" ||
     campaignObjective === "OUTCOME_SALES" ||
     campaignObjective === "OUTCOME_LEADS";
 
-  let objectStorySpec: any;
-  // Welcome message JSON total must not exceed 300 chars
-  function buildWelcomeMessage(): string {
-    // The JSON structure overhead is ~200 chars, leaving ~100 for content+text combined
+  // FIX 1: retorna objeto, não string — evita double-encode
+  function buildWelcomeMessageObject() {
     const makeObj = (content: string, text: string) => ({
       type: "VISUAL_EDITOR",
       version: 2,
@@ -611,12 +595,11 @@ export async function createAdInExistingAdSet(
         customer_action_type: "autofill_message",
         message: {
           autofill_message: { content },
-          text
-        }
-      }
+          text,
+        },
+      },
     });
 
-    // Try progressively shorter versions
     const attempts = [
       { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
       { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá! Bem-vindo!` },
@@ -626,70 +609,70 @@ export async function createAdInExistingAdSet(
     ];
 
     for (const a of attempts) {
-      const json = JSON.stringify(makeObj(a.content, a.text));
-      if (json.length <= 300) {
-        console.log(`[MetaAds] Welcome message length: ${json.length} chars`);
-        return json;
+      if (JSON.stringify(makeObj(a.content, a.text)).length <= 300) {
+        return makeObj(a.content, a.text);
       }
     }
-
-    // Fallback mínimo absoluto
-    const fallback = JSON.stringify(makeObj("Olá!", ""));
-    console.log(`[MetaAds] Welcome message fallback length: ${fallback.length} chars`);
-    return fallback;
+    return makeObj("Olá!", "");
   }
-  const welcomeMessage = buildWelcomeMessage();
+
+  let objectStorySpec: any;
 
   if (isCarousel && carouselHashes.length >= 2) {
-    // Carrossel com legendas individuais
-    // NOTA: child_attachments NÃO devem ter call_to_action nem link individuais
-    // para campanhas Click to WhatsApp — o CTA fica apenas no link_data pai
     const childAttachments = carouselHashes.map((hash, i) => {
-      const caption = carouselCaptions && carouselCaptions[i] ? carouselCaptions[i] : "";
-      const child: any = {
+      const caption = carouselCaptions?.[i] ?? "";
+      return {
         image_hash: hash,
         name: caption || (i === 0 ? texts.headline : `${vehicle.brand} ${vehicle.model} - Foto ${i + 1}`),
         description: i === 0 ? texts.description : caption,
       };
-      return child;
     });
 
     objectStorySpec = {
       page_id: config.pageId,
+      // FIX 3: instagram_actor_id dentro do object_story_spec (v21.0)
+      ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
       link_data: {
         message: texts.primaryText,
         child_attachments: childAttachments,
         multi_share_optimized: false,
         ...(isEngagementOrMessaging ? {
-          link: "https://api.whatsapp.com/send",
+          // FIX 2: número real no link
+          link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
           call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } },
-          page_welcome_message: welcomeMessage,
+          // FIX 1: objeto, não string
+          page_welcome_message: buildWelcomeMessageObject(),
         } : {
           link: whatsappLink,
         }),
       },
     };
-    console.log(`[MetaAds] Usando formato CARROSSEL com ${carouselHashes.length} imagens (objetivo: ${campaignObjective})`);
+    console.log(`[MetaAds] Formato CARROSSEL com ${carouselHashes.length} imagens (objetivo: ${campaignObjective})`);
+
   } else if (isEngagementOrMessaging) {
-    // Imagem única - Click to WhatsApp
     objectStorySpec = {
       page_id: config.pageId,
+      // FIX 3: instagram_actor_id dentro do object_story_spec (v21.0)
+      ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
       link_data: {
         image_hash: imageHash,
-        link: "https://api.whatsapp.com/send",
+        // FIX 2: número real no link
+        link: `https://wa.me/${AUTOINOVA_WHATSAPP}`,
         name: texts.headline,
         call_to_action: {
           type: "WHATSAPP_MESSAGE",
-          value: { app_destination: "WHATSAPP" }
+          value: { app_destination: "WHATSAPP" },
         },
-        page_welcome_message: welcomeMessage,
+        // FIX 1: objeto, não string
+        page_welcome_message: buildWelcomeMessageObject(),
       },
     };
-    console.log(`[MetaAds] Usando formato Click to WhatsApp (objetivo: ${campaignObjective})`);
+    console.log(`[MetaAds] Formato Click to WhatsApp (objetivo: ${campaignObjective})`);
+
   } else {
-    // Imagem única - Link direto
     objectStorySpec = {
       page_id: config.pageId,
+      ...(config.instagramActorId ? { instagram_actor_id: config.instagramActorId } : {}),
       link_data: {
         image_hash: imageHash,
         link: whatsappLink,
@@ -702,17 +685,9 @@ export async function createAdInExistingAdSet(
         },
       },
     };
-    console.log(`[MetaAds] Usando formato link direto (objetivo: ${campaignObjective || "desconhecido"})`);
+    console.log(`[MetaAds] Formato link direto (objetivo: ${campaignObjective || "desconhecido"})`);
   }
 
-  // Adicionar instagram_user_id ao object_story_spec se disponível (instagram_actor_id deprecated na v22.0)
-  if (config.instagramActorId) {
-    objectStorySpec.instagram_user_id = config.instagramActorId;
-    console.log(`[MetaAds] Instagram User ID configurado: ${config.instagramActorId}`);
-  }
-
-  // 3. Criar criativo (standard_enhancements foi descontinuado pelo Meta)
-  // Usar recursos individuais do Advantage+ em vez de standard_enhancements
   const creativePayload: any = {
     name: `Criativo — ${vehicle.brand} ${vehicle.model} #${vehicle.id}${isCarousel ? " (Carrossel)" : ""}`,
     object_story_spec: objectStorySpec,
@@ -731,9 +706,8 @@ export async function createAdInExistingAdSet(
     config.accessToken
   );
   const adCreativeId = creativeResult.id as string;
-  console.log(`[MetaAds] Criativo criado com Advantage+: ${adCreativeId}`);
+  console.log(`[MetaAds] Criativo criado: ${adCreativeId}`);
 
-  // 4. Criar anúncio no adset existente (PAUSADO) com rastreamento Pixel
   const adPayload: any = {
     name: `Anúncio — ${vehicle.brand} ${vehicle.model} ${vehicle.year} #${vehicle.id}`,
     adset_id: adSetId,
@@ -741,17 +715,12 @@ export async function createAdInExistingAdSet(
     status: "PAUSED",
   };
 
-  // Adicionar rastreamento com Pixel do Facebook
-  // NOTA: tracking_specs com offsite_conversion não é compatível com campanhas de Engajamento/WhatsApp
-  // Para essas campanhas, o Pixel é configurado no nível do adset/campanha, não do anúncio
   const trackingPixelId = pixelId || process.env.META_ADS_PIXEL_ID;
   if (trackingPixelId && !isEngagementOrMessaging) {
     adPayload.tracking_specs = [
       { action_type: ["offsite_conversion"], fb_pixel: [trackingPixelId] },
     ];
-    console.log(`[MetaAds] Rastreamento Pixel configurado no anúncio: ${trackingPixelId}`);
-  } else if (trackingPixelId) {
-    console.log(`[MetaAds] Pixel ${trackingPixelId} disponível (rastreamento configurado no nível da campanha para Engajamento)`);
+    console.log(`[MetaAds] Rastreamento Pixel configurado: ${trackingPixelId}`);
   }
 
   console.log(`[MetaAds] Payload anúncio:`, JSON.stringify(adPayload, null, 2));
@@ -762,7 +731,7 @@ export async function createAdInExistingAdSet(
   );
   const adId = adResult.id as string;
 
-  console.log(`[MetaAds] ✅ Anúncio criado no adset existente: adId=${adId}, adSetId=${adSetId}`);
+  console.log(`[MetaAds] ✅ Anúncio criado no adset existente: adId=${adId}`);
   return { adId, adCreativeId, imageHash };
 }
 
@@ -770,15 +739,13 @@ export async function createAdInExistingAdSet(
 
 export function buildMetaConfig(overrides?: Partial<MetaAdsConfig>): MetaAdsConfig {
   return {
-    accessToken:    process.env.META_ADS_ACCESS_TOKEN  || "",
-    adAccountId:    process.env.META_ADS_ACCOUNT_ID    || "",
-    pageId:         process.env.META_ADS_PAGE_ID       || "",
+    accessToken:      process.env.META_ADS_ACCESS_TOKEN  || "",
+    adAccountId:      process.env.META_ADS_ACCOUNT_ID    || "",
+    pageId:           process.env.META_ADS_PAGE_ID       || "",
     instagramActorId: process.env.META_ADS_INSTAGRAM_ID,
     defaultBudgetCents: 3000,
     defaultTargeting: {
       geo_locations: {
-        // Raio 80km a partir de Novo Hamburgo — cobre toda Serra Gaúcha
-        // Para outra cidade: GET /search?type=adcity&q=NOME&access_token=TOKEN
         cities: [
           { key: "229180", radius: 80, distance_unit: "kilometer" },
         ],
@@ -794,6 +761,10 @@ export function buildMetaConfig(overrides?: Partial<MetaAdsConfig>): MetaAdsConf
           ],
         },
       ],
+    },
+    ...overrides,
+  };
+}
     },
     ...overrides,
   };
