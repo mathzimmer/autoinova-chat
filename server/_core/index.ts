@@ -358,11 +358,19 @@ async function startServer() {
 
   // ─── Instagram & Facebook Messenger Webhook (GET — verificação) ─────────────
   app.get("/api/webhook/instagram", (req, res) => {
-    const token = process.env.META_ADS_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
-    if (req.query["hub.mode"] === "subscribe" && req.query["hub.verify_token"] === token) {
-      console.log("[Instagram Webhook] Verification successful");
+    const incomingToken = req.query["hub.verify_token"] as string;
+    // Accept any of the configured verify tokens
+    const validTokens = [
+      process.env.META_ADS_VERIFY_TOKEN,
+      process.env.WHATSAPP_VERIFY_TOKEN,
+      "autoinova_verify_token",
+    ].filter(Boolean);
+    
+    if (req.query["hub.mode"] === "subscribe" && validTokens.includes(incomingToken)) {
+      console.log(`[Instagram Webhook] Verification successful (token matched)`);
       return res.status(200).send(req.query["hub.challenge"]);
     }
+    console.log(`[Instagram Webhook] Verification FAILED. Received token: ${incomingToken?.substring(0, 10)}... Valid tokens: ${validTokens.map(t => t?.substring(0, 10) + '...').join(', ')}`);
     res.sendStatus(403);
   });
 

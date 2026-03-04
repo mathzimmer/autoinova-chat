@@ -830,3 +830,4 @@
 - [x] Ícones visuais de plataforma no painel de chat (header + badge de canal)
 - [x] Envio de respostas pela plataforma correta (Instagram/Facebook/WhatsApp) — debounce + agente
 - [x] 199 testes passando, 0 erros TypeScript
+- [x] Bug: Webhook Instagram/Facebook falha na validação do Meta App Dashboard — CORRIGIDO: aceita múltiplos verify tokens (META_ADS_VERIFY_TOKEN, WHATSAPP_VERIFY_TOKEN, default)
