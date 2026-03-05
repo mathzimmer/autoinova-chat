@@ -842,3 +842,4 @@
 - [x] Agente de IA envia REGULAR_PRICE ao cliente — formato: "R$ 112.990 (promoção: R$ 108.990)" quando há desconto
 - [x] Módulo de anúncios usa REGULAR_PRICE no texto do anúncio — usa v.price que agora é REGULAR_PRICE
 - [x] Sincronização de estoque importa ambos os preços (regular e promoção) — já funcionava, agora price = regularPrice
+- [x] Bug: Agente de IA informa preço errado para Mercedes — CORRIGIDO: 1) preço no banco já atualizado para REGULAR_PRICE (R$ 112.990), 2) prompt reforçado com regras críticas de preço e ano para evitar alucinação do LLM. Producão precisa ser republicada.

@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, brand, model, year, price, regularPrice, promotionPrice FROM vehicles WHERE price = 164990 OR regularPrice = 164990 OR promotionPrice = 164990;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, brand, model, year, price, regularPrice, promotionPrice FROM vehicles WHERE price = 164990 OR regularPrice = 164990 OR promotionPrice = 164990;",
+  "rows": [
+    {
+      "id": "41",
+      "brand": "Chevrolet",
+      "model": "TRAILBLAZER LTZ 2.8 CTDI Diesel Aut.",
+      "year": "2019",
+      "price": "164990",
+      "regularPrice": "164990",
+      "promotionPrice": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbrand\tmodel\tyear\tprice\tregularPrice\tpromotionPrice\n41\tChevrolet\tTRAILBLAZER LTZ 2.8 CTDI Diesel Aut.\t2019\t164990\t164990\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 73
+}

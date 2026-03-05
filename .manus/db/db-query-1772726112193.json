@@ -1,0 +1,19 @@
+{
+  "query": "SELECT id, brand, model, year, price, regularPrice, promotionPrice FROM vehicles WHERE id = 97;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, brand, model, year, price, regularPrice, promotionPrice FROM vehicles WHERE id = 97;",
+  "rows": [
+    {
+      "id": "97",
+      "brand": "Mercedes",
+      "model": "C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut.",
+      "year": "2016",
+      "price": "112990",
+      "regularPrice": "112990",
+      "promotionPrice": "108990"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbrand\tmodel\tyear\tprice\tregularPrice\tpromotionPrice\n97\tMercedes\tC-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut.\t2016\t112990\t112990\t108990\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}
