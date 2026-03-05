@@ -1,4 +1,5 @@
-import { invokeLLM, type Tool, type Message as LLMMessage } from "./_core/llm";
+import { type Tool, type Message as LLMMessage } from "./_core/llm";
+import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
 import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, getLeadByConversationId } from "./db";
 import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
