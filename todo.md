@@ -846,3 +846,19 @@
 - [x] Configurar chave OpenAI como secret do projeto
 - [x] Atualizar agente de IA para usar GPT-4o-mini da OpenAI em vez da LLM integrada do Manus — com fallback automático para Manus Forge se OpenAI falhar
 - [ ] Opção no painel de configurações para escolher provedor de LLM (Manus/OpenAI) — futuro
+
+## Feature - Rodada 56 (Módulo de Leads - Reformulação Completa)
+- [x] Resumo automático de conversa por dia (gerado pela IA, atualizado a cada interação)
+- [x] Histórico de resumos separado por dias (como anotações)
+- [x] Preview de 3 linhas do resumo no painel de leads
+- [x] Painel expandido ao clicar no lead com resumo completo e opções
+- [x] Botão "Ir para conversa" no lead
+- [x] Nome do cliente e telefone formatado (sem 55 na frente, ex: 51997566259)
+- [x] Botão copiar lead (nome, telefone, cidade, veículo interesse, veículo troca, pagamento)
+- [x] Botão copiar resumo completo
+- [x] Botão editar informações do lead manualmente (status, dados)
+- [x] Personalização avançada do módulo de leads (status customizados, campos extras)
+- [x] Campo cidade adicionado ao lead (schema + IA tool + frontend)
+- [x] Gerar resumo IA via botão manual (usa LLM para resumir mensagens do dia)
+- [x] Tabela leadSummaries no banco de dados (migração aplicada)
+- [x] 214 testes passando, 0 erros TypeScript

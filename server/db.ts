@@ -14,6 +14,7 @@ import {
   teamNotifications,
   teamPerformance,
   aiDecisions, InsertAiDecision,
+  leadSummaries, InsertLeadSummary,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -253,6 +254,40 @@ export async function upsertLead(data: InsertLead) {
   }
   const result = await db.insert(leads).values(data);
   return { ...data, id: result[0].insertId };
+}
+
+// ─── Lead Summary Queries ─────────────────────────────────────
+export async function getLeadSummaries(leadId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(leadSummaries).where(eq(leadSummaries.leadId, leadId)).orderBy(desc(leadSummaries.summaryDate));
+}
+
+export async function getLeadSummariesByConversation(conversationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(leadSummaries).where(eq(leadSummaries.conversationId, conversationId)).orderBy(desc(leadSummaries.summaryDate));
+}
+
+export async function upsertLeadSummary(data: { leadId: number; conversationId: number; summaryDate: string; summary: string; messageCount: number }) {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await db.select().from(leadSummaries)
+    .where(and(eq(leadSummaries.leadId, data.leadId), eq(leadSummaries.summaryDate, data.summaryDate)))
+    .limit(1);
+  if (existing[0]) {
+    await db.update(leadSummaries).set({ summary: data.summary, messageCount: data.messageCount }).where(eq(leadSummaries.id, existing[0].id));
+    return { ...existing[0], ...data };
+  }
+  const result = await db.insert(leadSummaries).values(data);
+  return { ...data, id: result[0].insertId };
+}
+
+export async function getFullLeadSummaryText(conversationId: number): Promise<string> {
+  const summaries = await getLeadSummariesByConversation(conversationId);
+  if (summaries.length === 0) return "";
+  // Oldest first for chronological reading
+  return summaries.reverse().map(s => `[${s.summaryDate}]\n${s.summary}`).join("\n\n");
 }
 
 // ─── AI Log Queries ────────────────────────────────────────────

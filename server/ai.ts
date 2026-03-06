@@ -1,6 +1,6 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, getLeadByConversationId } from "./db";
+import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, getLeadByConversationId, upsertLeadSummary } from "./db";
 import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
@@ -449,6 +449,7 @@ const TOOLS: Tool[] = [
           km_troca: { type: "string", description: "KM do veículo de troca" },
           forma_pagamento: { type: "string", description: "Forma de pagamento: financiamento, a_vista, consorcio, troca" },
           entrada: { type: "string", description: "Valor de entrada para financiamento" },
+          cidade: { type: "string", description: "Cidade do cliente" },
           status: { type: "string", description: "Status: qualifying ou qualified" },
           notas: { type: "string", description: "Resumo breve da conversa para o vendedor (ex: 'Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar')" },
         },
@@ -702,6 +703,7 @@ export async function processAIMessage(
             if (args.entrada) leadUpdate.downPayment = args.entrada;
             if (args.status) leadUpdate.status = args.status;
             if (args.notas) leadUpdate.notes = args.notas;
+            if (args.cidade) leadUpdate.city = args.cidade;
 
             try {
               await upsertLead(leadUpdate);
@@ -929,6 +931,53 @@ export async function processAIMessage(
     }
 
     console.log(`[AI] Response generated in ${responseTime}ms (${usage?.total_tokens || 0} tokens)`);
+
+    // === AUTO-GENERATE DAILY SUMMARY ===
+    try {
+      const lead = await getLeadByConversationId(conversation.id);
+      if (lead) {
+        const today = new Date();
+        const todayStr = today.toISOString().split("T")[0];
+        // Build a quick summary from the current exchange
+        const summaryParts: string[] = [];
+        if (customerMessage) summaryParts.push(`Cliente: ${customerMessage.substring(0, 200)}`);
+        if (fullResponse) summaryParts.push(`Resposta: ${fullResponse.substring(0, 200)}`);
+        if (collectedLeadData) {
+          const ld = collectedLeadData as any;
+          if (ld.veiculo_interesse) summaryParts.push(`Interesse: ${ld.veiculo_interesse}`);
+          if (ld.forma_pagamento) summaryParts.push(`Pagamento: ${ld.forma_pagamento}`);
+          if (ld.veiculo_troca) summaryParts.push(`Troca: ${ld.veiculo_troca}`);
+          if (ld.cidade) summaryParts.push(`Cidade: ${ld.cidade}`);
+        }
+        const quickSummary = summaryParts.join(" | ");
+        // Upsert: append to existing day summary or create new
+        const { leadSummaries: summariesTable } = await import("../drizzle/schema");
+        const { getDb } = await import("./db");
+        const db = await getDb();
+        if (db) {
+          const { eq, and: andOp } = await import("drizzle-orm");
+          const existing = await db.select().from(summariesTable)
+            .where(andOp(eq(summariesTable.leadId, lead.id), eq(summariesTable.summaryDate, todayStr)))
+            .limit(1);
+          if (existing[0]) {
+            // Append to existing summary
+            const updatedSummary = existing[0].summary + "\n" + quickSummary;
+            const newCount = (existing[0].messageCount || 0) + 1;
+            await db.update(summariesTable).set({ summary: updatedSummary, messageCount: newCount }).where(eq(summariesTable.id, existing[0].id));
+          } else {
+            await upsertLeadSummary({
+              leadId: lead.id,
+              conversationId: conversation.id,
+              summaryDate: todayStr,
+              summary: quickSummary,
+              messageCount: 1,
+            });
+          }
+        }
+      }
+    } catch (summaryErr) {
+      console.error("[AI] Failed to generate daily summary:", summaryErr);
+    }
 
     return { response: fullResponse, leadData: collectedLeadData };
 

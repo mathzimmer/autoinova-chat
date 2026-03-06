@@ -15,6 +15,7 @@ import {
   createTeamNotification, listTeamNotifications, markNotificationsAsRead, getUnreadNotificationCount,
   listAiDecisions, getAiDecisionsByConversation, getAiDecisionStats,
   updateMessageExternalId, setWindowExpired,
+  getLeadSummaries, getLeadSummariesByConversation, upsertLeadSummary, getFullLeadSummaryText,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -534,10 +535,155 @@ const leadRouter = router({
       return listLeads(input);
     }),
 
+  /** List leads with conversation data, vehicle, agent, and latest summary preview */
+  listWithDetails: protectedProcedure
+    .input(z.object({ status: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { leads: leadsTable, conversations: convsTable, leadSummaries: summariesTable, vehicles: vehiclesTable, teamMembers: membersTable } = await import("../drizzle/schema");
+      const { eq, desc, inArray } = await import("drizzle-orm");
+
+      // Get all leads
+      let allLeads;
+      if (input?.status && input.status !== "all") {
+        allLeads = await db.select().from(leadsTable).where(eq(leadsTable.status, input.status as any)).orderBy(desc(leadsTable.updatedAt));
+      } else {
+        allLeads = await db.select().from(leadsTable).orderBy(desc(leadsTable.updatedAt));
+      }
+      if (allLeads.length === 0) return [];
+
+      // Batch fetch conversations, summaries, vehicles, team members
+      const convIds = Array.from(new Set(allLeads.map(l => l.conversationId)));
+      const convs = await db.select().from(convsTable).where(inArray(convsTable.id, convIds));
+      const convMap = new Map(convs.map(c => [c.id, c]));
+
+      const leadIds = allLeads.map(l => l.id);
+      const summaries = await db.select().from(summariesTable).where(inArray(summariesTable.leadId, leadIds)).orderBy(desc(summariesTable.summaryDate));
+      const summaryMap = new Map<number, typeof summaries>();
+      summaries.forEach(s => {
+        if (!summaryMap.has(s.leadId)) summaryMap.set(s.leadId, []);
+        summaryMap.get(s.leadId)!.push(s);
+      });
+
+      const vehicleIds = allLeads.filter(l => l.vehicleId).map(l => l.vehicleId!) as number[];
+      let vehicleMap = new Map<number, any>();
+      if (vehicleIds.length > 0) {
+        const vehs = await db.select().from(vehiclesTable).where(inArray(vehiclesTable.id, vehicleIds));
+        vehicleMap = new Map(vehs.map(v => [v.id, v]));
+      }
+
+      const agentIds = Array.from(new Set(convs.filter(c => c.assignedTo).map(c => c.assignedTo!)));
+      let agentMap = new Map<number, any>();
+      if (agentIds.length > 0) {
+        const agents = await db.select().from(membersTable).where(inArray(membersTable.id, agentIds));
+        agentMap = new Map(agents.map(a => [a.id, a]));
+      }
+
+      return allLeads.map(lead => {
+        const conv = convMap.get(lead.conversationId);
+        const sums = summaryMap.get(lead.id) || [];
+        const vehicle = lead.vehicleId ? vehicleMap.get(lead.vehicleId) : null;
+        const agent = conv?.assignedTo ? agentMap.get(conv.assignedTo) : null;
+        // Build preview: latest summary, max 3 lines
+        const latestSummary = sums[0];
+        const summaryPreview = latestSummary?.summary?.split("\n").slice(0, 3).join("\n") || "";
+
+        return {
+          ...lead,
+          conversation: conv ? {
+            id: conv.id,
+            contactName: conv.contactName,
+            contactPhoto: conv.contactPhoto,
+            channel: conv.channel,
+            status: conv.status,
+            aiActive: conv.aiActive,
+            lastMessageAt: conv.lastMessageAt,
+          } : null,
+          summaryPreview,
+          summaries: sums.map(s => ({ id: s.id, date: s.summaryDate, summary: s.summary, messageCount: s.messageCount })),
+          linkedVehicle: vehicle ? {
+            id: vehicle.id,
+            brand: vehicle.brand,
+            model: vehicle.model,
+            year: vehicle.year,
+            price: vehicle.price,
+            color: vehicle.color,
+            imageUrl: vehicle.imageUrl,
+            url: vehicle.url,
+          } : null,
+          assignedAgent: agent ? { id: agent.id, name: agent.name, cargo: agent.cargo } : null,
+        };
+      });
+    }),
+
   getByConversation: protectedProcedure
     .input(z.object({ conversationId: z.number() }))
     .query(async ({ input }) => {
       return getLeadByConversationId(input.conversationId);
+    }),
+
+  /** Get summaries for a specific lead */
+  getSummaries: protectedProcedure
+    .input(z.object({ leadId: z.number() }))
+    .query(async ({ input }) => {
+      return getLeadSummaries(input.leadId);
+    }),
+
+  /** Generate/update summary for today based on conversation messages */
+  generateSummary: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .mutation(async ({ input }) => {
+      const lead = await getLeadByConversationId(input.conversationId);
+      if (!lead) throw new Error("Lead not found");
+
+      // Get today's messages
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { messages: msgsTable } = await import("../drizzle/schema");
+      const { eq, and: andOp, gte } = await import("drizzle-orm");
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStr = today.toISOString().split("T")[0];
+
+      const todayMsgs = await db.select().from(msgsTable)
+        .where(andOp(eq(msgsTable.conversationId, input.conversationId), gte(msgsTable.createdAt, today)))
+        .orderBy(msgsTable.createdAt);
+
+      if (todayMsgs.length === 0) return null;
+
+      // Build conversation text for summary
+      const convText = todayMsgs.map(m => {
+        const role = m.senderType === "customer" ? "Cliente" : m.senderType === "bot" ? "IA" : "Atendente";
+        return `${role}: ${m.content}`;
+      }).join("\n");
+
+      // Use LLM to generate summary
+      const { invokeLLM } = await import("./_core/llm");
+      let summaryText: string;
+      try {
+        const resp = await invokeLLM({
+          messages: [
+            { role: "system", content: "Você é um assistente que gera resumos concisos de conversas de atendimento de uma loja de veículos. Gere um resumo em 3-5 linhas do que aconteceu na conversa. Inclua: interesse do cliente, veículos mencionados, decisões tomadas, próximos passos. Seja objetivo e direto. NÃO use markdown." },
+            { role: "user", content: `Resuma esta conversa do dia ${todayStr}:\n\n${convText}` },
+          ],
+        });
+        const rawContent = resp.choices?.[0]?.message?.content;
+        summaryText = (typeof rawContent === "string" ? rawContent : "") || "Resumo indisponível";
+      } catch {
+        summaryText = `${todayMsgs.length} mensagens trocadas.`;
+      }
+
+      await upsertLeadSummary({
+        leadId: lead.id,
+        conversationId: input.conversationId,
+        summaryDate: todayStr,
+        summary: summaryText,
+        messageCount: todayMsgs.length,
+      });
+
+      return { date: todayStr, summary: summaryText, messageCount: todayMsgs.length };
     }),
 
   update: protectedProcedure
@@ -553,12 +699,12 @@ const leadRouter = router({
       tradeKm: z.string().optional(),
       paymentMethod: z.string().optional(),
       downPayment: z.string().optional(),
+      city: z.string().optional(),
       notes: z.string().optional(),
       status: z.enum(["new", "qualifying", "qualified", "contacted", "converted", "lost"]).optional(),
     }))
     .mutation(async ({ input }) => {
       const { conversationId, ...data } = input;
-      // Get conversation phone for upsert
       const conv = await getConversationById(conversationId);
       return upsertLead({
         conversationId,
