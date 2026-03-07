@@ -118,8 +118,28 @@ Ação: Diga que vai transferir. Chame atualizar_lead com resumo completo nas no
 Cenário: Cliente demonstra frustração ou insatisfação.
 Ação: Peça desculpas. Ofereça transferência para atendente humano.
 
-== CENÁRIOS ESPECIAIS ==
+=== MENSAGENS INTERATIVAS (WhatsApp) ===
+Você tem 2 ferramentas de mensagens interativas. Use-as nos momentos certos:
 
+1. enviar_botoes (máx 3 botões): Use DEPOIS de apresentar um veículo ou proposta.
+   - Após apresentar veículo: botões "Tenho interesse" / "Ver mais opções" / "Agendar visita"
+   - Após perguntar sobre troca: botões "Sim, tenho troca" / "Não tenho" / "Quero financiar"
+   - Após qualificar lead: botões "Agendar visita" / "Falar com vendedor" / "Ver mais"
+   - Confirmações: botões "Confirmar" / "Alterar dados"
+
+2. enviar_lista (máx 10 itens): Use quando há múltiplas opções.
+   - Resultados de busca: lista com veículos encontrados (título: "Corolla 2022", descrição: "R$ 139.900 | 28mil km")
+   - Categorias: lista com tipos de veículo (SUV, Sedan, Picape, Hatch)
+   - Formas de pagamento: lista com opções (Financiamento, À vista, Consórcio)
+
+REGRAS:
+- SEMPRE envie uma mensagem de texto ANTES ou JUNTO com a mensagem interativa
+- NÃO use botões para perguntas abertas (nome, cidade, km) - use texto normal
+- Se o canal NÃO for WhatsApp, não use essas ferramentas (use texto normal)
+- Botões: ideal para 2-3 opções de decisão rápida
+- Lista: ideal para 3-10 itens com detalhes (veículos, categorias)
+
+=== CENÁRIOS ESPECIAIS ===
 MUDANÇA DE INTERESSE: Cliente muda de veículo ("mudei de ideia", "prefiro outro").
 Ação: 1) atualizar_lead(veiculo_interesse: novo, veiculo_id: null) 2) buscar_veiculos(novo modelo) 3) apresentar. Volte para ETAPA 2.
 
@@ -420,6 +440,77 @@ const TOOLS: Tool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "enviar_botoes",
+      description: "Envia botões interativos no WhatsApp (máx 3 botões). Use para decisões rápidas: sim/não, financiar/troca/visita, etc. REGRAS: Use APÓS apresentar informações (veículo, proposta). NÃO use para perguntas abertas. Cada botão máx 20 caracteres.",
+      parameters: {
+        type: "object",
+        properties: {
+          texto: { type: "string", description: "Texto principal da mensagem (máx 1024 chars). Inclua a pergunta ou informação antes dos botões." },
+          botoes: {
+            type: "array",
+            description: "Lista de botões (1-3). Cada botão tem id e titulo.",
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string", description: "ID único do botão (ex: btn_financiar, btn_troca, btn_visita)" },
+                titulo: { type: "string", description: "Texto do botão (máx 20 chars, ex: 'Quero financiar')" },
+              },
+              required: ["id", "titulo"],
+            },
+          },
+          cabecalho: { type: "string", description: "Cabeçalho opcional (máx 60 chars)" },
+          rodape: { type: "string", description: "Rodapé opcional (máx 60 chars, ex: 'Auto Inova - Ivoti/RS')" },
+        },
+        required: ["texto", "botoes"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "enviar_lista",
+      description: "Envia um menu de lista interativo no WhatsApp (máx 10 itens). Use para: listar veículos encontrados, formas de pagamento, categorias de veículos. REGRAS: Use quando há 3+ opções. Cada item tem título (máx 24 chars) e descrição opcional (máx 72 chars).",
+      parameters: {
+        type: "object",
+        properties: {
+          texto: { type: "string", description: "Texto principal da mensagem (máx 1024 chars). Descreva o contexto antes da lista." },
+          texto_botao: { type: "string", description: "Texto do botão que abre a lista (máx 20 chars, ex: 'Ver opções')" },
+          secoes: {
+            type: "array",
+            description: "Seções da lista. Cada seção tem título e itens.",
+            items: {
+              type: "object",
+              properties: {
+                titulo: { type: "string", description: "Título da seção (máx 24 chars)" },
+                itens: {
+                  type: "array",
+                  description: "Itens da seção (total de todos itens em todas seções: máx 10)",
+                  items: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string", description: "ID único do item (ex: veiculo_123, pagamento_financiamento)" },
+                      titulo: { type: "string", description: "Título do item (máx 24 chars)" },
+                      descricao: { type: "string", description: "Descrição do item (máx 72 chars, ex: 'R$ 139.900 | 28.000 km | Automático')" },
+                    },
+                    required: ["id", "titulo"],
+                  },
+                },
+              },
+              required: ["titulo", "itens"],
+            },
+          },
+          cabecalho: { type: "string", description: "Cabeçalho opcional (máx 60 chars)" },
+          rodape: { type: "string", description: "Rodapé opcional (máx 60 chars)" },
+        },
+        required: ["texto", "texto_botao", "secoes"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 /**
@@ -430,11 +521,30 @@ const TOOLS: Tool[] = [
  * 3. PERSONALITY (editable) - tone and strategy
  * 4. CONTEXT (dynamic) - customer data and conversation state
  */
+// Types for interactive WhatsApp messages
+export interface InteractiveButton {
+  id: string;
+  title: string;
+}
+export interface InteractiveListSection {
+  title: string;
+  rows: Array<{ id: string; title: string; description?: string }>;
+}
+export interface InteractiveMessage {
+  type: "buttons" | "list";
+  body: string;
+  buttons?: InteractiveButton[];
+  sections?: InteractiveListSection[];
+  buttonText?: string; // for list type
+  header?: string;
+  footer?: string;
+}
+
 export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
   customerMessage: string
-): Promise<{ response: string; leadData: Record<string, unknown> | null }> {
+): Promise<{ response: string; leadData: Record<string, unknown> | null; interactiveMessages?: InteractiveMessage[] }> {
   const startTime = Date.now();
 
   // === LAYER 1: CORE (editable from DB, with safe default) ===
@@ -572,6 +682,9 @@ export async function processAIMessage(
 
   // Track lead data collected during this interaction
   let collectedLeadData: Record<string, unknown> | null = null;
+
+  // Track interactive messages to send
+  const interactiveMessages: InteractiveMessage[] = [];
 
   // Detect if we should force vehicle search (skip if ad vehicle already pre-loaded)
   const forceSearch = adVehicleId ? false : shouldForceVehicleSearch(customerMessage);
@@ -730,6 +843,58 @@ export async function processAIMessage(
             } else {
               toolResult = "ID do veículo não fornecido.";
               toolResultCount = 0;
+            }
+
+          } else if (toolCall.function.name === "enviar_botoes") {
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
+            console.log(`[AI] enviar_botoes args:`, JSON.stringify(args));
+            if (args.texto && args.botoes && Array.isArray(args.botoes) && args.botoes.length > 0) {
+              const buttons = args.botoes.slice(0, 3).map((b: any) => ({
+                id: b.id || `btn_${Math.random().toString(36).slice(2, 8)}`,
+                title: (b.titulo || b.title || "").substring(0, 20),
+              }));
+              interactiveMessages.push({
+                type: "buttons",
+                body: args.texto,
+                buttons,
+                header: args.cabecalho,
+                footer: args.rodape,
+              });
+              toolResult = `Botões interativos preparados: ${buttons.map((b: any) => b.title).join(", ")}. Serão enviados após sua resposta de texto.`;
+              console.log(`[AI] Interactive buttons queued: ${buttons.length} buttons`);
+            } else {
+              toolResult = "Erro: texto e botoes são obrigatórios.";
+              toolSuccess = false;
+            }
+
+          } else if (toolCall.function.name === "enviar_lista") {
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
+            console.log(`[AI] enviar_lista args:`, JSON.stringify(args));
+            if (args.texto && args.texto_botao && args.secoes && Array.isArray(args.secoes)) {
+              const sections = args.secoes.map((s: any) => ({
+                title: (s.titulo || "").substring(0, 24),
+                rows: (s.itens || []).map((item: any) => ({
+                  id: item.id || `item_${Math.random().toString(36).slice(2, 8)}`,
+                  title: (item.titulo || "").substring(0, 24),
+                  description: item.descricao ? item.descricao.substring(0, 72) : undefined,
+                })),
+              }));
+              interactiveMessages.push({
+                type: "list",
+                body: args.texto,
+                buttonText: args.texto_botao,
+                sections,
+                header: args.cabecalho,
+                footer: args.rodape,
+              });
+              const totalItems = sections.reduce((sum: number, s: any) => sum + s.rows.length, 0);
+              toolResult = `Lista interativa preparada com ${totalItems} itens. Será enviada após sua resposta de texto.`;
+              console.log(`[AI] Interactive list queued: ${totalItems} items in ${sections.length} sections`);
+            } else {
+              toolResult = "Erro: texto, texto_botao e secoes são obrigatórios.";
+              toolSuccess = false;
             }
 
           } else if (toolCall.function.name === "rotear_para_vendedor") {
@@ -995,7 +1160,7 @@ export async function processAIMessage(
       console.error("[AI] Failed to generate daily summary:", summaryErr);
     }
 
-    return { response: fullResponse, leadData: collectedLeadData };
+    return { response: fullResponse, leadData: collectedLeadData, interactiveMessages: interactiveMessages.length > 0 ? interactiveMessages : undefined };
 
   } catch (error) {
     console.error("[AI] Error processing message:", error);

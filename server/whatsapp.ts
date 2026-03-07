@@ -480,12 +480,160 @@ async function sendDocumentMessage(to: string, documentUrl: string, filename?: s
   }
 }
 
+/**
+ * Send an interactive Reply Buttons message (up to 3 buttons)
+ * https://developers.facebook.com/docs/whatsapp/guides/interactive-messages
+ */
+async function sendReplyButtons(
+  to: string,
+  body: string,
+  buttons: Array<{ id: string; title: string }>,
+  header?: string,
+  footer?: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. Reply buttons not sent to:", to);
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  if (buttons.length === 0 || buttons.length > 3) {
+    console.error(`[WhatsApp] Reply buttons must have 1-3 buttons, got ${buttons.length}`);
+    return { success: false, error: "Reply buttons must have 1-3 buttons" };
+  }
+
+  // Validate button titles (max 20 chars) and IDs (max 256 chars)
+  const validButtons = buttons.map(b => ({
+    type: "reply" as const,
+    reply: {
+      id: b.id.substring(0, 256),
+      title: b.title.substring(0, 20),
+    },
+  }));
+
+  try {
+    const interactive: any = {
+      type: "button",
+      body: { text: body.substring(0, 1024) },
+      action: { buttons: validButtons },
+    };
+    if (header) interactive.header = { type: "text", text: header.substring(0, 60) };
+    if (footer) interactive.footer = { text: footer.substring(0, 60) };
+
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const messageId = response.data?.messages?.[0]?.id;
+    console.log(`[WhatsApp] Reply buttons sent to ${to}, ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send reply buttons to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
+ * Send an interactive List Message (up to 10 items in sections)
+ * https://developers.facebook.com/docs/whatsapp/guides/interactive-messages
+ */
+async function sendListMessage(
+  to: string,
+  body: string,
+  buttonText: string,
+  sections: Array<{
+    title: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  }>,
+  header?: string,
+  footer?: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. List message not sent to:", to);
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  // Validate: max 10 rows total across all sections
+  const totalRows = sections.reduce((sum, s) => sum + s.rows.length, 0);
+  if (totalRows === 0 || totalRows > 10) {
+    console.error(`[WhatsApp] List must have 1-10 rows total, got ${totalRows}`);
+    return { success: false, error: "List must have 1-10 rows total" };
+  }
+
+  // Validate row titles (max 24 chars), descriptions (max 72 chars), IDs (max 200 chars)
+  const validSections = sections.map(s => ({
+    title: s.title.substring(0, 24),
+    rows: s.rows.map(r => ({
+      id: r.id.substring(0, 200),
+      title: r.title.substring(0, 24),
+      ...(r.description && { description: r.description.substring(0, 72) }),
+    })),
+  }));
+
+  try {
+    const interactive: any = {
+      type: "list",
+      body: { text: body.substring(0, 1024) },
+      action: {
+        button: buttonText.substring(0, 20),
+        sections: validSections,
+      },
+    };
+    if (header) interactive.header = { type: "text", text: header.substring(0, 60) };
+    if (footer) interactive.footer = { text: footer.substring(0, 60) };
+
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "interactive",
+        interactive,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const messageId = response.data?.messages?.[0]?.id;
+    console.log(`[WhatsApp] List message sent to ${to}, ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send list message to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
 export {
   isConfigured,
   sendTextMessage,
   sendImageMessage,
   sendAudioMessage,
   sendDocumentMessage,
+  sendReplyButtons,
+  sendListMessage,
   markAsRead,
   getMediaUrl,
   downloadMedia,

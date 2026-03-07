@@ -882,3 +882,13 @@
 - [x] Migração automática de prompts legados (ai_prompt → ai_personality_prompt, limpa ai_prompt)
 - [x] Atualizar DEFAULT_SYSTEM_PROMPT legado para formato condensado
 - [x] 230 testes passando, 0 erros TypeScript
+
+## Feature - Rodada 59 (Reply Buttons + List Messages - Abordagem Híbrida)
+- [x] Criar funções sendReplyButtons e sendListMessage no whatsapp.ts
+- [x] Criar funções sendListMessage no whatsapp.ts (validação de 1-10 rows, seções)
+- [x] Criar tools enviar_botoes e enviar_lista no agente de IA
+- [x] Processar respostas interativas (button_reply, list_reply) no webhook Express
+- [x] Enviar mensagens interativas após texto no debounce callback (800ms delay)
+- [x] Salvar mensagens interativas no banco para exibição no dashboard
+- [x] Integrar ao COMMERCIAL_PROMPT (seção MENSAGENS INTERATIVAS com regras)
+- [x] 241 testes passando, 0 erros TypeScript

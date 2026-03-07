@@ -163,6 +163,24 @@ async function startServer() {
           content = `[Documento: ${filename}]`;
         } else if (msg.type === "location") {
           content = `[Localização: ${msg.location?.latitude}, ${msg.location?.longitude}]`;
+        } else if (msg.type === "interactive") {
+          // Handle interactive message replies (button clicks and list selections)
+          const interactiveType = msg.interactive?.type;
+          if (interactiveType === "button_reply") {
+            const buttonId = msg.interactive?.button_reply?.id || "";
+            const buttonTitle = msg.interactive?.button_reply?.title || "";
+            content = buttonTitle; // Use the button title as the message content
+            console.log(`[Webhook] Interactive button reply: id=${buttonId}, title=${buttonTitle}`);
+          } else if (interactiveType === "list_reply") {
+            const listId = msg.interactive?.list_reply?.id || "";
+            const listTitle = msg.interactive?.list_reply?.title || "";
+            const listDescription = msg.interactive?.list_reply?.description || "";
+            content = listTitle; // Use the list item title as the message content
+            if (listDescription) content += ` - ${listDescription}`;
+            console.log(`[Webhook] Interactive list reply: id=${listId}, title=${listTitle}, desc=${listDescription}`);
+          } else {
+            content = `[Resposta interativa: ${interactiveType}]`;
+          }
         } else {
           content = `[${msg.type}]`;
         }

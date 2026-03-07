@@ -20,7 +20,7 @@ import {
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
-import { sendTextMessage, sendImageMessage, sendAudioMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { sendTextMessage, sendImageMessage, sendAudioMessage, sendReplyButtons, sendListMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
 import { sendPlatformMessage, sendPlatformImage, isInstagramConfigured, isFacebookConfigured, getPlatformUserProfile } from "./instagramFacebook";
 import { storagePut } from "./storage";
 import { convertWebmToOgg, needsConversionForWhatsApp, isWebmAudio } from "./audioConverter";
@@ -139,6 +139,60 @@ async function initDebounce() {
           sendPlatformVehicleImages(conversation.channel, conversation.platformUserId, aiResult.response).catch(err =>
             console.error("[Debounce] Error sending platform vehicle images:", err)
           );
+        }
+
+        // Send interactive messages (buttons/lists) if any were queued by the AI
+        if (aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+          for (const im of aiResult.interactiveMessages) {
+            try {
+              // Small delay to ensure text message arrives first
+              await new Promise(resolve => setTimeout(resolve, 800));
+              
+              let interactiveResult: { success: boolean; messageId?: string; error?: string } = { success: false };
+              
+              if (im.type === "buttons" && im.buttons && im.buttons.length > 0) {
+                interactiveResult = await sendReplyButtons(
+                  conversation.phone,
+                  im.body,
+                  im.buttons,
+                  im.header,
+                  im.footer
+                );
+                console.log(`[Debounce] Conversa ${conversationId}: reply buttons enviados (${im.buttons.length} botões) - success: ${interactiveResult.success}`);
+              } else if (im.type === "list" && im.sections && im.sections.length > 0 && im.buttonText) {
+                interactiveResult = await sendListMessage(
+                  conversation.phone,
+                  im.body,
+                  im.buttonText,
+                  im.sections,
+                  im.header,
+                  im.footer
+                );
+                const totalItems = im.sections.reduce((sum, s) => sum + s.rows.length, 0);
+                console.log(`[Debounce] Conversa ${conversationId}: list message enviada (${totalItems} itens) - success: ${interactiveResult.success}`);
+              }
+
+              // Save interactive message to DB for display in dashboard
+              if (interactiveResult.success) {
+                const interactiveContent = im.type === "buttons"
+                  ? `[Botões: ${im.buttons!.map(b => b.title).join(" | ")}]`
+                  : `[Lista: ${im.sections!.flatMap(s => s.rows.map(r => r.title)).join(" | ")}]`;
+                const interactiveMsg = await createMessage({
+                  conversationId,
+                  content: `${im.body}\n\n${interactiveContent}`,
+                  senderType: "bot",
+                  senderName: "Auto Inova IA",
+                  messageType: "text",
+                });
+                emitNewMessage(conversationId, interactiveMsg);
+                if (interactiveResult.messageId) {
+                  await updateMessageExternalId(interactiveMsg.id, interactiveResult.messageId);
+                }
+              }
+            } catch (interactiveErr) {
+              console.error(`[Debounce] Conversa ${conversationId}: erro ao enviar mensagem interativa:`, interactiveErr);
+            }
+          }
         }
       }
     } catch (err) {
