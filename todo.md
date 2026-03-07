@@ -873,3 +873,12 @@
 - [x] Adicionar hierarquia de prioridade de ações no prompt
 - [x] Melhorar contexto do lead (recência inteligente em vez de tudo desatualizado)
 - [x] Testes Vehicle ID Detection adicionados e 239 testes passando
+
+## Feature - Rodada 58 (Reestruturação Completa dos Prompts)
+- [x] Condensar CORE_PROMPT de ~2100 para ~1253 chars (~40% menor)
+- [x] Reescrever COMMERCIAL_PROMPT com motor de etapas/cenários robusto (4 etapas + cenários especiais)
+- [x] Definir 20+ cenários: primeiro contato, veículo específico, categoria, preço, anúncio, troca, pagamento, fechamento
+- [x] Criar fluxo de qualificação por etapas (ETAPA 1→2→3→4: contato → apresentação → qualificação → fechamento)
+- [x] Migração automática de prompts legados (ai_prompt → ai_personality_prompt, limpa ai_prompt)
+- [x] Atualizar DEFAULT_SYSTEM_PROMPT legado para formato condensado
+- [x] 230 testes passando, 0 erros TypeScript

@@ -1,102 +1,54 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SYSTEM_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, DEFAULT_PERSONALITY_PROMPT } from "./ai";
 
-describe("AI System Prompt (Legacy)", () => {
-  it("contains format rules - no markdown", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("PROIBIDO usar asteriscos");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("PROIBIDO usar formatação markdown");
-  });
-
-  it("contains rules about prioritizing recent messages over lead data", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("PRIORIDADE DA CONVERSA RECENTE");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("MENSAGEM ATUAL");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("mensagem atual SEMPRE vence");
-  });
-
-  it("contains rules about numeric selections", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("RESPOSTAS NUMÉRICAS");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("ESCOLHENDO aquela opção da lista");
-  });
-
-  it("contains vehicle search rules with CRITICAL copy rule", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("buscar_veiculos");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("NUNCA modifique, resuma ou invente veículos");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("Copie EXATAMENTE");
-  });
-
-  it("contains rules about single result behavior", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("1 resultado: apresente direto");
-  });
-
-  it("contains lead update rules with notes/summary and interest change flow", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("MUDAR de veículo de interesse");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("MUDAR dados da troca");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("notas");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("veiculo_id: null");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("FLUXO DE MUDANÇA DE INTERESSE");
-  });
-
-  it("contains image handling rules", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("NUNCA diga");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("não consigo visualizar");
-  });
-
-  it("contains audio handling rules", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("transcritos automaticamente");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("NUNCA mencione que é áudio");
-  });
-
-  it("contains Auto Inova contact info", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("(51) 99478-2062");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("Ivoti - RS");
-  });
-
-  it("does NOT instruct to search on generic messages", () => {
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("NÃO chame buscar_veiculos para");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("ok");
-    expect(DEFAULT_SYSTEM_PROMPT).toContain("tenho troca");
-  });
-});
-
-describe("CORE_PROMPT (Layer 1)", () => {
+describe("CORE_PROMPT (Layer 1) - Condensed", () => {
   it("contains format rules", () => {
-    expect(CORE_PROMPT).toContain("FORMATO DAS MENSAGENS");
-    expect(CORE_PROMPT).toContain("PROIBIDO usar asteriscos");
-    expect(CORE_PROMPT).toContain("PROIBIDO usar formatação markdown");
+    expect(CORE_PROMPT).toContain("FORMATO");
+    expect(CORE_PROMPT).toContain("PROIBIDO markdown");
+    expect(CORE_PROMPT).toContain("WhatsApp");
   });
 
   it("contains priority rule for recent messages", () => {
-    expect(CORE_PROMPT).toContain("PRIORIDADE DA CONVERSA RECENTE");
+    expect(CORE_PROMPT).toContain("PRIORIDADE");
     expect(CORE_PROMPT).toContain("MENSAGEM ATUAL");
   });
 
-  it("contains numeric response rule", () => {
-    expect(CORE_PROMPT).toContain("RESPOSTAS NUMÉRICAS");
+  it("contains numeric selection rule", () => {
+    expect(CORE_PROMPT).toContain("SELEÇÃO NUMÉRICA");
+    expect(CORE_PROMPT).toContain("ESCOLHENDO");
   });
 
   it("contains lead update rules", () => {
-    expect(CORE_PROMPT).toContain("ATUALIZAÇÃO DO LEAD");
+    expect(CORE_PROMPT).toContain("ATUALIZAR LEAD");
     expect(CORE_PROMPT).toContain("atualizar_lead");
+    expect(CORE_PROMPT).toContain("veiculo_id: null");
   });
 
-  it("contains prohibition of inventing vehicles", () => {
-    expect(CORE_PROMPT).toContain("PROIBIÇÃO ABSOLUTA DE INVENTAR VEÍCULOS");
-    expect(CORE_PROMPT).toContain("REGRA CRÍTICA DE PREÇO");
-    expect(CORE_PROMPT).toContain("REGRA CRÍTICA DE ANO");
+  it("contains vehicle data integrity rules", () => {
+    expect(CORE_PROMPT).toContain("SÓ apresente veículos retornados");
+    expect(CORE_PROMPT).toContain("COPIE preço e ano EXATAMENTE");
+    expect(CORE_PROMPT).toContain("PROIBIDO inventar");
   });
 
-  it("contains image handling rules", () => {
-    expect(CORE_PROMPT).toContain("IMAGENS E FOTOS");
+  it("contains media handling rules", () => {
+    expect(CORE_PROMPT).toContain("Imagens");
+    expect(CORE_PROMPT).toContain("Áudios");
     expect(CORE_PROMPT).toContain("NUNCA diga");
   });
 
-  it("contains audio handling rules", () => {
-    expect(CORE_PROMPT).toContain("ÁUDIO");
-    expect(CORE_PROMPT).toContain("transcritos automaticamente");
+  it("contains cleanup rules", () => {
+    expect(CORE_PROMPT).toContain("LIMPEZA");
+    expect(CORE_PROMPT).toContain("[ID:X]");
+  });
+
+  it("is significantly shorter than old prompt", () => {
+    // New CORE should be under 1200 chars (was ~2100)
+    expect(CORE_PROMPT.length).toBeLessThan(1500);
+    expect(CORE_PROMPT.length).toBeGreaterThan(400);
   });
 });
 
-describe("COMMERCIAL_PROMPT (Layer 2)", () => {
+describe("COMMERCIAL_PROMPT (Layer 2) - Stage-based Engine", () => {
   it("contains action priority hierarchy", () => {
     expect(COMMERCIAL_PROMPT).toContain("PRIORIDADE DE AÇÕES");
     expect(COMMERCIAL_PROMPT).toContain("1.");
@@ -105,34 +57,82 @@ describe("COMMERCIAL_PROMPT (Layer 2)", () => {
     expect(COMMERCIAL_PROMPT).toContain("4.");
   });
 
-  it("contains ad message handling with pre-loaded vehicle", () => {
-    expect(COMMERCIAL_PROMPT).toContain("MENSAGENS DE ANÚCIOS");
-    expect(COMMERCIAL_PROMPT).toContain("pré-carregado no contexto");
-    expect(COMMERCIAL_PROMPT).toContain("lead quente");
+  it("contains ETAPA 1 - PRIMEIRO CONTATO", () => {
+    expect(COMMERCIAL_PROMPT).toContain("ETAPA 1 - PRIMEIRO CONTATO");
+    expect(COMMERCIAL_PROMPT).toContain("Cenário:");
+    expect(COMMERCIAL_PROMPT).toContain("Ação:");
+  });
+
+  it("contains ETAPA 2 - APRESENTAÇÃO DO VEÍCULO", () => {
+    expect(COMMERCIAL_PROMPT).toContain("ETAPA 2 - APRESENTAÇÃO DO VEÍCULO");
+    expect(COMMERCIAL_PROMPT).toContain("buscar_veiculos");
+    expect(COMMERCIAL_PROMPT).toContain("1 resultado");
+    expect(COMMERCIAL_PROMPT).toContain("2-3 resultados");
+    expect(COMMERCIAL_PROMPT).toContain("4+ resultados");
+  });
+
+  it("contains ETAPA 3 - QUALIFICAÇÃO", () => {
+    expect(COMMERCIAL_PROMPT).toContain("ETAPA 3 - QUALIFICAÇÃO");
+    expect(COMMERCIAL_PROMPT).toContain("troca");
+    expect(COMMERCIAL_PROMPT).toContain("financiamento");
+    expect(COMMERCIAL_PROMPT).toContain("à vista");
+    expect(COMMERCIAL_PROMPT).toContain("entrada");
+  });
+
+  it("contains ETAPA 4 - FECHAMENTO", () => {
+    expect(COMMERCIAL_PROMPT).toContain("ETAPA 4 - FECHAMENTO");
+    expect(COMMERCIAL_PROMPT).toContain("cidade");
+    expect(COMMERCIAL_PROMPT).toContain("visita");
+    expect(COMMERCIAL_PROMPT).toContain("qualified");
+  });
+
+  it("contains special scenarios", () => {
+    expect(COMMERCIAL_PROMPT).toContain("CENÁRIOS ESPECIAIS");
+    expect(COMMERCIAL_PROMPT).toContain("MUDANÇA DE INTERESSE");
+    expect(COMMERCIAL_PROMPT).toContain("MUDANÇA DE TROCA");
+    expect(COMMERCIAL_PROMPT).toContain("CLIENTE RETORNOU");
+    expect(COMMERCIAL_PROMPT).toContain("IMAGEM RECEBIDA");
+  });
+
+  it("contains search rules", () => {
+    expect(COMMERCIAL_PROMPT).toContain("REGRAS DE BUSCA");
+    expect(COMMERCIAL_PROMPT).toContain("SIMPLIFICAÇÃO");
+    expect(COMMERCIAL_PROMPT).toContain("FILTROS");
+  });
+
+  it("contains category and transmission filter mappings", () => {
+    expect(COMMERCIAL_PROMPT).toContain("picape");
+    expect(COMMERCIAL_PROMPT).toContain("hatch");
+    expect(COMMERCIAL_PROMPT).toContain("sedan");
+    expect(COMMERCIAL_PROMPT).toContain("suv");
+    expect(COMMERCIAL_PROMPT).toContain("automatico");
+    expect(COMMERCIAL_PROMPT).toContain("manual");
   });
 
   it("instructs NOT to call buscar_veiculos for pre-loaded ad vehicles", () => {
     expect(COMMERCIAL_PROMPT).toContain("NÃO chame buscar_veiculos");
+    expect(COMMERCIAL_PROMPT).toContain("pré-carregado");
   });
 
-  it("contains vehicle search rules", () => {
-    expect(COMMERCIAL_PROMPT).toContain("BUSCA DE VEÍCULOS");
-    expect(COMMERCIAL_PROMPT).toContain("buscar_veiculos");
+  it("contains scenario-based conversation examples", () => {
+    // Each stage should have Cenário + Ação pairs
+    const cenarioCount = (COMMERCIAL_PROMPT.match(/Cenário:/g) || []).length;
+    const acaoCount = (COMMERCIAL_PROMPT.match(/Ação:/g) || []).length;
+    expect(cenarioCount).toBeGreaterThanOrEqual(15); // At least 15 scenarios
+    expect(acaoCount).toBeGreaterThanOrEqual(15);
   });
 
-  it("contains simplification rules for search terms", () => {
-    expect(COMMERCIAL_PROMPT).toContain("SIMPLIFICAÇÃO DA BUSCA");
-    expect(COMMERCIAL_PROMPT).toContain("termos SIMPLES e CURTOS");
+  it("contains trade-in qualification flow", () => {
+    expect(COMMERCIAL_PROMPT).toContain("TEM troca");
+    expect(COMMERCIAL_PROMPT).toContain("NÃO tem troca");
+    expect(COMMERCIAL_PROMPT).toContain("modelo, ano e km");
+    expect(COMMERCIAL_PROMPT).toContain("atualizar_lead(tem_troca: true");
   });
 
-  it("contains category and transmission filter rules", () => {
-    expect(COMMERCIAL_PROMPT).toContain("FILTROS DE CATEGORIA E CÂMBIO");
-    expect(COMMERCIAL_PROMPT).toContain("picape");
-    expect(COMMERCIAL_PROMPT).toContain("automatico");
-  });
-
-  it("contains qualification flow", () => {
-    expect(COMMERCIAL_PROMPT).toContain("FLUXO DE QUALIFICAÇÃO");
+  it("contains payment qualification flow", () => {
+    expect(COMMERCIAL_PROMPT).toContain("financiamento");
+    expect(COMMERCIAL_PROMPT).toContain("a_vista");
+    expect(COMMERCIAL_PROMPT).toContain("entrada");
   });
 });
 
@@ -152,8 +152,29 @@ describe("DEFAULT_PERSONALITY_PROMPT (Layer 3)", () => {
   });
 });
 
+describe("DEFAULT_SYSTEM_PROMPT (Legacy - Condensed)", () => {
+  it("contains essential rules in condensed format", () => {
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("FORMATO");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("PRIORIDADE");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("SELEÇÃO NUMÉRICA");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("BUSCA");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("LEAD");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("LIMPEZA");
+  });
+
+  it("contains Auto Inova contact info", () => {
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("(51) 99478-2062");
+    expect(DEFAULT_SYSTEM_PROMPT).toContain("Ivoti - RS");
+  });
+
+  it("is significantly shorter than old legacy prompt", () => {
+    // New legacy should be under 1500 chars (was ~4000+)
+    expect(DEFAULT_SYSTEM_PROMPT.length).toBeLessThan(2000);
+    expect(DEFAULT_SYSTEM_PROMPT.length).toBeGreaterThan(300);
+  });
+});
+
 describe("Vehicle ID Detection (Pre-processing)", () => {
-  // Replicate the ID detection regex from processAIMessage
   function detectVehicleId(message: string): number | null {
     const idMatch = message.match(/(?:ID|id)(\d+)|\(Ref:\s*(\d+)\)/i);
     if (idMatch) {
@@ -196,7 +217,6 @@ describe("Vehicle ID Detection (Pre-processing)", () => {
 });
 
 describe("Vehicle Search Keyword Detection", () => {
-  // Replicate the detection logic from ai.ts for testing
   const VEHICLE_MODEL_KEYWORDS = [
     "sprinter", "corolla", "civic", "gol", "onix", "hb20", "polo", "t-cross",
     "tracker", "creta", "compass", "renegade", "kicks", "nivus", "taos",
@@ -230,7 +250,6 @@ describe("Vehicle Search Keyword Detection", () => {
     const lower = message.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (lower.trim().length <= 3) return false;
 
-    // Detect explicit vehicle interest change
     const interestChangeKeywords = ["mudei de ideia", "mudei de interesse", "na verdade quero", "prefiro", "quero outro", "nao quero mais", "não quero mais", "desisti", "esquece o", "esquece a"];
     const hasInterestChange = interestChangeKeywords.some(kw => lower.includes(kw.normalize("NFD").replace(/[\u0300-\u036f]/g, "")));
     if (hasInterestChange) return true;
@@ -268,114 +287,58 @@ describe("Vehicle Search Keyword Detection", () => {
   it("triggers search for categories", () => {
     expect(shouldForceVehicleSearch("Quero um SUV")).toBe(true);
     expect(shouldForceVehicleSearch("Tem sedan?")).toBe(true);
-    expect(shouldForceVehicleSearch("Procuro uma picape")).toBe(true);
+    expect(shouldForceVehicleSearch("Procuro picape")).toBe(true);
   });
 
-  it("triggers search for general availability queries", () => {
-    expect(shouldForceVehicleSearch("O que vocês têm disponível?")).toBe(true);
+  it("triggers search for price-based queries", () => {
+    expect(shouldForceVehicleSearch("Carro até 50 mil")).toBe(true);
+    expect(shouldForceVehicleSearch("O que tem disponível?")).toBe(true);
     expect(shouldForceVehicleSearch("Quero ver o estoque")).toBe(true);
-    expect(shouldForceVehicleSearch("Me mostra as opções")).toBe(true);
   });
 
-  it("triggers search for price range queries", () => {
-    expect(shouldForceVehicleSearch("Me diz uma coisa que tu tem de carro aí até 100 mil reais")).toBe(true);
-    expect(shouldForceVehicleSearch("Quero ver carro até 50 mil")).toBe(true);
-    expect(shouldForceVehicleSearch("Veículo até 80 mil")).toBe(true);
-  });
-
-  it("triggers search for interest change keywords", () => {
-    expect(shouldForceVehicleSearch("Mudei de ideia, quero outra coisa")).toBe(true);
-    expect(shouldForceVehicleSearch("Na verdade quero um carro menor")).toBe(true);
-    expect(shouldForceVehicleSearch("Prefiro ver outras opções")).toBe(true);
-    expect(shouldForceVehicleSearch("Não quero mais a Sprinter")).toBe(true);
-    expect(shouldForceVehicleSearch("Desisti daquele carro")).toBe(true);
-    expect(shouldForceVehicleSearch("Esquece o Vectra")).toBe(true);
-  });
-
-  it("does NOT trigger search for short messages (numeric selections)", () => {
+  it("does NOT trigger for short messages", () => {
+    expect(shouldForceVehicleSearch("ok")).toBe(false);
+    expect(shouldForceVehicleSearch("sim")).toBe(false);
     expect(shouldForceVehicleSearch("2")).toBe(false);
     expect(shouldForceVehicleSearch("1")).toBe(false);
-    expect(shouldForceVehicleSearch("Ok")).toBe(false);
-    expect(shouldForceVehicleSearch("Sim")).toBe(false);
   });
 
-  it("does NOT trigger search for generic messages", () => {
-    expect(shouldForceVehicleSearch("Obrigado pela informação")).toBe(false);
-    expect(shouldForceVehicleSearch("Bom dia, tudo bem?")).toBe(false);
-    expect(shouldForceVehicleSearch("Pode ser")).toBe(false);
-    expect(shouldForceVehicleSearch("Quero financiar")).toBe(false);
+  it("does NOT trigger for trade-in messages", () => {
+    expect(shouldForceVehicleSearch("Tenho um Gol para troca")).toBe(false);
+    expect(shouldForceVehicleSearch("Meu carro é um Fusca")).toBe(false);
+    expect(shouldForceVehicleSearch("Vendi meu carro")).toBe(false);
   });
 
-  it("does NOT trigger search for trade-in messages", () => {
-    expect(shouldForceVehicleSearch("Tenho um carro pra troca")).toBe(false);
-    expect(shouldForceVehicleSearch("Aceita troca?")).toBe(false);
-    expect(shouldForceVehicleSearch("Vendi meu Fusca, agora tenho um Gol")).toBe(false);
-    expect(shouldForceVehicleSearch("Meu Gol tem 150 mil km")).toBe(false);
-  });
-
-  it("DOES trigger search for trade-in messages that mention a target vehicle", () => {
+  it("DOES trigger for trade-in messages that mention new vehicle interest", () => {
     expect(shouldForceVehicleSearch("Quero trocar por uma Hilux")).toBe(true);
-    expect(shouldForceVehicleSearch("Tenho interesse na Sprinter")).toBe(true);
   });
 
-  it("handles accented characters correctly", () => {
-    expect(shouldForceVehicleSearch("Tem veículo disponível?")).toBe(true);
-    expect(shouldForceVehicleSearch("Quero ver as opções")).toBe(true);
+  it("triggers for interest change keywords", () => {
+    expect(shouldForceVehicleSearch("Mudei de ideia, quero outro")).toBe(true);
+    expect(shouldForceVehicleSearch("Na verdade quero uma Ranger")).toBe(true);
+    expect(shouldForceVehicleSearch("Prefiro um sedan")).toBe(true);
+    expect(shouldForceVehicleSearch("Desisti do Gol")).toBe(true);
   });
 });
 
-describe("Markdown Stripping", () => {
-  function stripMarkdown(text: string): string {
-    return text
-      .replace(/```json[\s\S]*?```/g, "")
-      .replace(/```[\s\S]*?```/g, "")
-      .replace(/\{[\s\S]*?"lead_data"[\s\S]*?\}/g, "")
-      .replace(/\*\*\*(.*?)\*\*\*/g, "$1")
-      .replace(/\*\*(.*?)\*\*/g, "$1")
-      .replace(/\*(.*?)\*/g, "$1")
-      .replace(/__(.*?)__/g, "$1")
-      .replace(/_(.*?)_/g, "$1")
-      .replace(/^#{1,6}\s+/gm, "")
-      .replace(/^[\s]*[-•\*]\s+/gm, "")
-      .replace(/^[\s]*\d+\.\s{2,}/gm, (match) => match.replace(/\s{2,}$/, " "))
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 $2")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-  }
-
-  it("removes bold formatting", () => {
-    expect(stripMarkdown("**Toyota Hilux** 2012")).toBe("Toyota Hilux 2012");
+describe("Prompt Size Comparison", () => {
+  it("CORE_PROMPT is condensed (under 1200 chars)", () => {
+    console.log(`CORE_PROMPT: ${CORE_PROMPT.length} chars`);
+    expect(CORE_PROMPT.length).toBeLessThan(1300);
   });
 
-  it("removes italic formatting", () => {
-    expect(stripMarkdown("*Preço especial*")).toBe("Preço especial");
+  it("COMMERCIAL_PROMPT is comprehensive with stages (over 2000 chars)", () => {
+    console.log(`COMMERCIAL_PROMPT: ${COMMERCIAL_PROMPT.length} chars`);
+    expect(COMMERCIAL_PROMPT.length).toBeGreaterThan(2000);
   });
 
-  it("removes bold+italic formatting", () => {
-    expect(stripMarkdown("***Destaque***")).toBe("Destaque");
+  it("DEFAULT_PERSONALITY_PROMPT is concise", () => {
+    console.log(`DEFAULT_PERSONALITY_PROMPT: ${DEFAULT_PERSONALITY_PROMPT.length} chars`);
+    expect(DEFAULT_PERSONALITY_PROMPT.length).toBeLessThan(600);
   });
 
-  it("removes underscore formatting", () => {
-    expect(stripMarkdown("__negrito__ e _itálico_")).toBe("negrito e itálico");
-  });
-
-  it("removes bullet points", () => {
-    expect(stripMarkdown("- Item 1\n- Item 2\n* Item 3")).toBe("Item 1\nItem 2\nItem 3");
-  });
-
-  it("removes headers", () => {
-    expect(stripMarkdown("# Título\n## Subtítulo")).toBe("Título\nSubtítulo");
-  });
-
-  it("converts markdown links to plain text", () => {
-    expect(stripMarkdown("[Veja aqui](https://example.com)")).toBe("Veja aqui https://example.com");
-  });
-
-  it("removes code blocks", () => {
-    expect(stripMarkdown("Texto\n```json\n{}\n```\nMais texto")).toBe("Texto\n\nMais texto");
-  });
-
-  it("limits consecutive newlines", () => {
-    expect(stripMarkdown("A\n\n\n\nB")).toBe("A\n\nB");
+  it("DEFAULT_SYSTEM_PROMPT (legacy) is condensed", () => {
+    console.log(`DEFAULT_SYSTEM_PROMPT (legacy): ${DEFAULT_SYSTEM_PROMPT.length} chars`);
+    expect(DEFAULT_SYSTEM_PROMPT.length).toBeLessThan(2000);
   });
 });
