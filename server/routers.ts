@@ -16,6 +16,10 @@ import {
   listAiDecisions, getAiDecisionsByConversation, getAiDecisionStats,
   updateMessageExternalId, setWindowExpired,
   getLeadSummaries, getLeadSummariesByConversation, upsertLeadSummary, getFullLeadSummaryText,
+  listChatFlows, getChatFlowById, createChatFlow, updateChatFlow, deleteChatFlow, getActiveChatFlows,
+  listChatFlowNodes, getChatFlowNodeById, createChatFlowNode, updateChatFlowNode, deleteChatFlowNode, bulkUpsertNodes,
+  listChatFlowEdges, createChatFlowEdge, deleteChatFlowEdge, replaceFlowEdges,
+  getActiveFlowSession, createFlowSession, updateFlowSession, getFlowSessionsByFlow,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -65,6 +69,7 @@ import {
 import { listTemplates, sendWhatsAppTemplate, isTemplateApproved, isTemplatesConfigured } from "./whatsappTemplates";
 import { invokeLLM } from "./_core/llm";
 import { runTokenHealthCheck, getLastCheckResults } from "./tokenMonitor";
+import { processFlowMessage, cancelFlowSession } from "./flowEngine";
 
 /**
  * Inicializa o debounce callback e carrega delay do banco
@@ -91,6 +96,37 @@ async function initDebounce() {
 
       console.log(`[Debounce] Conversa ${conversationId}: processando ${messages.length} mensagem(ns) agrupada(s)`);
       emitTypingIndicator(conversationId, true, "Auto Inova IA");
+
+      // === FLOW ENGINE: Tentar processar via fluxo programado ===
+      try {
+        const flowResult = await processFlowMessage({
+          conversationId,
+          phone: conversation.phone || "",
+          customerMessage: groupedContent,
+          contactName: conversation.contactName || undefined,
+        });
+
+        if (flowResult.handled) {
+          console.log(`[Debounce] Conversa ${conversationId}: processado pelo Flow Engine (${flowResult.responses.length} respostas, waiting: ${flowResult.waitingForInput})`);
+          emitTypingIndicator(conversationId, false, "Auto Inova IA");
+
+          // Save flow responses to DB and emit
+          for (const response of flowResult.responses) {
+            const botMsg = await createMessage({
+              conversationId,
+              content: response,
+              senderType: "bot",
+              senderName: "Auto Inova IA",
+              messageType: "text",
+            });
+            emitNewMessage(conversationId, botMsg);
+          }
+          return; // Flow handled, don't pass to AI
+        }
+      } catch (flowErr) {
+        console.error(`[Debounce] Conversa ${conversationId}: erro no Flow Engine, fallback para IA:`, flowErr);
+      }
+      // === END FLOW ENGINE ===
 
       const recentMessages = await listMessages(conversationId, 30);
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent);
@@ -2108,6 +2144,192 @@ const vendorRouter = router({
     }),
 });
 
+// ─── Chat Flow Router ─────────────────────────────────────────
+const flowRouter = router({
+  list: protectedProcedure.query(async () => {
+    const flows = await listChatFlows();
+    // Count nodes per flow
+    const result = [];
+    for (const flow of flows) {
+      const nodes = await listChatFlowNodes(flow.id);
+      const sessions = await getFlowSessionsByFlow(flow.id);
+      result.push({
+        ...flow,
+        nodeCount: nodes.length,
+        sessionCount: sessions.length,
+        activeSessionCount: sessions.filter(s => s.status === "active").length,
+      });
+    }
+    return result;
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const flow = await getChatFlowById(input.id);
+      if (!flow) throw new Error("Flow not found");
+      const nodes = await listChatFlowNodes(input.id);
+      const edges = await listChatFlowEdges(input.id);
+      return { flow, nodes, edges };
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest"]),
+      triggerValue: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const id = await createChatFlow({
+        name: input.name,
+        description: input.description || null,
+        trigger: input.trigger,
+        triggerValue: input.triggerValue || null,
+        active: false,
+        priority: 0,
+        createdBy: ctx.user.id,
+      });
+      // Create default start node
+      await createChatFlowNode({
+        flowId: id,
+        nodeType: "start",
+        label: "Início",
+        data: {},
+        positionX: 250,
+        positionY: 50,
+      });
+      return { id };
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest"]).optional(),
+      triggerValue: z.string().optional(),
+      active: z.boolean().optional(),
+      priority: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateChatFlow(id, data as any);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteChatFlow(input.id);
+      return { success: true };
+    }),
+
+  // Save entire flow (nodes + edges) in one operation
+  saveFlow: adminProcedure
+    .input(z.object({
+      flowId: z.number(),
+      nodes: z.array(z.object({
+        id: z.number().optional(),
+        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "end"]),
+        label: z.string().optional(),
+        data: z.any(),
+        positionX: z.number(),
+        positionY: z.number(),
+      })),
+      edges: z.array(z.object({
+        sourceNodeId: z.number(),
+        targetNodeId: z.number(),
+        sourceHandle: z.string().optional(),
+        label: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      // Delete old nodes that are not in the new list
+      const existingNodes = await listChatFlowNodes(input.flowId);
+      const newNodeIds = input.nodes.filter(n => n.id).map(n => n.id!);
+      for (const existing of existingNodes) {
+        if (!newNodeIds.includes(existing.id)) {
+          await deleteChatFlowNode(existing.id);
+        }
+      }
+      // Upsert nodes
+      const nodeIds = await bulkUpsertNodes(input.flowId, input.nodes.map(n => ({
+        id: n.id,
+        flowId: input.flowId,
+        nodeType: n.nodeType,
+        label: n.label || null,
+        data: n.data || {},
+        positionX: n.positionX,
+        positionY: n.positionY,
+      })));
+      // Build ID mapping (old temp IDs -> new real IDs)
+      const idMap = new Map<number, number>();
+      input.nodes.forEach((n, i) => {
+        const oldId = n.id || -(i + 1); // temp negative IDs for new nodes
+        idMap.set(oldId, nodeIds[i]);
+      });
+      // Replace edges with mapped IDs
+      const mappedEdges = input.edges.map(e => ({
+        flowId: input.flowId,
+        sourceNodeId: idMap.get(e.sourceNodeId) || e.sourceNodeId,
+        targetNodeId: idMap.get(e.targetNodeId) || e.targetNodeId,
+        sourceHandle: e.sourceHandle || "default",
+        label: e.label || null,
+      }));
+      await replaceFlowEdges(input.flowId, mappedEdges);
+      return { success: true, nodeIds };
+    }),
+
+  // Duplicate a flow
+  duplicate: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const flow = await getChatFlowById(input.id);
+      if (!flow) throw new Error("Flow not found");
+      const nodes = await listChatFlowNodes(input.id);
+      const edges = await listChatFlowEdges(input.id);
+      // Create new flow
+      const newFlowId = await createChatFlow({
+        name: `${flow.name} (cópia)`,
+        description: flow.description,
+        trigger: flow.trigger,
+        triggerValue: flow.triggerValue,
+        active: false,
+        priority: flow.priority,
+        createdBy: ctx.user.id,
+      });
+      // Copy nodes with ID mapping
+      const nodeIdMap = new Map<number, number>();
+      for (const node of nodes) {
+        const newNodeId = await createChatFlowNode({
+          flowId: newFlowId,
+          nodeType: node.nodeType,
+          label: node.label,
+          data: node.data,
+          positionX: node.positionX,
+          positionY: node.positionY,
+        });
+        nodeIdMap.set(node.id, newNodeId);
+      }
+      // Copy edges with mapped IDs
+      for (const edge of edges) {
+        const newSource = nodeIdMap.get(edge.sourceNodeId);
+        const newTarget = nodeIdMap.get(edge.targetNodeId);
+        if (newSource && newTarget) {
+          await createChatFlowEdge({
+            flowId: newFlowId,
+            sourceNodeId: newSource,
+            targetNodeId: newTarget,
+            sourceHandle: edge.sourceHandle,
+            label: edge.label,
+          });
+        }
+      }
+      return { id: newFlowId };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2135,6 +2357,7 @@ export const appRouter = router({
   whatsappTemplate: whatsappTemplateRouter,
   tokenHealth: tokenHealthRouter,
   vendor: vendorRouter,
+  flow: flowRouter,
 });
 
 export type AppRouter = typeof appRouter;

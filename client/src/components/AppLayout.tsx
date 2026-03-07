@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key, Sun, Moon } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key, Sun, Moon, GitBranch } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -30,6 +30,7 @@ const navItems: NavItem[] = [
   { icon: UsersRound, label: "Equipe", path: "/team", allowedCargos: ["admin", "gerente"] },
   { icon: Megaphone, label: "Meta Ads", path: "/meta-ads", allowedCargos: ["admin", "gerente"] },
   { icon: Zap, label: "Follow-Up", path: "/follow-up", allowedCargos: ["admin", "gerente"] },
+  { icon: GitBranch, label: "Fluxos", path: "/flows", allowedCargos: ["admin", "gerente"] },
   { icon: Brain, label: "Auditoria IA", path: "/ai-audit", allowedCargos: ["admin"] },
   { icon: Key, label: "API Keys", path: "/vendor-keys", allowedCargos: ["admin"] },
   { icon: Settings, label: "Configurações", path: "/settings", allowedCargos: ["admin"] },

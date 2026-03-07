@@ -892,3 +892,19 @@
 - [x] Salvar mensagens interativas no banco para exibição no dashboard
 - [x] Integrar ao COMMERCIAL_PROMPT (seção MENSAGENS INTERATIVAS com regras)
 - [x] 241 testes passando, 0 erros TypeScript
+
+## Feature - Rodada 60 (Módulo de Fluxos de Conversa - Estilo ManyChat)
+- [x] Schema do banco: tabelas chatFlows, chatFlowNodes, chatFlowEdges, chatFlowSessions
+- [x] Backend: CRUD completo de fluxos, nós e conexões (tRPC) + saveFlow + duplicate
+- [x] Editor visual: canvas React Flow com drag-and-drop para posicionar nós
+- [x] 10 tipos de nós: Início, Mensagem, Botões (Reply Buttons), Lista (List Message), Imagem, Condição, IA Livre, Atualizar Lead, Transferir, Delay, Fim
+- [x] Painel de propriedades: configurar texto, botões (até 3), seções de lista (até 10 itens), condições, variáveis de template
+- [x] Conexões visuais entre nós (edges animadas com setas)
+- [x] Motor de execução (flowEngine.ts): processar fluxo ativo durante conversa real
+- [x] Integração com debounce callback: fluxo tem prioridade sobre IA livre
+- [x] Ativar/desativar fluxos, 7 gatilhos (primeiro contato, palavra-chave, clique em botão, anúncio, manual, reativação, categoria)
+- [x] Lista de categorias como nó de lista com seções e itens
+- [x] Salvar e carregar fluxos do banco com posições dos nós
+- [x] Variáveis de template: {{nome}}, {{telefone}}, {{veiculo}}, {{cidade}}, {{troca}}, {{pagamento}}
+- [x] Proteção contra loops infinitos (depth > 20)
+- [x] 261 testes passando, 0 erros TypeScript

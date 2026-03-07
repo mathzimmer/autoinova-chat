@@ -15,6 +15,10 @@ import {
   teamPerformance,
   aiDecisions, InsertAiDecision,
   leadSummaries, InsertLeadSummary,
+  chatFlows, InsertChatFlow,
+  chatFlowNodes, InsertChatFlowNode,
+  chatFlowEdges, InsertChatFlowEdge,
+  chatFlowSessions, InsertChatFlowSession,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -571,4 +575,174 @@ export async function getUnreadNotificationCount(userId: number) {
     .from(teamNotifications)
     .where(and(eq(teamNotifications.userId, userId), eq(teamNotifications.read, false)));
   return result[0]?.count ?? 0;
+}
+
+
+// ─── Chat Flows Queries ──────────────────────────────────────
+export async function listChatFlows() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatFlows).orderBy(desc(chatFlows.updatedAt));
+}
+
+export async function getChatFlowById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(chatFlows).where(eq(chatFlows.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createChatFlow(data: InsertChatFlow) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(chatFlows).values(data);
+  return result[0].insertId;
+}
+
+export async function updateChatFlow(id: number, data: Partial<InsertChatFlow>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(chatFlows).set(data).where(eq(chatFlows.id, id));
+}
+
+export async function deleteChatFlow(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete edges, nodes, sessions, then flow
+  await db.delete(chatFlowEdges).where(eq(chatFlowEdges.flowId, id));
+  await db.delete(chatFlowNodes).where(eq(chatFlowNodes.flowId, id));
+  await db.delete(chatFlowSessions).where(eq(chatFlowSessions.flowId, id));
+  await db.delete(chatFlows).where(eq(chatFlows.id, id));
+}
+
+export async function getActiveChatFlows() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatFlows)
+    .where(eq(chatFlows.active, true))
+    .orderBy(desc(chatFlows.priority));
+}
+
+// ─── Chat Flow Nodes Queries ─────────────────────────────────
+export async function listChatFlowNodes(flowId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatFlowNodes).where(eq(chatFlowNodes.flowId, flowId));
+}
+
+export async function getChatFlowNodeById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(chatFlowNodes).where(eq(chatFlowNodes.id, id)).limit(1);
+  return result[0];
+}
+
+export async function createChatFlowNode(data: InsertChatFlowNode) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(chatFlowNodes).values(data);
+  return result[0].insertId;
+}
+
+export async function updateChatFlowNode(id: number, data: Partial<InsertChatFlowNode>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(chatFlowNodes).set(data).where(eq(chatFlowNodes.id, id));
+}
+
+export async function deleteChatFlowNode(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Delete connected edges first
+  await db.delete(chatFlowEdges).where(
+    sql`${chatFlowEdges.sourceNodeId} = ${id} OR ${chatFlowEdges.targetNodeId} = ${id}`
+  );
+  await db.delete(chatFlowNodes).where(eq(chatFlowNodes.id, id));
+}
+
+export async function bulkUpsertNodes(flowId: number, nodes: Array<InsertChatFlowNode & { id?: number }>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const ids: number[] = [];
+  for (const node of nodes) {
+    if (node.id && node.id > 0) {
+      await db.update(chatFlowNodes).set({
+        nodeType: node.nodeType,
+        label: node.label,
+        data: node.data,
+        positionX: node.positionX,
+        positionY: node.positionY,
+      }).where(eq(chatFlowNodes.id, node.id));
+      ids.push(node.id);
+    } else {
+      const result = await db.insert(chatFlowNodes).values({ ...node, flowId });
+      ids.push(result[0].insertId);
+    }
+  }
+  return ids;
+}
+
+// ─── Chat Flow Edges Queries ─────────────────────────────────
+export async function listChatFlowEdges(flowId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatFlowEdges).where(eq(chatFlowEdges.flowId, flowId));
+}
+
+export async function createChatFlowEdge(data: InsertChatFlowEdge) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(chatFlowEdges).values(data);
+  return result[0].insertId;
+}
+
+export async function deleteChatFlowEdge(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(chatFlowEdges).where(eq(chatFlowEdges.id, id));
+}
+
+export async function replaceFlowEdges(flowId: number, edges: InsertChatFlowEdge[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.delete(chatFlowEdges).where(eq(chatFlowEdges.flowId, flowId));
+  if (edges.length > 0) {
+    await db.insert(chatFlowEdges).values(edges.map(e => ({ ...e, flowId })));
+  }
+}
+
+// ─── Chat Flow Sessions Queries ──────────────────────────────
+export async function getActiveFlowSession(conversationId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(chatFlowSessions)
+    .where(and(
+      eq(chatFlowSessions.conversationId, conversationId),
+      eq(chatFlowSessions.status, "active")
+    ))
+    .orderBy(desc(chatFlowSessions.startedAt))
+    .limit(1);
+  return result[0];
+}
+
+export async function createFlowSession(data: InsertChatFlowSession) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(chatFlowSessions).values(data);
+  return result[0].insertId;
+}
+
+export async function updateFlowSession(id: number, data: Partial<InsertChatFlowSession>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(chatFlowSessions).set(data).where(eq(chatFlowSessions.id, id));
+}
+
+export async function getFlowSessionsByFlow(flowId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatFlowSessions)
+    .where(eq(chatFlowSessions.flowId, flowId))
+    .orderBy(desc(chatFlowSessions.startedAt))
+    .limit(100);
 }

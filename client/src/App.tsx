@@ -17,6 +17,7 @@ import AiAudit from "./pages/AiAudit";
 import MetaAdsPage from "./pages/MetaAds";
 import FollowUpPage from "./pages/FollowUp";
 import VendorApiKeys from "./pages/VendorApiKeys";
+import Flows from "./pages/Flows";
 
 function Router() {
   return (
@@ -70,6 +71,11 @@ function Router() {
       <Route path="/vendor-keys">
         <AppLayout>
           <VendorApiKeys />
+        </AppLayout>
+      </Route>
+      <Route path="/flows">
+        <AppLayout>
+          <Flows />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />

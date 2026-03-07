@@ -1,0 +1,807 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ReactFlow,
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  useNodesState,
+  useEdgesState,
+  Connection,
+  Node,
+  Edge,
+  Handle,
+  Position,
+  NodeProps,
+  MarkerType,
+  Panel,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import { trpc } from "@/lib/trpc";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { toast } from "sonner";
+import {
+  ArrowLeft, Save, Plus, Trash2, X,
+  MessageSquare, MousePointerClick, List, Image, GitBranch,
+  Bot, UserCheck, Clock, Square, Play,
+  ChevronDown, GripVertical,
+} from "lucide-react";
+
+// ─── Node Type Definitions ───────────────────────────────────
+const NODE_TYPES_CONFIG: Record<string, {
+  label: string;
+  icon: typeof MessageSquare;
+  color: string;
+  bgColor: string;
+  description: string;
+}> = {
+  start: { label: "Início", icon: Play, color: "text-green-400", bgColor: "border-green-500/50 bg-green-500/5", description: "Ponto de entrada do fluxo" },
+  send_message: { label: "Mensagem", icon: MessageSquare, color: "text-blue-400", bgColor: "border-blue-500/50 bg-blue-500/5", description: "Enviar mensagem de texto" },
+  send_buttons: { label: "Botões", icon: MousePointerClick, color: "text-purple-400", bgColor: "border-purple-500/50 bg-purple-500/5", description: "Reply Buttons (até 3)" },
+  send_list: { label: "Lista", icon: List, color: "text-cyan-400", bgColor: "border-cyan-500/50 bg-cyan-500/5", description: "List Message (até 10 itens)" },
+  send_image: { label: "Imagem", icon: Image, color: "text-pink-400", bgColor: "border-pink-500/50 bg-pink-500/5", description: "Enviar imagem" },
+  condition: { label: "Condição", icon: GitBranch, color: "text-yellow-400", bgColor: "border-yellow-500/50 bg-yellow-500/5", description: "If/Else baseado em dados" },
+  ai_response: { label: "IA Livre", icon: Bot, color: "text-emerald-400", bgColor: "border-emerald-500/50 bg-emerald-500/5", description: "Deixar IA responder" },
+  update_lead: { label: "Atualizar Lead", icon: UserCheck, color: "text-orange-400", bgColor: "border-orange-500/50 bg-orange-500/5", description: "Atualizar dados do lead" },
+  assign_agent: { label: "Transferir", icon: UserCheck, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Transferir para humano" },
+  delay: { label: "Delay", icon: Clock, color: "text-gray-400", bgColor: "border-gray-500/50 bg-gray-500/5", description: "Aguardar X segundos" },
+  end: { label: "Fim", icon: Square, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Encerrar fluxo" },
+};
+
+// ─── Custom Node Component ───────────────────────────────────
+function FlowNode({ data, selected, id }: NodeProps) {
+  const config = NODE_TYPES_CONFIG[data.nodeType as string] || NODE_TYPES_CONFIG.send_message;
+  const Icon = config.icon;
+  const nodeType = data.nodeType as string;
+
+  // Determine output handles based on node type
+  const getOutputHandles = () => {
+    if (nodeType === "end") return [];
+    if (nodeType === "send_buttons") {
+      const buttons = ((data.config as any)?.buttons || []) as Array<{ text: string }>;
+      if (buttons.length === 0) return [{ id: "default", label: "Próximo" }];
+      return buttons.map((b: { text: string }, i: number) => ({ id: `button_${i}`, label: b.text || `Botão ${i + 1}` }));
+    }
+    if (nodeType === "send_list") {
+      const rows = ((data.config as any)?.sections || []).flatMap((s: any) => s.rows || []) as Array<{ title: string }>;
+      if (rows.length === 0) return [{ id: "default", label: "Próximo" }];
+      return rows.map((r: { title: string }, i: number) => ({ id: `row_${i}`, label: r.title || `Item ${i + 1}` }));
+    }
+    if (nodeType === "condition") {
+      return [
+        { id: "yes", label: "Sim ✓" },
+        { id: "no", label: "Não ✗" },
+      ];
+    }
+    return [{ id: "default", label: "" }];
+  };
+
+  const outputs = getOutputHandles();
+
+  return (
+    <div className={`rounded-lg border-2 ${config.bgColor} ${selected ? "ring-2 ring-primary" : ""} min-w-[200px] max-w-[280px] shadow-lg`}>
+      {/* Input handle (not for start) */}
+      {nodeType !== "start" && (
+        <Handle type="target" position={Position.Top} className="!w-3 !h-3 !bg-primary !border-2 !border-background" />
+      )}
+
+      {/* Header */}
+      <div className="px-3 py-2 flex items-center gap-2 border-b border-border/50">
+        <Icon className={`h-4 w-4 ${config.color} shrink-0`} />
+        <span className="text-xs font-semibold text-foreground truncate">{data.label as string || config.label}</span>
+      </div>
+
+      {/* Content preview */}
+      <div className="px-3 py-2">
+        {nodeType === "send_message" && (
+          <p className="text-xs text-muted-foreground line-clamp-3">{(data.config as any)?.text || "Configurar mensagem..."}</p>
+        )}
+        {nodeType === "send_buttons" && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground line-clamp-2">{(data.config as any)?.body || "Texto..."}</p>
+            <div className="flex flex-wrap gap-1 mt-1">
+              {((data.config as any)?.buttons || []).map((b: any, i: number) => (
+                <Badge key={i} variant="outline" className="text-[10px] py-0">{b.text || `Botão ${i + 1}`}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        {nodeType === "send_list" && (
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">{(data.config as any)?.body || "Texto..."}</p>
+            <Badge variant="outline" className="text-[10px]">
+              {((data.config as any)?.sections || []).reduce((acc: number, s: any) => acc + (s.rows?.length || 0), 0)} itens
+            </Badge>
+          </div>
+        )}
+        {nodeType === "condition" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.field || "campo"} {(data.config as any)?.operator || "="} {(data.config as any)?.value || "valor"}
+          </p>
+        )}
+        {nodeType === "delay" && (
+          <p className="text-xs text-muted-foreground">{(data.config as any)?.seconds || 0}s de espera</p>
+        )}
+        {nodeType === "ai_response" && (
+          <p className="text-xs text-muted-foreground">{(data.config as any)?.instruction || "IA responde livremente"}</p>
+        )}
+        {nodeType === "update_lead" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.field || "campo"} → {(data.config as any)?.value || "valor"}
+          </p>
+        )}
+        {nodeType === "start" && (
+          <p className="text-xs text-muted-foreground">Início do fluxo</p>
+        )}
+        {nodeType === "end" && (
+          <p className="text-xs text-muted-foreground">Fim do fluxo</p>
+        )}
+        {nodeType === "assign_agent" && (
+          <p className="text-xs text-muted-foreground">Transferir para agente humano</p>
+        )}
+        {nodeType === "send_image" && (
+          <p className="text-xs text-muted-foreground">{(data.config as any)?.caption || "Imagem"}</p>
+        )}
+      </div>
+
+      {/* Output handles */}
+      {outputs.length === 1 && outputs[0].id === "default" ? (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          id="default"
+          className="!w-3 !h-3 !bg-primary !border-2 !border-background"
+        />
+      ) : outputs.length > 0 ? (
+        <div className="border-t border-border/50 px-2 py-1.5 space-y-1">
+          {outputs.map((out, i) => (
+            <div key={out.id} className="relative flex items-center justify-end pr-2">
+              <span className="text-[10px] text-muted-foreground mr-1 truncate max-w-[180px]">{out.label}</span>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={out.id}
+                style={{ top: "auto", position: "relative", transform: "none" }}
+                className="!w-2.5 !h-2.5 !bg-primary !border-2 !border-background !relative !right-0 !top-0 !transform-none"
+              />
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Properties Panel ────────────────────────────────────────
+function PropertiesPanel({
+  node,
+  onUpdate,
+  onDelete,
+  onClose,
+}: {
+  node: Node;
+  onUpdate: (id: string, data: any) => void;
+  onDelete: (id: string) => void;
+  onClose: () => void;
+}) {
+  const nodeType = node.data.nodeType as string;
+  const config = node.data.config as any || {};
+  const nodeConfig = NODE_TYPES_CONFIG[nodeType];
+
+  const updateConfig = (key: string, value: any) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, [key]: value },
+    });
+  };
+
+  const updateLabel = (label: string) => {
+    onUpdate(node.id, { ...node.data, label });
+  };
+
+  return (
+    <Card className="w-80 max-h-[calc(100vh-200px)] overflow-y-auto shadow-xl border-primary/20">
+      <CardHeader className="pb-3 sticky top-0 bg-card z-10">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            {nodeConfig && (() => { const Icon = nodeConfig.icon; return <Icon className={`h-4 w-4 ${nodeConfig.color}`} />; })()}
+            Propriedades
+          </CardTitle>
+          <div className="flex gap-1">
+            {nodeType !== "start" && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(node.id)}>
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Label */}
+        <div>
+          <Label className="text-xs">Nome do Nó</Label>
+          <Input
+            value={(node.data.label as string) || ""}
+            onChange={(e) => updateLabel(e.target.value)}
+            placeholder={nodeConfig?.label}
+            className="h-8 text-sm"
+          />
+        </div>
+
+        {/* Type-specific fields */}
+        {nodeType === "send_message" && (
+          <div>
+            <Label className="text-xs">Mensagem</Label>
+            <Textarea
+              value={config.text || ""}
+              onChange={(e) => updateConfig("text", e.target.value)}
+              placeholder="Digite a mensagem que será enviada ao cliente..."
+              rows={4}
+              className="text-sm"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Use {"{{nome}}"} para nome do cliente, {"{{veiculo}}"} para veículo de interesse
+            </p>
+          </div>
+        )}
+
+        {nodeType === "send_buttons" && (
+          <>
+            <div>
+              <Label className="text-xs">Texto da Mensagem</Label>
+              <Textarea
+                value={config.body || ""}
+                onChange={(e) => updateConfig("body", e.target.value)}
+                placeholder="Texto que acompanha os botões..."
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Botões (máx. 3)</Label>
+              <div className="space-y-2 mt-1">
+                {(config.buttons || [{ text: "" }]).map((btn: any, i: number) => (
+                  <div key={i} className="flex gap-2">
+                    <Input
+                      value={btn.text}
+                      onChange={(e) => {
+                        const newButtons = [...(config.buttons || [{ text: "" }])];
+                        newButtons[i] = { ...newButtons[i], text: e.target.value };
+                        updateConfig("buttons", newButtons);
+                      }}
+                      placeholder={`Botão ${i + 1}`}
+                      className="h-8 text-sm"
+                      maxLength={20}
+                    />
+                    {(config.buttons || []).length > 1 && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => {
+                          const newButtons = (config.buttons || []).filter((_: any, j: number) => j !== i);
+                          updateConfig("buttons", newButtons);
+                        }}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                {(config.buttons || []).length < 3 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-7 text-xs"
+                    onClick={() => updateConfig("buttons", [...(config.buttons || []), { text: "" }])}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Adicionar Botão
+                  </Button>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+
+        {nodeType === "send_list" && (
+          <>
+            <div>
+              <Label className="text-xs">Texto da Mensagem</Label>
+              <Textarea
+                value={config.body || ""}
+                onChange={(e) => updateConfig("body", e.target.value)}
+                placeholder="Texto que acompanha a lista..."
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Texto do Botão</Label>
+              <Input
+                value={config.buttonText || ""}
+                onChange={(e) => updateConfig("buttonText", e.target.value)}
+                placeholder="Ver Opções"
+                className="h-8 text-sm"
+                maxLength={20}
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Seções e Itens</Label>
+              {(config.sections || [{ title: "", rows: [{ title: "", description: "" }] }]).map((section: any, si: number) => (
+                <div key={si} className="border rounded-md p-2 mt-2 space-y-2">
+                  <div className="flex gap-2 items-center">
+                    <Input
+                      value={section.title}
+                      onChange={(e) => {
+                        const newSections = [...(config.sections || [{ title: "", rows: [] }])];
+                        newSections[si] = { ...newSections[si], title: e.target.value };
+                        updateConfig("sections", newSections);
+                      }}
+                      placeholder={`Seção ${si + 1}`}
+                      className="h-7 text-xs"
+                    />
+                    {(config.sections || []).length > 1 && (
+                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => {
+                        updateConfig("sections", (config.sections || []).filter((_: any, j: number) => j !== si));
+                      }}>
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                  {(section.rows || []).map((row: any, ri: number) => (
+                    <div key={ri} className="pl-3 flex gap-1">
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          value={row.title}
+                          onChange={(e) => {
+                            const newSections = [...(config.sections || [])];
+                            const newRows = [...(newSections[si].rows || [])];
+                            newRows[ri] = { ...newRows[ri], title: e.target.value };
+                            newSections[si] = { ...newSections[si], rows: newRows };
+                            updateConfig("sections", newSections);
+                          }}
+                          placeholder="Título do item"
+                          className="h-6 text-[11px]"
+                          maxLength={24}
+                        />
+                        <Input
+                          value={row.description || ""}
+                          onChange={(e) => {
+                            const newSections = [...(config.sections || [])];
+                            const newRows = [...(newSections[si].rows || [])];
+                            newRows[ri] = { ...newRows[ri], description: e.target.value };
+                            newSections[si] = { ...newSections[si], rows: newRows };
+                            updateConfig("sections", newSections);
+                          }}
+                          placeholder="Descrição (opcional)"
+                          className="h-6 text-[11px]"
+                          maxLength={72}
+                        />
+                      </div>
+                      <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => {
+                        const newSections = [...(config.sections || [])];
+                        newSections[si] = { ...newSections[si], rows: (newSections[si].rows || []).filter((_: any, j: number) => j !== ri) };
+                        updateConfig("sections", newSections);
+                      }}>
+                        <Trash2 className="h-2.5 w-2.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full h-6 text-[10px]"
+                    onClick={() => {
+                      const newSections = [...(config.sections || [])];
+                      newSections[si] = { ...newSections[si], rows: [...(newSections[si].rows || []), { title: "", description: "" }] };
+                      updateConfig("sections", newSections);
+                    }}
+                  >
+                    <Plus className="h-2.5 w-2.5 mr-1" /> Item
+                  </Button>
+                </div>
+              ))}
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full h-7 text-xs mt-2"
+                onClick={() => updateConfig("sections", [...(config.sections || []), { title: "", rows: [{ title: "", description: "" }] }])}
+              >
+                <Plus className="h-3 w-3 mr-1" /> Adicionar Seção
+              </Button>
+            </div>
+          </>
+        )}
+
+        {nodeType === "condition" && (
+          <>
+            <div>
+              <Label className="text-xs">Campo do Lead</Label>
+              <Select value={config.field || ""} onValueChange={(v) => updateConfig("field", v)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="hasTrade">Tem troca?</SelectItem>
+                  <SelectItem value="vehicleInterest">Veículo de interesse</SelectItem>
+                  <SelectItem value="paymentMethod">Forma de pagamento</SelectItem>
+                  <SelectItem value="city">Cidade</SelectItem>
+                  <SelectItem value="name">Nome</SelectItem>
+                  <SelectItem value="status">Status do lead</SelectItem>
+                  <SelectItem value="lastMessage">Última mensagem contém</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Operador</Label>
+              <Select value={config.operator || "equals"} onValueChange={(v) => updateConfig("operator", v)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="equals">Igual a</SelectItem>
+                  <SelectItem value="not_equals">Diferente de</SelectItem>
+                  <SelectItem value="contains">Contém</SelectItem>
+                  <SelectItem value="not_empty">Não está vazio</SelectItem>
+                  <SelectItem value="is_empty">Está vazio</SelectItem>
+                  <SelectItem value="is_true">É verdadeiro</SelectItem>
+                  <SelectItem value="is_false">É falso</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {!["not_empty", "is_empty", "is_true", "is_false"].includes(config.operator) && (
+              <div>
+                <Label className="text-xs">Valor</Label>
+                <Input
+                  value={config.value || ""}
+                  onChange={(e) => updateConfig("value", e.target.value)}
+                  placeholder="Valor para comparar"
+                  className="h-8 text-sm"
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        {nodeType === "ai_response" && (
+          <div>
+            <Label className="text-xs">Instrução para a IA</Label>
+            <Textarea
+              value={config.instruction || ""}
+              onChange={(e) => updateConfig("instruction", e.target.value)}
+              placeholder="Ex: Apresente os veículos encontrados e pergunte sobre troca..."
+              rows={4}
+              className="text-sm"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              A IA responderá livremente com base nesta instrução
+            </p>
+          </div>
+        )}
+
+        {nodeType === "update_lead" && (
+          <>
+            <div>
+              <Label className="text-xs">Campo</Label>
+              <Select value={config.field || ""} onValueChange={(v) => updateConfig("field", v)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Selecione..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="status">Status</SelectItem>
+                  <SelectItem value="vehicleInterest">Veículo de interesse</SelectItem>
+                  <SelectItem value="hasTrade">Tem troca</SelectItem>
+                  <SelectItem value="paymentMethod">Forma de pagamento</SelectItem>
+                  <SelectItem value="intention">Intenção</SelectItem>
+                  <SelectItem value="notes">Notas</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Valor</Label>
+              <Input
+                value={config.value || ""}
+                onChange={(e) => updateConfig("value", e.target.value)}
+                placeholder="Novo valor"
+                className="h-8 text-sm"
+              />
+            </div>
+          </>
+        )}
+
+        {nodeType === "delay" && (
+          <div>
+            <Label className="text-xs">Tempo de espera (segundos)</Label>
+            <Input
+              type="number"
+              value={config.seconds || 3}
+              onChange={(e) => updateConfig("seconds", parseInt(e.target.value) || 3)}
+              min={1}
+              max={300}
+              className="h-8 text-sm"
+            />
+          </div>
+        )}
+
+        {nodeType === "send_image" && (
+          <>
+            <div>
+              <Label className="text-xs">URL da Imagem</Label>
+              <Input
+                value={config.imageUrl || ""}
+                onChange={(e) => updateConfig("imageUrl", e.target.value)}
+                placeholder="https://..."
+                className="h-8 text-sm"
+              />
+            </div>
+            <div>
+              <Label className="text-xs">Legenda</Label>
+              <Input
+                value={config.caption || ""}
+                onChange={(e) => updateConfig("caption", e.target.value)}
+                placeholder="Legenda da imagem"
+                className="h-8 text-sm"
+              />
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main Editor Component ───────────────────────────────────
+export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack: () => void }) {
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [hasChanges, setHasChanges] = useState(false);
+  const reactFlowWrapper = useRef<HTMLDivElement>(null);
+
+  const flowQuery = trpc.flow.getById.useQuery({ id: flowId });
+  const saveMutation = trpc.flow.saveFlow.useMutation({
+    onSuccess: () => {
+      toast.success("Fluxo salvo com sucesso!");
+      setHasChanges(false);
+    },
+    onError: (err) => toast.error(`Erro ao salvar: ${err.message}`),
+  });
+
+  // Load flow data into React Flow
+  useEffect(() => {
+    if (!flowQuery.data) return;
+    const { nodes: dbNodes, edges: dbEdges } = flowQuery.data;
+
+    const rfNodes: Node[] = dbNodes.map((n) => ({
+      id: String(n.id),
+      type: "flowNode",
+      position: { x: n.positionX, y: n.positionY },
+      data: {
+        nodeType: n.nodeType,
+        label: n.label || NODE_TYPES_CONFIG[n.nodeType]?.label || n.nodeType,
+        config: (n.data as any) || {},
+        dbId: n.id,
+      },
+    }));
+
+    const rfEdges: Edge[] = dbEdges.map((e) => ({
+      id: `e${e.id}`,
+      source: String(e.sourceNodeId),
+      target: String(e.targetNodeId),
+      sourceHandle: e.sourceHandle || "default",
+      label: e.label || undefined,
+      animated: true,
+      style: { stroke: "oklch(0.7 0.15 250)" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "oklch(0.7 0.15 250)" },
+      data: { dbId: e.id },
+    }));
+
+    setNodes(rfNodes);
+    setEdges(rfEdges);
+  }, [flowQuery.data]);
+
+  const nodeTypes = useMemo(() => ({ flowNode: FlowNode }), []);
+
+  const onConnect = useCallback((connection: Connection) => {
+    const newEdge: Edge = {
+      id: `e_${Date.now()}`,
+      source: connection.source,
+      target: connection.target,
+      sourceHandle: connection.sourceHandle,
+      targetHandle: connection.targetHandle,
+      animated: true,
+      style: { stroke: "oklch(0.7 0.15 250)" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "oklch(0.7 0.15 250)" },
+    };
+    setEdges((eds) => addEdge(newEdge, eds));
+    setHasChanges(true);
+  }, []);
+
+  const onNodeClick = useCallback((_: any, node: Node) => {
+    setSelectedNode(node);
+  }, []);
+
+  const onPaneClick = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
+
+  // Add new node
+  const addNode = (nodeType: string) => {
+    const id = `new_${Date.now()}`;
+    const config = NODE_TYPES_CONFIG[nodeType];
+    const defaultData: any = {};
+
+    if (nodeType === "send_buttons") {
+      defaultData.buttons = [{ text: "Opção 1" }, { text: "Opção 2" }];
+      defaultData.body = "";
+    }
+    if (nodeType === "send_list") {
+      defaultData.sections = [{ title: "Opções", rows: [{ title: "Item 1", description: "" }] }];
+      defaultData.body = "";
+      defaultData.buttonText = "Ver Opções";
+    }
+    if (nodeType === "delay") {
+      defaultData.seconds = 3;
+    }
+
+    const newNode: Node = {
+      id,
+      type: "flowNode",
+      position: { x: 250 + Math.random() * 200, y: 200 + nodes.length * 80 },
+      data: {
+        nodeType,
+        label: config?.label || nodeType,
+        config: defaultData,
+      },
+    };
+    setNodes((nds) => [...nds, newNode]);
+    setSelectedNode(newNode);
+    setHasChanges(true);
+  };
+
+  // Update node data
+  const updateNodeData = (nodeId: string, data: any) => {
+    setNodes((nds) => nds.map((n) => n.id === nodeId ? { ...n, data } : n));
+    setSelectedNode((prev) => prev && prev.id === nodeId ? { ...prev, data } : prev);
+    setHasChanges(true);
+  };
+
+  // Delete node
+  const deleteNode = (nodeId: string) => {
+    setNodes((nds) => nds.filter((n) => n.id !== nodeId));
+    setEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    setSelectedNode(null);
+    setHasChanges(true);
+  };
+
+  // Save flow
+  const handleSave = () => {
+    const saveNodes = nodes.map((n) => ({
+      id: (n.data.dbId as number) || undefined,
+      nodeType: n.data.nodeType as any,
+      label: (n.data.label as string) || undefined,
+      data: (n.data.config as any) || {},
+      positionX: Math.round(n.position.x),
+      positionY: Math.round(n.position.y),
+    }));
+
+    // Build node ID map for edges
+    const nodeIdMap = new Map<string, number>();
+    nodes.forEach((n, i) => {
+      const dbId = (n.data.dbId as number) || -(i + 1);
+      nodeIdMap.set(n.id, dbId);
+    });
+
+    const saveEdges = edges.map((e) => ({
+      sourceNodeId: nodeIdMap.get(e.source) || 0,
+      targetNodeId: nodeIdMap.get(e.target) || 0,
+      sourceHandle: e.sourceHandle || "default",
+      label: (e.label as string) || undefined,
+    })).filter((e) => e.sourceNodeId !== 0 && e.targetNodeId !== 0);
+
+    saveMutation.mutate({ flowId, nodes: saveNodes, edges: saveEdges });
+  };
+
+  const flow = flowQuery.data?.flow;
+
+  return (
+    <div className="h-[calc(100vh-64px)] flex flex-col">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-card">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
+          </Button>
+          <div className="h-5 w-px bg-border" />
+          <div>
+            <h2 className="text-sm font-semibold text-foreground">{flow?.name || "Carregando..."}</h2>
+            <p className="text-[10px] text-muted-foreground">{flow?.description || ""}</p>
+          </div>
+          {hasChanges && (
+            <Badge variant="secondary" className="text-[10px] bg-yellow-500/10 text-yellow-500">
+              Alterações não salvas
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending || !hasChanges}>
+            <Save className="h-3.5 w-3.5 mr-1" />
+            {saveMutation.isPending ? "Salvando..." : "Salvar"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Canvas + Sidebar */}
+      <div className="flex-1 flex">
+        {/* Node palette */}
+        <div className="w-52 border-r border-border bg-card/50 overflow-y-auto p-3 space-y-1">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Adicionar Nó</p>
+          {Object.entries(NODE_TYPES_CONFIG).filter(([k]) => k !== "start").map(([key, cfg]) => {
+            const Icon = cfg.icon;
+            return (
+              <button
+                key={key}
+                onClick={() => addNode(key)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-accent text-left transition-colors"
+              >
+                <Icon className={`h-3.5 w-3.5 ${cfg.color} shrink-0`} />
+                <div>
+                  <span className="text-xs font-medium text-foreground">{cfg.label}</span>
+                  <p className="text-[9px] text-muted-foreground leading-tight">{cfg.description}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* React Flow Canvas */}
+        <div className="flex-1 relative" ref={reactFlowWrapper}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={(changes) => { onNodesChange(changes); setHasChanges(true); }}
+            onEdgesChange={(changes) => { onEdgesChange(changes); setHasChanges(true); }}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            nodeTypes={nodeTypes}
+            fitView
+            snapToGrid
+            snapGrid={[15, 15]}
+            deleteKeyCode={["Backspace", "Delete"]}
+            className="bg-background"
+          >
+            <Background gap={15} size={1} color="oklch(0.3 0 0 / 0.15)" />
+            <Controls className="!bg-card !border-border !shadow-lg" />
+            <MiniMap
+              className="!bg-card !border-border"
+              nodeColor="oklch(0.6 0.15 250)"
+              maskColor="oklch(0.1 0 0 / 0.7)"
+            />
+          </ReactFlow>
+
+          {/* Properties panel overlay */}
+          {selectedNode && (
+            <div className="absolute top-4 right-4 z-10">
+              <PropertiesPanel
+                node={selectedNode}
+                onUpdate={updateNodeData}
+                onDelete={deleteNode}
+                onClose={() => setSelectedNode(null)}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

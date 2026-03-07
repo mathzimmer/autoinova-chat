@@ -366,3 +366,98 @@ export const vendorApiKeys = mysqlTable("vendorApiKeys", {
 
 export type VendorApiKey = typeof vendorApiKeys.$inferSelect;
 export type InsertVendorApiKey = typeof vendorApiKeys.$inferInsert;
+
+/**
+ * Chat Flows — fluxos de conversa programáveis estilo ManyChat.
+ * Cada fluxo é um grafo de nós conectados por edges.
+ */
+export const chatFlows = mysqlTable("chatFlows", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  trigger: mysqlEnum("flowTrigger", [
+    "first_contact",     // Primeiro contato do cliente
+    "keyword",           // Palavra-chave detectada
+    "button_click",      // Cliente clicou em botão específico
+    "ad_click",          // Veio de anúncio (tem ID de veículo)
+    "manual",            // Ativado manualmente pelo agente
+    "reactivation",      // Cliente retorna após inatividade
+    "category_interest", // Cliente pergunta sobre categoria
+  ]).default("first_contact").notNull(),
+  triggerValue: varchar("triggerValue", { length: 500 }), // Ex: palavra-chave, ID do botão
+  active: boolean("active").default(false).notNull(),
+  priority: int("priority").default(0).notNull(), // Maior = mais prioridade
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChatFlow = typeof chatFlows.$inferSelect;
+export type InsertChatFlow = typeof chatFlows.$inferInsert;
+
+/**
+ * Chat Flow Nodes — nós individuais dentro de um fluxo.
+ * Cada nó representa uma ação ou decisão na conversa.
+ */
+export const chatFlowNodes = mysqlTable("chatFlowNodes", {
+  id: int("id").autoincrement().primaryKey(),
+  flowId: int("flowId").notNull(),
+  nodeType: mysqlEnum("nodeType", [
+    "start",              // Nó inicial (1 por fluxo)
+    "send_message",       // Enviar mensagem de texto
+    "send_buttons",       // Enviar Reply Buttons (até 3)
+    "send_list",          // Enviar List Message (até 10 itens)
+    "send_image",         // Enviar imagem
+    "condition",          // Condição (if/else baseado em dados do lead)
+    "ai_response",        // Deixar a IA responder livremente
+    "update_lead",        // Atualizar dados do lead
+    "assign_agent",       // Transferir para agente humano
+    "delay",              // Aguardar X segundos antes de continuar
+    "end",                // Fim do fluxo
+  ]).notNull(),
+  label: varchar("label", { length: 255 }), // Nome visual do nó
+  data: json("data").notNull(), // Configuração específica do tipo de nó (JSON)
+  positionX: int("positionX").default(0).notNull(),
+  positionY: int("positionY").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChatFlowNode = typeof chatFlowNodes.$inferSelect;
+export type InsertChatFlowNode = typeof chatFlowNodes.$inferInsert;
+
+/**
+ * Chat Flow Edges — conexões entre nós.
+ * sourceHandle identifica qual saída do nó (ex: "button_1", "yes", "no", "default")
+ */
+export const chatFlowEdges = mysqlTable("chatFlowEdges", {
+  id: int("id").autoincrement().primaryKey(),
+  flowId: int("flowId").notNull(),
+  sourceNodeId: int("sourceNodeId").notNull(),
+  targetNodeId: int("targetNodeId").notNull(),
+  sourceHandle: varchar("sourceHandle", { length: 100 }).default("default"), // "default", "button_0", "yes", "no"
+  label: varchar("edgeLabel", { length: 255 }), // Label visual na seta
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ChatFlowEdge = typeof chatFlowEdges.$inferSelect;
+export type InsertChatFlowEdge = typeof chatFlowEdges.$inferInsert;
+
+/**
+ * Chat Flow Sessions — rastreia em qual nó cada conversa está dentro de um fluxo.
+ * Permite retomar o fluxo quando o cliente responde.
+ */
+export const chatFlowSessions = mysqlTable("chatFlowSessions", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  flowId: int("flowId").notNull(),
+  currentNodeId: int("currentNodeId"),
+  status: mysqlEnum("sessionStatus", ["active", "completed", "paused", "cancelled"]).default("active").notNull(),
+  context: json("context"), // Dados coletados durante o fluxo
+  startedAt: timestamp("startedAt").defaultNow().notNull(),
+  completedAt: timestamp("completedAt"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ChatFlowSession = typeof chatFlowSessions.$inferSelect;
+export type InsertChatFlowSession = typeof chatFlowSessions.$inferInsert;
