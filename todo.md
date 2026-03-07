@@ -862,3 +862,14 @@
 - [x] Gerar resumo IA via botão manual (usa LLM para resumir mensagens do dia)
 - [x] Tabela leadSummaries no banco de dados (migração aplicada)
 - [x] 214 testes passando, 0 erros TypeScript
+
+## Feature - Rodada 57 (Melhorias nos Prompts e Fluxo de ID)
+- [x] Criar função getVehicleByIdForAI no stockSync.ts para busca direta por ID
+- [x] Implementar pré-processamento de mensagens com ID (detectar IDX antes do LLM)
+- [x] Injetar dados do veículo no contexto quando ID detectado
+- [x] Atualizar lead automaticamente com veiculo_id quando ID detectado
+- [x] Adicionar tool buscar_veiculo_por_id para fallback do LLM
+- [x] Condensar COMMERCIAL_PROMPT (remover duplicações, hierarquia de prioridade)
+- [x] Adicionar hierarquia de prioridade de ações no prompt
+- [x] Melhorar contexto do lead (recência inteligente em vez de tudo desatualizado)
+- [x] Testes Vehicle ID Detection adicionados e 239 testes passando

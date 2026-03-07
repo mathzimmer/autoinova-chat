@@ -231,6 +231,34 @@ Localização: Ivoti - RS`;
 }
 
 /**
+ * Get a specific vehicle by ID for AI responses (used when customer comes from an ad with IDX)
+ */
+async function getVehicleByIdForAI(vehicleId: number): Promise<{ found: boolean; text: string; vehicle: any | null }> {
+  const db = await getDb();
+  if (!db) return { found: false, text: "Estoque indisponível no momento.", vehicle: null };
+
+  const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+  if (rows.length === 0) {
+    return { found: false, text: `Veículo com ID ${vehicleId} não encontrado no estoque. Pode ter sido vendido.`, vehicle: null };
+  }
+
+  const v = rows[0];
+  if (!v.available) {
+    return { found: false, text: `O veículo ${v.brand} ${v.model} ${v.year} (ID:${v.id}) não está mais disponível. Pode ter sido vendido recentemente.`, vehicle: v };
+  }
+
+  const priceStr = v.promotionPrice && v.promotionPrice < v.price
+    ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
+    : `R$ ${v.price.toLocaleString("pt-BR")}`;
+  const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
+  const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
+
+  const text = `VEÍCULO DO ANÚNCIO (ID:${v.id}):\n${v.title || `${v.brand} ${v.model}`}\nAno: ${v.year}\nCor: ${v.color || "N/I"}\nQuilometragem: ${mileageStr}\nCâmbio: ${transStr}\nCombustível: ${v.fuel || "N/I"}\nCategoria: ${v.category || "N/I"}\nPreço: ${priceStr}\nLink: ${v.url || "N/I"}`;
+
+  return { found: true, text, vehicle: v };
+}
+
+/**
  * Search vehicles with detailed info for AI responses
  */
 async function searchVehiclesForAI(filters: {
@@ -518,6 +546,7 @@ export {
   syncStock,
   fetchExternalStock,
   getStockSummaryForAI,
+  getVehicleByIdForAI,
   searchVehiclesForAI,
   startAutoSync,
   stopAutoSync,

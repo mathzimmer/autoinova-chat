@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_SYSTEM_PROMPT } from "./ai";
+import { DEFAULT_SYSTEM_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, DEFAULT_PERSONALITY_PROMPT } from "./ai";
 
-describe("AI System Prompt", () => {
+describe("AI System Prompt (Legacy)", () => {
   it("contains format rules - no markdown", () => {
     expect(DEFAULT_SYSTEM_PROMPT).toContain("PROIBIDO usar asteriscos");
     expect(DEFAULT_SYSTEM_PROMPT).toContain("PROIBIDO usar formatação markdown");
@@ -58,6 +58,143 @@ describe("AI System Prompt", () => {
   });
 });
 
+describe("CORE_PROMPT (Layer 1)", () => {
+  it("contains format rules", () => {
+    expect(CORE_PROMPT).toContain("FORMATO DAS MENSAGENS");
+    expect(CORE_PROMPT).toContain("PROIBIDO usar asteriscos");
+    expect(CORE_PROMPT).toContain("PROIBIDO usar formatação markdown");
+  });
+
+  it("contains priority rule for recent messages", () => {
+    expect(CORE_PROMPT).toContain("PRIORIDADE DA CONVERSA RECENTE");
+    expect(CORE_PROMPT).toContain("MENSAGEM ATUAL");
+  });
+
+  it("contains numeric response rule", () => {
+    expect(CORE_PROMPT).toContain("RESPOSTAS NUMÉRICAS");
+  });
+
+  it("contains lead update rules", () => {
+    expect(CORE_PROMPT).toContain("ATUALIZAÇÃO DO LEAD");
+    expect(CORE_PROMPT).toContain("atualizar_lead");
+  });
+
+  it("contains prohibition of inventing vehicles", () => {
+    expect(CORE_PROMPT).toContain("PROIBIÇÃO ABSOLUTA DE INVENTAR VEÍCULOS");
+    expect(CORE_PROMPT).toContain("REGRA CRÍTICA DE PREÇO");
+    expect(CORE_PROMPT).toContain("REGRA CRÍTICA DE ANO");
+  });
+
+  it("contains image handling rules", () => {
+    expect(CORE_PROMPT).toContain("IMAGENS E FOTOS");
+    expect(CORE_PROMPT).toContain("NUNCA diga");
+  });
+
+  it("contains audio handling rules", () => {
+    expect(CORE_PROMPT).toContain("ÁUDIO");
+    expect(CORE_PROMPT).toContain("transcritos automaticamente");
+  });
+});
+
+describe("COMMERCIAL_PROMPT (Layer 2)", () => {
+  it("contains action priority hierarchy", () => {
+    expect(COMMERCIAL_PROMPT).toContain("PRIORIDADE DE AÇÕES");
+    expect(COMMERCIAL_PROMPT).toContain("1.");
+    expect(COMMERCIAL_PROMPT).toContain("2.");
+    expect(COMMERCIAL_PROMPT).toContain("3.");
+    expect(COMMERCIAL_PROMPT).toContain("4.");
+  });
+
+  it("contains ad message handling with pre-loaded vehicle", () => {
+    expect(COMMERCIAL_PROMPT).toContain("MENSAGENS DE ANÚCIOS");
+    expect(COMMERCIAL_PROMPT).toContain("pré-carregado no contexto");
+    expect(COMMERCIAL_PROMPT).toContain("lead quente");
+  });
+
+  it("instructs NOT to call buscar_veiculos for pre-loaded ad vehicles", () => {
+    expect(COMMERCIAL_PROMPT).toContain("NÃO chame buscar_veiculos");
+  });
+
+  it("contains vehicle search rules", () => {
+    expect(COMMERCIAL_PROMPT).toContain("BUSCA DE VEÍCULOS");
+    expect(COMMERCIAL_PROMPT).toContain("buscar_veiculos");
+  });
+
+  it("contains simplification rules for search terms", () => {
+    expect(COMMERCIAL_PROMPT).toContain("SIMPLIFICAÇÃO DA BUSCA");
+    expect(COMMERCIAL_PROMPT).toContain("termos SIMPLES e CURTOS");
+  });
+
+  it("contains category and transmission filter rules", () => {
+    expect(COMMERCIAL_PROMPT).toContain("FILTROS DE CATEGORIA E CÂMBIO");
+    expect(COMMERCIAL_PROMPT).toContain("picape");
+    expect(COMMERCIAL_PROMPT).toContain("automatico");
+  });
+
+  it("contains qualification flow", () => {
+    expect(COMMERCIAL_PROMPT).toContain("FLUXO DE QUALIFICAÇÃO");
+  });
+});
+
+describe("DEFAULT_PERSONALITY_PROMPT (Layer 3)", () => {
+  it("contains Auto Inova identity", () => {
+    expect(DEFAULT_PERSONALITY_PROMPT).toContain("Auto Inova");
+    expect(DEFAULT_PERSONALITY_PROMPT).toContain("Ivoti - RS");
+  });
+
+  it("contains tone of voice guidelines", () => {
+    expect(DEFAULT_PERSONALITY_PROMPT).toContain("TOM DE VOZ");
+    expect(DEFAULT_PERSONALITY_PROMPT).toContain("Consultivo e amigável");
+  });
+
+  it("contains store contact info", () => {
+    expect(DEFAULT_PERSONALITY_PROMPT).toContain("(51) 99478-2062");
+  });
+});
+
+describe("Vehicle ID Detection (Pre-processing)", () => {
+  // Replicate the ID detection regex from processAIMessage
+  function detectVehicleId(message: string): number | null {
+    const idMatch = message.match(/(?:ID|id)(\d+)|\(Ref:\s*(\d+)\)/i);
+    if (idMatch) {
+      return parseInt(idMatch[1] || idMatch[2]);
+    }
+    return null;
+  }
+
+  it("detects ID in standard ad format", () => {
+    expect(detectVehicleId("Olá, tenho interesse no veículo: Chevrolet Agile 2013 ID9")).toBe(9);
+  });
+
+  it("detects ID with uppercase", () => {
+    expect(detectVehicleId("Quero saber mais sobre o ID42")).toBe(42);
+  });
+
+  it("detects ID with lowercase", () => {
+    expect(detectVehicleId("Me fala do id123")).toBe(123);
+  });
+
+  it("detects Ref format", () => {
+    expect(detectVehicleId("Olá, tenho interesse (Ref: 15)")).toBe(15);
+  });
+
+  it("detects ID at the end of message", () => {
+    expect(detectVehicleId("Chevrolet TRAILBLAZER LTZ 2.8 4X4 Diesel 2018/2019 ID120")).toBe(120);
+  });
+
+  it("returns null for messages without ID", () => {
+    expect(detectVehicleId("Olá, quero ver uma Hilux")).toBeNull();
+  });
+
+  it("returns null for generic messages", () => {
+    expect(detectVehicleId("Bom dia, tudo bem?")).toBeNull();
+  });
+
+  it("returns null for numeric-only messages", () => {
+    expect(detectVehicleId("2")).toBeNull();
+  });
+});
+
 describe("Vehicle Search Keyword Detection", () => {
   // Replicate the detection logic from ai.ts for testing
   const VEHICLE_MODEL_KEYWORDS = [
@@ -72,7 +209,7 @@ describe("Vehicle Search Keyword Detection", () => {
     "mercedes", "bmw", "audi", "volvo", "peugeot", "citroen", "kia",
     "caoa", "chery", "jac", "lifan", "byd", "gwm", "ram",
     "vectra", "astra", "celta", "classic", "meriva", "zafira", "blazer",
-    "fusca", "kombi", "brasilia", "variant", "passat",
+    "fusca", "kombi", "brasilia", "variant", "passat", "belina", "corcel", "del rey", "pampa", "maverick", "opala", "chevette", "monza", "kadett", "ipanema", "veraneio", "bonanza", "d-20", "d20",
     "fiesta", "focus", "ka", "ecosport", "territory",
     "fit", "city", "hrv", "wrv", "crv",
     "etios", "yaris", "camry", "sw4", "rav4",

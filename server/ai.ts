@@ -1,7 +1,7 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
 import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, getLeadByConversationId, upsertLeadSummary } from "./db";
-import { getStockSummaryForAI, searchVehiclesForAI } from "./stockSync";
+import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation } from "../drizzle/schema";
 
 // ============================================================================
@@ -73,13 +73,17 @@ REGRA 8 - ÁUDIO:
 // ============================================================================
 export const COMMERCIAL_PROMPT = `=== MOTOR COMERCIAL (IMUTÁVEL) ===
 
-MENSAGENS DE ANÚCIOS (REFERÊCIA DE VEÍCULO):
-- Quando o cliente enviar uma mensagem contendo "IDX" (onde X é um número, ex: ID42, ID9, ID123), significa que ele veio de um anúncio e está interessado no veículo com ID X
-- Também reconheça o formato "(Ref: X)" como sinônimo de IDX
-- Nesse caso: 1) Chame atualizar_lead com veiculo_id: X e veiculo_interesse com o nome do veículo mencionado na mensagem 2) Chame buscar_veiculos para buscar o veículo pelo modelo mencionado
-- Trate o cliente como alguém que já demonstrou interesse real (veio de um anúncio pago)
-- Exemplo: "Olá, tenho interesse no veículo: Chevrolet Agile 2013 ID9" → atualizar_lead(veiculo_id: 9, veiculo_interesse: "Chevrolet Agile 2013") + buscar_veiculos(marca: "chevrolet", modelo: "agile")
-- NUNCA mencione o "IDX", "(Ref: X)" ou qualquer código de referência na resposta ao cliente
+PRIORIDADE DE AÇÕES (execute na ordem):
+1. Se a mensagem contém IDX ou (Ref: X): o veículo já foi pré-carregado no contexto. Apresente-o diretamente ao cliente com preço, ano, km, link. NÃO chame buscar_veiculos. Pergunte se quer agendar visita ou tem troca.
+2. Se a mensagem pede veículo específico: chame buscar_veiculos com termos simples
+3. Se a mensagem traz dados novos do cliente: chame atualizar_lead
+4. Se é qualificação (troca, financiamento, dados): siga o fluxo comercial
+
+MENSAGENS DE ANÚCIOS (IDX / Ref: X):
+- O sistema já detecta automaticamente o ID e carrega o veículo no contexto
+- Trate o cliente como lead quente (veio de anúncio pago)
+- Se o veículo não estiver mais disponível, informe com empatia e ofereça similares
+- NUNCA mencione IDX, (Ref: X) ou códigos internos na resposta
 
 BUSCA DE VEÍCULOS:
 - Chame buscar_veiculos quando o cliente perguntar sobre um veículo, marca ou modelo específico
@@ -458,6 +462,21 @@ const TOOLS: Tool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "buscar_veiculo_por_id",
+      description: "Busca um veículo específico pelo ID no estoque. Use quando o cliente mencionar um ID específico (ex: ID9, ID42) ou quando quiser detalhes de um veículo já identificado.",
+      parameters: {
+        type: "object",
+        properties: {
+          id: { type: "number", description: "ID do veículo no estoque (o número após 'ID' na mensagem do cliente)" },
+        },
+        required: ["id"],
+        additionalProperties: false,
+      },
+    },
+  },
 ];
 
 /**
@@ -505,30 +524,70 @@ export async function processAIMessage(
     contextBlock += `\nOBSERVAÇÕES: ${(conversation as any).contactNotes}`;
   }
 
-  // Lead data - present as reference only, with clear warning about recency
+  // Lead data - present as reference, with smart recency handling
   let existingLead: any = null;
   try {
     existingLead = await getLeadByConversationId(conversation.id);
     if (existingLead) {
-      contextBlock += `\n\nDADOS DO LEAD SALVOS (informações antigas - podem estar DESATUALIZADAS):`;
+      // Calculate how old the lead data is
+      const leadAge = existingLead.updatedAt ? Date.now() - new Date(existingLead.updatedAt).getTime() : Infinity;
+      const isRecent = leadAge < 24 * 60 * 60 * 1000; // less than 24h
+      const ageLabel = isRecent ? "dados recentes" : "dados anteriores";
+      contextBlock += `\n\nDADOS DO LEAD (${ageLabel}):`;
       if (existingLead.name) contextBlock += `\n- Nome: ${existingLead.name}`;
       if (existingLead.intention) contextBlock += `\n- Intenção: ${existingLead.intention}`;
-      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse (ANTIGO, pode ter mudado): ${existingLead.vehicleInterest}`;
+      if (existingLead.vehicleInterest) contextBlock += `\n- Veículo de interesse: ${existingLead.vehicleInterest}`;
+      if (existingLead.vehicleId) contextBlock += `\n- Veículo vinculado ID: ${existingLead.vehicleId}`;
       if (existingLead.hasTrade) contextBlock += `\n- Tem troca: Sim`;
-      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca (ANTIGO, pode ter mudado): ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm || ""}`;
+      if (existingLead.tradeVehicle) contextBlock += `\n- Veículo de troca: ${existingLead.tradeVehicle} ${existingLead.tradeYear || ""} ${existingLead.tradeKm || ""}`;
       if (existingLead.paymentMethod) contextBlock += `\n- Pagamento: ${existingLead.paymentMethod}`;
       if (existingLead.downPayment) contextBlock += `\n- Entrada: ${existingLead.downPayment}`;
+      if (existingLead.city) contextBlock += `\n- Cidade: ${existingLead.city}`;
       if (existingLead.notes) contextBlock += `\n- Notas: ${existingLead.notes}`;
-      contextBlock += `\n\nATENÇÃO: Se a [MENSAGEM ATUAL] do cliente contradiz qualquer dado acima, a mensagem atual tem PRIORIDADE TOTAL. Atualize o lead com atualizar_lead.`;
+      contextBlock += `\nSe a [MENSAGEM ATUAL] contradiz algum dado acima, a mensagem atual tem prioridade. Atualize com atualizar_lead.`;
     }
   } catch (e) {
     console.error("[AI] Failed to load lead context:", e);
   }
 
-  // === ASSEMBLE FULL PROMPT (4 layers in order) ===
-  const fullSystemPrompt = `${corePrompt}\n\n${commercialPrompt}\n\n${personalityPrompt}\n\n${contextBlock}`;
+  // === PRE-PROCESSING: Detect vehicle ID in message and fetch directly ===
+  let adVehicleContext = "";
+  let adVehicleId: number | null = null;
+  const idMatch = customerMessage.match(/(?:ID|id)(\d+)|\(Ref:\s*(\d+)\)/i);
+  if (idMatch) {
+    adVehicleId = parseInt(idMatch[1] || idMatch[2]);
+    console.log(`[AI] Detected vehicle ID ${adVehicleId} in message. Pre-fetching from database...`);
+    try {
+      const vehicleResult = await getVehicleByIdForAI(adVehicleId);
+      if (vehicleResult.found) {
+        adVehicleContext = `\n\n=== VEÍCULO DO ANÚCIO (PRÉ-CARREGADO) ===\n${vehicleResult.text}\n\nINSTRUÇÃO: O cliente veio de um anúncio e já demonstrou interesse neste veículo. Apresente-o diretamente na resposta (preço, ano, cor, km, câmbio, link). NÃO chame buscar_veiculos para este veículo pois os dados já estão acima. Pergunte se deseja agendar uma visita, saber mais detalhes ou se tem veículo de troca.`;
+        // Auto-update lead with vehicle ID
+        try {
+          const v = vehicleResult.vehicle;
+          await upsertLead({
+            conversationId: conversation.id,
+            phone: conversation.phone,
+            vehicleId: adVehicleId,
+            vehicleInterest: v ? `${v.brand} ${v.model} ${v.year}` : undefined,
+            intention: "compra",
+            status: "qualifying",
+          });
+          console.log(`[AI] Auto-updated lead with vehicle ID ${adVehicleId}`);
+        } catch (leadErr) {
+          console.error(`[AI] Failed to auto-update lead with vehicle ID:`, leadErr);
+        }
+      } else {
+        adVehicleContext = `\n\n=== VEÍCULO DO ANÚCIO ===\n${vehicleResult.text}\nINSTRUÇÃO: O veículo do anúncio não está mais disponível. Informe ao cliente com empatia e ofereça buscar veículos similares usando buscar_veiculos.`;
+      }
+    } catch (err) {
+      console.error(`[AI] Failed to pre-fetch vehicle ID ${adVehicleId}:`, err);
+    }
+  }
 
-  console.log(`[AI] Prompt assembled: CORE(${corePrompt.length}ch) + COMMERCIAL(${commercialPrompt.length}ch) + PERSONALITY(${personalityPrompt.length}ch) + CONTEXT(${contextBlock.length}ch) = ${fullSystemPrompt.length}ch total`);
+  // === ASSEMBLE FULL PROMPT (4 layers in order + ad vehicle context) ===
+  const fullSystemPrompt = `${corePrompt}\n\n${commercialPrompt}\n\n${personalityPrompt}\n\n${contextBlock}${adVehicleContext}`;
+
+  console.log(`[AI] Prompt assembled: CORE(${corePrompt.length}ch) + COMMERCIAL(${commercialPrompt.length}ch) + PERSONALITY(${personalityPrompt.length}ch) + CONTEXT(${contextBlock.length}ch) + AD_VEHICLE(${adVehicleContext.length}ch) = ${fullSystemPrompt.length}ch total`);
 
   // Build message history for context
   const llmMessages: LLMMessage[] = [
@@ -571,8 +630,8 @@ export async function processAIMessage(
   // Track lead data collected during this interaction
   let collectedLeadData: Record<string, unknown> | null = null;
 
-  // Detect if we should force vehicle search
-  const forceSearch = shouldForceVehicleSearch(customerMessage);
+  // Detect if we should force vehicle search (skip if ad vehicle already pre-loaded)
+  const forceSearch = adVehicleId ? false : shouldForceVehicleSearch(customerMessage);
 
   try {
     console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 80)}..." forceSearch=${forceSearch}`);
@@ -716,6 +775,20 @@ export async function processAIMessage(
               toolSuccess = false;
               toolErrorMsg = leadErr instanceof Error ? leadErr.message : "Erro desconhecido";
             }
+          } else if (toolCall.function.name === "buscar_veiculo_por_id") {
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
+            console.log(`[AI] buscar_veiculo_por_id args:`, JSON.stringify(args));
+            if (args.id) {
+              const vehicleResult = await getVehicleByIdForAI(args.id);
+              toolResult = vehicleResult.text;
+              toolResultCount = vehicleResult.found ? 1 : 0;
+              console.log(`[AI] buscar_veiculo_por_id: found=${vehicleResult.found}`);
+            } else {
+              toolResult = "ID do veículo não fornecido.";
+              toolResultCount = 0;
+            }
+
           } else if (toolCall.function.name === "rotear_para_vendedor") {
             parsedArgs = JSON.parse(toolCall.function.arguments || "{}");
             toolResult = "Conversa encaminhada para vendedor.";
