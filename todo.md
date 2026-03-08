@@ -954,3 +954,6 @@
 - [x] FlowEngine processa wait_input: envia pergunta, pausa, salva resposta, avança
 - [x] Editor visual com painel de propriedades para wait_input e ai_response
 - [x] 266 testes passando, 0 erros TypeScript
+
+## Bug - Rodada 67 (wait_input não aceito no saveFlow)
+- [x] Adicionar wait_input à validação Zod do nodeType no saveFlow do backend
