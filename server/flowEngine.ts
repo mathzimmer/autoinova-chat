@@ -180,6 +180,55 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return result;
   }
 
+  // For wait_input node - customer responded with free text
+  if (currentNode.nodeType === "wait_input") {
+    const sessionCtx = (session.context as any) || {};
+    const variable = sessionCtx.waitInputVariable;
+    
+    // Save the customer's response to lead data if variable is specified
+    if (variable && ctx.customerMessage) {
+      try {
+        // Map variable names to lead fields
+        const fieldMap: Record<string, string> = {
+          nome: "name", name: "name",
+          cidade: "city", city: "city",
+          veiculo_troca: "tradeVehicle", tradeVehicle: "tradeVehicle",
+          pagamento: "paymentMethod", paymentMethod: "paymentMethod",
+          entrada: "downPayment", downPayment: "downPayment",
+          veiculo_interesse: "vehicleInterest", vehicleInterest: "vehicleInterest",
+          notas: "notes", notes: "notes",
+          email: "email",
+          cpf: "cpf",
+        };
+        const leadField = fieldMap[variable] || variable;
+        const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf"];
+        if (validFields.includes(leadField)) {
+          await upsertLead({
+            conversationId: ctx.conversationId,
+            phone: ctx.phone,
+            [leadField]: ctx.customerMessage,
+          } as any);
+          console.log(`[FlowEngine] Saved wait_input response to lead.${leadField}: "${ctx.customerMessage}"`);
+        }
+      } catch (err) {
+        console.error(`[FlowEngine] Failed to save wait_input response:`, err);
+      }
+    }
+
+    // Clear wait context and advance to next node
+    const newCtx = { ...sessionCtx };
+    delete newCtx.waitInputVariable;
+    delete newCtx.waitInputLabel;
+    await updateFlowSession(session.id, { context: newCtx });
+
+    // Find next edge and continue
+    const nextEdge = edges.find(e => e.sourceNodeId === currentNode.id);
+    if (nextEdge) {
+      await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
+    }
+    return result;
+  }
+
   // For condition node waiting for input
   if (currentNode.nodeType === "condition") {
     const condResult = evaluateCondition(currentNode, ctx);
@@ -335,6 +384,26 @@ async function executeFromNode(
           pendingNextNodeId: nextEdge?.targetNodeId || null,
         },
       });
+      break;
+    }
+
+    case "wait_input": {
+      // Send prompt message if configured
+      const promptText = replaceVariables(config.promptText || "", ctx);
+      if (promptText) {
+        await sendTextMessage(ctx.phone, promptText);
+        result.responses.push(promptText);
+      }
+      // Wait for customer response - store which variable to save the response to
+      await updateFlowSession(session.id, {
+        currentNodeId: node.id,
+        context: {
+          ...((session.context as any) || {}),
+          waitInputVariable: config.variable || null,
+          waitInputLabel: config.label || "resposta",
+        },
+      });
+      result.waitingForInput = true;
       break;
     }
 

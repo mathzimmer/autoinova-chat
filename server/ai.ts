@@ -543,18 +543,33 @@ export interface InteractiveMessage {
 export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
-  customerMessage: string
+  customerMessage: string,
+  options?: { flowPrompt?: string; flowInstruction?: string }
 ): Promise<{ response: string; leadData: Record<string, unknown> | null; interactiveMessages?: InteractiveMessage[] }> {
   const startTime = Date.now();
+  const isFlowMode = !!(options?.flowPrompt);
 
-  // === LAYER 1: CORE (editable from DB, with safe default) ===
-  const corePrompt = await getCorePrompt();
+  // When inside a flow with custom prompt, use ONLY the flow prompt (no global layers)
+  // When in free AI mode, use the 3 global layers as usual
+  let corePrompt: string;
+  let commercialPrompt: string;
+  let personalityPrompt: string;
 
-  // === LAYER 2: COMMERCIAL (editable from DB, with safe default) ===
-  const commercialPrompt = await getCommercialPrompt();
-
-  // === LAYER 3: PERSONALITY (editable from DB) ===
-  const personalityPrompt = await getPersonalityPrompt();
+  if (isFlowMode) {
+    // FLOW MODE: Use minimal core rules + flow-specific prompt only
+    corePrompt = `=== REGRAS DO SISTEMA ===\nFORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Separe com quebras de linha. Máximo 1-2 emojis. Máximo 3 parágrafos curtos.\nIMPORTANTE: SÓ apresente veículos retornados por buscar_veiculos ou buscar_veiculo_por_id. COPIE preço e ano EXATAMENTE. PROIBIDO inventar dados.\nMÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto.\nLIMPEZA: Remova [ID:X], [FOTO] da resposta.`;
+    commercialPrompt = ""; // No commercial prompt in flow mode
+    personalityPrompt = options.flowPrompt!;
+    if (options.flowInstruction) {
+      personalityPrompt += `\n\n=== INSTRUÇÃO DO NÓ ATUAL ===\n${options.flowInstruction}`;
+    }
+    console.log(`[AI] FLOW MODE: usando prompt do fluxo (${personalityPrompt.length}ch) em vez dos 3 prompts globais`);
+  } else {
+    // FREE AI MODE: Use all 3 global layers
+    corePrompt = await getCorePrompt();
+    commercialPrompt = await getCommercialPrompt();
+    personalityPrompt = await getPersonalityPrompt();
+  }
 
   // === LAYER 4: CONTEXT (dynamic) ===
   let contextBlock = "\n=== CONTEXTO DINÂMICO ===";

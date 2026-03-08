@@ -172,7 +172,27 @@ async function initDebounce() {
       }
 
       const recentMessages = await listMessages(conversationId, 30);
-      const aiResult = await processAIMessage(conversation, recentMessages, groupedContent);
+
+      // Check if there's an active flow session with a custom prompt
+      let flowAiOptions: { flowPrompt?: string; flowInstruction?: string } | undefined;
+      try {
+        const activeFlowSession = await getActiveFlowSession(conversationId);
+        if (activeFlowSession) {
+          const flow = await getChatFlowById(activeFlowSession.flowId);
+          if (flow?.aiPrompt) {
+            const sessionCtx = (activeFlowSession.context as any) || {};
+            flowAiOptions = {
+              flowPrompt: flow.aiPrompt,
+              flowInstruction: sessionCtx.aiInstruction || undefined,
+            };
+            console.log(`[Debounce] Conversa ${conversationId}: usando prompt do fluxo "${flow.name}" (${flow.aiPrompt.length}ch)`);
+          }
+        }
+      } catch (flowPromptErr) {
+        console.error(`[Debounce] Erro ao carregar prompt do fluxo:`, flowPromptErr);
+      }
+
+      const aiResult = await processAIMessage(conversation, recentMessages, groupedContent, flowAiOptions);
 
       emitTypingIndicator(conversationId, false, "Auto Inova IA");
 
@@ -2365,6 +2385,7 @@ const flowRouter = router({
       triggerValue: z.string().optional(),
       active: z.boolean().optional(),
       priority: z.number().optional(),
+      aiPrompt: z.string().nullable().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;

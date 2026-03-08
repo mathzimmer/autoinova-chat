@@ -29,7 +29,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, Save, Plus, Trash2, X,
   MessageSquare, MousePointerClick, List, Image, GitBranch,
-  Bot, UserCheck, Clock, Square, Play,
+  Bot, UserCheck, Clock, Square, Play, MessageCircle,
   ChevronDown, GripVertical,
 } from "lucide-react";
 
@@ -51,6 +51,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   update_lead: { label: "Atualizar Lead", icon: UserCheck, color: "text-orange-400", bgColor: "border-orange-500/50 bg-orange-500/5", description: "Atualizar dados do lead" },
   assign_agent: { label: "Transferir", icon: UserCheck, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Transferir para humano" },
   delay: { label: "Delay", icon: Clock, color: "text-gray-400", bgColor: "border-gray-500/50 bg-gray-500/5", description: "Aguardar X segundos" },
+  wait_input: { label: "Aguardar Resposta", icon: MessageCircle, color: "text-teal-400", bgColor: "border-teal-500/50 bg-teal-500/5", description: "Aguardar texto livre do cliente" },
   end: { label: "Fim", icon: Square, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Encerrar fluxo" },
 };
 
@@ -518,6 +519,46 @@ function PropertiesPanel({
           </>
         )}
 
+        {nodeType === "wait_input" && (
+          <>
+            <div>
+              <Label className="text-xs">Pergunta para o cliente</Label>
+              <Textarea
+                value={config.promptText || ""}
+                onChange={(e) => updateConfig("promptText", e.target.value)}
+                placeholder="Ex: Qual o seu nome completo?"
+                rows={3}
+                className="text-sm"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Mensagem enviada antes de aguardar a resposta. Suporta variáveis: {"{{nome}}"}, {"{{telefone}}"}, etc.
+              </p>
+            </div>
+            <div>
+              <Label className="text-xs">Salvar resposta no campo</Label>
+              <Select value={config.variable || ""} onValueChange={(v) => updateConfig("variable", v)}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Selecione o campo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="nome">Nome</SelectItem>
+                  <SelectItem value="cidade">Cidade</SelectItem>
+                  <SelectItem value="veiculo_interesse">Veículo de Interesse</SelectItem>
+                  <SelectItem value="veiculo_troca">Veículo de Troca</SelectItem>
+                  <SelectItem value="pagamento">Forma de Pagamento</SelectItem>
+                  <SelectItem value="entrada">Valor de Entrada</SelectItem>
+                  <SelectItem value="email">Email</SelectItem>
+                  <SelectItem value="cpf">CPF</SelectItem>
+                  <SelectItem value="notas">Notas</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                A resposta do cliente será salva automaticamente neste campo do lead
+              </p>
+            </div>
+          </>
+        )}
+
         {nodeType === "delay" && (
           <div>
             <Label className="text-xs">Tempo de espera (segundos)</Label>
@@ -712,6 +753,16 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
   };
 
   const flow = flowQuery.data?.flow;
+  const [showFlowSettings, setShowFlowSettings] = useState(false);
+  const [flowAiPrompt, setFlowAiPrompt] = useState("");
+  const updateFlowMutation = trpc.flow.update.useMutation({
+    onSuccess: () => toast.success("Configurações do fluxo salvas!"),
+  });
+
+  // Load flow AI prompt
+  useEffect(() => {
+    if (flow?.aiPrompt) setFlowAiPrompt(flow.aiPrompt);
+  }, [flow?.aiPrompt]);
 
   return (
     <div className="h-[calc(100vh-64px)] flex flex-col">
@@ -733,12 +784,53 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowFlowSettings(!showFlowSettings)}>
+            <Bot className="h-3.5 w-3.5 mr-1" />
+            Prompt IA
+          </Button>
           <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending || !hasChanges}>
             <Save className="h-3.5 w-3.5 mr-1" />
             {saveMutation.isPending ? "Salvando..." : "Salvar"}
           </Button>
         </div>
       </div>
+
+      {/* Flow AI Prompt Settings */}
+      {showFlowSettings && (
+        <div className="border-b border-border bg-card/80 px-4 py-3">
+          <div className="max-w-3xl">
+            <div className="flex items-center justify-between mb-2">
+              <div>
+                <Label className="text-sm font-medium">Prompt da IA para este Fluxo</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Quando o nó "IA Livre" é usado neste fluxo, a IA usará APENAS este prompt em vez dos 3 prompts globais do sistema.
+                  Se vazio, usa os prompts globais normalmente.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  updateFlowMutation.mutate({ id: flowId, aiPrompt: flowAiPrompt || null });
+                }}
+                disabled={updateFlowMutation.isPending}
+              >
+                {updateFlowMutation.isPending ? "Salvando..." : "Salvar Prompt"}
+              </Button>
+            </div>
+            <Textarea
+              value={flowAiPrompt}
+              onChange={(e) => setFlowAiPrompt(e.target.value)}
+              placeholder={`Ex: Você é um consultor de vendas da Auto Inova. Apresente o veículo de forma profissional, destaque os pontos fortes e pergunte se o cliente tem interesse em agendar uma visita.\n\nRegras:\n- Seja objetivo e profissional\n- Não invente informações sobre o veículo\n- Use os dados do estoque fornecidos no contexto`}
+              rows={6}
+              className="text-sm font-mono"
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Variáveis disponíveis: {"{{nome}}"}, {"{{telefone}}"}, {"{{veiculo}}"}, {"{{cidade}}"}, {"{{troca}}"}, {"{{pagamento}}"}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Canvas + Sidebar */}
       <div className="flex-1 flex">

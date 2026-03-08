@@ -943,3 +943,14 @@
 - [x] Debounce callback chama continueFlowAfterAI após processAIMessage para executar nó pendente
 - [x] Quando cliente envia nova msg e está no nó ai_response, passa para IA normalmente
 - [x] 266 testes passando (novos testes para continueFlowAfterAI), 0 erros TypeScript
+
+## Feature - Rodada 66 (Prompt por Fluxo + Nó Aguardar Resposta)
+- [x] Separar IA de fluxo da IA livre: processAIMessage aceita flowPrompt que substitui os 3 prompts globais
+- [x] Campo aiPrompt na tabela chatFlows (migração aplicada)
+- [x] Botão "Prompt IA" no toolbar do editor visual para editar prompt do fluxo
+- [x] Nó ai_response dentro do fluxo usa apenas o prompt do fluxo + instrução do nó
+- [x] Criar nó "Aguardar Resposta" (wait_input) com pergunta e variável de destino
+- [x] Nó wait_input salva resposta em 9 campos do lead (nome, cidade, veiculo, troca, pagamento, etc.)
+- [x] FlowEngine processa wait_input: envia pergunta, pausa, salva resposta, avança
+- [x] Editor visual com painel de propriedades para wait_input e ai_response
+- [x] 266 testes passando, 0 erros TypeScript

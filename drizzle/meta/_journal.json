@@ -113,6 +113,20 @@
       "when": 1772917540886,
       "tag": "0015_gifted_reaper",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "5",
+      "when": 1773010404403,
+      "tag": "0016_mysterious_puck",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "5",
+      "when": 1773010561352,
+      "tag": "0017_glorious_pretty_boy",
+      "breakpoints": true
     }
   ]
 }

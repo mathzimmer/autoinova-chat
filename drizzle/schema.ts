@@ -387,6 +387,7 @@ export const chatFlows = mysqlTable("chatFlows", {
   triggerValue: varchar("triggerValue", { length: 500 }), // Ex: palavra-chave, ID do botão
   active: boolean("active").default(false).notNull(),
   priority: int("priority").default(0).notNull(), // Maior = mais prioridade
+  aiPrompt: text("aiPrompt"), // Prompt customizado para a IA dentro deste fluxo (substitui prompts globais)
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -413,6 +414,7 @@ export const chatFlowNodes = mysqlTable("chatFlowNodes", {
     "update_lead",        // Atualizar dados do lead
     "assign_agent",       // Transferir para agente humano
     "delay",              // Aguardar X segundos antes de continuar
+    "wait_input",         // Aguardar resposta livre do cliente (texto)
     "end",                // Fim do fluxo
   ]).notNull(),
   label: varchar("label", { length: 255 }), // Nome visual do nó

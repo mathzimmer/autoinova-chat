@@ -1,0 +1,1 @@
+ALTER TABLE `chatFlows` ADD `aiPrompt` text;
