@@ -20,6 +20,7 @@ import {
   listChatFlowNodes, getChatFlowNodeById, createChatFlowNode, updateChatFlowNode, deleteChatFlowNode, bulkUpsertNodes,
   listChatFlowEdges, createChatFlowEdge, deleteChatFlowEdge, replaceFlowEdges,
   getActiveFlowSession, createFlowSession, updateFlowSession, getFlowSessionsByFlow,
+  pauseFlowSessionByConversation, pauseAllActiveSessionsByFlow,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -121,6 +122,28 @@ async function initDebounce() {
             });
             emitNewMessage(conversationId, botMsg);
           }
+          // Save flow interactive messages to DB with metadata
+          for (const im of flowResult.interactiveMessages) {
+            const interactiveMetadata: any = { interactiveType: im.type, interactiveData: im.data };
+            let content = im.data.body || "";
+            if (im.type === "buttons" && im.data.buttons) {
+              content += `\n\n[Botões: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
+              interactiveMetadata.buttons = im.data.buttons;
+            } else if (im.type === "list" && im.data.sections) {
+              content += `\n\n[Lista: ${im.data.sections.flatMap((s: any) => (s.rows || []).map((r: any) => r.title)).join(" | ")}]`;
+              interactiveMetadata.sections = im.data.sections;
+              interactiveMetadata.buttonText = im.data.buttonText;
+            }
+            const flowInteractiveMsg = await createMessage({
+              conversationId,
+              content,
+              senderType: "bot",
+              senderName: "Auto Inova IA",
+              messageType: "text",
+              metadata: interactiveMetadata,
+            });
+            emitNewMessage(conversationId, flowInteractiveMsg);
+          }
           return; // Flow handled, don't pass to AI
         }
       } catch (flowErr) {
@@ -213,12 +236,22 @@ async function initDebounce() {
                 const interactiveContent = im.type === "buttons"
                   ? `[Botões: ${im.buttons!.map(b => b.title).join(" | ")}]`
                   : `[Lista: ${im.sections!.flatMap(s => s.rows.map(r => r.title)).join(" | ")}]`;
+                const interactiveMetadata: any = { interactiveType: im.type };
+                if (im.type === "buttons" && im.buttons) {
+                  interactiveMetadata.buttons = im.buttons;
+                  interactiveMetadata.body = im.body;
+                } else if (im.type === "list" && im.sections) {
+                  interactiveMetadata.sections = im.sections;
+                  interactiveMetadata.buttonText = im.buttonText;
+                  interactiveMetadata.body = im.body;
+                }
                 const interactiveMsg = await createMessage({
                   conversationId,
                   content: `${im.body}\n\n${interactiveContent}`,
                   senderType: "bot",
                   senderName: "Auto Inova IA",
                   messageType: "text",
+                  metadata: interactiveMetadata,
                 });
                 emitNewMessage(conversationId, interactiveMsg);
                 if (interactiveResult.messageId) {
@@ -2215,7 +2248,28 @@ const flowRouter = router({
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
       await updateChatFlow(id, data as any);
+      // Se estiver inativando o fluxo, pausar todas as sessões ativas
+      if (input.active === false) {
+        const paused = await pauseAllActiveSessionsByFlow(id);
+        console.log(`[Flow] Fluxo ${id} inativado, ${paused} sessões pausadas`);
+      }
       return { success: true };
+    }),
+
+  // Pausar fluxo ativo de uma conversa manualmente
+  pauseSession: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .mutation(async ({ input }) => {
+      const paused = await pauseFlowSessionByConversation(input.conversationId);
+      return { success: paused };
+    }),
+
+  // Verificar se há sessão de fluxo ativa para uma conversa
+  getActiveSession: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const session = await getActiveFlowSession(input.conversationId);
+      return session || null;
     }),
 
   delete: adminProcedure

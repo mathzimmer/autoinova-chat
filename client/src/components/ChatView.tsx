@@ -3,7 +3,7 @@ import { useConversationSocket } from "@/hooks/useSocket";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2, Clock, AlertTriangle, MessageSquareText, ChevronDown } from "lucide-react";
+import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2, Clock, AlertTriangle, MessageSquareText, ChevronDown, GitBranch, PauseCircle, List } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
@@ -46,6 +46,19 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     { id: conversationId },
     { refetchInterval: 15000 }
   );
+
+  // Flow session state
+  const { data: activeFlowSession, refetch: refetchFlowSession } = trpc.flow.getActiveSession.useQuery(
+    { conversationId },
+    { refetchInterval: 10000 }
+  );
+  const pauseFlowMutation = trpc.flow.pauseSession.useMutation({
+    onSuccess: () => {
+      toast.success("Fluxo pausado com sucesso");
+      refetchFlowSession();
+    },
+    onError: () => toast.error("Erro ao pausar fluxo"),
+  });
   const { data: msgs, refetch: refetchMessages } = trpc.message.list.useQuery(
     { conversationId },
     { refetchInterval: 5000 }
@@ -512,6 +525,29 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             )}
           </div>
         </div>
+        {/* Flow active indicator + pause button */}
+        {activeFlowSession && (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <div className="flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/25 text-violet-400 px-2.5 py-1 rounded-full">
+              <GitBranch className="h-3.5 w-3.5" />
+              <span className="text-[11px] font-medium">Fluxo Ativo</span>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => pauseFlowMutation.mutate({ conversationId })}
+              disabled={pauseFlowMutation.isPending}
+              className="h-7 px-2 text-xs text-violet-400 hover:text-violet-300 hover:bg-violet-500/10"
+              title="Pausar fluxo ativo"
+            >
+              {pauseFlowMutation.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <><PauseCircle className="h-3.5 w-3.5 mr-1" /> Pausar</>
+              )}
+            </Button>
+          </div>
+        )}
         {/* Panel toggle button */}
         {panelToggle}
       </div>
@@ -872,6 +908,15 @@ function MessageBubble({ message }: { message: MessageData }) {
   const mediaUrl = meta?.mediaUrl as string | undefined;
   const transcribedText = meta?.transcribedText as string | undefined;
 
+  // Interactive message data (buttons/lists from flows or AI)
+  const interactiveType = meta?.interactiveType as string | undefined;
+  const interactiveButtons = (meta?.buttons as Array<{ id?: string; title: string }>) || [];
+  const interactiveSections = (meta?.sections as Array<{ title?: string; rows: Array<{ id?: string; title: string; description?: string }> }>) || [];
+  // Also check interactiveData for flow-generated messages
+  const interactiveData = meta?.interactiveData as Record<string, any> | undefined;
+  const effectiveButtons = interactiveButtons.length > 0 ? interactiveButtons : (interactiveData?.buttons || []);
+  const effectiveSections = interactiveSections.length > 0 ? interactiveSections : (interactiveData?.sections || []);
+
   // Template messages — show as delivered outgoing messages with special styling
   if (isTemplate) {
     const templateName = (meta?.templateName as string) || "template";
@@ -1019,9 +1064,57 @@ function MessageBubble({ message }: { message: MessageData }) {
             <p className="whitespace-pre-wrap">
               {message.messageType === "audio" && transcribedText
                 ? "" // Already shown in transcription section above
-                : message.content
+                : interactiveType
+                  ? (meta?.body as string || message.content.split("\n\n[")[0] || message.content)
+                  : message.content
               }
             </p>
+          )}
+
+          {/* Interactive Buttons Visual */}
+          {interactiveType === "buttons" && effectiveButtons.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-primary/15 space-y-1.5">
+              {effectiveButtons.map((btn: any, i: number) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs font-medium text-primary"
+                >
+                  <span className="h-4 w-4 rounded-full border border-primary/40 flex items-center justify-center text-[9px] shrink-0">{i + 1}</span>
+                  {btn.title}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Interactive List Visual */}
+          {interactiveType === "list" && effectiveSections.length > 0 && (
+            <div className="mt-2 pt-2 border-t border-primary/15">
+              <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-primary">
+                <List className="h-3.5 w-3.5" />
+                {(meta?.buttonText as string) || (interactiveData?.buttonText as string) || "Ver Opções"}
+              </div>
+              {effectiveSections.map((section: any, si: number) => (
+                <div key={si} className="mb-2">
+                  {section.title && (
+                    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">{section.title}</div>
+                  )}
+                  <div className="space-y-1">
+                    {(section.rows || []).map((row: any, ri: number) => (
+                      <div
+                        key={ri}
+                        className="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-primary/5 border border-primary/10 text-xs"
+                      >
+                        <span className="h-4 w-4 rounded bg-primary/15 flex items-center justify-center text-[9px] font-bold text-primary shrink-0 mt-0.5">{ri + 1}</span>
+                        <div className="min-w-0">
+                          <div className="font-medium text-foreground">{row.title}</div>
+                          {row.description && <div className="text-muted-foreground text-[10px] mt-0.5 line-clamp-2">{row.description}</div>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>

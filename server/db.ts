@@ -746,3 +746,26 @@ export async function getFlowSessionsByFlow(flowId: number) {
     .orderBy(desc(chatFlowSessions.startedAt))
     .limit(100);
 }
+
+export async function pauseFlowSessionByConversation(conversationId: number) {
+  const db = await getDb();
+  if (!db) return false;
+  const session = await getActiveFlowSession(conversationId);
+  if (!session) return false;
+  await db.update(chatFlowSessions)
+    .set({ status: "paused" })
+    .where(eq(chatFlowSessions.id, session.id));
+  return true;
+}
+
+export async function pauseAllActiveSessionsByFlow(flowId: number) {
+  const db = await getDb();
+  if (!db) return 0;
+  const result = await db.update(chatFlowSessions)
+    .set({ status: "paused" })
+    .where(and(
+      eq(chatFlowSessions.flowId, flowId),
+      eq(chatFlowSessions.status, "active")
+    ));
+  return result[0].affectedRows || 0;
+}

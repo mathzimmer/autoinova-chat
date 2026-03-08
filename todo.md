@@ -908,3 +908,18 @@
 - [x] Variáveis de template: {{nome}}, {{telefone}}, {{veiculo}}, {{cidade}}, {{troca}}, {{pagamento}}
 - [x] Proteção contra loops infinitos (depth > 20)
 - [x] 261 testes passando, 0 erros TypeScript
+
+## Feature - Rodada 61 (Manual de Fluxos + Correções de Conexão)
+- [x] Verificar mecânica de conexão entre nós (handles de saída por botão/opção)
+- [x] Verificar continuação do fluxo após clique em botão do WhatsApp
+- [x] Mecânica correta: cada botão/item tem handle individual, FlowEngine faz matchResponseToEdge
+- [x] Criar manual completo de como usar o editor de fluxos (manual-fluxos-conversa.md)
+
+## Feature - Rodada 62 (Pausa de Fluxos + Exibição Visual de Botões/Listas no Chat)
+- [x] Endpoint de pausa manual de sessão de fluxo ativa por conversa (flow.pauseSession)
+- [x] Ao inativar um fluxo, pausar automaticamente todas as sessões ativas desse fluxo (pauseAllActiveSessionsByFlow)
+- [x] Botão de pausar fluxo visível na interface de conversa (header com indicador violeta + botão Pausar)
+- [x] Salvar dados de botões/listas (interactiveData) nas mensagens do banco (metadata com interactiveType, buttons, sections)
+- [x] Exibir botões e listas visualmente no chat (botões numerados + listas com seções e descrições)
+- [x] Endpoint getActiveSession para verificar fluxo ativo na conversa
+- [x] 261 testes passando, 0 erros TypeScript
