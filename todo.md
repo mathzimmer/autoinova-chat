@@ -923,3 +923,13 @@
 - [x] Exibir botões e listas visualmente no chat (botões numerados + listas com seções e descrições)
 - [x] Endpoint getActiveSession para verificar fluxo ativo na conversa
 - [x] 261 testes passando, 0 erros TypeScript
+
+## Feature - Rodada 63 (Botão Global Ativar/Desativar Robô e Fluxos)
+- [x] Setting global no banco: ai_global_enabled e flows_global_enabled (via getSetting/upsertSetting)
+- [x] Verificar setting global antes de processar IA no debounce callback
+- [x] Verificar setting global antes de executar fluxos no debounce callback (if globalFlowsEnabled)
+- [x] Pausar todas as sessões de fluxo ativas ao desativar globalmente (setGlobalFlows)
+- [x] Botão Power na sidebar com dropdown: toggle IA, toggle Fluxos, Desativar/Ativar Tudo
+- [x] Indicador de status colorido (verde=tudo ativo, vermelho=tudo inativo, amarelo=parcial)
+- [x] Toast de confirmação ao ativar/desativar
+- [x] 261 testes passando, 0 erros TypeScript

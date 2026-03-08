@@ -33,6 +33,7 @@ import { syncStock } from "./stockSync";
 import { addToDebounce, setDebounceCallback, cancelDebounce, setDebounceDelay, getDebounceDelay } from "./messageDebounce";
 import crypto from "crypto";
 import { getDb } from "./db";
+import { chatFlowSessions } from "../drizzle/schema";
 import { createTeamMember, updateTeamMember, deactivateTeamMember, hashPassword, authenticateTeamMember } from "./teamAuth";
 import { listTeamMembers as listTeamMembersAuth } from "./teamAuth";
 import { sdk } from "./_core/sdk";
@@ -91,15 +92,27 @@ async function initDebounce() {
     try {
       const conversation = await getConversationById(conversationId);
       if (!conversation || !conversation.aiActive) {
-        console.log(`[Debounce] Conversa ${conversationId}: IA desativada ou conversa não encontrada, ignorando`);
+        console.log(`[Debounce] Conversa ${conversationId}: IA desativada ou conversa n\u00e3o encontrada, ignorando`);
         return;
       }
+
+      // === GLOBAL TOGGLE CHECK ===
+      const globalAiSetting = await getSetting("ai_global_enabled");
+      const globalFlowsSetting = await getSetting("flows_global_enabled");
+      const globalAiEnabled = globalAiSetting !== "false";
+      const globalFlowsEnabled = globalFlowsSetting !== "false";
+
+      if (!globalAiEnabled && !globalFlowsEnabled) {
+        console.log(`[Debounce] Conversa ${conversationId}: IA e Fluxos DESATIVADOS globalmente, ignorando`);
+        return;
+      }
+      // === END GLOBAL TOGGLE CHECK ===
 
       console.log(`[Debounce] Conversa ${conversationId}: processando ${messages.length} mensagem(ns) agrupada(s)`);
       emitTypingIndicator(conversationId, true, "Auto Inova IA");
 
       // === FLOW ENGINE: Tentar processar via fluxo programado ===
-      try {
+      if (globalFlowsEnabled) try {
         const flowResult = await processFlowMessage({
           conversationId,
           phone: conversation.phone || "",
@@ -150,6 +163,13 @@ async function initDebounce() {
         console.error(`[Debounce] Conversa ${conversationId}: erro no Flow Engine, fallback para IA:`, flowErr);
       }
       // === END FLOW ENGINE ===
+
+      // Check if AI is globally enabled before processing
+      if (!globalAiEnabled) {
+        console.log(`[Debounce] Conversa ${conversationId}: IA DESATIVADA globalmente, ignorando processamento IA`);
+        emitTypingIndicator(conversationId, false, "Auto Inova IA");
+        return;
+      }
 
       const recentMessages = await listMessages(conversationId, 30);
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent);
@@ -1133,6 +1153,42 @@ const settingsRouter = router({
       await upsertSetting("debounce_delay_ms", String(input.delayMs), ctx.user.id);
       setDebounceDelay(input.delayMs);
       return { success: true, delayMs: input.delayMs };
+    }),
+
+  // ─── Global AI & Flows Toggle ─────────────────────────────────
+  getGlobalStatus: protectedProcedure.query(async () => {
+    const aiEnabled = await getSetting("ai_global_enabled");
+    const flowsEnabled = await getSetting("flows_global_enabled");
+    return {
+      aiEnabled: aiEnabled !== "false", // default true
+      flowsEnabled: flowsEnabled !== "false", // default true
+    };
+  }),
+
+  setGlobalAI: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ai_global_enabled", String(input.enabled), ctx.user.id);
+      console.log(`[Settings] IA global ${input.enabled ? "ATIVADA" : "DESATIVADA"} por user ${ctx.user.id}`);
+      return { success: true, enabled: input.enabled };
+    }),
+
+  setGlobalFlows: adminProcedure
+    .input(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("flows_global_enabled", String(input.enabled), ctx.user.id);
+      console.log(`[Settings] Fluxos globais ${input.enabled ? "ATIVADOS" : "DESATIVADOS"} por user ${ctx.user.id}`);
+      // If disabling, pause all active flow sessions
+      if (!input.enabled) {
+        const db = await getDb();
+        if (db) {
+          await db.update(chatFlowSessions)
+            .set({ status: "completed" })
+            .where(eq(chatFlowSessions.status, "active"));
+          console.log(`[Settings] Todas as sess\u00f5es de fluxo ativas foram pausadas`);
+        }
+      }
+      return { success: true, enabled: input.enabled };
     }),
 });
 

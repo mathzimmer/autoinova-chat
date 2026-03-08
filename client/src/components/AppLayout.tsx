@@ -7,12 +7,15 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key, Sun, Moon, GitBranch } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key, Sun, Moon, GitBranch, Power, BotOff } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
+import { useState } from "react";
+import { toast } from "sonner";
 
 type NavItem = {
   icon: typeof MessageSquare;
@@ -41,13 +44,45 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const [location, setLocation] = useLocation();
   const { theme, toggleTheme, switchable } = useTheme();
 
+
   // Check if this is a team member
   const teamMeQuery = trpc.teamAuth.me.useQuery(undefined, {
     enabled: !!user,
   });
 
+  // Global AI & Flows status
+  const globalStatus = trpc.settings.getGlobalStatus.useQuery(undefined, {
+    enabled: !!user,
+  });
+  const setGlobalAI = trpc.settings.setGlobalAI.useMutation({
+    onSuccess: (data) => {
+      globalStatus.refetch();
+      toast.success(data.enabled ? "Robô IA Ativado" : "Robô IA Desativado", {
+        description: data.enabled
+          ? "O robô voltou a responder em todas as conversas."
+          : "O robô parou de responder em todas as conversas.",
+      });
+    },
+  });
+  const setGlobalFlows = trpc.settings.setGlobalFlows.useMutation({
+    onSuccess: (data) => {
+      globalStatus.refetch();
+      toast.success(data.enabled ? "Fluxos Ativados" : "Fluxos Desativados", {
+        description: data.enabled
+          ? "Os fluxos programados voltaram a funcionar."
+          : "Todos os fluxos foram pausados em todas as conversas.",
+      });
+    },
+  });
+
+  const aiEnabled = globalStatus.data?.aiEnabled ?? true;
+  const flowsEnabled = globalStatus.data?.flowsEnabled ?? true;
+  const allActive = aiEnabled && flowsEnabled;
+  const allInactive = !aiEnabled && !flowsEnabled;
+
   const teamMember = teamMeQuery.data?.teamMember;
   const isTeamMember = teamMeQuery.data?.isTeamMember ?? false;
+  const isAdmin = !isTeamMember || teamMember?.cargo === "admin";
 
   if (loading) {
     return (
@@ -124,6 +159,108 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             );
           })}
         </div>
+
+        {/* Global AI/Flows Power Button - Admin only */}
+        {isAdmin && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`h-10 w-10 rounded-lg flex items-center justify-center transition-all mb-2 relative ${
+                      allActive
+                        ? "text-emerald-400 hover:bg-emerald-500/10"
+                        : allInactive
+                          ? "text-red-400 hover:bg-red-500/10"
+                          : "text-amber-400 hover:bg-amber-500/10"
+                    }`}
+                  >
+                    <Power className="h-5 w-5" />
+                    {/* Status dot */}
+                    <span className={`absolute top-1 right-1 h-2 w-2 rounded-full ${
+                      allActive ? "bg-emerald-400" : allInactive ? "bg-red-400" : "bg-amber-400"
+                    }`} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right" className="text-xs">
+                  {allActive ? "Robô e Fluxos: Ativos" : allInactive ? "Robô e Fluxos: Inativos" : "Parcialmente ativo"}
+                </TooltipContent>
+              </Tooltip>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="right" align="end" className="w-56">
+              <div className="px-2 py-1.5 border-b border-border mb-1">
+                <p className="text-sm font-semibold text-foreground">Controle Global</p>
+                <p className="text-xs text-muted-foreground">Ativar/desativar em todas as conversas</p>
+              </div>
+
+              {/* AI Toggle */}
+              <DropdownMenuItem
+                onClick={() => setGlobalAI.mutate({ enabled: !aiEnabled })}
+                disabled={setGlobalAI.isPending}
+                className="cursor-pointer"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <Bot className={`h-4 w-4 ${aiEnabled ? "text-emerald-400" : "text-red-400"}`} />
+                  <span className="flex-1">Robô IA</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    aiEnabled
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "bg-red-500/15 text-red-400"
+                  }`}>
+                    {aiEnabled ? "ON" : "OFF"}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              {/* Flows Toggle */}
+              <DropdownMenuItem
+                onClick={() => setGlobalFlows.mutate({ enabled: !flowsEnabled })}
+                disabled={setGlobalFlows.isPending}
+                className="cursor-pointer"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <GitBranch className={`h-4 w-4 ${flowsEnabled ? "text-emerald-400" : "text-red-400"}`} />
+                  <span className="flex-1">Fluxos</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    flowsEnabled
+                      ? "bg-emerald-500/15 text-emerald-400"
+                      : "bg-red-500/15 text-red-400"
+                  }`}>
+                    {flowsEnabled ? "ON" : "OFF"}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              <DropdownMenuSeparator />
+
+              {/* Quick toggle all */}
+              <DropdownMenuItem
+                onClick={() => {
+                  if (allActive) {
+                    setGlobalAI.mutate({ enabled: false });
+                    setGlobalFlows.mutate({ enabled: false });
+                  } else {
+                    setGlobalAI.mutate({ enabled: true });
+                    setGlobalFlows.mutate({ enabled: true });
+                  }
+                }}
+                disabled={setGlobalAI.isPending || setGlobalFlows.isPending}
+                className="cursor-pointer"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  {allActive ? (
+                    <BotOff className="h-4 w-4 text-red-400" />
+                  ) : (
+                    <Power className="h-4 w-4 text-emerald-400" />
+                  )}
+                  <span className="flex-1 font-medium">
+                    {allActive ? "Desativar Tudo" : "Ativar Tudo"}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         {/* Theme Toggle */}
         {switchable && toggleTheme && (
