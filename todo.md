@@ -933,3 +933,6 @@
 - [x] Indicador de status colorido (verde=tudo ativo, vermelho=tudo inativo, amarelo=parcial)
 - [x] Toast de confirmação ao ativar/desativar
 - [x] 261 testes passando, 0 erros TypeScript
+
+## Bug - Rodada 64 (Botão Power não abre dropdown)
+- [x] Corrigir botão Power na sidebar - removido Tooltip aninhado dentro do DropdownMenuTrigger que bloqueava o clique

@@ -164,28 +164,22 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {isAdmin && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    className={`h-10 w-10 rounded-lg flex items-center justify-center transition-all mb-2 relative ${
-                      allActive
-                        ? "text-emerald-400 hover:bg-emerald-500/10"
-                        : allInactive
-                          ? "text-red-400 hover:bg-red-500/10"
-                          : "text-amber-400 hover:bg-amber-500/10"
-                    }`}
-                  >
-                    <Power className="h-5 w-5" />
-                    {/* Status dot */}
-                    <span className={`absolute top-1 right-1 h-2 w-2 rounded-full ${
-                      allActive ? "bg-emerald-400" : allInactive ? "bg-red-400" : "bg-amber-400"
-                    }`} />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="text-xs">
-                  {allActive ? "Robô e Fluxos: Ativos" : allInactive ? "Robô e Fluxos: Inativos" : "Parcialmente ativo"}
-                </TooltipContent>
-              </Tooltip>
+              <button
+                className={`h-10 w-10 rounded-lg flex items-center justify-center transition-all mb-2 relative ${
+                  allActive
+                    ? "text-emerald-400 hover:bg-emerald-500/10"
+                    : allInactive
+                      ? "text-red-400 hover:bg-red-500/10"
+                      : "text-amber-400 hover:bg-amber-500/10"
+                }`}
+                title={allActive ? "Rob\u00f4 e Fluxos: Ativos" : allInactive ? "Rob\u00f4 e Fluxos: Inativos" : "Parcialmente ativo"}
+              >
+                <Power className="h-5 w-5" />
+                {/* Status dot */}
+                <span className={`absolute top-1 right-1 h-2 w-2 rounded-full ${
+                  allActive ? "bg-emerald-400" : allInactive ? "bg-red-400" : "bg-amber-400"
+                }`} />
+              </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent side="right" align="end" className="w-56">
               <div className="px-2 py-1.5 border-b border-border mb-1">
