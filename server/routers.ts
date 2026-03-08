@@ -71,7 +71,7 @@ import {
 import { listTemplates, sendWhatsAppTemplate, isTemplateApproved, isTemplatesConfigured } from "./whatsappTemplates";
 import { invokeLLM } from "./_core/llm";
 import { runTokenHealthCheck, getLastCheckResults } from "./tokenMonitor";
-import { processFlowMessage, cancelFlowSession } from "./flowEngine";
+import { processFlowMessage, cancelFlowSession, continueFlowAfterAI } from "./flowEngine";
 
 /**
  * Inicializa o debounce callback e carrega delay do banco
@@ -219,6 +219,71 @@ async function initDebounce() {
             console.error("[Debounce] Error sending platform vehicle images:", err)
           );
         }
+
+        // === FLOW CONTINUATION: After AI responds, continue flow if pending ===
+        if (globalFlowsEnabled) try {
+          const flowContinuation = await continueFlowAfterAI(conversationId, {
+            conversationId,
+            phone: conversation.phone || "",
+            customerMessage: groupedContent,
+            contactName: conversation.contactName || undefined,
+          });
+
+          if (flowContinuation.handled) {
+            console.log(`[Debounce] Conversa ${conversationId}: fluxo continuado ap\u00f3s IA (${flowContinuation.responses.length} respostas, ${flowContinuation.interactiveMessages.length} interativos)`);
+
+            // Small delay to ensure AI text arrives first
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            // Send flow continuation responses
+            for (const response of flowContinuation.responses) {
+              const botMsg = await createMessage({
+                conversationId,
+                content: response,
+                senderType: "bot",
+                senderName: "Auto Inova IA",
+                messageType: "text",
+              });
+              emitNewMessage(conversationId, botMsg);
+              if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+                await sendTextMessage(conversation.phone, response);
+              }
+            }
+
+            // Send flow continuation interactive messages
+            for (const im of flowContinuation.interactiveMessages) {
+              await new Promise(resolve => setTimeout(resolve, 800));
+              const interactiveMetadata: any = { interactiveType: im.type, interactiveData: im.data };
+              let content = im.data.body || "";
+              if (im.type === "buttons" && im.data.buttons) {
+                content += `\n\n[Bot\u00f5es: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
+                interactiveMetadata.buttons = im.data.buttons;
+                if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+                  await sendReplyButtons(conversation.phone, im.data.body, im.data.buttons);
+                }
+              } else if (im.type === "list" && im.data.sections) {
+                content += `\n\n[Lista: ${im.data.sections.flatMap((s: any) => (s.rows || []).map((r: any) => r.title)).join(" | ")}]`;
+                interactiveMetadata.sections = im.data.sections;
+                interactiveMetadata.buttonText = im.data.buttonText;
+                if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+                  await sendListMessage(conversation.phone, im.data.body, im.data.buttonText || "Ver Op\u00e7\u00f5es", im.data.sections);
+                }
+              }
+              const flowInteractiveMsg = await createMessage({
+                conversationId,
+                content,
+                senderType: "bot",
+                senderName: "Auto Inova IA",
+                messageType: "text",
+                metadata: interactiveMetadata,
+              });
+              emitNewMessage(conversationId, flowInteractiveMsg);
+            }
+          }
+        } catch (flowContErr) {
+          console.error(`[Debounce] Conversa ${conversationId}: erro ao continuar fluxo ap\u00f3s IA:`, flowContErr);
+        }
+        // === END FLOW CONTINUATION ===
 
         // Send interactive messages (buttons/lists) if any were queued by the AI
         if (aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {

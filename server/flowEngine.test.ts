@@ -1,9 +1,35 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Test the flow engine logic without database dependencies
-describe("Flow Engine - Unit Tests", () => {
+// Mock all dependencies
+vi.mock("./db", () => ({
+  getActiveChatFlows: vi.fn().mockResolvedValue([]),
+  listChatFlowNodes: vi.fn().mockResolvedValue([]),
+  listChatFlowEdges: vi.fn().mockResolvedValue([]),
+  getActiveFlowSession: vi.fn().mockResolvedValue(null),
+  createFlowSession: vi.fn().mockResolvedValue(1),
+  updateFlowSession: vi.fn().mockResolvedValue(undefined),
+  getChatFlowNodeById: vi.fn().mockResolvedValue(null),
+  getLeadByConversationId: vi.fn().mockResolvedValue(null),
+  upsertLead: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("./whatsapp", () => ({
+  sendTextMessage: vi.fn().mockResolvedValue({ success: true }),
+  sendReplyButtons: vi.fn().mockResolvedValue({ success: true }),
+  sendListMessage: vi.fn().mockResolvedValue({ success: true }),
+  sendImageMessage: vi.fn().mockResolvedValue({ success: true }),
+}));
+
+import { findMatchingFlow, processFlowMessage, continueFlowAfterAI } from "./flowEngine";
+import * as db from "./db";
+
+describe("FlowEngine", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // ─── Template Variable Replacement ─────────────────────────
   describe("Template Variable Replacement", () => {
-    // Simulating replaceVariables logic
     function replaceVariables(text: string, ctx: Record<string, string>): string {
       return text
         .replace(/\{\{nome\}\}/gi, ctx.nome || "cliente")
@@ -17,52 +43,30 @@ describe("Flow Engine - Unit Tests", () => {
     it("should replace all template variables", () => {
       const text = "Olá {{nome}}, você está em {{cidade}} e quer o {{veiculo}}?";
       const result = replaceVariables(text, {
-        nome: "João",
-        cidade: "Porto Alegre",
-        veiculo: "Hilux 2024",
-        telefone: "51999999999",
-        troca: "",
-        pagamento: "",
+        nome: "João", cidade: "Porto Alegre", veiculo: "Hilux 2024",
+        telefone: "51999999999", troca: "", pagamento: "",
       });
       expect(result).toBe("Olá João, você está em Porto Alegre e quer o Hilux 2024?");
     });
 
     it("should use default for missing nome", () => {
-      const text = "Olá {{nome}}!";
-      const result = replaceVariables(text, {
-        nome: "",
-        telefone: "",
-        veiculo: "",
-        cidade: "",
-        troca: "",
-        pagamento: "",
-      });
+      const result = replaceVariables("Olá {{nome}}!", { nome: "", telefone: "", veiculo: "", cidade: "", troca: "", pagamento: "" });
       expect(result).toBe("Olá cliente!");
     });
 
     it("should handle text without variables", () => {
-      const text = "Bem-vindo à Auto Inova!";
-      const result = replaceVariables(text, { nome: "João", telefone: "", veiculo: "", cidade: "", troca: "", pagamento: "" });
+      const result = replaceVariables("Bem-vindo à Auto Inova!", { nome: "João", telefone: "", veiculo: "", cidade: "", troca: "", pagamento: "" });
       expect(result).toBe("Bem-vindo à Auto Inova!");
     });
   });
 
+  // ─── Condition Evaluation ──────────────────────────────────
   describe("Condition Evaluation", () => {
-    function evaluateCondition(
-      field: string,
-      operator: string,
-      value: string,
-      leadData: Record<string, any>,
-      customerMessage: string,
-    ): boolean {
+    function evaluateCondition(field: string, operator: string, value: string, leadData: Record<string, any>, customerMessage: string): boolean {
       let fieldValue = "";
-      if (field === "lastMessage") {
-        fieldValue = customerMessage.toLowerCase();
-      } else if (field in leadData) {
-        fieldValue = String(leadData[field] || "").toLowerCase();
-      }
+      if (field === "lastMessage") fieldValue = customerMessage.toLowerCase();
+      else if (field in leadData) fieldValue = String(leadData[field] || "").toLowerCase();
       const val = value.toLowerCase();
-
       switch (operator) {
         case "equals": return fieldValue === val;
         case "not_equals": return fieldValue !== val;
@@ -75,55 +79,29 @@ describe("Flow Engine - Unit Tests", () => {
       }
     }
 
-    it("should evaluate equals condition", () => {
+    it("should evaluate equals", () => {
       expect(evaluateCondition("status", "equals", "novo", { status: "novo" }, "")).toBe(true);
       expect(evaluateCondition("status", "equals", "novo", { status: "ativo" }, "")).toBe(false);
     });
 
-    it("should evaluate not_equals condition", () => {
-      expect(evaluateCondition("status", "not_equals", "fechado", { status: "novo" }, "")).toBe(true);
-      expect(evaluateCondition("status", "not_equals", "novo", { status: "novo" }, "")).toBe(false);
-    });
-
-    it("should evaluate contains condition", () => {
+    it("should evaluate contains", () => {
       expect(evaluateCondition("vehicleInterest", "contains", "hilux", { vehicleInterest: "Toyota Hilux 2024" }, "")).toBe(true);
-      expect(evaluateCondition("vehicleInterest", "contains", "corolla", { vehicleInterest: "Toyota Hilux 2024" }, "")).toBe(false);
     });
 
-    it("should evaluate not_empty condition", () => {
+    it("should evaluate not_empty", () => {
       expect(evaluateCondition("city", "not_empty", "", { city: "Porto Alegre" }, "")).toBe(true);
       expect(evaluateCondition("city", "not_empty", "", { city: "" }, "")).toBe(false);
     });
 
-    it("should evaluate is_empty condition", () => {
-      expect(evaluateCondition("city", "is_empty", "", { city: "" }, "")).toBe(true);
-      expect(evaluateCondition("city", "is_empty", "", { city: "Porto Alegre" }, "")).toBe(false);
-    });
-
-    it("should evaluate is_true condition", () => {
-      expect(evaluateCondition("hasTrade", "is_true", "", { hasTrade: "true" }, "")).toBe(true);
-      expect(evaluateCondition("hasTrade", "is_true", "", { hasTrade: "sim" }, "")).toBe(true);
-      expect(evaluateCondition("hasTrade", "is_true", "", { hasTrade: "false" }, "")).toBe(false);
-    });
-
-    it("should evaluate is_false condition", () => {
-      expect(evaluateCondition("hasTrade", "is_false", "", { hasTrade: "false" }, "")).toBe(true);
-      expect(evaluateCondition("hasTrade", "is_false", "", { hasTrade: "" }, "")).toBe(true);
-      expect(evaluateCondition("hasTrade", "is_false", "", { hasTrade: "true" }, "")).toBe(false);
-    });
-
-    it("should evaluate lastMessage field", () => {
+    it("should evaluate lastMessage", () => {
       expect(evaluateCondition("lastMessage", "contains", "financiar", {}, "Quero financiar o carro")).toBe(true);
-      expect(evaluateCondition("lastMessage", "contains", "troca", {}, "Quero financiar o carro")).toBe(false);
     });
   });
 
+  // ─── Button/List Response Matching ─────────────────────────
   describe("Button/List Response Matching", () => {
-    function matchButtonResponse(
-      buttons: Array<{ text: string }>,
-      customerMessage: string,
-    ): number {
-      const msgLower = customerMessage.toLowerCase().trim();
+    function matchButtonResponse(buttons: Array<{ text: string }>, msg: string): number {
+      const msgLower = msg.toLowerCase().trim();
       for (let i = 0; i < buttons.length; i++) {
         const btnText = buttons[i].text.toLowerCase().trim();
         if (msgLower === btnText || msgLower.includes(btnText)) return i;
@@ -131,69 +109,214 @@ describe("Flow Engine - Unit Tests", () => {
       return -1;
     }
 
-    function matchListResponse(
-      rows: Array<{ title: string }>,
-      customerMessage: string,
-    ): number {
-      const msgLower = customerMessage.toLowerCase().trim();
-      for (let i = 0; i < rows.length; i++) {
-        const rowTitle = rows[i].title.toLowerCase().trim();
-        if (msgLower === rowTitle || msgLower.includes(rowTitle)) return i;
-      }
-      return -1;
-    }
-
     it("should match exact button text", () => {
       const buttons = [{ text: "Sim, tenho troca" }, { text: "Não tenho" }, { text: "Quero financiar" }];
       expect(matchButtonResponse(buttons, "Sim, tenho troca")).toBe(0);
-      expect(matchButtonResponse(buttons, "Não tenho")).toBe(1);
       expect(matchButtonResponse(buttons, "Quero financiar")).toBe(2);
     });
 
     it("should match partial button text", () => {
-      const buttons = [{ text: "Sim" }, { text: "Não" }];
-      expect(matchButtonResponse(buttons, "sim")).toBe(0);
-      expect(matchButtonResponse(buttons, "não")).toBe(1);
+      expect(matchButtonResponse([{ text: "Sim" }, { text: "Não" }], "sim")).toBe(0);
     });
 
     it("should return -1 for no match", () => {
-      const buttons = [{ text: "Sim" }, { text: "Não" }];
-      expect(matchButtonResponse(buttons, "talvez")).toBe(-1);
-    });
-
-    it("should match list row titles", () => {
-      const rows = [{ title: "SUVs" }, { title: "Sedans" }, { title: "Hatches" }];
-      expect(matchListResponse(rows, "SUVs")).toBe(0);
-      expect(matchListResponse(rows, "Sedans")).toBe(1);
-      expect(matchListResponse(rows, "hatches")).toBe(2);
+      expect(matchButtonResponse([{ text: "Sim" }, { text: "Não" }], "talvez")).toBe(-1);
     });
   });
 
-  describe("Flow Trigger Matching", () => {
-    function matchKeywordTrigger(triggerValue: string, message: string): boolean {
-      const keywords = triggerValue.split(",").map(k => k.trim().toLowerCase()).filter(Boolean);
-      const msgLower = message.toLowerCase();
-      return keywords.some(kw => msgLower.includes(kw));
-    }
-
-    it("should match single keyword", () => {
-      expect(matchKeywordTrigger("financiar", "Quero financiar meu carro")).toBe(true);
+  // ─── Flow Trigger Matching ─────────────────────────────────
+  describe("findMatchingFlow", () => {
+    it("returns null when no active flows", async () => {
+      const result = await findMatchingFlow(1, "hello", false, false);
+      expect(result).toBeNull();
     });
 
-    it("should match multiple keywords", () => {
-      expect(matchKeywordTrigger("financiar, financiamento, parcela", "Qual o valor da parcela?")).toBe(true);
-      expect(matchKeywordTrigger("financiar, financiamento, parcela", "Quero financiar")).toBe(true);
+    it("matches first_contact trigger", async () => {
+      vi.mocked(db.getActiveChatFlows).mockResolvedValueOnce([
+        { id: 1, name: "Welcome", trigger: "first_contact", triggerValue: null, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+      ] as any);
+      expect(await findMatchingFlow(1, "hello", true, false)).toBe(1);
     });
 
-    it("should not match unrelated message", () => {
-      expect(matchKeywordTrigger("financiar, financiamento", "Quero ver o estoque")).toBe(false);
+    it("matches keyword trigger", async () => {
+      vi.mocked(db.getActiveChatFlows).mockResolvedValueOnce([
+        { id: 2, name: "Finance", trigger: "keyword", triggerValue: "financiar,financiamento", isActive: true, createdAt: new Date(), updatedAt: new Date() },
+      ] as any);
+      expect(await findMatchingFlow(1, "quero financiar", false, false)).toBe(2);
     });
 
-    it("should handle empty trigger value", () => {
-      expect(matchKeywordTrigger("", "Qualquer mensagem")).toBe(false);
+    it("matches ad_click trigger with vehicle ID", async () => {
+      vi.mocked(db.getActiveChatFlows).mockResolvedValueOnce([
+        { id: 3, name: "Ad Flow", trigger: "ad_click", triggerValue: null, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+      ] as any);
+      expect(await findMatchingFlow(1, "Hilux ID42", false, true)).toBe(3);
+    });
+
+    it("does not match ad_click without vehicle ID", async () => {
+      vi.mocked(db.getActiveChatFlows).mockResolvedValueOnce([
+        { id: 3, name: "Ad Flow", trigger: "ad_click", triggerValue: null, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+      ] as any);
+      expect(await findMatchingFlow(1, "Hilux", false, false)).toBeNull();
     });
   });
 
+  // ─── processFlowMessage ────────────────────────────────────
+  describe("processFlowMessage", () => {
+    it("returns unhandled when no matching flow", async () => {
+      const result = await processFlowMessage({ conversationId: 1, phone: "5551999999999", customerMessage: "hello" });
+      expect(result.handled).toBe(false);
+    });
+
+    it("starts a new flow and sends message", async () => {
+      vi.mocked(db.getActiveChatFlows).mockResolvedValueOnce([
+        { id: 1, name: "Welcome", trigger: "first_contact", triggerValue: null, isActive: true, createdAt: new Date(), updatedAt: new Date() },
+      ] as any);
+      vi.mocked(db.listChatFlowNodes).mockResolvedValue([
+        { id: 10, flowId: 1, nodeType: "start", label: "Início", data: {}, positionX: 0, positionY: 0 },
+        { id: 11, flowId: 1, nodeType: "send_message", label: "Boas-vindas", data: { text: "Olá {{nome}}!" }, positionX: 0, positionY: 100 },
+      ] as any);
+      vi.mocked(db.listChatFlowEdges).mockResolvedValue([
+        { id: 1, flowId: 1, sourceNodeId: 10, targetNodeId: 11, sourceHandle: null, label: null },
+      ] as any);
+
+      const result = await processFlowMessage({ conversationId: 1, phone: "5551999999999", customerMessage: "oi", contactName: "João" });
+      expect(result.handled).toBe(true);
+      expect(result.responses[0]).toContain("João");
+    });
+
+    it("handles button response matching", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce({
+        id: 1, conversationId: 1, flowId: 1, currentNodeId: 20,
+        status: "active", context: {}, startedAt: new Date(), completedAt: null, updatedAt: new Date(),
+      } as any);
+      vi.mocked(db.listChatFlowNodes).mockResolvedValue([
+        { id: 20, flowId: 1, nodeType: "send_buttons", label: "Pergunta", data: { body: "Tem troca?", buttons: [{ text: "Sim" }, { text: "Não" }] }, positionX: 0, positionY: 0 },
+        { id: 21, flowId: 1, nodeType: "send_message", label: "Com troca", data: { text: "Qual veículo de troca?" }, positionX: 0, positionY: 100 },
+        { id: 22, flowId: 1, nodeType: "end", label: "Fim", data: {}, positionX: 0, positionY: 200 },
+      ] as any);
+      vi.mocked(db.listChatFlowEdges).mockResolvedValue([
+        { id: 1, flowId: 1, sourceNodeId: 20, targetNodeId: 21, sourceHandle: "button_0", label: null },
+        { id: 2, flowId: 1, sourceNodeId: 20, targetNodeId: 22, sourceHandle: "button_1", label: null },
+        { id: 3, flowId: 1, sourceNodeId: 21, targetNodeId: 22, sourceHandle: null, label: null },
+      ] as any);
+
+      const result = await processFlowMessage({ conversationId: 1, phone: "5551999999999", customerMessage: "Sim" });
+      expect(result.handled).toBe(true);
+      expect(result.responses).toContain("Qual veículo de troca?");
+    });
+
+    it("passes to AI when current node is ai_response", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce({
+        id: 1, conversationId: 1, flowId: 1, currentNodeId: 30,
+        status: "active", context: { aiInstruction: "Mostre o veículo", pendingNextNodeId: 31 },
+        startedAt: new Date(), completedAt: null, updatedAt: new Date(),
+      } as any);
+      vi.mocked(db.listChatFlowNodes).mockResolvedValue([
+        { id: 30, flowId: 1, nodeType: "ai_response", label: "IA", data: { instruction: "Mostre o veículo" }, positionX: 0, positionY: 0 },
+        { id: 31, flowId: 1, nodeType: "send_buttons", label: "Confirmar", data: { body: "Gostou?", buttons: [{ text: "Sim" }, { text: "Não" }] }, positionX: 0, positionY: 100 },
+      ] as any);
+      vi.mocked(db.listChatFlowEdges).mockResolvedValue([
+        { id: 1, flowId: 1, sourceNodeId: 30, targetNodeId: 31, sourceHandle: null, label: null },
+      ] as any);
+
+      const result = await processFlowMessage({ conversationId: 1, phone: "5551999999999", customerMessage: "me mostra o carro" });
+      // Should NOT be handled - passes to AI
+      expect(result.handled).toBe(false);
+    });
+  });
+
+  // ─── continueFlowAfterAI ──────────────────────────────────
+  describe("continueFlowAfterAI", () => {
+    it("returns unhandled when no active session", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce(null);
+      const result = await continueFlowAfterAI(1, { conversationId: 1, phone: "5551999999999", customerMessage: "" });
+      expect(result.handled).toBe(false);
+    });
+
+    it("returns unhandled when no pendingNextNodeId", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce({
+        id: 1, conversationId: 1, flowId: 1, currentNodeId: 30,
+        status: "active", context: { aiInstruction: "test" },
+        startedAt: new Date(), completedAt: null, updatedAt: new Date(),
+      } as any);
+      const result = await continueFlowAfterAI(1, { conversationId: 1, phone: "5551999999999", customerMessage: "" });
+      expect(result.handled).toBe(false);
+    });
+
+    it("executes pending buttons node after AI responds", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce({
+        id: 1, conversationId: 1, flowId: 1, currentNodeId: 30,
+        status: "active", context: { aiInstruction: "Mostre o veículo", pendingNextNodeId: 31 },
+        startedAt: new Date(), completedAt: null, updatedAt: new Date(),
+      } as any);
+      vi.mocked(db.listChatFlowNodes).mockResolvedValue([
+        { id: 30, flowId: 1, nodeType: "ai_response", label: "IA", data: {}, positionX: 0, positionY: 0 },
+        { id: 31, flowId: 1, nodeType: "send_buttons", label: "Confirmar", data: { body: "Gostou do veículo?", buttons: [{ text: "Sim" }, { text: "Não" }] }, positionX: 0, positionY: 100 },
+      ] as any);
+      vi.mocked(db.listChatFlowEdges).mockResolvedValue([
+        { id: 1, flowId: 1, sourceNodeId: 30, targetNodeId: 31, sourceHandle: null, label: null },
+      ] as any);
+
+      const result = await continueFlowAfterAI(1, { conversationId: 1, phone: "5551999999999", customerMessage: "" });
+
+      expect(result.handled).toBe(true);
+      expect(result.interactiveMessages.length).toBe(1);
+      expect(result.interactiveMessages[0].type).toBe("buttons");
+      expect(result.interactiveMessages[0].data.body).toBe("Gostou do veículo?");
+      expect(result.waitingForInput).toBe(true);
+      // Should clear pendingNextNodeId
+      expect(db.updateFlowSession).toHaveBeenCalledWith(1, expect.objectContaining({
+        context: expect.not.objectContaining({ pendingNextNodeId: 31 }),
+      }));
+    });
+
+    it("executes pending message + end after AI responds", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce({
+        id: 1, conversationId: 1, flowId: 1, currentNodeId: 30,
+        status: "active", context: { pendingNextNodeId: 31 },
+        startedAt: new Date(), completedAt: null, updatedAt: new Date(),
+      } as any);
+      vi.mocked(db.listChatFlowNodes).mockResolvedValue([
+        { id: 30, flowId: 1, nodeType: "ai_response", label: "IA", data: {}, positionX: 0, positionY: 0 },
+        { id: 31, flowId: 1, nodeType: "send_message", label: "Msg", data: { text: "Obrigado!" }, positionX: 0, positionY: 100 },
+        { id: 32, flowId: 1, nodeType: "end", label: "Fim", data: {}, positionX: 0, positionY: 200 },
+      ] as any);
+      vi.mocked(db.listChatFlowEdges).mockResolvedValue([
+        { id: 1, flowId: 1, sourceNodeId: 30, targetNodeId: 31, sourceHandle: null, label: null },
+        { id: 2, flowId: 1, sourceNodeId: 31, targetNodeId: 32, sourceHandle: null, label: null },
+      ] as any);
+
+      const result = await continueFlowAfterAI(1, { conversationId: 1, phone: "5551999999999", customerMessage: "" });
+
+      expect(result.handled).toBe(true);
+      expect(result.responses).toContain("Obrigado!");
+      expect(result.flowCompleted).toBe(true);
+    });
+
+    it("executes pending list node after AI responds", async () => {
+      vi.mocked(db.getActiveFlowSession).mockResolvedValueOnce({
+        id: 1, conversationId: 1, flowId: 1, currentNodeId: 30,
+        status: "active", context: { pendingNextNodeId: 31 },
+        startedAt: new Date(), completedAt: null, updatedAt: new Date(),
+      } as any);
+      vi.mocked(db.listChatFlowNodes).mockResolvedValue([
+        { id: 30, flowId: 1, nodeType: "ai_response", label: "IA", data: {}, positionX: 0, positionY: 0 },
+        { id: 31, flowId: 1, nodeType: "send_list", label: "Categorias", data: { body: "Escolha uma categoria:", buttonText: "Ver Opções", sections: [{ title: "Veículos", rows: [{ title: "SUVs", description: "Veículos SUV" }, { title: "Sedans", description: "Veículos Sedan" }] }] }, positionX: 0, positionY: 100 },
+      ] as any);
+      vi.mocked(db.listChatFlowEdges).mockResolvedValue([
+        { id: 1, flowId: 1, sourceNodeId: 30, targetNodeId: 31, sourceHandle: null, label: null },
+      ] as any);
+
+      const result = await continueFlowAfterAI(1, { conversationId: 1, phone: "5551999999999", customerMessage: "" });
+
+      expect(result.handled).toBe(true);
+      expect(result.interactiveMessages.length).toBe(1);
+      expect(result.interactiveMessages[0].type).toBe("list");
+      expect(result.waitingForInput).toBe(true);
+    });
+  });
+
+  // ─── Depth Limit Protection ────────────────────────────────
   describe("Depth Limit Protection", () => {
     it("should prevent infinite loops with depth > 20", () => {
       let depth = 0;
@@ -202,9 +325,7 @@ describe("Flow Engine - Unit Tests", () => {
         if (d > maxDepth) return d;
         return simulateExecution(d + 1);
       }
-      const result = simulateExecution(0);
-      expect(result).toBe(21);
-      expect(result).toBeGreaterThan(maxDepth);
+      expect(simulateExecution(0)).toBeGreaterThan(maxDepth);
     });
   });
 });

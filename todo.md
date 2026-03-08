@@ -936,3 +936,10 @@
 
 ## Bug - Rodada 64 (Botão Power não abre dropdown)
 - [x] Corrigir botão Power na sidebar - removido Tooltip aninhado dentro do DropdownMenuTrigger que bloqueava o clique
+
+## Bug - Rodada 65 (Fluxo não continua após nó IA Livre)
+- [x] Corrigir FlowEngine: após nó IA Livre responder, o fluxo avança automaticamente via continueFlowAfterAI()
+- [x] Nó ai_response salva pendingNextNodeId no contexto da sessão
+- [x] Debounce callback chama continueFlowAfterAI após processAIMessage para executar nó pendente
+- [x] Quando cliente envia nova msg e está no nó ai_response, passa para IA normalmente
+- [x] 266 testes passando (novos testes para continueFlowAfterAI), 0 erros TypeScript

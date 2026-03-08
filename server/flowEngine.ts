@@ -174,6 +174,12 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return result;
   }
 
+  // For ai_response node - let AI handle, it will continue via continueFlowAfterAI
+  if (currentNode.nodeType === "ai_response") {
+    result.handled = false; // Pass to AI
+    return result;
+  }
+
   // For condition node waiting for input
   if (currentNode.nodeType === "condition") {
     const condResult = evaluateCondition(currentNode, ctx);
@@ -185,6 +191,41 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return result;
   }
 
+  return result;
+}
+
+// ─── Continue Flow After AI ─────────────────────────────────
+/**
+ * After AI responds in an ai_response node, call this to continue the flow
+ * from the pendingNextNodeId stored in the session context.
+ */
+export async function continueFlowAfterAI(conversationId: number, ctx: FlowContext): Promise<FlowResult> {
+  const result: FlowResult = {
+    handled: false,
+    responses: [],
+    interactiveMessages: [],
+    waitingForInput: false,
+    flowCompleted: false,
+  };
+
+  const session = await getActiveFlowSession(conversationId);
+  if (!session) return result;
+
+  const sessionCtx = (session.context as any) || {};
+  const pendingNextNodeId = sessionCtx.pendingNextNodeId;
+  if (!pendingNextNodeId) return result;
+
+  // Clear the pending flag
+  const newContext = { ...sessionCtx };
+  delete newContext.pendingNextNodeId;
+  await updateFlowSession(session.id, { context: newContext });
+
+  // Load flow data and execute from the pending node
+  const nodes = await listChatFlowNodes(session.flowId);
+  const edges = await listChatFlowEdges(session.flowId);
+
+  result.handled = true;
+  await executeFromNode(pendingNextNodeId, nodes, edges, session, ctx, result);
   return result;
 }
 
@@ -282,21 +323,18 @@ async function executeFromNode(
     }
 
     case "ai_response": {
-      // Let AI handle from here - stop flow execution
+      // Let AI handle this message - stop flow execution temporarily
       result.handled = false; // Pass to AI
-      // Store instruction in session context for AI to use
+      // Store instruction + pendingNextNodeId in session context
+      const nextEdge = edges.find(e => e.sourceNodeId === node.id);
       await updateFlowSession(session.id, {
         currentNodeId: node.id,
-        context: { ...((session.context as any) || {}), aiInstruction: config.instruction || "" },
+        context: {
+          ...((session.context as any) || {}),
+          aiInstruction: config.instruction || "",
+          pendingNextNodeId: nextEdge?.targetNodeId || null,
+        },
       });
-      // Find next edge for after AI responds
-      const nextEdge = edges.find(e => e.sourceNodeId === node.id);
-      if (nextEdge) {
-        // After AI responds, advance to next node
-        await updateFlowSession(session.id, {
-          currentNodeId: nextEdge.targetNodeId,
-        });
-      }
       break;
     }
 
