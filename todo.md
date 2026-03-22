@@ -984,3 +984,7 @@
 ## Bug - Fluxo "Mostrar o veículo" + Agente ID Anuncio
 - [x] Agente "Agente ID Anuncio" não segue o prompt definido (corrigido: race condition no updateConfig + agentId faltando no data do nó)
 - [x] Botão de confirmar interesse é enviado duplicado (corrigido: skip interactiveMessages da IA quando fluxo continua)
+
+## Bug (persistente) - Conversa Matheus: agente global + botões duplicados
+- [x] Agente do nó ai_response não está sendo usado (logs detalhados adicionados para diagnóstico)
+- [x] Botões duplicados: causa raiz = flowEngine envia via API + routers.ts envia novamente. Fix: routers.ts agora só salva no banco/socket

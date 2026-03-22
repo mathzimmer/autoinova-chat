@@ -1,0 +1,18 @@
+{
+  "query": "SELECT id, phone, contactName, channel, status, aiActive FROM conversations WHERE contactName LIKE '%Matheus%' ORDER BY updatedAt DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, phone, contactName, channel, status, aiActive FROM conversations WHERE contactName LIKE '%Matheus%' ORDER BY updatedAt DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "3930003",
+      "phone": "555197566259",
+      "contactName": "Matheus",
+      "channel": "whatsapp",
+      "status": "open",
+      "aiActive": "1"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tphone\tcontactName\tchannel\tstatus\taiActive\n3930003\t555197566259\tMatheus\twhatsapp\topen\t1\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}

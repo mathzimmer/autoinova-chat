@@ -548,6 +548,7 @@ export async function processAIMessage(
 ): Promise<{ response: string; leadData: Record<string, unknown> | null; interactiveMessages?: InteractiveMessage[] }> {
   const startTime = Date.now();
   const isFlowMode = !!(options?.flowPrompt);
+  console.log(`[AI] processAIMessage called for conv ${conversation.id}, options: ${JSON.stringify({ flowPrompt: options?.flowPrompt ? `${options.flowPrompt.substring(0, 50)}...` : undefined, flowInstruction: options?.flowInstruction, agentId: options?.agentId })}`);
 
   // Load agent config if agentId is provided
   let agent: AiAgent | null = null;
@@ -580,7 +581,7 @@ export async function processAIMessage(
     if (options?.flowInstruction) {
       personalityPrompt += `\n\n=== INSTRUÇÃO DO NÓ ATUAL ===\n${options.flowInstruction}`;
     }
-    console.log(`[AI] AGENT MODE: usando agente "${agent.name}" (${personalityPrompt.length}ch)`);
+    console.log(`[AI] AGENT MODE: usando agente "${agent.name}" (ID: ${agent.id}, includeCoreLayers: ${agent.includeCoreLayers}, tools: ${JSON.stringify(agent.enabledTools)}, prompt: ${personalityPrompt.substring(0, 100)}...)`);
   } else if (isFlowMode) {
     // FLOW MODE (legacy): Use minimal core rules + flow-specific prompt only
     corePrompt = `=== REGRAS DO SISTEMA ===\nFORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Separe com quebras de linha. Máximo 1-2 emojis. Máximo 3 parágrafos curtos.\nIMPORTANTE: SÓ apresente veículos retornados por buscar_veiculos ou buscar_veiculo_por_id. COPIE preço e ano EXATAMENTE. PROIBIDO inventar dados.\nMÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto.\nLIMPEZA: Remova [ID:X], [FOTO] da resposta.`;
@@ -601,6 +602,8 @@ export async function processAIMessage(
   const activeTools: Tool[] = agent?.enabledTools && agent.enabledTools.length > 0
     ? TOOLS.filter(t => (agent!.enabledTools as string[]).includes(t.function.name))
     : TOOLS; // If no agent or no tool filter, use all tools
+  console.log(`[AI] Conv ${conversation.id}: activeTools=[${activeTools.map(t => t.function.name).join(', ')}] (${activeTools.length}/${TOOLS.length})`);
+  console.log(`[AI] Conv ${conversation.id}: mode=${agent ? 'AGENT' : isFlowMode ? 'FLOW_LEGACY' : 'FREE'}, corePrompt=${corePrompt.length}ch, commercialPrompt=${commercialPrompt.length}ch, personalityPrompt=${personalityPrompt.length}ch`);
 
   // === LAYER 4: CONTEXT (dynamic) ===
   let contextBlock = "\n=== CONTEXTO DINÂMICO ===";

@@ -1,0 +1,25 @@
+{
+  "query": "SELECT id, content, senderType, senderName, messageType, metadata, createdAt FROM messages WHERE conversationId = 3930003 ORDER BY id DESC LIMIT 15;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, content, senderType, senderName, messageType, metadata, createdAt FROM messages WHERE conversationId = 3930003 ORDER BY id DESC LIMIT 15;",
+  "rows": [
+    {
+      "id": "5100071",
+      "content": "Interesse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97",
+      "senderType": "customer",
+      "senderName": "Matheus",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 20:49:37"
+    }
+  ],
+  "messages": [
+    "5100073\tConfima o interesse neste veículo?",
+    "[Botões: Sim, quero este | Outra opção]\tbot\tAuto Inova IA\ttext\t{\"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}], \"interactiveData\": {\"body\": \"Confima o interesse neste veículo?\", \"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}]}, \"interactiveType\": \"buttons\"}\t2026-03-22 20:49:49",
+    "5100072\tOi Matheus! ",
+    "Estou com o veículo que você se interessou: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V Aut. de 2016, na cor branca, com 91.500 km e câmbio automático. O preço está R$ 112.990, mas está em promoção por R$ 108.990.",
+    "Se você quiser, posso agendar uma visita, fornecer mais detalhes ou verificar se tem algum veículo para troca. O que você prefere? 😊\tbot\tAuto Inova IA\ttext\tNULL\t2026-03-22 20:49:46"
+  ],
+  "stdout": "id\tcontent\tsenderType\tsenderName\tmessageType\tmetadata\tcreatedAt\n5100073\tConfima o interesse neste veículo?\n\n[Botões: Sim, quero este | Outra opção]\tbot\tAuto Inova IA\ttext\t{\"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}], \"interactiveData\": {\"body\": \"Confima o interesse neste veículo?\", \"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}]}, \"interactiveType\": \"buttons\"}\t2026-03-22 20:49:49\n5100072\tOi Matheus! \n\nEstou com o veículo que você se interessou: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V Aut. de 2016, na cor branca, com 91.500 km e câmbio automático. O preço está R$ 112.990, mas está em promoção por R$ 108.990.\n\nSe você quiser, posso agendar uma visita, fornecer mais detalhes ou verificar se tem algum veículo para troca. O que você prefere? 😊\tbot\tAuto Inova IA\ttext\tNULL\t2026-03-22 20:49:46\n5100071\tInteresse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97\tcustomer\tMatheus\ttext\tNULL\t2026-03-22 20:49:37\n",
+  "stderr": "",
+  "execution_time_ms": 58
+}

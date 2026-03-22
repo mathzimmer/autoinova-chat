@@ -1,0 +1,21 @@
+{
+  "query": "SELECT * FROM chatFlowSessions WHERE conversationId = 3930003 ORDER BY id DESC LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT * FROM chatFlowSessions WHERE conversationId = 3930003 ORDER BY id DESC LIMIT 3;",
+  "rows": [
+    {
+      "id": "60006",
+      "conversationId": "3930003",
+      "flowId": "30002",
+      "currentNodeId": "30021",
+      "sessionStatus": "active",
+      "context": "{\"aiInstruction\": \"\\n\", \"nodeAgentId\": 5}",
+      "startedAt": "2026-03-22 20:49:43",
+      "completedAt": "NULL",
+      "updatedAt": "2026-03-22 20:49:47"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tconversationId\tflowId\tcurrentNodeId\tsessionStatus\tcontext\tstartedAt\tcompletedAt\tupdatedAt\n60006\t3930003\t30002\t30021\tactive\t{\"aiInstruction\": \"\\n\", \"nodeAgentId\": 5}\t2026-03-22 20:49:43\tNULL\t2026-03-22 20:49:47\n",
+  "stderr": "",
+  "execution_time_ms": 61
+}

@@ -179,10 +179,12 @@ async function initDebounce() {
       let flowAiOptions: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null } | undefined;
       try {
         const activeFlowSession = await getActiveFlowSession(conversationId);
+        console.log(`[Debounce] Conversa ${conversationId}: activeFlowSession=${activeFlowSession ? `id=${activeFlowSession.id}, currentNodeId=${activeFlowSession.currentNodeId}, context=${JSON.stringify(activeFlowSession.context)}` : 'null'}`);
         if (activeFlowSession) {
           const flow = await getChatFlowById(activeFlowSession.flowId);
           if (flow) {
             const sessionCtx = (activeFlowSession.context as any) || {};
+            console.log(`[Debounce] Conversa ${conversationId}: fluxo "${flow.name}", sessionCtx.nodeAgentId=${sessionCtx.nodeAgentId}, flow.agentId=${flow.agentId}, flow.aiPrompt=${flow.aiPrompt ? 'yes' : 'no'}`);
             // Priority 1: agentId from the current ai_response node
             if (sessionCtx.nodeAgentId) {
               flowAiOptions = {
@@ -227,7 +229,9 @@ async function initDebounce() {
         }
       }
 
+      console.log(`[Debounce] Conversa ${conversationId}: chamando processAIMessage com flowAiOptions=${JSON.stringify(flowAiOptions)}`);
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent, flowAiOptions);
+      console.log(`[Debounce] Conversa ${conversationId}: IA respondeu, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
 
       emitTypingIndicator(conversationId, false, "Auto Inova IA");
 
@@ -292,7 +296,7 @@ async function initDebounce() {
             // Small delay to ensure AI text arrives first
             await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Send flow continuation responses
+            // Send flow continuation responses (save to DB + emit socket only; flowEngine already sent via WhatsApp API)
             for (const response of flowContinuation.responses) {
               const botMsg = await createMessage({
                 conversationId,
@@ -302,29 +306,19 @@ async function initDebounce() {
                 messageType: "text",
               });
               emitNewMessage(conversationId, botMsg);
-              if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
-                await sendTextMessage(conversation.phone, response);
-              }
             }
 
-            // Send flow continuation interactive messages
+            // Send flow continuation interactive messages (save to DB + emit socket only; flowEngine already sent via WhatsApp API)
             for (const im of flowContinuation.interactiveMessages) {
-              await new Promise(resolve => setTimeout(resolve, 800));
               const interactiveMetadata: any = { interactiveType: im.type, interactiveData: im.data };
               let content = im.data.body || "";
               if (im.type === "buttons" && im.data.buttons) {
-                content += `\n\n[Bot\u00f5es: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
+                content += `\n\n[Botões: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
                 interactiveMetadata.buttons = im.data.buttons;
-                if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
-                  await sendReplyButtons(conversation.phone, im.data.body, im.data.buttons);
-                }
               } else if (im.type === "list" && im.data.sections) {
                 content += `\n\n[Lista: ${im.data.sections.flatMap((s: any) => (s.rows || []).map((r: any) => r.title)).join(" | ")}]`;
                 interactiveMetadata.sections = im.data.sections;
                 interactiveMetadata.buttonText = im.data.buttonText;
-                if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
-                  await sendListMessage(conversation.phone, im.data.body, im.data.buttonText || "Ver Op\u00e7\u00f5es", im.data.sections);
-                }
               }
               const flowInteractiveMsg = await createMessage({
                 conversationId,
@@ -344,6 +338,7 @@ async function initDebounce() {
 
         // Send interactive messages (buttons/lists) if any were queued by the AI
         // Skip if flow already continued (to avoid duplicate buttons from AI tool + flow node)
+        console.log(`[Debounce] Conversa ${conversationId}: flowContinued=${flowContinued}, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
         if (!flowContinued && aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
           for (const im of aiResult.interactiveMessages) {
             try {

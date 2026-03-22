@@ -1,0 +1,13 @@
+{
+  "query": "SHOW TABLES LIKE '%agent%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SHOW TABLES LIKE '%agent%';",
+  "rows": [
+    {
+      "Tables_in_WRYbLJeRQcsg6cNcJJnu32 (%agent%)": "aiAgents"
+    }
+  ],
+  "messages": [],
+  "stdout": "Tables_in_WRYbLJeRQcsg6cNcJJnu32 (%agent%)\naiAgents\n",
+  "stderr": "",
+  "execution_time_ms": 57
+}
