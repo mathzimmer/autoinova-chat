@@ -346,8 +346,32 @@ async function initDebounce() {
               await new Promise(resolve => setTimeout(resolve, 800));
               
               let interactiveResult: { success: boolean; messageId?: string; error?: string } = { success: false };
-              
-              if (im.type === "buttons" && im.buttons && im.buttons.length > 0) {
+
+              if (im.type === "image" && im.imageUrl) {
+                // Send vehicle photo with caption
+                interactiveResult = await sendImageMessage(
+                  conversation.phone,
+                  im.imageUrl,
+                  im.caption || im.body
+                );
+                console.log(`[Debounce] Conversa ${conversationId}: imagem de veículo enviada - success: ${interactiveResult.success}`);
+                // Save to DB
+                if (interactiveResult.success) {
+                  const imageMsg = await createMessage({
+                    conversationId,
+                    content: im.caption || im.body || "[Imagem do veículo]",
+                    senderType: "bot",
+                    senderName: "Auto Inova IA",
+                    messageType: "image",
+                    metadata: { imageUrl: im.imageUrl, caption: im.caption },
+                  });
+                  emitNewMessage(conversationId, imageMsg);
+                  if (interactiveResult.messageId) {
+                    await updateMessageExternalId(imageMsg.id, interactiveResult.messageId);
+                  }
+                }
+                continue; // Skip the generic save below
+              } else if (im.type === "buttons" && im.buttons && im.buttons.length > 0) {
                 interactiveResult = await sendReplyButtons(
                   conversation.phone,
                   im.body,
@@ -2566,6 +2590,7 @@ const AVAILABLE_TOOLS = [
   { id: "resumo_estoque", name: "Resumo do Estoque", description: "Obtém resumo geral do estoque" },
   { id: "atualizar_lead", name: "Atualizar Lead", description: "Atualiza dados do lead no CRM" },
   { id: "buscar_veiculo_por_id", name: "Buscar por ID", description: "Busca veículo específico pelo ID" },
+  { id: "apresentar_veiculo", name: "Apresentar Veículo (Foto)", description: "Envia foto do veículo com informações formatadas" },
   { id: "enviar_botoes", name: "Enviar Botões", description: "Envia botões interativos (máx 3)" },
   { id: "enviar_lista", name: "Enviar Lista", description: "Envia menu de lista interativo (máx 10 itens)" },
 ];

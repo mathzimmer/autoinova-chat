@@ -988,3 +988,9 @@
 ## Bug (persistente) - Conversa Matheus: agente global + botões duplicados
 - [x] Agente do nó ai_response não está sendo usado (logs detalhados adicionados para diagnóstico)
 - [x] Botões duplicados: causa raiz = flowEngine envia via API + routers.ts envia novamente. Fix: routers.ts agora só salva no banco/socket
+
+## Feature - Envio de foto do veículo com informações
+- [x] Criar tool 'apresentar_veiculo' na IA que envia imagem + dados formatados
+- [x] Usar sendImageMessage do WhatsApp com caption contendo as informações do veículo
+- [x] Integrar com dados do estoque (foto do anúncio + campos selecionados)
+- [x] Adicionar tool ao painel de agentes para seleção

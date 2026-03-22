@@ -472,6 +472,22 @@ const TOOLS: Tool[] = [
   {
     type: "function",
     function: {
+      name: "apresentar_veiculo",
+      description: "Apresenta um veículo do estoque com FOTO e informações formatadas. Busca o veículo pelo ID e envia a imagem do anúncio com os dados. Use APÓS buscar_veiculos ou buscar_veiculo_por_id quando quiser mostrar o veículo visualmente ao cliente. A foto é enviada automaticamente junto com as informações.",
+      parameters: {
+        type: "object",
+        properties: {
+          veiculo_id: { type: "number", description: "ID do veículo no estoque (ex: 42). Obrigatório." },
+          mensagem_adicional: { type: "string", description: "Mensagem opcional para enviar junto (ex: 'Olha que beleza esse aqui!'). Se não informado, envia apenas os dados do veículo." },
+        },
+        required: ["veiculo_id"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "enviar_lista",
       description: "Envia um menu de lista interativo no WhatsApp (máx 10 itens). Use para: listar veículos encontrados, formas de pagamento, categorias de veículos. REGRAS: Use quando há 3+ opções. Cada item tem título (máx 24 chars) e descrição opcional (máx 72 chars).",
       parameters: {
@@ -531,13 +547,15 @@ export interface InteractiveListSection {
   rows: Array<{ id: string; title: string; description?: string }>;
 }
 export interface InteractiveMessage {
-  type: "buttons" | "list";
+  type: "buttons" | "list" | "image";
   body: string;
   buttons?: InteractiveButton[];
   sections?: InteractiveListSection[];
   buttonText?: string; // for list type
   header?: string;
   footer?: string;
+  imageUrl?: string; // for image type
+  caption?: string; // for image type
 }
 
 export async function processAIMessage(
@@ -892,6 +910,69 @@ export async function processAIMessage(
             } else {
               toolResult = "ID do veículo não fornecido.";
               toolResultCount = 0;
+            }
+
+          } else if (toolCall.function.name === "apresentar_veiculo") {
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
+            console.log(`[AI] apresentar_veiculo args:`, JSON.stringify(args));
+            if (args.veiculo_id) {
+              const vehicleResult = await getVehicleByIdForAI(args.veiculo_id);
+              if (vehicleResult.found && vehicleResult.vehicle) {
+                const v = vehicleResult.vehicle;
+                // Get the first image URL
+                let photoUrl = v.imageUrl || "";
+                if (!photoUrl && v.images && Array.isArray(v.images) && v.images.length > 0) {
+                  photoUrl = v.images[0]?.IMAGE_URL || v.images[0]?.url || v.images[0] || "";
+                }
+                
+                // Build caption with vehicle info
+                const priceStr = v.promotionPrice && v.promotionPrice < v.price
+                  ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
+                  : `R$ ${v.price.toLocaleString("pt-BR")}`;
+                const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
+                const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
+                
+                let caption = "";
+                if (args.mensagem_adicional) {
+                  caption += args.mensagem_adicional + "\n\n";
+                }
+                caption += `${v.title || `${v.brand} ${v.model}`}\n`;
+                caption += `Ano: ${v.year}\n`;
+                caption += `Km: ${mileageStr}\n`;
+                caption += `Câmbio: ${transStr}\n`;
+                caption += `Combustível: ${v.fuel || "N/I"}\n`;
+                caption += `Cor: ${v.color || "N/I"}\n`;
+                caption += `Preço: ${priceStr}`;
+                if (v.url) {
+                  caption += `\n\nVeja mais: ${v.url}`;
+                }
+                
+                if (photoUrl) {
+                  // Queue image message for sending
+                  interactiveMessages.push({
+                    type: "image",
+                    body: caption,
+                    imageUrl: photoUrl,
+                    caption: caption,
+                  });
+                  toolResult = `Veículo ${v.title || v.brand + " " + v.model} apresentado com foto e informações. A imagem será enviada ao cliente. NÃO repita as informações do veículo na sua resposta de texto, pois já estão na foto.`;
+                  toolResultCount = 1;
+                  console.log(`[AI] Vehicle image queued: ${photoUrl.substring(0, 80)}...`);
+                } else {
+                  // No photo available, return text only
+                  toolResult = `Veículo encontrado mas sem foto disponível. Dados: ${vehicleResult.text}`;
+                  toolResultCount = 1;
+                  console.log(`[AI] Vehicle found but no photo available`);
+                }
+              } else {
+                toolResult = vehicleResult.text;
+                toolResultCount = 0;
+              }
+            } else {
+              toolResult = "ID do veículo não fornecido.";
+              toolResultCount = 0;
+              toolSuccess = false;
             }
 
           } else if (toolCall.function.name === "enviar_botoes") {

@@ -16,7 +16,7 @@ import { toast } from "sonner";
 import {
   Bot, Plus, Pencil, Trash2, Power, PowerOff, Copy,
   Wrench, MessageSquare, Search, Zap, ListChecks,
-  Hash, ChevronRight, AlertTriangle,
+  Hash, ChevronRight, AlertTriangle, Image,
 } from "lucide-react";
 
 const MODEL_OPTIONS = [
@@ -30,6 +30,7 @@ const TOOL_ICONS: Record<string, React.ReactNode> = {
   resumo_estoque: <ListChecks className="h-4 w-4" />,
   atualizar_lead: <Zap className="h-4 w-4" />,
   buscar_veiculo_por_id: <Hash className="h-4 w-4" />,
+  apresentar_veiculo: <Image className="h-4 w-4" />,
   enviar_botoes: <MessageSquare className="h-4 w-4" />,
   enviar_lista: <ListChecks className="h-4 w-4" />,
 };
