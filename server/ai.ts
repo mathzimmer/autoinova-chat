@@ -592,7 +592,7 @@ export async function processAIMessage(
       corePrompt = await getCorePrompt();
       commercialPrompt = await getCommercialPrompt();
     } else {
-      corePrompt = `=== REGRAS DO SISTEMA ===\nFORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Separe com quebras de linha. Máximo 1-2 emojis. Máximo 3 parágrafos curtos.\nIMPORTANTE: SÓ apresente veículos retornados por buscar_veiculos ou buscar_veiculo_por_id. COPIE preço e ano EXATAMENTE. PROIBIDO inventar dados.\nMÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto.\nLIMPEZA: Remova [ID:X], [FOTO] da resposta.`;
+      corePrompt = `=== REGRAS DO SISTEMA ===\nFORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Separe com quebras de linha. Máximo 1-2 emojis. Máximo 3 parágrafos curtos.\nIMPORTANTE: SÓ apresente veículos retornados por buscar_veiculos ou buscar_veiculo_por_id. COPIE preço e ano EXATAMENTE. PROIBIDO inventar dados.\nMÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto.\nLIMPEZA: Remova [ID:X], [FOTO] da resposta.\nFERRAMENTAS: Você DEVE usar as ferramentas disponíveis para executar ações. Se tem a ferramenta apresentar_veiculo, USE-A para mostrar veículos com foto. Se tem buscar_veiculos, USE-A para buscar. NUNCA escreva informações de veículos em texto se pode usar uma ferramenta para isso.`;
       commercialPrompt = "";
     }
     personalityPrompt = agent.systemPrompt;
@@ -759,10 +759,16 @@ export async function processAIMessage(
   try {
     console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 80)}..." forceSearch=${forceSearch}`);
 
+    // If agent has specific tools enabled, force tool use on first call
+    const agentToolChoice = agent?.enabledTools && agent.enabledTools.length > 0 && agent.enabledTools.length <= 3
+      ? "required" as const
+      : "auto" as const;
+    console.log(`[AI] Conv ${conversation.id}: tool_choice=${agentToolChoice} (agent tools: ${agent?.enabledTools?.length || 'all'})`);
+
     let result = await invokeLLM({
       messages: llmMessages,
       tools: activeTools,
-      tool_choice: "auto",
+      tool_choice: agentToolChoice,
     });
 
     console.log(`[AI] First LLM response - finish_reason: ${result.choices[0]?.finish_reason}, has_tool_calls: ${!!result.choices[0]?.message?.tool_calls?.length}, forceSearch: ${forceSearch}`);

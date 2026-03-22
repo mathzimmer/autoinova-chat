@@ -1,0 +1,13 @@
+{
+  "query": "SELECT id, content, senderType, messageType, metadata FROM messages WHERE id = 5130040",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, content, senderType, messageType, metadata FROM messages WHERE id = 5130040",
+  "rows": [],
+  "messages": [
+    "5130040\tAqui estão as informações do veículo que você se interessou:",
+    "Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. | Ano: 2016 | Km: 91.500 | Preço: R$ 112.990 (promoção: R$ 108.990)",
+    "Se você deseja agendar uma visita, saber mais detalhes ou se tem um veículo para troca, é só me avisar! 😊\tbot\ttext\tNULL"
+  ],
+  "stdout": "id\tcontent\tsenderType\tmessageType\tmetadata\n5130040\tAqui estão as informações do veículo que você se interessou:\n\nMercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. | Ano: 2016 | Km: 91.500 | Preço: R$ 112.990 (promoção: R$ 108.990)\n\nSe você deseja agendar uma visita, saber mais detalhes ou se tem um veículo para troca, é só me avisar! 😊\tbot\ttext\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

@@ -1,0 +1,92 @@
+{
+  "query": "SELECT m.id, m.content, m.senderType, m.messageType, m.createdAt FROM messages m JOIN conversations c ON m.conversationId = c.id WHERE c.contactName LIKE '%Matheus%' ORDER BY m.createdAt DESC LIMIT 15",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT m.id, m.content, m.senderType, m.messageType, m.createdAt FROM messages m JOIN conversations c ON m.conversationId = c.id WHERE c.contactName LIKE '%Matheus%' ORDER BY m.createdAt DESC LIMIT 15",
+  "rows": [
+    {
+      "id": "5130039",
+      "content": "Interesse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97",
+      "senderType": "customer",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:20:08"
+    },
+    {
+      "id": "5130038",
+      "content": "Ótimo! Vou passar as informações para o vendedor, em breve ele entrará em contato.",
+      "senderType": "bot",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:53"
+    },
+    {
+      "id": "5130037",
+      "content": "Quero pagar à vista",
+      "senderType": "customer",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:44"
+    },
+    {
+      "id": "5130035",
+      "content": "Certo! Você deseja financiar o veículo, pagar à vista ou outra forma de pagamento? ",
+      "senderType": "bot",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:39"
+    },
+    {
+      "id": "5130030",
+      "content": "H",
+      "senderType": "customer",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:32"
+    },
+    {
+      "id": "5130028",
+      "content": "Me envie por favor o modelo, ano e km do seu veículo.",
+      "senderType": "bot",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:27"
+    },
+    {
+      "id": "5130027",
+      "content": "Aceitamos troca!",
+      "senderType": "bot",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:27"
+    },
+    {
+      "id": "5130025",
+      "content": "Interesse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97",
+      "senderType": "customer",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:19:20"
+    },
+    {
+      "id": "5130023",
+      "content": "Ótima escolha! Você tem algum veículo para colocar na troca?",
+      "senderType": "bot",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:08:54"
+    },
+    {
+      "id": "5130022",
+      "content": "Sim, quero este",
+      "senderType": "customer",
+      "messageType": "text",
+      "createdAt": "2026-03-22 22:08:42"
+    }
+  ],
+  "messages": [
+    "5130041\tConfima o interesse neste veículo?",
+    "[Botões: Sim, quero este | Outra opção]\tbot\ttext\t2026-03-22 22:20:29",
+    "5130040\tAqui estão as informações do veículo que você se interessou:",
+    "Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. | Ano: 2016 | Km: 91.500 | Preço: R$ 112.990 (promoção: R$ 108.990)",
+    "Se você deseja agendar uma visita, saber mais detalhes ou se tem um veículo para troca, é só me avisar! 😊\tbot\ttext\t2026-03-22 22:20:24",
+    "5130036\tTipo de pagamento",
+    "[Botões: Quero financiar | Quero pagar à vista | Outra forma]\tbot\ttext\t2026-03-22 22:19:39",
+    "5130024\tVocê tem troca?",
+    "[Botões: Sim | Não]\tbot\ttext\t2026-03-22 22:08:54",
+    "5130021\tConfima o interesse neste veículo?",
+    "[Botões: Sim, quero este | Outra opção]\tbot\ttext\t2026-03-22 22:08:01"
+  ],
+  "stdout": "id\tcontent\tsenderType\tmessageType\tcreatedAt\n5130041\tConfima o interesse neste veículo?\n\n[Botões: Sim, quero este | Outra opção]\tbot\ttext\t2026-03-22 22:20:29\n5130040\tAqui estão as informações do veículo que você se interessou:\n\nMercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. | Ano: 2016 | Km: 91.500 | Preço: R$ 112.990 (promoção: R$ 108.990)\n\nSe você deseja agendar uma visita, saber mais detalhes ou se tem um veículo para troca, é só me avisar! 😊\tbot\ttext\t2026-03-22 22:20:24\n5130039\tInteresse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97\tcustomer\ttext\t2026-03-22 22:20:08\n5130038\tÓtimo! Vou passar as informações para o vendedor, em breve ele entrará em contato.\tbot\ttext\t2026-03-22 22:19:53\n5130037\tQuero pagar à vista\tcustomer\ttext\t2026-03-22 22:19:44\n5130035\tCerto! Você deseja financiar o veículo, pagar à vista ou outra forma de pagamento? \tbot\ttext\t2026-03-22 22:19:39\n5130036\tTipo de pagamento\n\n[Botões: Quero financiar | Quero pagar à vista | Outra forma]\tbot\ttext\t2026-03-22 22:19:39\n5130030\tH\tcustomer\ttext\t2026-03-22 22:19:32\n5130028\tMe envie por favor o modelo, ano e km do seu veículo.\tbot\ttext\t2026-03-22 22:19:27\n5130027\tAceitamos troca!\tbot\ttext\t2026-03-22 22:19:27\n5130025\tInteresse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97\tcustomer\ttext\t2026-03-22 22:19:20\n5130023\tÓtima escolha! Você tem algum veículo para colocar na troca?\tbot\ttext\t2026-03-22 22:08:54\n5130024\tVocê tem troca?\n\n[Botões: Sim | Não]\tbot\ttext\t2026-03-22 22:08:54\n5130022\tSim, quero este\tcustomer\ttext\t2026-03-22 22:08:42\n5130021\tConfima o interesse neste veículo?\n\n[Botões: Sim, quero este | Outra opção]\tbot\ttext\t2026-03-22 22:08:01\n",
+  "stderr": "",
+  "execution_time_ms": 89
+}

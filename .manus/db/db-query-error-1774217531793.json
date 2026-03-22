@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, name, enabled_tools, system_prompt, active, include_core_layers FROM ai_agents WHERE name LIKE '%ID%' OR name LIKE '%Anuncio%' OR name LIKE '%anuncio%'",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, name, enabled_tools, system_prompt, active, include_core_layers FROM ai_agents WHERE name LIKE '%ID%' OR name LIKE '%Anuncio%' OR name LIKE '%anuncio%'",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1146 (42S02) at line 1: Table 'wrybljerqcsg6cncjjnu32.ai_agents' doesn't exist"
+  ]
+}

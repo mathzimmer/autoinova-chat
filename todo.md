@@ -994,3 +994,10 @@
 - [x] Usar sendImageMessage do WhatsApp com caption contendo as informações do veículo
 - [x] Integrar com dados do estoque (foto do anúncio + campos selecionados)
 - [x] Adicionar tool ao painel de agentes para seleção
+
+## Bug - Agente ID não envia foto do veículo no fluxo
+- [x] Tool apresentar_veiculo habilitada no agente (confirmado)
+- [x] Causa raiz: corePrompt mínimo não mencionava apresentar_veiculo + tool_choice era 'auto' (IA ignorava a tool)
+- [x] Fix 1: corePrompt mínimo agora instrui a usar ferramentas disponíveis
+- [x] Fix 2: tool_choice='required' quando agente tem 1-3 tools específicas
+- [x] Fix 3: prompt do agente reescrito para ser explícito sobre chamar a tool

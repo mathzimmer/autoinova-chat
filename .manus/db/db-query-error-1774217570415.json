@@ -1,0 +1,8 @@
+{
+  "query": "SELECT n.id, n.type, n.data FROM chatFlowNodes n JOIN chatFlows f ON n.flowId = f.id WHERE f.name LIKE '%Mostrar%' OR f.name LIKE '%veículo%' OR f.name LIKE '%veiculo%'",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT n.id, n.type, n.data FROM chatFlowNodes n JOIN chatFlows f ON n.flowId = f.id WHERE f.name LIKE '%Mostrar%' OR f.name LIKE '%veículo%' OR f.name LIKE '%veiculo%'",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'n.type' in 'field list'"
+  ]
+}
