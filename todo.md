@@ -1006,3 +1006,6 @@
 - [x] Tool apresentar_veiculo foi chamada mas imagem não apareceu no WhatsApp
 - [x] Causa raiz: flowContinued=true bloqueava TODOS os interactiveMessages, incluindo imagens
 - [x] Fix: imagens são enviadas SEMPRE (independente de flowContinued), apenas botões/listas são pulados
+
+## Fix - Ordem de envio: imagem antes dos botões
+- [x] Mover envio de imagens da IA para ANTES do flow continuation para que a foto chegue antes dos botões

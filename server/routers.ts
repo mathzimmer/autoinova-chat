@@ -279,6 +279,41 @@ async function initDebounce() {
           );
         }
 
+        // === SEND AI IMAGES FIRST (before flow continuation, so photo arrives before buttons) ===
+        if (aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+          for (const im of aiResult.interactiveMessages) {
+            if (im.type === "image" && im.imageUrl) {
+              try {
+                // Small delay to ensure AI text arrives first
+                await new Promise(resolve => setTimeout(resolve, 800));
+                const imageResult = await sendImageMessage(
+                  conversation.phone,
+                  im.imageUrl,
+                  im.caption || im.body
+                );
+                console.log(`[Debounce] Conversa ${conversationId}: imagem de ve\u00edculo enviada - success: ${imageResult.success}`);
+                if (imageResult.success) {
+                  const imageMsg = await createMessage({
+                    conversationId,
+                    content: im.caption || im.body || "[Imagem do ve\u00edculo]",
+                    senderType: "bot",
+                    senderName: "Auto Inova IA",
+                    messageType: "image",
+                    metadata: { imageUrl: im.imageUrl, caption: im.caption },
+                  });
+                  emitNewMessage(conversationId, imageMsg);
+                  if (imageResult.messageId) {
+                    await updateMessageExternalId(imageMsg.id, imageResult.messageId);
+                  }
+                }
+              } catch (imgErr) {
+                console.error(`[Debounce] Conversa ${conversationId}: erro ao enviar imagem:`, imgErr);
+              }
+            }
+          }
+        }
+        // === END SEND AI IMAGES ===
+
         // === FLOW CONTINUATION: After AI responds, continue flow if pending ===
         let flowContinued = false;
         if (globalFlowsEnabled) try {
@@ -336,47 +371,18 @@ async function initDebounce() {
         }
         // === END FLOW CONTINUATION ===
 
-        // Send AI image messages ALWAYS (even if flow continued - images are unique content from AI tool)
+        // Send AI interactive messages (buttons/lists only - images already sent above)
         console.log(`[Debounce] Conversa ${conversationId}: flowContinued=${flowContinued}, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
-        if (aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+        if (!flowContinued && aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
           for (const im of aiResult.interactiveMessages) {
+            // Skip images - already sent before flow continuation
+            if (im.type === "image") continue;
+
             try {
-              // Small delay to ensure text message arrives first
+              // Small delay to ensure previous messages arrive first
               await new Promise(resolve => setTimeout(resolve, 800));
               
               let interactiveResult: { success: boolean; messageId?: string; error?: string } = { success: false };
-
-              if (im.type === "image" && im.imageUrl) {
-                // Send vehicle photo with caption - ALWAYS send, regardless of flowContinued
-                interactiveResult = await sendImageMessage(
-                  conversation.phone,
-                  im.imageUrl,
-                  im.caption || im.body
-                );
-                console.log(`[Debounce] Conversa ${conversationId}: imagem de veículo enviada - success: ${interactiveResult.success}`);
-                // Save to DB
-                if (interactiveResult.success) {
-                  const imageMsg = await createMessage({
-                    conversationId,
-                    content: im.caption || im.body || "[Imagem do veículo]",
-                    senderType: "bot",
-                    senderName: "Auto Inova IA",
-                    messageType: "image",
-                    metadata: { imageUrl: im.imageUrl, caption: im.caption },
-                  });
-                  emitNewMessage(conversationId, imageMsg);
-                  if (interactiveResult.messageId) {
-                    await updateMessageExternalId(imageMsg.id, interactiveResult.messageId);
-                  }
-                }
-                continue; // Skip the generic save below
-              }
-
-              // Skip buttons/lists if flow already continued (to avoid duplicates)
-              if (flowContinued) {
-                console.log(`[Debounce] Conversa ${conversationId}: skipping ${im.type} because flowContinued=true`);
-                continue;
-              }
 
               if (im.type === "buttons" && im.buttons && im.buttons.length > 0) {
                 interactiveResult = await sendReplyButtons(
