@@ -336,10 +336,9 @@ async function initDebounce() {
         }
         // === END FLOW CONTINUATION ===
 
-        // Send interactive messages (buttons/lists) if any were queued by the AI
-        // Skip if flow already continued (to avoid duplicate buttons from AI tool + flow node)
+        // Send AI image messages ALWAYS (even if flow continued - images are unique content from AI tool)
         console.log(`[Debounce] Conversa ${conversationId}: flowContinued=${flowContinued}, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
-        if (!flowContinued && aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+        if (aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
           for (const im of aiResult.interactiveMessages) {
             try {
               // Small delay to ensure text message arrives first
@@ -348,7 +347,7 @@ async function initDebounce() {
               let interactiveResult: { success: boolean; messageId?: string; error?: string } = { success: false };
 
               if (im.type === "image" && im.imageUrl) {
-                // Send vehicle photo with caption
+                // Send vehicle photo with caption - ALWAYS send, regardless of flowContinued
                 interactiveResult = await sendImageMessage(
                   conversation.phone,
                   im.imageUrl,
@@ -371,7 +370,15 @@ async function initDebounce() {
                   }
                 }
                 continue; // Skip the generic save below
-              } else if (im.type === "buttons" && im.buttons && im.buttons.length > 0) {
+              }
+
+              // Skip buttons/lists if flow already continued (to avoid duplicates)
+              if (flowContinued) {
+                console.log(`[Debounce] Conversa ${conversationId}: skipping ${im.type} because flowContinued=true`);
+                continue;
+              }
+
+              if (im.type === "buttons" && im.buttons && im.buttons.length > 0) {
                 interactiveResult = await sendReplyButtons(
                   conversation.phone,
                   im.body,

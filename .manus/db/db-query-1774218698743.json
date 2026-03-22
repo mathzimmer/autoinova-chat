@@ -1,0 +1,63 @@
+{
+  "query": "SELECT m.id, m.content, m.senderType, m.messageType, m.metadata, m.createdAt FROM messages m JOIN conversations c ON m.conversationId = c.id WHERE c.contactName LIKE '%Matheus%' ORDER BY m.createdAt DESC LIMIT 8",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT m.id, m.content, m.senderType, m.messageType, m.metadata, m.createdAt FROM messages m JOIN conversations c ON m.conversationId = c.id WHERE c.contactName LIKE '%Matheus%' ORDER BY m.createdAt DESC LIMIT 8",
+  "rows": [
+    {
+      "id": "5130054",
+      "content": "Aqui está o veículo que você se interessou!",
+      "senderType": "bot",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 22:29:14"
+    },
+    {
+      "id": "5130053",
+      "content": "Interesse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97",
+      "senderType": "customer",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 22:28:50"
+    },
+    {
+      "id": "5130052",
+      "content": "Ótimo! Vou passar as informações para o vendedor, em breve ele entrará em contato.",
+      "senderType": "bot",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 22:28:44"
+    },
+    {
+      "id": "5130051",
+      "content": "Quero pagar à vista",
+      "senderType": "customer",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 22:28:35"
+    },
+    {
+      "id": "5130049",
+      "content": "Certo! Você deseja financiar o veículo, pagar à vista ou outra forma de pagamento? ",
+      "senderType": "bot",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 22:28:30"
+    },
+    {
+      "id": "5130048",
+      "content": "G",
+      "senderType": "customer",
+      "messageType": "text",
+      "metadata": "NULL",
+      "createdAt": "2026-03-22 22:28:20"
+    }
+  ],
+  "messages": [
+    "5130055\tConfima o interesse neste veículo?",
+    "[Botões: Sim, quero este | Outra opção]\tbot\ttext\t{\"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}], \"interactiveData\": {\"body\": \"Confima o interesse neste veículo?\", \"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}]}, \"interactiveType\": \"buttons\"}\t2026-03-22 22:29:33",
+    "5130050\tTipo de pagamento",
+    "[Botões: Quero financiar | Quero pagar à vista | Outra forma]\tbot\ttext\t{\"buttons\": [{\"id\": \"flow_btn_30026_0\", \"title\": \"Quero financiar\"}, {\"id\": \"flow_btn_30026_1\", \"title\": \"Quero pagar à vista\"}, {\"id\": \"flow_btn_30026_2\", \"title\": \"Outra forma\"}], \"interactiveData\": {\"body\": \"Tipo de pagamento\", \"buttons\": [{\"id\": \"flow_btn_30026_0\", \"title\": \"Quero financiar\"}, {\"id\": \"flow_btn_30026_1\", \"title\": \"Quero pagar à vista\"}, {\"id\": \"flow_btn_30026_2\", \"title\": \"Outra forma\"}]}, \"interactiveType\": \"buttons\"}\t2026-03-22 22:28:30"
+  ],
+  "stdout": "id\tcontent\tsenderType\tmessageType\tmetadata\tcreatedAt\n5130055\tConfima o interesse neste veículo?\n\n[Botões: Sim, quero este | Outra opção]\tbot\ttext\t{\"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}], \"interactiveData\": {\"body\": \"Confima o interesse neste veículo?\", \"buttons\": [{\"id\": \"flow_btn_30021_0\", \"title\": \"Sim, quero este\"}, {\"id\": \"flow_btn_30021_1\", \"title\": \"Outra opção\"}]}, \"interactiveType\": \"buttons\"}\t2026-03-22 22:29:33\n5130054\tAqui está o veículo que você se interessou!\tbot\ttext\tNULL\t2026-03-22 22:29:14\n5130053\tInteresse no veículo: Mercedes C-180 CGI Exc. 1.6/1.6 Flex TB 16V  Aut. ID97\tcustomer\ttext\tNULL\t2026-03-22 22:28:50\n5130052\tÓtimo! Vou passar as informações para o vendedor, em breve ele entrará em contato.\tbot\ttext\tNULL\t2026-03-22 22:28:44\n5130051\tQuero pagar à vista\tcustomer\ttext\tNULL\t2026-03-22 22:28:35\n5130049\tCerto! Você deseja financiar o veículo, pagar à vista ou outra forma de pagamento? \tbot\ttext\tNULL\t2026-03-22 22:28:30\n5130050\tTipo de pagamento\n\n[Botões: Quero financiar | Quero pagar à vista | Outra forma]\tbot\ttext\t{\"buttons\": [{\"id\": \"flow_btn_30026_0\", \"title\": \"Quero financiar\"}, {\"id\": \"flow_btn_30026_1\", \"title\": \"Quero pagar à vista\"}, {\"id\": \"flow_btn_30026_2\", \"title\": \"Outra forma\"}], \"interactiveData\": {\"body\": \"Tipo de pagamento\", \"buttons\": [{\"id\": \"flow_btn_30026_0\", \"title\": \"Quero financiar\"}, {\"id\": \"flow_btn_30026_1\", \"title\": \"Quero pagar à vista\"}, {\"id\": \"flow_btn_30026_2\", \"title\": \"Outra forma\"}]}, \"interactiveType\": \"buttons\"}\t2026-03-22 22:28:30\n5130048\tG\tcustomer\ttext\tNULL\t2026-03-22 22:28:20\n",
+  "stderr": "",
+  "execution_time_ms": 65
+}

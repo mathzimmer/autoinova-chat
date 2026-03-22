@@ -1001,3 +1001,8 @@
 - [x] Fix 1: corePrompt mínimo agora instrui a usar ferramentas disponíveis
 - [x] Fix 2: tool_choice='required' quando agente tem 1-3 tools específicas
 - [x] Fix 3: prompt do agente reescrito para ser explícito sobre chamar a tool
+
+## Bug - Foto do veículo não enviada mesmo com tool chamada
+- [x] Tool apresentar_veiculo foi chamada mas imagem não apareceu no WhatsApp
+- [x] Causa raiz: flowContinued=true bloqueava TODOS os interactiveMessages, incluindo imagens
+- [x] Fix: imagens são enviadas SEMPRE (independente de flowContinued), apenas botões/listas são pulados
