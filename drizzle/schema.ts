@@ -1,4 +1,5 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, bigint, tinyint } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, boolean, json, bigint, tinyint, decimal } from "drizzle-orm/mysql-core";
+
 
 /**
  * Core user table backing auth flow.
@@ -387,7 +388,8 @@ export const chatFlows = mysqlTable("chatFlows", {
   triggerValue: varchar("triggerValue", { length: 500 }), // Ex: palavra-chave, ID do botão
   active: boolean("active").default(false).notNull(),
   priority: int("priority").default(0).notNull(), // Maior = mais prioridade
-  aiPrompt: text("aiPrompt"), // Prompt customizado para a IA dentro deste fluxo (substitui prompts globais)
+  aiPrompt: text("aiPrompt"), // Prompt customizado para a IA dentro deste fluxo (legado, substituído por agentId)
+  agentId: int("agentId"), // Referência ao agente de IA configurado para este fluxo
   createdBy: int("createdBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
@@ -463,3 +465,32 @@ export const chatFlowSessions = mysqlTable("chatFlowSessions", {
 
 export type ChatFlowSession = typeof chatFlowSessions.$inferSelect;
 export type InsertChatFlowSession = typeof chatFlowSessions.$inferInsert;
+
+/**
+ * AI Agents — agentes de IA configuráveis com prompt, tools e modelo próprios.
+ * Cada agente pode ser vinculado a fluxos ou canais específicos.
+ * Sem agente global: se nenhum agente estiver configurado, a IA não responde.
+ */
+export const aiAgents = mysqlTable("aiAgents", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Prompt layers
+  systemPrompt: text("systemPrompt").notNull(),           // Prompt principal do agente (personalidade + instruções)
+  includeCoreLayers: boolean("includeCoreLayers").default(true).notNull(), // Se inclui CORE_PROMPT + COMMERCIAL_PROMPT
+  // Model config
+  model: varchar("model", { length: 100 }).default("gpt-4o-mini").notNull(),
+  temperature: decimal("temperature", { precision: 2, scale: 1 }).default("0.7").notNull(),
+  maxTokens: int("maxTokens").default(1024).notNull(),
+  // Tools habilitadas (JSON array de nomes de tools)
+  enabledTools: json("enabledTools").$type<string[]>(),   // ["buscar_veiculos", "atualizar_lead", ...]
+  // Status
+  active: boolean("active").default(true).notNull(),
+  // Metadata
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type AiAgent = typeof aiAgents.$inferSelect;
+export type InsertAiAgent = typeof aiAgents.$inferInsert;

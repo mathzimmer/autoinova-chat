@@ -18,6 +18,7 @@ import MetaAdsPage from "./pages/MetaAds";
 import FollowUpPage from "./pages/FollowUp";
 import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
+import Agents from "./pages/Agents";
 
 function Router() {
   return (
@@ -76,6 +77,11 @@ function Router() {
       <Route path="/flows">
         <AppLayout>
           <Flows />
+        </AppLayout>
+      </Route>
+      <Route path="/agents">
+        <AppLayout>
+          <Agents />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />

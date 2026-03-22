@@ -957,3 +957,19 @@
 
 ## Bug - Rodada 67 (wait_input não aceito no saveFlow)
 - [x] Adicionar wait_input à validação Zod do nodeType no saveFlow do backend
+
+## Feature - Sistema de Múltiplos Agentes de IA
+- [x] Criar tabela aiAgents no schema (nome, prompt, tools habilitadas, modelo, temperatura, ativo)
+- [x] Adicionar campo agentId na tabela chatFlows (referência ao agente)
+- [x] Adicionar settings channel_whatsapp_agent_id e channel_instagram_agent_id
+- [x] Migrar banco (pnpm db:push)
+- [x] Criar helpers CRUD de agentes no db.ts (create, list, getById, update, delete)
+- [x] Criar router tRPC para agentes (list, create, update, delete, getById)
+- [x] Alterar processAIMessage para carregar configurações do agente (prompt, tools, modelo, temperatura)
+- [x] Alterar roteamento no debounce: buscar agente do fluxo ativo ou agente do canal
+- [x] Se nenhum agente configurado, usa prompts globais (fallback para compatibilidade)
+- [x] Criar página /agents no frontend: lista de agentes com cards e toggle ativar/desativar
+- [x] Criar formulário de criação/edição de agente (nome, prompt, tools, modelo, temperatura)
+- [x] Integrar seletor de agente no flow builder (dropdown no lugar do campo de prompt)
+- [x] Criar seção de seleção de agente por canal na página de Agentes (WhatsApp e Instagram)
+- [x] Testes para CRUD de agentes e roteamento (10 testes passando, 276 total)

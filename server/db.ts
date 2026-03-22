@@ -19,6 +19,7 @@ import {
   chatFlowNodes, InsertChatFlowNode,
   chatFlowEdges, InsertChatFlowEdge,
   chatFlowSessions, InsertChatFlowSession,
+  aiAgents, InsertAiAgent,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -768,4 +769,75 @@ export async function pauseAllActiveSessionsByFlow(flowId: number) {
       eq(chatFlowSessions.status, "active")
     ));
   return result[0].affectedRows || 0;
+}
+
+// ─── AI Agents CRUD ──────────────────────────────────────────
+
+export async function listAiAgents() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiAgents).orderBy(aiAgents.name);
+}
+
+export async function getAiAgentById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(aiAgents).where(eq(aiAgents.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function createAiAgent(data: InsertAiAgent) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(aiAgents).values(data);
+  return { id: result[0].insertId };
+}
+
+export async function updateAiAgent(id: number, data: Partial<InsertAiAgent>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(aiAgents).set(data).where(eq(aiAgents.id, id));
+}
+
+export async function deleteAiAgent(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  // Remove agent references from flows
+  await db.update(chatFlows).set({ agentId: null }).where(eq(chatFlows.agentId, id));
+  // Remove channel agent settings
+  const channelSettings = ["channel_whatsapp_agent_id", "channel_instagram_agent_id", "channel_facebook_agent_id"];
+  for (const key of channelSettings) {
+    const setting = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
+    if (setting[0] && setting[0].value === String(id)) {
+      await db.update(settings).set({ value: "" }).where(eq(settings.id, setting[0].id));
+    }
+  }
+  await db.delete(aiAgents).where(eq(aiAgents.id, id));
+}
+
+export async function getActiveAiAgents() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(aiAgents).where(eq(aiAgents.active, true)).orderBy(aiAgents.name);
+}
+
+export async function getAiAgentForChannel(channel: string): Promise<typeof aiAgents.$inferSelect | null> {
+  const settingKey = `channel_${channel}_agent_id`;
+  const agentIdStr = await getSetting(settingKey);
+  if (!agentIdStr) return null;
+  const agentId = parseInt(agentIdStr, 10);
+  if (isNaN(agentId)) return null;
+  const agent = await getAiAgentById(agentId);
+  if (agent && agent.active) return agent;
+  return null;
+}
+
+export async function getAiAgentForFlow(flowId: number): Promise<typeof aiAgents.$inferSelect | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const flow = await getChatFlowById(flowId);
+  if (!flow?.agentId) return null;
+  const agent = await getAiAgentById(flow.agentId);
+  if (agent && agent.active) return agent;
+  return null;
 }

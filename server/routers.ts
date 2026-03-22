@@ -21,6 +21,7 @@ import {
   listChatFlowEdges, createChatFlowEdge, deleteChatFlowEdge, replaceFlowEdges,
   getActiveFlowSession, createFlowSession, updateFlowSession, getFlowSessionsByFlow,
   pauseFlowSessionByConversation, pauseAllActiveSessionsByFlow,
+  listAiAgents, getAiAgentById, createAiAgent, updateAiAgent, deleteAiAgent, getActiveAiAgents,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -173,23 +174,46 @@ async function initDebounce() {
 
       const recentMessages = await listMessages(conversationId, 30);
 
-      // Check if there's an active flow session with a custom prompt
-      let flowAiOptions: { flowPrompt?: string; flowInstruction?: string } | undefined;
+      // Check if there's an active flow session with a custom prompt or agent
+      let flowAiOptions: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null } | undefined;
       try {
         const activeFlowSession = await getActiveFlowSession(conversationId);
         if (activeFlowSession) {
           const flow = await getChatFlowById(activeFlowSession.flowId);
-          if (flow?.aiPrompt) {
+          if (flow) {
             const sessionCtx = (activeFlowSession.context as any) || {};
-            flowAiOptions = {
-              flowPrompt: flow.aiPrompt,
-              flowInstruction: sessionCtx.aiInstruction || undefined,
-            };
-            console.log(`[Debounce] Conversa ${conversationId}: usando prompt do fluxo "${flow.name}" (${flow.aiPrompt.length}ch)`);
+            // Priority: agentId > aiPrompt (legacy)
+            if (flow.agentId) {
+              flowAiOptions = {
+                agentId: flow.agentId,
+                flowInstruction: sessionCtx.aiInstruction || undefined,
+              };
+              console.log(`[Debounce] Conversa ${conversationId}: usando agente ID ${flow.agentId} do fluxo "${flow.name}"`);
+            } else if (flow.aiPrompt) {
+              flowAiOptions = {
+                flowPrompt: flow.aiPrompt,
+                flowInstruction: sessionCtx.aiInstruction || undefined,
+              };
+              console.log(`[Debounce] Conversa ${conversationId}: usando prompt legado do fluxo "${flow.name}"`);
+            }
           }
         }
       } catch (flowPromptErr) {
         console.error(`[Debounce] Erro ao carregar prompt do fluxo:`, flowPromptErr);
+      }
+
+      // If no flow agent, try channel agent
+      if (!flowAiOptions?.agentId && !flowAiOptions?.flowPrompt) {
+        try {
+          const { getAiAgentForChannel } = await import("./db");
+          const channelAgent = await getAiAgentForChannel(conversation.channel || "whatsapp");
+          if (channelAgent) {
+            flowAiOptions = { ...flowAiOptions, agentId: channelAgent.id };
+            console.log(`[Debounce] Conversa ${conversationId}: usando agente de canal "${channelAgent.name}" (ID: ${channelAgent.id}) para ${conversation.channel}`);
+          }
+        } catch (channelAgentErr) {
+          console.error(`[Debounce] Erro ao carregar agente de canal:`, channelAgentErr);
+        }
       }
 
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent, flowAiOptions);
@@ -2386,6 +2410,7 @@ const flowRouter = router({
       active: z.boolean().optional(),
       priority: z.number().optional(),
       aiPrompt: z.string().nullable().optional(),
+      agentId: z.number().nullable().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -2526,6 +2551,113 @@ const flowRouter = router({
     }),
 });
 
+// ─── AI Agents Router ──────────────────────────────────────────────
+const AVAILABLE_TOOLS = [
+  { id: "buscar_veiculos", name: "Buscar Veículos", description: "Busca veículos no estoque por filtros" },
+  { id: "resumo_estoque", name: "Resumo do Estoque", description: "Obtém resumo geral do estoque" },
+  { id: "atualizar_lead", name: "Atualizar Lead", description: "Atualiza dados do lead no CRM" },
+  { id: "buscar_veiculo_por_id", name: "Buscar por ID", description: "Busca veículo específico pelo ID" },
+  { id: "enviar_botoes", name: "Enviar Botões", description: "Envia botões interativos (máx 3)" },
+  { id: "enviar_lista", name: "Enviar Lista", description: "Envia menu de lista interativo (máx 10 itens)" },
+];
+
+const agentRouter = router({
+  list: protectedProcedure.query(async () => {
+    return listAiAgents();
+  }),
+
+  listActive: protectedProcedure.query(async () => {
+    return getActiveAiAgents();
+  }),
+
+  getById: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const agent = await getAiAgentById(input.id);
+      if (!agent) throw new Error("Agent not found");
+      return agent;
+    }),
+
+  availableTools: protectedProcedure.query(() => {
+    return AVAILABLE_TOOLS;
+  }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      systemPrompt: z.string().min(1),
+      includeCoreLayers: z.boolean().default(true),
+      model: z.string().default("gpt-4o-mini"),
+      temperature: z.string().default("0.7"),
+      maxTokens: z.number().default(1024),
+      enabledTools: z.array(z.string()).optional(),
+      active: z.boolean().default(true),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await createAiAgent({
+        name: input.name,
+        description: input.description || null,
+        systemPrompt: input.systemPrompt,
+        includeCoreLayers: input.includeCoreLayers,
+        model: input.model,
+        temperature: input.temperature,
+        maxTokens: input.maxTokens,
+        enabledTools: input.enabledTools || [],
+        active: input.active,
+        createdBy: ctx.user.id,
+      });
+      return result;
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().min(1).optional(),
+      description: z.string().nullable().optional(),
+      systemPrompt: z.string().min(1).optional(),
+      includeCoreLayers: z.boolean().optional(),
+      model: z.string().optional(),
+      temperature: z.string().optional(),
+      maxTokens: z.number().optional(),
+      enabledTools: z.array(z.string()).optional(),
+      active: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateAiAgent(id, data as any);
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteAiAgent(input.id);
+      return { success: true };
+    }),
+
+  // Get/set channel agent assignments
+  getChannelAgents: protectedProcedure.query(async () => {
+    const whatsappId = await getSetting("channel_whatsapp_agent_id");
+    const instagramId = await getSetting("channel_instagram_agent_id");
+    return {
+      whatsapp: whatsappId ? parseInt(whatsappId, 10) : null,
+      instagram: instagramId ? parseInt(instagramId, 10) : null,
+    };
+  }),
+
+  setChannelAgent: adminProcedure
+    .input(z.object({
+      channel: z.enum(["whatsapp", "instagram"]),
+      agentId: z.number().nullable(),
+    }))
+    .mutation(async ({ input }) => {
+      const key = `channel_${input.channel}_agent_id`;
+      await upsertSetting(key, input.agentId ? String(input.agentId) : "");
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2554,6 +2686,7 @@ export const appRouter = router({
   tokenHealth: tokenHealthRouter,
   vendor: vendorRouter,
   flow: flowRouter,
+  agent: agentRouter,
 });
 
 export type AppRouter = typeof appRouter;

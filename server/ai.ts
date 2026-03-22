@@ -1,8 +1,8 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary } from "./db";
+import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
-import type { Message, Conversation } from "../drizzle/schema";
+import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 
 // ============================================================================
 // CAMADA 1: NÚCLEO (CORE) — IMUTÁVEL
@@ -544,32 +544,63 @@ export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
   customerMessage: string,
-  options?: { flowPrompt?: string; flowInstruction?: string }
+  options?: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null }
 ): Promise<{ response: string; leadData: Record<string, unknown> | null; interactiveMessages?: InteractiveMessage[] }> {
   const startTime = Date.now();
   const isFlowMode = !!(options?.flowPrompt);
 
-  // When inside a flow with custom prompt, use ONLY the flow prompt (no global layers)
-  // When in free AI mode, use the 3 global layers as usual
+  // Load agent config if agentId is provided
+  let agent: AiAgent | null = null;
+  if (options?.agentId) {
+    agent = await getAiAgentById(options.agentId);
+    if (agent && !agent.active) {
+      console.log(`[AI] Agent ${agent.id} (${agent.name}) is inactive, skipping`);
+      agent = null;
+    }
+    if (agent) {
+      console.log(`[AI] Using agent: ${agent.name} (ID: ${agent.id}, model: ${agent.model}, tools: ${JSON.stringify(agent.enabledTools)})`);
+    }
+  }
+
+  // Determine prompt layers based on mode
   let corePrompt: string;
   let commercialPrompt: string;
   let personalityPrompt: string;
 
-  if (isFlowMode) {
-    // FLOW MODE: Use minimal core rules + flow-specific prompt only
+  if (agent) {
+    // AGENT MODE: Use agent-specific prompt
+    if (agent.includeCoreLayers) {
+      corePrompt = await getCorePrompt();
+      commercialPrompt = await getCommercialPrompt();
+    } else {
+      corePrompt = `=== REGRAS DO SISTEMA ===\nFORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Separe com quebras de linha. Máximo 1-2 emojis. Máximo 3 parágrafos curtos.\nIMPORTANTE: SÓ apresente veículos retornados por buscar_veiculos ou buscar_veiculo_por_id. COPIE preço e ano EXATAMENTE. PROIBIDO inventar dados.\nMÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto.\nLIMPEZA: Remova [ID:X], [FOTO] da resposta.`;
+      commercialPrompt = "";
+    }
+    personalityPrompt = agent.systemPrompt;
+    if (options?.flowInstruction) {
+      personalityPrompt += `\n\n=== INSTRUÇÃO DO NÓ ATUAL ===\n${options.flowInstruction}`;
+    }
+    console.log(`[AI] AGENT MODE: usando agente "${agent.name}" (${personalityPrompt.length}ch)`);
+  } else if (isFlowMode) {
+    // FLOW MODE (legacy): Use minimal core rules + flow-specific prompt only
     corePrompt = `=== REGRAS DO SISTEMA ===\nFORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Separe com quebras de linha. Máximo 1-2 emojis. Máximo 3 parágrafos curtos.\nIMPORTANTE: SÓ apresente veículos retornados por buscar_veiculos ou buscar_veiculo_por_id. COPIE preço e ano EXATAMENTE. PROIBIDO inventar dados.\nMÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto.\nLIMPEZA: Remova [ID:X], [FOTO] da resposta.`;
-    commercialPrompt = ""; // No commercial prompt in flow mode
+    commercialPrompt = "";
     personalityPrompt = options.flowPrompt!;
     if (options.flowInstruction) {
       personalityPrompt += `\n\n=== INSTRUÇÃO DO NÓ ATUAL ===\n${options.flowInstruction}`;
     }
-    console.log(`[AI] FLOW MODE: usando prompt do fluxo (${personalityPrompt.length}ch) em vez dos 3 prompts globais`);
+    console.log(`[AI] FLOW MODE (legacy): usando prompt do fluxo (${personalityPrompt.length}ch)`);
   } else {
     // FREE AI MODE: Use all 3 global layers
     corePrompt = await getCorePrompt();
     commercialPrompt = await getCommercialPrompt();
     personalityPrompt = await getPersonalityPrompt();
   }
+
+  // Filter tools based on agent config
+  const activeTools: Tool[] = agent?.enabledTools && agent.enabledTools.length > 0
+    ? TOOLS.filter(t => (agent!.enabledTools as string[]).includes(t.function.name))
+    : TOOLS; // If no agent or no tool filter, use all tools
 
   // === LAYER 4: CONTEXT (dynamic) ===
   let contextBlock = "\n=== CONTEXTO DINÂMICO ===";
@@ -709,7 +740,7 @@ export async function processAIMessage(
 
     let result = await invokeLLM({
       messages: llmMessages,
-      tools: TOOLS,
+      tools: activeTools,
       tool_choice: "auto",
     });
 
@@ -730,7 +761,7 @@ export async function processAIMessage(
       try {
         result = await invokeLLM({
           messages: retryMessages,
-          tools: TOOLS,
+          tools: activeTools,
           tool_choice: "auto",
         });
         console.log(`[AI] Retry response - finish_reason: ${result.choices[0]?.finish_reason}, has_tool_calls: ${!!result.choices[0]?.message?.tool_calls?.length}`);
@@ -946,7 +977,7 @@ export async function processAIMessage(
       try {
         result = await invokeLLM({
           messages: llmMessages,
-          tools: TOOLS,
+          tools: activeTools,
           tool_choice: "auto",
         });
         assistantMessage = result.choices?.[0]?.message || null;
@@ -1000,7 +1031,7 @@ export async function processAIMessage(
       } as any);
       
       try {
-        const autoResult = await invokeLLM({ messages: llmMessages, tools: TOOLS, tool_choice: "auto" });
+        const autoResult = await invokeLLM({ messages: llmMessages, tools: activeTools, tool_choice: "auto" });
         assistantMessage = autoResult.choices?.[0]?.message || assistantMessage;
         console.log(`[AI] AUTO-SEARCH: LLM presented results successfully.`);
       } catch (autoErr) {

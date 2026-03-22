@@ -30,7 +30,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, X,
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
-  ChevronDown, GripVertical,
+  ChevronDown, GripVertical, Cpu,
 } from "lucide-react";
 
 // ─── Node Type Definitions ───────────────────────────────────
@@ -755,14 +755,18 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
   const flow = flowQuery.data?.flow;
   const [showFlowSettings, setShowFlowSettings] = useState(false);
   const [flowAiPrompt, setFlowAiPrompt] = useState("");
+  const [flowAgentId, setFlowAgentId] = useState<number | null>(null);
   const updateFlowMutation = trpc.flow.update.useMutation({
     onSuccess: () => toast.success("Configurações do fluxo salvas!"),
   });
+  const activeAgentsQuery = trpc.agent.listActive.useQuery();
+  const activeAgents = activeAgentsQuery.data || [];
 
-  // Load flow AI prompt
+  // Load flow AI prompt and agent
   useEffect(() => {
     if (flow?.aiPrompt) setFlowAiPrompt(flow.aiPrompt);
-  }, [flow?.aiPrompt]);
+    if (flow?.agentId) setFlowAgentId(flow.agentId);
+  }, [flow?.aiPrompt, flow?.agentId]);
 
   return (
     <div className="h-[calc(100vh-64px)] flex flex-col">
@@ -785,8 +789,8 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setShowFlowSettings(!showFlowSettings)}>
-            <Bot className="h-3.5 w-3.5 mr-1" />
-            Prompt IA
+            <Cpu className="h-3.5 w-3.5 mr-1" />
+            Agente IA
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending || !hasChanges}>
             <Save className="h-3.5 w-3.5 mr-1" />
@@ -795,39 +799,70 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
         </div>
       </div>
 
-      {/* Flow AI Prompt Settings */}
+      {/* Flow AI Agent & Prompt Settings */}
       {showFlowSettings && (
         <div className="border-b border-border bg-card/80 px-4 py-3">
-          <div className="max-w-3xl">
-            <div className="flex items-center justify-between mb-2">
+          <div className="max-w-3xl space-y-4">
+            {/* Agent Selector */}
+            <div className="flex items-center justify-between">
               <div>
-                <Label className="text-sm font-medium">Prompt da IA para este Fluxo</Label>
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <Cpu className="h-3.5 w-3.5 text-primary" />
+                  Agente de IA deste Fluxo
+                </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  Quando o nó "IA Livre" é usado neste fluxo, a IA usará APENAS este prompt em vez dos 3 prompts globais do sistema.
-                  Se vazio, usa os prompts globais normalmente.
+                  Selecione qual agente responde nos nós "IA Livre" deste fluxo. Se nenhum for selecionado, usa o prompt legado abaixo.
                 </p>
               </div>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  updateFlowMutation.mutate({ id: flowId, aiPrompt: flowAiPrompt || null });
+                  updateFlowMutation.mutate({
+                    id: flowId,
+                    agentId: flowAgentId,
+                    aiPrompt: flowAiPrompt || null,
+                  });
                 }}
                 disabled={updateFlowMutation.isPending}
               >
-                {updateFlowMutation.isPending ? "Salvando..." : "Salvar Prompt"}
+                {updateFlowMutation.isPending ? "Salvando..." : "Salvar"}
               </Button>
             </div>
-            <Textarea
-              value={flowAiPrompt}
-              onChange={(e) => setFlowAiPrompt(e.target.value)}
-              placeholder={`Ex: Você é um consultor de vendas da Auto Inova. Apresente o veículo de forma profissional, destaque os pontos fortes e pergunte se o cliente tem interesse em agendar uma visita.\n\nRegras:\n- Seja objetivo e profissional\n- Não invente informações sobre o veículo\n- Use os dados do estoque fornecidos no contexto`}
-              rows={6}
-              className="text-sm font-mono"
-            />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Variáveis disponíveis: {"{{nome}}"}, {"{{telefone}}"}, {"{{veiculo}}"}, {"{{cidade}}"}, {"{{troca}}"}, {"{{pagamento}}"}
-            </p>
+            <Select
+              value={flowAgentId ? String(flowAgentId) : "none"}
+              onValueChange={(v) => setFlowAgentId(v === "none" ? null : parseInt(v, 10))}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione um agente" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhum (usa prompt legado abaixo)</SelectItem>
+                {activeAgents.map(a => (
+                  <SelectItem key={a.id} value={String(a.id)}>
+                    <span className="font-medium">{a.name}</span>
+                    {a.description && <span className="text-muted-foreground ml-2 text-xs">{a.description}</span>}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            {/* Legacy Prompt (only shown when no agent selected) */}
+            {!flowAgentId && (
+              <div className="space-y-2 pt-2 border-t border-border/50">
+                <Label className="text-sm font-medium text-muted-foreground">Prompt Legado (sem agente)</Label>
+                <Textarea
+                  value={flowAiPrompt}
+                  onChange={(e) => setFlowAiPrompt(e.target.value)}
+                  placeholder={`Ex: Você é um consultor de vendas da Auto Inova...`}
+                  rows={5}
+                  className="text-sm font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Variáveis disponíveis: {"{{nome}}"}, {"{{telefone}}"}, {"{{veiculo}}"}, {"{{cidade}}"}, {"{{troca}}"}, {"{{pagamento}}"}
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
