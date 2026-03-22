@@ -130,7 +130,12 @@ function FlowNode({ data, selected, id }: NodeProps) {
           <p className="text-xs text-muted-foreground">{(data.config as any)?.seconds || 0}s de espera</p>
         )}
         {nodeType === "ai_response" && (
-          <p className="text-xs text-muted-foreground">{(data.config as any)?.instruction || "IA responde livremente"}</p>
+          <div>
+            {(data.config as any)?.agentName && (
+              <p className="text-[10px] font-medium text-primary">{(data.config as any).agentName}</p>
+            )}
+            <p className="text-xs text-muted-foreground">{(data.config as any)?.instruction || "IA responde livremente"}</p>
+          </div>
         )}
         {nodeType === "update_lead" && (
           <p className="text-xs text-muted-foreground">
@@ -179,7 +184,68 @@ function FlowNode({ data, selected, id }: NodeProps) {
   );
 }
 
-// ─── Properties Panel ────────────────────────────────────────
+// ─── Node Agent Selector (for ai_response nodes) ──────────────────
+function NodeAgentSelector({ config, updateConfig }: { config: any; updateConfig: (key: string, value: any) => void }) {
+  const activeAgentsQuery = trpc.agent.listActive.useQuery();
+  const activeAgents = activeAgentsQuery.data || [];
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label className="text-xs font-medium flex items-center gap-1.5">
+          <Cpu className="h-3 w-3 text-primary" />
+          Agente de IA
+        </Label>
+        <Select
+          value={config.agentId ? String(config.agentId) : "none"}
+          onValueChange={(v) => {
+            if (v === "none") {
+              updateConfig("agentId", null);
+              updateConfig("agentName", null);
+            } else {
+              const id = parseInt(v, 10);
+              const agent = activeAgents.find(a => a.id === id);
+              updateConfig("agentId", id);
+              updateConfig("agentName", agent?.name || null);
+            }
+          }}
+        >
+          <SelectTrigger className="h-8 text-sm mt-1">
+            <SelectValue placeholder="Selecione um agente" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Nenhum (usa agente do fluxo/canal)</SelectItem>
+            {activeAgents.map(a => (
+              <SelectItem key={a.id} value={String(a.id)}>
+                {a.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          {config.agentId
+            ? "Este nó usará o agente selecionado com seu prompt e tools"
+            : "Sem agente: usará o agente do fluxo ou do canal como fallback"}
+        </p>
+      </div>
+      <div>
+        <Label className="text-xs">Instrução adicional (opcional)</Label>
+        <Textarea
+          value={config.instruction || ""}
+          onChange={(e) => updateConfig("instruction", e.target.value)}
+          placeholder="Ex: Apresente os veículos encontrados e pergunte sobre troca..."
+          rows={3}
+          className="text-sm"
+        />
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Instrução específica para este momento do fluxo (complementa o prompt do agente)
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// ─── Properties Panel ────────────────────────────────────────────────────
 function PropertiesPanel({
   node,
   onUpdate,
@@ -474,19 +540,7 @@ function PropertiesPanel({
         )}
 
         {nodeType === "ai_response" && (
-          <div>
-            <Label className="text-xs">Instrução para a IA</Label>
-            <Textarea
-              value={config.instruction || ""}
-              onChange={(e) => updateConfig("instruction", e.target.value)}
-              placeholder="Ex: Apresente os veículos encontrados e pergunte sobre troca..."
-              rows={4}
-              className="text-sm"
-            />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              A IA responderá livremente com base nesta instrução
-            </p>
-          </div>
+          <NodeAgentSelector config={config} updateConfig={updateConfig} />
         )}
 
         {nodeType === "update_lead" && (

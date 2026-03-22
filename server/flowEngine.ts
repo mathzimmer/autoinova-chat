@@ -374,13 +374,14 @@ async function executeFromNode(
     case "ai_response": {
       // Let AI handle this message - stop flow execution temporarily
       result.handled = false; // Pass to AI
-      // Store instruction + pendingNextNodeId in session context
+      // Store instruction + pendingNextNodeId + node agentId in session context
       const nextEdge = edges.find(e => e.sourceNodeId === node.id);
       await updateFlowSession(session.id, {
         currentNodeId: node.id,
         context: {
           ...((session.context as any) || {}),
           aiInstruction: config.instruction || "",
+          nodeAgentId: config.agentId || null,
           pendingNextNodeId: nextEdge?.targetNodeId || null,
         },
       });

@@ -973,3 +973,10 @@
 - [x] Integrar seletor de agente no flow builder (dropdown no lugar do campo de prompt)
 - [x] Criar seção de seleção de agente por canal na página de Agentes (WhatsApp e Instagram)
 - [x] Testes para CRUD de agentes e roteamento (10 testes passando, 276 total)
+
+## Feature - Agente por Nó (ai_response)
+- [x] Cada nó ai_response armazena agentId no campo data do nó
+- [x] flowEngine passa agentId do nó ao processAIMessage (via session context nodeAgentId)
+- [x] FlowEditor: seletor de agente no painel de edição do nó ai_response
+- [x] Manter seletor de agente no nível do fluxo como fallback (se nó não tiver agente, usa do fluxo)
+- [x] Testes e verificação (276 testes passando)

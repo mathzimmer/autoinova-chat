@@ -175,6 +175,7 @@ async function initDebounce() {
       const recentMessages = await listMessages(conversationId, 30);
 
       // Check if there's an active flow session with a custom prompt or agent
+      // Priority: node agentId > flow agentId > channel agent > global prompts
       let flowAiOptions: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null } | undefined;
       try {
         const activeFlowSession = await getActiveFlowSession(conversationId);
@@ -182,14 +183,24 @@ async function initDebounce() {
           const flow = await getChatFlowById(activeFlowSession.flowId);
           if (flow) {
             const sessionCtx = (activeFlowSession.context as any) || {};
-            // Priority: agentId > aiPrompt (legacy)
-            if (flow.agentId) {
+            // Priority 1: agentId from the current ai_response node
+            if (sessionCtx.nodeAgentId) {
+              flowAiOptions = {
+                agentId: sessionCtx.nodeAgentId,
+                flowInstruction: sessionCtx.aiInstruction || undefined,
+              };
+              console.log(`[Debounce] Conversa ${conversationId}: usando agente ID ${sessionCtx.nodeAgentId} do nó IA no fluxo "${flow.name}"`);
+            }
+            // Priority 2: agentId from the flow itself (fallback)
+            else if (flow.agentId) {
               flowAiOptions = {
                 agentId: flow.agentId,
                 flowInstruction: sessionCtx.aiInstruction || undefined,
               };
               console.log(`[Debounce] Conversa ${conversationId}: usando agente ID ${flow.agentId} do fluxo "${flow.name}"`);
-            } else if (flow.aiPrompt) {
+            }
+            // Priority 3: legacy prompt from the flow
+            else if (flow.aiPrompt) {
               flowAiOptions = {
                 flowPrompt: flow.aiPrompt,
                 flowInstruction: sessionCtx.aiInstruction || undefined,
