@@ -980,3 +980,7 @@
 - [x] FlowEditor: seletor de agente no painel de edição do nó ai_response
 - [x] Manter seletor de agente no nível do fluxo como fallback (se nó não tiver agente, usa do fluxo)
 - [x] Testes e verificação (276 testes passando)
+
+## Bug - Fluxo "Mostrar o veículo" + Agente ID Anuncio
+- [x] Agente "Agente ID Anuncio" não segue o prompt definido (corrigido: race condition no updateConfig + agentId faltando no data do nó)
+- [x] Botão de confirmar interesse é enviado duplicado (corrigido: skip interactiveMessages da IA quando fluxo continua)

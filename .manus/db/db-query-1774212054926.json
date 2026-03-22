@@ -1,0 +1,12 @@
+{
+  "query": "SELECT id, name, systemPrompt, enabledTools, includeCoreLayers, model, temperature, active FROM aiAgents WHERE name LIKE '%Anuncio%' OR name LIKE '%anuncio%' OR name LIKE '%ID%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, name, systemPrompt, enabledTools, includeCoreLayers, model, temperature, active FROM aiAgents WHERE name LIKE '%Anuncio%' OR name LIKE '%anuncio%' OR name LIKE '%ID%';",
+  "rows": [],
+  "messages": [
+    "5\tAgente ID anuncio\tuse a ferramenta Buscar Veículos e apresente as informacoes do veiculo de acordo com o ID informado:",
+    "Modelo do veiculo | Ano | Km | Preço\t[\"buscar_veiculos\"]\t0\tgpt-4o-mini\t0.1\t1"
+  ],
+  "stdout": "id\tname\tsystemPrompt\tenabledTools\tincludeCoreLayers\tmodel\ttemperature\tactive\n5\tAgente ID anuncio\tuse a ferramenta Buscar Veículos e apresente as informacoes do veiculo de acordo com o ID informado:\nModelo do veiculo | Ano | Km | Preço\t[\"buscar_veiculos\"]\t0\tgpt-4o-mini\t0.1\t1\n",
+  "stderr": "",
+  "execution_time_ms": 60
+}

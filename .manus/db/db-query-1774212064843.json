@@ -1,0 +1,136 @@
+{
+  "query": "SELECT id, nodeType, label, data FROM chatFlowNodes WHERE flowId = 30002 ORDER BY id;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, nodeType, label, data FROM chatFlowNodes WHERE flowId = 30002 ORDER BY id;",
+  "rows": [
+    {
+      "id": "30006",
+      "nodeType": "start",
+      "label": "Início",
+      "data": "{}"
+    },
+    {
+      "id": "30019",
+      "nodeType": "ai_response",
+      "label": "IA Livre",
+      "data": "{\"agentName\": \"Agente ID anuncio\", \"instruction\": \"\\n\"}"
+    },
+    {
+      "id": "30020",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Olá 👋. Sou a assistente virtual da Auto Inova! \"}"
+    },
+    {
+      "id": "30021",
+      "nodeType": "send_buttons",
+      "label": "Botões",
+      "data": "{\"body\": \"Confima o interesse neste veículo?\", \"buttons\": [{\"text\": \"Sim, quero este\"}, {\"text\": \"Outra opção\"}]}"
+    },
+    {
+      "id": "30022",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Ótima escolha! Você tem algum veículo para colocar na troca?\"}"
+    },
+    {
+      "id": "30023",
+      "nodeType": "send_buttons",
+      "label": "Botões",
+      "data": "{\"body\": \"Você tem troca?\", \"buttons\": [{\"text\": \"Sim\"}, {\"text\": \"Não\"}]}"
+    },
+    {
+      "id": "30024",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Aceitamos troca!\"}"
+    },
+    {
+      "id": "30025",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Certo! Você deseja financiar o veículo, pagar à vista ou outra forma de pagamento? \"}"
+    },
+    {
+      "id": "30026",
+      "nodeType": "send_buttons",
+      "label": "Botões",
+      "data": "{\"body\": \"Tipo de pagamento\", \"buttons\": [{\"text\": \"Quero financiar\"}, {\"text\": \"Quero pagar à vista\"}, {\"text\": \"Outra forma\"}]}"
+    },
+    {
+      "id": "30027",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Ótimo! Trabalhamos com mais de 10 financeiras.\"}"
+    },
+    {
+      "id": "30028",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Ótimo! Vou passar as informações para o vendedor, em breve ele entrará em contato.\"}"
+    },
+    {
+      "id": "30029",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Qual seria a forma de pagamento?\"}"
+    },
+    {
+      "id": "30030",
+      "nodeType": "end",
+      "label": "Fim",
+      "data": "{}"
+    },
+    {
+      "id": "30031",
+      "nodeType": "end",
+      "label": "Fim",
+      "data": "{}"
+    },
+    {
+      "id": "30032",
+      "nodeType": "end",
+      "label": "Fim",
+      "data": "{}"
+    },
+    {
+      "id": "30034",
+      "nodeType": "send_list",
+      "label": "estoque",
+      "data": "{\"body\": \"Ver opções\", \"buttonText\": \"Ver Opções\", \"sections\": [{\"rows\": [{\"description\": \"\", \"title\": \"Até R$50 mil\"}, {\"description\": \"\", \"title\": \"De R$50 mil a R$80 mil\"}], \"title\": \"Suv\"}, {\"rows\": [{\"description\": \"\", \"title\": \"Até R$50 mil\"}, {\"description\": \"\", \"title\": \"De R$50 mil a R$80 mil\"}], \"title\": \"Hatch\"}]}"
+    },
+    {
+      "id": "30035",
+      "nodeType": "wait_input",
+      "label": "Aguardar Resposta",
+      "data": "{\"promptText\": \"Me envie por favor o modelo, ano e km do seu veículo.\", \"variable\": \"veiculo_troca\"}"
+    },
+    {
+      "id": "30036",
+      "nodeType": "ai_response",
+      "label": "IA Livre",
+      "data": "{\"instruction\": \"apresente todas as opcoes de SUV até R$50.000\"}"
+    },
+    {
+      "id": "60005",
+      "nodeType": "wait_input",
+      "label": "Aguardar Resposta",
+      "data": "{\"promptText\": \"Para agilizar o atendimento com o vendedor me envie os dados para simular: \\nNome completo:\\nCPF:  \\nData de nascimento:\\nCidade:\"}"
+    },
+    {
+      "id": "60006",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Recebemos suas informações! Em breve um de nossos vendedores entrará em contato! Obrigado\"}"
+    },
+    {
+      "id": "60007",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Digite o número da opção escolhida:\"}"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnodeType\tlabel\tdata\n30006\tstart\tInício\t{}\n30019\tai_response\tIA Livre\t{\"agentName\": \"Agente ID anuncio\", \"instruction\": \"\\n\"}\n30020\tsend_message\tMensagem\t{\"text\": \"Olá 👋. Sou a assistente virtual da Auto Inova! \"}\n30021\tsend_buttons\tBotões\t{\"body\": \"Confima o interesse neste veículo?\", \"buttons\": [{\"text\": \"Sim, quero este\"}, {\"text\": \"Outra opção\"}]}\n30022\tsend_message\tMensagem\t{\"text\": \"Ótima escolha! Você tem algum veículo para colocar na troca?\"}\n30023\tsend_buttons\tBotões\t{\"body\": \"Você tem troca?\", \"buttons\": [{\"text\": \"Sim\"}, {\"text\": \"Não\"}]}\n30024\tsend_message\tMensagem\t{\"text\": \"Aceitamos troca!\"}\n30025\tsend_message\tMensagem\t{\"text\": \"Certo! Você deseja financiar o veículo, pagar à vista ou outra forma de pagamento? \"}\n30026\tsend_buttons\tBotões\t{\"body\": \"Tipo de pagamento\", \"buttons\": [{\"text\": \"Quero financiar\"}, {\"text\": \"Quero pagar à vista\"}, {\"text\": \"Outra forma\"}]}\n30027\tsend_message\tMensagem\t{\"text\": \"Ótimo! Trabalhamos com mais de 10 financeiras.\"}\n30028\tsend_message\tMensagem\t{\"text\": \"Ótimo! Vou passar as informações para o vendedor, em breve ele entrará em contato.\"}\n30029\tsend_message\tMensagem\t{\"text\": \"Qual seria a forma de pagamento?\"}\n30030\tend\tFim\t{}\n30031\tend\tFim\t{}\n30032\tend\tFim\t{}\n30034\tsend_list\testoque\t{\"body\": \"Ver opções\", \"buttonText\": \"Ver Opções\", \"sections\": [{\"rows\": [{\"description\": \"\", \"title\": \"Até R$50 mil\"}, {\"description\": \"\", \"title\": \"De R$50 mil a R$80 mil\"}], \"title\": \"Suv\"}, {\"rows\": [{\"description\": \"\", \"title\": \"Até R$50 mil\"}, {\"description\": \"\", \"title\": \"De R$50 mil a R$80 mil\"}], \"title\": \"Hatch\"}]}\n30035\twait_input\tAguardar Resposta\t{\"promptText\": \"Me envie por favor o modelo, ano e km do seu veículo.\", \"variable\": \"veiculo_troca\"}\n30036\tai_response\tIA Livre\t{\"instruction\": \"apresente todas as opcoes de SUV até R$50.000\"}\n60005\twait_input\tAguardar Resposta\t{\"promptText\": \"Para agilizar o atendimento com o vendedor me envie os dados para simular: \\nNome completo:\\nCPF:  \\nData de nascimento:\\nCidade:\"}\n60006\tsend_message\tMensagem\t{\"text\": \"Recebemos suas informações! Em breve um de nossos vendedores entrará em contato! Obrigado\"}\n60007\tsend_message\tMensagem\t{\"text\": \"Digite o número da opção escolhida:\"}\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

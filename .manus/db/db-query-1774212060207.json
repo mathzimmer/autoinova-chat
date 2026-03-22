@@ -1,0 +1,16 @@
+{
+  "query": "SELECT cf.id, cf.name, cf.agentId, cf.aiPrompt FROM chatFlows cf WHERE cf.name LIKE '%Mostrar%' OR cf.name LIKE '%veiculo%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT cf.id, cf.name, cf.agentId, cf.aiPrompt FROM chatFlows cf WHERE cf.name LIKE '%Mostrar%' OR cf.name LIKE '%veiculo%';",
+  "rows": [
+    {
+      "id": "30002",
+      "name": "Mostrar o veiculo",
+      "agentId": "NULL",
+      "aiPrompt": "Você vai utilizar a funcao buscar_veiculos quando necessario dentro do fluxo da conversa com o cliente. "
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tname\tagentId\taiPrompt\n30002\tMostrar o veiculo\tNULL\tVocê vai utilizar a funcao buscar_veiculos quando necessario dentro do fluxo da conversa com o cliente. \n",
+  "stderr": "",
+  "execution_time_ms": 59
+}

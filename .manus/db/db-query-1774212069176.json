@@ -1,0 +1,157 @@
+{
+  "query": "SELECT id, sourceNodeId, targetNodeId, sourceHandle, edgeLabel FROM chatFlowEdges WHERE flowId = 30002 ORDER BY sourceNodeId;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, sourceNodeId, targetNodeId, sourceHandle, edgeLabel FROM chatFlowEdges WHERE flowId = 30002 ORDER BY sourceNodeId;",
+  "rows": [
+    {
+      "id": "90022",
+      "sourceNodeId": "30006",
+      "targetNodeId": "30020",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90024",
+      "sourceNodeId": "30019",
+      "targetNodeId": "30021",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90023",
+      "sourceNodeId": "30020",
+      "targetNodeId": "30019",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90025",
+      "sourceNodeId": "30021",
+      "targetNodeId": "30022",
+      "sourceHandle": "button_0",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90035",
+      "sourceNodeId": "30021",
+      "targetNodeId": "30034",
+      "sourceHandle": "button_1",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90026",
+      "sourceNodeId": "30022",
+      "targetNodeId": "30023",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90028",
+      "sourceNodeId": "30023",
+      "targetNodeId": "30025",
+      "sourceHandle": "button_1",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90027",
+      "sourceNodeId": "30023",
+      "targetNodeId": "30024",
+      "sourceHandle": "button_0",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90036",
+      "sourceNodeId": "30024",
+      "targetNodeId": "30035",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90029",
+      "sourceNodeId": "30025",
+      "targetNodeId": "30026",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90030",
+      "sourceNodeId": "30026",
+      "targetNodeId": "30027",
+      "sourceHandle": "button_0",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90031",
+      "sourceNodeId": "30026",
+      "targetNodeId": "30028",
+      "sourceHandle": "button_1",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90033",
+      "sourceNodeId": "30026",
+      "targetNodeId": "30029",
+      "sourceHandle": "button_2",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90038",
+      "sourceNodeId": "30027",
+      "targetNodeId": "60005",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90032",
+      "sourceNodeId": "30028",
+      "targetNodeId": "30031",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90034",
+      "sourceNodeId": "30029",
+      "targetNodeId": "30032",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90037",
+      "sourceNodeId": "30034",
+      "targetNodeId": "30036",
+      "sourceHandle": "row_0",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90041",
+      "sourceNodeId": "30035",
+      "targetNodeId": "30025",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90042",
+      "sourceNodeId": "30036",
+      "targetNodeId": "60007",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90039",
+      "sourceNodeId": "60005",
+      "targetNodeId": "60006",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "90040",
+      "sourceNodeId": "60006",
+      "targetNodeId": "30030",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tsourceNodeId\ttargetNodeId\tsourceHandle\tedgeLabel\n90022\t30006\t30020\tdefault\tNULL\n90024\t30019\t30021\tdefault\tNULL\n90023\t30020\t30019\tdefault\tNULL\n90025\t30021\t30022\tbutton_0\tNULL\n90035\t30021\t30034\tbutton_1\tNULL\n90026\t30022\t30023\tdefault\tNULL\n90028\t30023\t30025\tbutton_1\tNULL\n90027\t30023\t30024\tbutton_0\tNULL\n90036\t30024\t30035\tdefault\tNULL\n90029\t30025\t30026\tdefault\tNULL\n90030\t30026\t30027\tbutton_0\tNULL\n90031\t30026\t30028\tbutton_1\tNULL\n90033\t30026\t30029\tbutton_2\tNULL\n90038\t30027\t60005\tdefault\tNULL\n90032\t30028\t30031\tdefault\tNULL\n90034\t30029\t30032\tdefault\tNULL\n90037\t30034\t30036\trow_0\tNULL\n90041\t30035\t30025\tdefault\tNULL\n90042\t30036\t60007\tdefault\tNULL\n90039\t60005\t60006\tdefault\tNULL\n90040\t60006\t30030\tdefault\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 66
+}

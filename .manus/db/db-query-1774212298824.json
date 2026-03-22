@@ -1,0 +1,9 @@
+{
+  "query": "UPDATE chatFlowNodes SET data = JSON_SET(data, '$.agentId', 5) WHERE id = 30019;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute UPDATE chatFlowNodes SET data = JSON_SET(data, '$.agentId', 5) WHERE id = 30019;",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 96
+}

@@ -276,6 +276,7 @@ async function initDebounce() {
         }
 
         // === FLOW CONTINUATION: After AI responds, continue flow if pending ===
+        let flowContinued = false;
         if (globalFlowsEnabled) try {
           const flowContinuation = await continueFlowAfterAI(conversationId, {
             conversationId,
@@ -285,6 +286,7 @@ async function initDebounce() {
           });
 
           if (flowContinuation.handled) {
+            flowContinued = true;
             console.log(`[Debounce] Conversa ${conversationId}: fluxo continuado ap\u00f3s IA (${flowContinuation.responses.length} respostas, ${flowContinuation.interactiveMessages.length} interativos)`);
 
             // Small delay to ensure AI text arrives first
@@ -341,7 +343,8 @@ async function initDebounce() {
         // === END FLOW CONTINUATION ===
 
         // Send interactive messages (buttons/lists) if any were queued by the AI
-        if (aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
+        // Skip if flow already continued (to avoid duplicate buttons from AI tool + flow node)
+        if (!flowContinued && aiResult.interactiveMessages && aiResult.interactiveMessages.length > 0 && conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
           for (const im of aiResult.interactiveMessages) {
             try {
               // Small delay to ensure text message arrives first

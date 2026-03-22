@@ -185,7 +185,7 @@ function FlowNode({ data, selected, id }: NodeProps) {
 }
 
 // ─── Node Agent Selector (for ai_response nodes) ──────────────────
-function NodeAgentSelector({ config, updateConfig }: { config: any; updateConfig: (key: string, value: any) => void }) {
+function NodeAgentSelector({ config, updateConfig, node, onUpdate }: { config: any; updateConfig: (key: string, value: any) => void; node: Node; onUpdate: (id: string, data: any) => void }) {
   const activeAgentsQuery = trpc.agent.listActive.useQuery();
   const activeAgents = activeAgentsQuery.data || [];
 
@@ -200,13 +200,18 @@ function NodeAgentSelector({ config, updateConfig }: { config: any; updateConfig
           value={config.agentId ? String(config.agentId) : "none"}
           onValueChange={(v) => {
             if (v === "none") {
-              updateConfig("agentId", null);
-              updateConfig("agentName", null);
+              // Use a single atomic update to avoid race condition where second call overwrites first
+              onUpdate(node.id, {
+                ...node.data,
+                config: { ...config, agentId: null, agentName: null },
+              });
             } else {
               const id = parseInt(v, 10);
               const agent = activeAgents.find(a => a.id === id);
-              updateConfig("agentId", id);
-              updateConfig("agentName", agent?.name || null);
+              onUpdate(node.id, {
+                ...node.data,
+                config: { ...config, agentId: id, agentName: agent?.name || null },
+              });
             }
           }}
         >
@@ -540,7 +545,7 @@ function PropertiesPanel({
         )}
 
         {nodeType === "ai_response" && (
-          <NodeAgentSelector config={config} updateConfig={updateConfig} />
+          <NodeAgentSelector config={config} updateConfig={updateConfig} node={node} onUpdate={onUpdate} />
         )}
 
         {nodeType === "update_lead" && (

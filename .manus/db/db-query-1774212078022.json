@@ -1,0 +1,16 @@
+{
+  "query": "SELECT id, nodeType, label, data FROM chatFlowNodes WHERE id = 60007;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, nodeType, label, data FROM chatFlowNodes WHERE id = 60007;",
+  "rows": [
+    {
+      "id": "60007",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Digite o número da opção escolhida:\"}"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnodeType\tlabel\tdata\n60007\tsend_message\tMensagem\t{\"text\": \"Digite o número da opção escolhida:\"}\n",
+  "stderr": "",
+  "execution_time_ms": 59
+}

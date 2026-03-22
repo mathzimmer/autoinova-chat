@@ -1,0 +1,8 @@
+{
+  "query": "SELECT id, name, prompt, enabledTools, includeCoreLayers, model, temperature, isActive FROM aiAgents WHERE name LIKE '%Anuncio%' OR name LIKE '%anuncio%' OR name LIKE '%ID%';",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, name, prompt, enabledTools, includeCoreLayers, model, temperature, isActive FROM aiAgents WHERE name LIKE '%Anuncio%' OR name LIKE '%anuncio%' OR name LIKE '%ID%';",
+  "returncode": 1,
+  "logs": [
+    "ERROR 1054 (42S22) at line 1: Unknown column 'prompt' in 'field list'"
+  ]
+}
