@@ -1009,3 +1009,12 @@
 
 ## Fix - Ordem de envio: imagem antes dos botões
 - [x] Mover envio de imagens da IA para ANTES do flow continuation para que a foto chegue antes dos botões
+
+## Feature - Categoria (carro/moto) e Tipo de veículo (sedan, SUV, hatch, esportiva, naked)
+- [x] Adicionar campo vehicleType na tabela vehicles do schema + migrar banco
+- [x] Mapear CATEGORY do JSON externo para campo category (carros/motos)
+- [x] Mapear BODY do JSON externo para campo vehicleType (hatch, sedan, SUV, naked, esportiva, etc.)
+- [x] Atualizar searchVehiclesForAI para filtrar por category e vehicleType
+- [x] Atualizar tool buscar_veiculos na IA para incluir parâmetros categoria e tipo
+- [x] Excluir motos por padrão (só mostrar quando cliente pedir especificamente)
+- [x] Atualizar testes (276 passando, incluindo novos testes de motos/naked/esportiva)

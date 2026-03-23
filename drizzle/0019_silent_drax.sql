@@ -1,0 +1,1 @@
+ALTER TABLE `vehicles` ADD `vehicleType` varchar(100);

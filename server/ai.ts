@@ -158,9 +158,11 @@ SIMPLIFICAÇÃO: Use termos curtos. "Ford Belina I L 1.8" → marca: "ford", mod
 Sem resultados? Tente só pelo modelo sem marca.
 
 FILTROS:
-- Tipo: picape/camionete → categoria: "picape" | hatch → "hatch" | sedan → "sedan" | suv → "suv" | van → "van"
+- Categoria: carros → categoria: "carros" | motos → categoria: "motos" (se não especificado, busca só carros)
+- Tipo de carro: picape → tipo: "picape" | hatch → tipo: "hatch" | sedan → tipo: "sedan" | suv → tipo: "suv" | van → tipo: "van"
+- Tipo de moto: naked → tipo: "naked" | esportiva → tipo: "esportiva" | street → tipo: "street" | trail → tipo: "trail" | custom → tipo: "custom"
 - Câmbio: automático → cambio: "automatico" | manual → cambio: "manual"
-- Exemplos: "picape até 80 mil" → buscar_veiculos(categoria: "picape", preco_max: 80000)
+- Exemplos: "picape até 80 mil" → buscar_veiculos(tipo: "picape", preco_max: 80000) | "moto naked" → buscar_veiculos(categoria: "motos", tipo: "naked")
 
 NÃO busque para: "ok", "sim", "obrigado", números de seleção, dados de troca.
 NUNCA diga "vou verificar" ou "só um momento". Apresente resultados na mesma resposta.`;
@@ -199,7 +201,7 @@ SELEÇÃO NUMÉRICA: Se você listou veículos e o cliente responde com número,
 
 BUSCA: Chame buscar_veiculos para veículos específicos ou opções. NÃO busque para "ok", "sim", "tenho troca", "obrigado". Use termos simples (marca: "ford", modelo: "belina"). Copie EXATAMENTE preço e ano dos resultados.
 
-FILTROS: picape → categoria: "picape" | hatch → "hatch" | sedan → "sedan" | suv → "suv" | automático → cambio: "automatico" | manual → "manual"
+FILTROS: carros → categoria: "carros" | motos → categoria: "motos" | picape → tipo: "picape" | hatch → tipo: "hatch" | sedan → tipo: "sedan" | suv → tipo: "suv" | naked → tipo: "naked" | esportiva → tipo: "esportiva" | automático → cambio: "automatico" | manual → "manual"
 
 VEÍCULOS: SÓ apresente veículos retornados por buscar_veiculos. PROIBIDO inventar. Para mais opções: pagina: 2+.
 
@@ -363,7 +365,7 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque REAL da Auto Inova. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. IMPORTANTE: use 'categoria' para filtrar por tipo (picape, hatch, sedan, SUV) e 'cambio' para filtrar por transmissão (automatico, manual). Cada resultado inclui [ID:X] para vincular ao lead.",
+      description: "Busca veículos disponíveis no estoque REAL da Auto Inova. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. IMPORTANTE: use 'categoria' para filtrar carros ou motos, 'tipo' para filtrar por carroceria (picape, hatch, sedan, SUV, naked, esportiva, etc.), e 'cambio' para filtrar por transmissão (automatico, manual). Cada resultado inclui [ID:X] para vincular ao lead.",
       parameters: {
         type: "object",
         properties: {
@@ -371,7 +373,8 @@ const TOOLS: Tool[] = [
           modelo: { type: "string", description: "Modelo do veículo (ex: Corolla, Civic, Gol). Use termos simples e curtos." },
           preco_max: { type: "number", description: "Preço máximo em reais" },
           preco_min: { type: "number", description: "Preço mínimo em reais" },
-          categoria: { type: "string", description: "Tipo/categoria do veículo. Valores aceitos: picape, hatch, sedan, suv, van, wagon, esportivo. OBRIGATÓRIO quando o cliente pedir por tipo de veículo (ex: 'quero uma picape', 'carro hatch', 'sedan completo')." },
+          categoria: { type: "string", description: "Categoria principal: 'carros' ou 'motos'. Use 'motos' quando o cliente perguntar por motos/motocicletas. Se não especificado, busca apenas carros por padrão." },
+          tipo: { type: "string", description: "Tipo/carroceria do veículo. Para CARROS: picape, hatch, sedan, suv, van, wagon, minivan, esportivo. Para MOTOS: naked, esportiva, street, touring, trail, custom. OBRIGATÓRIO quando o cliente pedir por tipo (ex: 'quero uma picape', 'moto naked', 'sedan completo')." },
           combustivel: { type: "string", description: "Combustível: flex, gasolina, diesel, elétrico, híbrido" },
           cambio: { type: "string", description: "Câmbio/transmissão. Valores aceitos: automatico, manual. OBRIGATÓRIO quando o cliente mencionar tipo de câmbio (ex: 'automático', 'manual', 'câmbio automático')." },
           km_max: { type: "number", description: "Quilometragem máxima" },
@@ -850,6 +853,7 @@ export async function processAIMessage(
               maxPrice: args.preco_max,
               minPrice: args.preco_min,
               category: args.categoria,
+              vehicleType: args.tipo,
               fuel: args.combustivel,
               transmission: args.cambio,
               maxMileage: args.km_max,

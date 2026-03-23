@@ -41,6 +41,7 @@ interface ExternalVehicle {
   VIDEO: string | null;
   HP: string | null;
   MOTOR: string | null;
+  CATEGORY: string;
   [key: string]: unknown;
 }
 
@@ -107,7 +108,8 @@ function mapExternalToDb(ext: ExternalVehicle): Omit<InsertVehicle, "id" | "crea
     color: ext.COLOR || null,
     transmission,
     fuel: ext.FUEL || null,
-    category: ext.BODY || null,
+    category: ext.CATEGORY || null,
+    vehicleType: ext.BODY || null,
     condition: ext.CONDITION || null,
     doors: ext.DOORS || null,
     description: ext.DESCRIPTION || null,
@@ -215,19 +217,34 @@ async function getStockSummaryForAI(): Promise<string> {
     return "Nenhum veículo disponível no estoque no momento.";
   }
 
-  // Build a concise summary
-  const brands = Array.from(new Set(allVehicles.map(v => v.brand))).sort();
+  // Build a concise summary with category and type breakdown
+  const carros = allVehicles.filter(v => v.category === "carros");
+  const motos = allVehicles.filter(v => v.category === "motos");
+  const outros = allVehicles.filter(v => v.category !== "carros" && v.category !== "motos");
+
+  const carBrands = Array.from(new Set(carros.map(v => v.brand))).sort();
+  const motoBrands = Array.from(new Set(motos.map(v => v.brand))).sort();
+  const carTypes = Array.from(new Set(carros.map(v => v.vehicleType).filter(Boolean))).sort();
+  const motoTypes = Array.from(new Set(motos.map(v => v.vehicleType).filter(Boolean))).sort();
+
   const priceRange = {
     min: Math.min(...allVehicles.map(v => v.price)),
     max: Math.max(...allVehicles.map(v => v.price)),
   };
-  const categories = Array.from(new Set(allVehicles.map(v => v.category).filter(Boolean))).sort();
 
-  return `ESTOQUE ATUAL DA AUTO INOVA (${allVehicles.length} veículos disponíveis):
-Marcas: ${brands.join(", ")}
-Categorias: ${categories.join(", ")}
-Faixa de preço: R$ ${priceRange.min.toLocaleString("pt-BR")} a R$ ${priceRange.max.toLocaleString("pt-BR")}
-Localização: Ivoti - RS`;
+  let summary = `ESTOQUE ATUAL DA AUTO INOVA (${allVehicles.length} ve\u00edculos dispon\u00edveis):\n`;
+  if (carros.length > 0) {
+    summary += `\nCARROS (${carros.length}):\n  Marcas: ${carBrands.join(", ")}\n  Tipos: ${carTypes.join(", ")}`;
+  }
+  if (motos.length > 0) {
+    summary += `\nMOTOS (${motos.length}):\n  Marcas: ${motoBrands.join(", ")}\n  Tipos: ${motoTypes.join(", ")}`;
+  }
+  if (outros.length > 0) {
+    summary += `\nOUTROS (${outros.length})`;
+  }
+  summary += `\nFaixa de pre\u00e7o: R$ ${priceRange.min.toLocaleString("pt-BR")} a R$ ${priceRange.max.toLocaleString("pt-BR")}\nLocaliza\u00e7\u00e3o: Ivoti - RS`;
+
+  return summary;
 }
 
 /**
@@ -250,10 +267,12 @@ async function getVehicleByIdForAI(vehicleId: number): Promise<{ found: boolean;
   const priceStr = v.promotionPrice && v.promotionPrice < v.price
     ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
     : `R$ ${v.price.toLocaleString("pt-BR")}`;
-  const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
+   const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
   const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
+  const categoryStr = v.category === "motos" ? "Moto" : v.category === "carros" ? "Carro" : v.category || "N/I";
+  const typeStr = v.vehicleType || "N/I";
 
-  const text = `VEÍCULO DO ANÚNCIO (ID:${v.id}):\n${v.title || `${v.brand} ${v.model}`}\nAno: ${v.year}\nCor: ${v.color || "N/I"}\nQuilometragem: ${mileageStr}\nCâmbio: ${transStr}\nCombustível: ${v.fuel || "N/I"}\nCategoria: ${v.category || "N/I"}\nPreço: ${priceStr}\nLink: ${v.url || "N/I"}`;
+  const text = `VE\u00cdCULO DO AN\u00daCIO (ID:${v.id}):\n${v.title || `${v.brand} ${v.model}`}\nCategoria: ${categoryStr}\nTipo: ${typeStr}\nAno: ${v.year}\nCor: ${v.color || "N/I"}\nQuilometragem: ${mileageStr}\nC\u00e2mbio: ${transStr}\nCombust\u00edvel: ${v.fuel || "N/I"}\nPre\u00e7o: ${priceStr}\nLink: ${v.url || "N/I"}`;
 
   return { found: true, text, vehicle: v };
 }
@@ -267,6 +286,7 @@ async function searchVehiclesForAI(filters: {
   maxPrice?: number;
   minPrice?: number;
   category?: string;
+  vehicleType?: string;
   fuel?: string;
   transmission?: string;
   maxMileage?: number;
@@ -362,52 +382,25 @@ async function searchVehiclesForAI(filters: {
   }
   if (filters.category) {
     const catLower = filters.category.toLowerCase().trim();
-    // Map common user terms to actual DB category values
+    // category is now "carros" or "motos"
     const categoryMap: Record<string, string[]> = {
-      // Picapes
-      "picape": ["picapes"],
-      "picapes": ["picapes"],
-      "picap": ["picapes"],
-      "camionete": ["picapes"],
-      "camioneta": ["picapes"],
-      "caminhonete": ["picapes"],
-      "pickup": ["picapes"],
-      "pick-up": ["picapes"],
-      "cabine dupla": ["picapes"],
-      // Hatch
-      "hatch": ["hatch"],
-      "hatchback": ["hatch"],
-      "compacto": ["hatch"],
-      // Sedan
-      "sedan": ["sedã", "sedan"],
-      "sedã": ["sedã", "sedan"],
-      "seda": ["sedã", "sedan"],
-      // SUV
-      "suv": ["suv / utilitário esportivo", "suv"],
-      "utilitario": ["suv / utilitário esportivo", "van/utilitário"],
-      "utilitário": ["suv / utilitário esportivo", "van/utilitário"],
-      // Van
-      "van": ["van/utilitário"],
-      // Wagon
-      "wagon": ["wagon/perua"],
-      "perua": ["wagon/perua"],
-      // Esportivo
-      "esportivo": ["esportiva"],
-      "esportiva": ["esportiva"],
-      "sport": ["esportiva"],
+      "carros": ["carros"],
+      "carro": ["carros"],
+      "motos": ["motos"],
+      "moto": ["motos"],
+      "motocicleta": ["motos"],
+      "motocicletas": ["motos"],
     };
-    
     const mappedCategories = categoryMap[catLower] || null;
     if (mappedCategories) {
       allVehicles = allVehicles.filter(v => {
         const vCat = v.category?.toLowerCase() || "";
-        return mappedCategories.some(mc => vCat.includes(mc));
+        return mappedCategories.some(mc => vCat === mc);
       });
-      console.log(`[StockSync] Category mapped: "${catLower}" → [${mappedCategories.join(", ")}] → ${allVehicles.length} results`);
+      console.log(`[StockSync] Category mapped: "${catLower}" \u2192 [${mappedCategories.join(", ")}] \u2192 ${allVehicles.length} results`);
     } else {
-      // Fallback: direct includes match
       allVehicles = allVehicles.filter(v => v.category?.toLowerCase().includes(catLower));
-      console.log(`[StockSync] Category direct match: "${catLower}" → ${allVehicles.length} results`);
+      console.log(`[StockSync] Category direct match: "${catLower}" \u2192 ${allVehicles.length} results`);
     }
   }
   if (filters.fuel) {
@@ -455,21 +448,54 @@ async function searchVehiclesForAI(filters: {
     allVehicles = allVehicles.filter(v => v.color?.toLowerCase().includes(colorLower));
   }
 
-  // Filter out non-car items (motos, barcos, quadriciclos, etc.) unless specifically searched
-  const nonCarCategories = ["motos", "moto", "barco", "barcos", "quadriciclo", "utv", "atv"];
-  const isSearchingNonCar = filters.category && nonCarCategories.some(nc => filters.category!.toLowerCase().includes(nc));
-  if (!isSearchingNonCar) {
-    allVehicles = allVehicles.filter(v => {
-      const cat = (v.category || "").toLowerCase();
-      const model = (v.model || "").toLowerCase();
-      const brand = (v.brand || "").toLowerCase();
-      // Exclude motos, barcos, etc
-      const isNonCar = nonCarCategories.some(nc => cat.includes(nc)) ||
-        ["honda/c100", "yamaha", "suzuki gsx", "bmw g 310", "bmw r 1200", "royal enfield", "barco", "polaris", "buggy"].some(nc => 
-          brand.toLowerCase().includes(nc) || model.toLowerCase().includes(nc) || (v.title || "").toLowerCase().includes(nc)
-        );
-      return !isNonCar;
-    });
+  // Filter by vehicleType (Hatch, Sedã, SUV, Naked, Esportiva, etc.)
+  if (filters.vehicleType) {
+    const typeLower = filters.vehicleType.toLowerCase().trim();
+    const vehicleTypeMap: Record<string, string[]> = {
+      "hatch": ["hatch"],
+      "hatchback": ["hatch"],
+      "compacto": ["hatch"],
+      "sedan": ["sed\u00e3", "sedan"],
+      "sed\u00e3": ["sed\u00e3", "sedan"],
+      "seda": ["sed\u00e3", "sedan"],
+      "suv": ["suv / utilit\u00e1rio esportivo", "suv"],
+      "utilitario": ["suv / utilit\u00e1rio esportivo", "van/utilit\u00e1rio"],
+      "utilit\u00e1rio": ["suv / utilit\u00e1rio esportivo", "van/utilit\u00e1rio"],
+      "picape": ["picapes"],
+      "picapes": ["picapes"],
+      "pickup": ["picapes"],
+      "pick-up": ["picapes"],
+      "camionete": ["picapes"],
+      "van": ["van/utilit\u00e1rio"],
+      "minivan": ["minivan"],
+      "wagon": ["wagon/perua"],
+      "perua": ["wagon/perua"],
+      "esportiva": ["esportiva"],
+      "esportivo": ["esportiva"],
+      "sport": ["esportiva"],
+      "naked": ["naked"],
+      "street": ["street"],
+      "touring": ["touring"],
+      "trail": ["trail"],
+      "custom": ["custom"],
+    };
+    const mappedTypes = vehicleTypeMap[typeLower] || null;
+    if (mappedTypes) {
+      allVehicles = allVehicles.filter(v => {
+        const vType = v.vehicleType?.toLowerCase() || "";
+        return mappedTypes.some(mt => vType.includes(mt));
+      });
+      console.log(`[StockSync] VehicleType mapped: "${typeLower}" \u2192 [${mappedTypes.join(", ")}] \u2192 ${allVehicles.length} results`);
+    } else {
+      allVehicles = allVehicles.filter(v => v.vehicleType?.toLowerCase().includes(typeLower));
+      console.log(`[StockSync] VehicleType direct match: "${typeLower}" \u2192 ${allVehicles.length} results`);
+    }
+  }
+
+  // Filter out motos unless specifically searched by category
+  const isSearchingMotos = filters.category && filters.category.toLowerCase().includes("moto");
+  if (!isSearchingMotos) {
+    allVehicles = allVehicles.filter(v => v.category !== "motos");
   }
 
   if (allVehicles.length === 0) {
@@ -490,17 +516,14 @@ async function searchVehiclesForAI(filters: {
   }
 
   const vehicleList = sorted.map((v, i) => {
-    // price = REGULAR_PRICE (preço principal), promotionPrice = PROMOTION_PRICE (preço com desconto)
     const priceStr = v.promotionPrice && v.promotionPrice < v.price
-      ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
+      ? `R$ ${v.price.toLocaleString("pt-BR")} (promo\u00e7\u00e3o: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
       : `R$ ${v.price.toLocaleString("pt-BR")}`;
-    
     const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
-    
-    // Compact format to prevent AI from inventing details
-    const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
-    const catStr = v.category || "";
-    return `Opção ${startIndex + i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${transStr} - ${catStr} - ${priceStr} - ${v.url || ""}`;
+    const transStr = v.transmission === "automatic" ? "Autom\u00e1tico" : v.transmission === "manual" ? "Manual" : v.transmission || "";
+    const catStr = v.category === "motos" ? "Moto" : v.category === "carros" ? "Carro" : v.category || "";
+    const typeStr = v.vehicleType || "";
+    return `Op\u00e7\u00e3o ${startIndex + i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${catStr} - ${typeStr} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${transStr} - ${priceStr} - ${v.url || ""}`;
   }).join("\n");
 
   const remaining = allVehicles.length - (startIndex + sorted.length);

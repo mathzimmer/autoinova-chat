@@ -155,6 +155,7 @@ export const vehicles = mysqlTable("vehicles", {
   transmission: varchar("transmission", { length: 30 }).default("manual"),
   fuel: varchar("fuel", { length: 50 }),
   category: varchar("category", { length: 100 }),
+  vehicleType: varchar("vehicleType", { length: 100 }),
   condition: varchar("vehicleCondition", { length: 30 }),
   doors: int("doors"),
   description: text("description"),
