@@ -20,6 +20,9 @@ import {
   chatFlowEdges, InsertChatFlowEdge,
   chatFlowSessions, InsertChatFlowSession,
   aiAgents, InsertAiAgent,
+  sellers, InsertSeller,
+  sellerQueues, InsertSellerQueue,
+  sellerAssignments, InsertSellerAssignment,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -840,4 +843,144 @@ export async function getAiAgentForFlow(flowId: number): Promise<typeof aiAgents
   const agent = await getAiAgentById(flow.agentId);
   if (agent && agent.active) return agent;
   return null;
+}
+
+// ─── Seller Queries ───────────────────────────────────────────
+export async function listSellers(storeLocation?: string) {
+  const db = await getDb();
+  if (!db) return [];
+  if (storeLocation) {
+    return db.select().from(sellers).where(eq(sellers.storeLocation, storeLocation)).orderBy(sellers.sortOrder, sellers.id);
+  }
+  return db.select().from(sellers).orderBy(sellers.storeLocation, sellers.sortOrder, sellers.id);
+}
+
+export async function listActiveSellers(storeLocation: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sellers)
+    .where(and(eq(sellers.storeLocation, storeLocation), eq(sellers.isActive, true)))
+    .orderBy(sellers.sortOrder, sellers.id);
+}
+
+export async function getSellerById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(sellers).where(eq(sellers.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function createSeller(data: Omit<InsertSeller, "id" | "createdAt" | "updatedAt">): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(sellers).values(data as any);
+  return (result as any)[0].insertId;
+}
+
+export async function updateSeller(id: number, data: Partial<InsertSeller>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(sellers).set(data as any).where(eq(sellers.id, id));
+}
+
+export async function deleteSeller(id: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.delete(sellers).where(eq(sellers.id, id));
+}
+
+// ─── Seller Queue (Round-Robin) ───────────────────────────────
+export async function getSellerQueue(storeLocation: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(sellerQueues).where(eq(sellerQueues.storeLocation, storeLocation)).limit(1);
+  return rows[0] || null;
+}
+
+export async function upsertSellerQueue(storeLocation: string, currentIndex: number): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const existing = await getSellerQueue(storeLocation);
+  if (existing) {
+    await db.update(sellerQueues).set({ currentIndex }).where(eq(sellerQueues.id, existing.id));
+  } else {
+    await db.insert(sellerQueues).values({ storeLocation, currentIndex } as any);
+  }
+}
+
+/**
+ * Get the next seller in the round-robin queue for a store.
+ * Atomically advances the queue index.
+ */
+export async function getNextSellerInQueue(storeLocation: string) {
+  const activeSellers = await listActiveSellers(storeLocation);
+  if (activeSellers.length === 0) return null;
+
+  const queue = await getSellerQueue(storeLocation);
+  const currentIndex = queue?.currentIndex ?? 0;
+
+  // Ensure index is within bounds
+  const safeIndex = currentIndex % activeSellers.length;
+  const selectedSeller = activeSellers[safeIndex];
+
+  // Advance to next index
+  const nextIndex = (safeIndex + 1) % activeSellers.length;
+  await upsertSellerQueue(storeLocation, nextIndex);
+
+  // Increment total assignments
+  const db = await getDb();
+  if (db) {
+    await db.update(sellers)
+      .set({ totalAssignments: sql`${sellers.totalAssignments} + 1` })
+      .where(eq(sellers.id, selectedSeller.id));
+  }
+
+  return selectedSeller;
+}
+
+// ─── Seller Assignments ───────────────────────────────────────
+export async function createSellerAssignment(data: Omit<InsertSellerAssignment, "id" | "assignedAt">): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(sellerAssignments).values(data as any);
+  return (result as any)[0].insertId;
+}
+
+export async function listSellerAssignments(storeLocation?: string, sellerId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions = [];
+  if (storeLocation) conditions.push(eq(sellerAssignments.storeLocation, storeLocation));
+  if (sellerId) conditions.push(eq(sellerAssignments.sellerId, sellerId));
+  if (conditions.length > 0) {
+    return db.select().from(sellerAssignments).where(and(...conditions)).orderBy(desc(sellerAssignments.assignedAt));
+  }
+  return db.select().from(sellerAssignments).orderBy(desc(sellerAssignments.assignedAt));
+}
+
+export async function updateSellerAssignment(id: number, data: Partial<InsertSellerAssignment>): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(sellerAssignments).set(data as any).where(eq(sellerAssignments.id, id));
+}
+
+/**
+ * Get the store location from a vehicle ID.
+ * Used to determine which seller queue to use.
+ */
+export async function getStoreLocationByVehicleId(vehicleId: number): Promise<string | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select({ seller: vehicles.seller }).from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+  return rows[0]?.seller || null;
+}
+
+/**
+ * Get distinct store locations from vehicles table.
+ */
+export async function getDistinctStoreLocations(): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.selectDistinct({ seller: vehicles.seller }).from(vehicles).where(eq(vehicles.available, true));
+  return rows.map(r => r.seller).filter(Boolean) as string[];
 }

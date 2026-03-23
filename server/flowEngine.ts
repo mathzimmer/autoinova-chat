@@ -12,8 +12,12 @@ import {
   getChatFlowNodeById,
   getLeadByConversationId,
   upsertLead,
+  getNextSellerInQueue,
+  createSellerAssignment,
+  getStoreLocationByVehicleId,
+  getDistinctStoreLocations,
 } from "./db";
-import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage } from "./whatsapp";
+import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard } from "./whatsapp";
 import type { ChatFlowNode, ChatFlowEdge } from "../drizzle/schema";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -454,6 +458,90 @@ async function executeFromNode(
     case "end": {
       await updateFlowSession(session.id, { status: "completed", completedAt: new Date() });
       result.flowCompleted = true;
+      break;
+    }
+
+    case "assign_seller": {
+      /**
+       * Atribuir vendedor da fila (rodízio por loja).
+       * config.storeLocation: loja específica (opcional, pode ser "auto" para detectar pelo veículo)
+       * config.message: mensagem personalizada para o cliente
+       * config.sendContact: se deve enviar o cartão de contato do vendedor (default: true)
+       */
+      let storeLocation = config.storeLocation || "auto";
+
+      // Se "auto", tentar detectar a loja pelo veículo no contexto do lead
+      if (storeLocation === "auto") {
+        const lead = await getLeadByConversationId(ctx.conversationId);
+        const vehicleInterest = lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
+        // Try to extract vehicle ID from interest text
+        const vehicleIdMatch = vehicleInterest.match(/ID\s*(\d+)/i);
+        if (vehicleIdMatch) {
+          const vehicleId = parseInt(vehicleIdMatch[1]);
+          const detectedStore = await getStoreLocationByVehicleId(vehicleId);
+          if (detectedStore) storeLocation = detectedStore;
+        }
+        // Fallback: check session context for vehicleId
+        const sessionCtx = (session.context as any) || {};
+        if (storeLocation === "auto" && sessionCtx.vehicleId) {
+          const detectedStore = await getStoreLocationByVehicleId(sessionCtx.vehicleId);
+          if (detectedStore) storeLocation = detectedStore;
+        }
+        // Final fallback: use first available store
+        if (storeLocation === "auto") {
+          const stores = await getDistinctStoreLocations();
+          storeLocation = stores[0] || "Auto Inova";
+        }
+      }
+
+      // Get next seller from round-robin queue
+      const seller = await getNextSellerInQueue(storeLocation);
+      if (!seller) {
+        const fallbackMsg = "Desculpe, no momento não temos vendedores disponíveis. Tente novamente em breve!";
+        await sendTextMessage(ctx.phone, fallbackMsg);
+        result.responses.push(fallbackMsg);
+        const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+        if (nextEdge) {
+          await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+        }
+        break;
+      }
+
+      // Create assignment record
+      const lead = await getLeadByConversationId(ctx.conversationId);
+      await createSellerAssignment({
+        sellerId: seller.id,
+        conversationId: ctx.conversationId,
+        storeLocation,
+        vehicleId: null,
+        customerPhone: ctx.phone,
+        customerName: ctx.contactName || lead?.name || null,
+        status: "pending",
+      });
+
+      // Build message
+      const defaultMsg = `Perfeito! Vou te conectar com um dos nossos vendedores \ud83d\udc47\n\nTe enviei o contato do *${seller.name}*.\n\nEle já vai te chamar para te atender melhor, mas se preferir você também pode chamar ele diretamente.`;
+      const messageText = config.message
+        ? replaceVariables(config.message.replace(/\{vendedor\}/gi, seller.name).replace(/\{loja\}/gi, storeLocation), ctx)
+        : defaultMsg;
+
+      await sendTextMessage(ctx.phone, messageText);
+      result.responses.push(messageText);
+
+      // Send contact card
+      const shouldSendContact = config.sendContact !== false;
+      if (shouldSendContact) {
+        await sendContactCard(ctx.phone, {
+          name: seller.name,
+          phone: seller.phone,
+          organization: storeLocation,
+        });
+      }
+
+      console.log(`[FlowEngine] assign_seller: assigned ${seller.name} (${storeLocation}) to conversation ${ctx.conversationId}`);
+
+      // Pause the flow (transfer to human)
+      await updateFlowSession(session.id, { status: "paused" });
       break;
     }
 

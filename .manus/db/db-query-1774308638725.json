@@ -1,0 +1,18 @@
+{
+  "query": "SELECT DISTINCT seller, COUNT(*) as count FROM vehicles WHERE available = 1 GROUP BY seller ORDER BY count DESC",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT DISTINCT seller, COUNT(*) as count FROM vehicles WHERE available = 1 GROUP BY seller ORDER BY count DESC",
+  "rows": [
+    {
+      "seller": "Auto Inova",
+      "count": "72"
+    },
+    {
+      "seller": "Auto Inova - Loja 2",
+      "count": "42"
+    }
+  ],
+  "messages": [],
+  "stdout": "seller\tcount\nAuto Inova\t72\nAuto Inova - Loja 2\t42\n",
+  "stderr": "",
+  "execution_time_ms": 112
+}

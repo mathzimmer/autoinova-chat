@@ -19,6 +19,7 @@ import FollowUpPage from "./pages/FollowUp";
 import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
+import Sellers from "./pages/Sellers";
 
 function Router() {
   return (
@@ -82,6 +83,11 @@ function Router() {
       <Route path="/agents">
         <AppLayout>
           <Agents />
+        </AppLayout>
+      </Route>
+      <Route path="/sellers">
+        <AppLayout>
+          <Sellers />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />

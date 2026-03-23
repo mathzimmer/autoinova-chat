@@ -30,7 +30,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, X,
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
-  ChevronDown, GripVertical, Cpu,
+  ChevronDown, GripVertical, Cpu, UserPlus,
 } from "lucide-react";
 
 // ─── Node Type Definitions ───────────────────────────────────
@@ -54,6 +54,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   wait_input: { label: "Aguardar Resposta", icon: MessageCircle, color: "text-teal-400", bgColor: "border-teal-500/50 bg-teal-500/5", description: "Aguardar texto livre do cliente" },
   end: { label: "Fim", icon: Square, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Encerrar fluxo" },
   goto_flow: { label: "Ir para Fluxo", icon: GitBranch, color: "text-amber-400", bgColor: "border-amber-500/50 bg-amber-500/5", description: "Redirecionar para outro fluxo" },
+  assign_seller: { label: "Falar c/ Vendedor", icon: UserPlus, color: "text-lime-400", bgColor: "border-lime-500/50 bg-lime-500/5", description: "Atribuir vendedor da fila (rodízio)" },
 };
 
 // ─── Custom Node Component ───────────────────────────────────
@@ -64,7 +65,7 @@ function FlowNode({ data, selected, id }: NodeProps) {
 
   // Determine output handles based on node type
   const getOutputHandles = () => {
-    if (nodeType === "end" || nodeType === "goto_flow") return [];
+    if (nodeType === "end" || nodeType === "goto_flow" || nodeType === "assign_seller") return [];
     if (nodeType === "send_buttons") {
       const buttons = ((data.config as any)?.buttons || []) as Array<{ text: string }>;
       if (buttons.length === 0) return [{ id: "default", label: "Próximo" }];
@@ -158,6 +159,13 @@ function FlowNode({ data, selected, id }: NodeProps) {
         {nodeType === "goto_flow" && (
           <p className="text-xs text-muted-foreground">
             {(data.config as any)?.targetFlowName || "Selecionar fluxo destino..."}
+          </p>
+        )}
+        {nodeType === "assign_seller" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.storeLocation === "auto"
+              ? "Detectar loja automaticamente"
+              : (data.config as any)?.storeLocation || "Fila de vendedores"}
           </p>
         )}
       </div>
@@ -664,8 +672,73 @@ function PropertiesPanel({
         {nodeType === "goto_flow" && (
           <GotoFlowSelector config={config} onUpdate={onUpdate} node={node} />
         )}
+        {nodeType === "assign_seller" && (
+          <AssignSellerConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Assign Seller Config Component ──────────────────────────
+function AssignSellerConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const storesQuery = trpc.seller.storeLocations.useQuery();
+  const stores = storesQuery.data || [];
+
+  const updateConfig = (key: string, value: any) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, [key]: value },
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label className="text-xs">Loja</Label>
+        <Select
+          value={config.storeLocation || "auto"}
+          onValueChange={(v) => updateConfig("storeLocation", v)}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="auto">Detectar automaticamente (pelo veículo)</SelectItem>
+            {stores.map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          "Auto" detecta a loja pelo veículo de interesse do cliente.
+        </p>
+      </div>
+      <div>
+        <Label className="text-xs">Mensagem personalizada (opcional)</Label>
+        <Textarea
+          className="text-sm min-h-[80px]"
+          placeholder={`Perfeito! Vou te conectar com um dos nossos vendedores...\n\nUse {vendedor} para o nome e {loja} para a loja.`}
+          value={config.message || ""}
+          onChange={(e) => updateConfig("message", e.target.value)}
+        />
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Variáveis: {'{vendedor}'}, {'{loja}'}, {'{{nome}}'}, {'{{telefone}}'}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="sendContact"
+          checked={config.sendContact !== false}
+          onChange={(e) => updateConfig("sendContact", e.target.checked)}
+          className="rounded border-border"
+        />
+        <Label htmlFor="sendContact" className="text-xs cursor-pointer">
+          Enviar cartão de contato do vendedor
+        </Label>
+      </div>
+    </div>
   );
 }
 

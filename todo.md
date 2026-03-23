@@ -1031,3 +1031,20 @@
 - [x] Adicionar nó goto_flow no FlowEditor (UI) com seletor de fluxo destino
 - [x] Nó sem output handles (terminal como 'end') + display do nome do fluxo destino
 - [x] Testes (276 passando)
+
+## Feature - Sistema de Distribuição de Atendimento (Fila de Vendedores por Loja)
+- [x] Criar tabela 'sellers' no banco (id, name, phone, storeLocation, isActive, createdAt)
+- [x] Criar tabela 'sellerQueues' para controle de rodízio por loja (storeLocation, currentIndex)
+- [x] Criar tabela 'sellerAssignments' para histórico de atribuições (sellerId, conversationId, assignedAt)
+- [x] Migrar banco com pnpm db:push
+- [x] Backend: CRUD de vendedores (listar, criar, editar, excluir, ativar/desativar)
+- [x] Backend: Lógica de fila round-robin por loja (próximo vendedor da fila)
+- [x] Backend: Rota de atribuição automática (identifica loja pelo veículo do lead)
+- [x] Frontend: Página /sellers para gestão de vendedores por loja
+- [x] Frontend: Cadastro com nome e telefone, filtro por loja
+- [x] Novo tipo de nó 'assign_seller' no flow builder
+- [x] FlowEngine: executar nó assign_seller (identificar loja, selecionar vendedor, enviar contato)
+- [x] Envio de contato do vendedor via WhatsApp (vCard)
+- [x] Mensagem automática ao cliente com dados do vendedor
+- [x] Integração com transferência para humano (handoff via pausa do fluxo)
+- [x] Testes Vitest para o sistema de vendedores (12 testes passando)

@@ -626,6 +626,79 @@ async function sendListMessage(
   }
 }
 
+/**
+ * Send a contact card (vCard) to a WhatsApp number.
+ * Used to share seller contact information with customers.
+ */
+async function sendContactCard(
+  to: string,
+  contact: {
+    name: string;
+    phone: string;
+    organization?: string;
+  }
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. Contact card not sent to:", to);
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  try {
+    // Format phone for vCard (remove leading +)
+    const formattedPhone = contact.phone.replace(/^\+/, "");
+    const nameParts = contact.name.split(" ");
+    const firstName = nameParts[0] || contact.name;
+    const lastName = nameParts.slice(1).join(" ") || "";
+
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "contacts",
+        contacts: [
+          {
+            name: {
+              formatted_name: contact.name,
+              first_name: firstName,
+              ...(lastName && { last_name: lastName }),
+            },
+            phones: [
+              {
+                phone: `+${formattedPhone}`,
+                type: "WORK",
+                wa_id: formattedPhone,
+              },
+            ],
+            ...(contact.organization && {
+              org: {
+                company: contact.organization,
+              },
+            }),
+          },
+        ],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    const messageId = response.data?.messages?.[0]?.id;
+    console.log(`[WhatsApp] Contact card sent to ${to} (${contact.name}), ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send contact card to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
 export {
   isConfigured,
   sendTextMessage,
@@ -634,6 +707,7 @@ export {
   sendDocumentMessage,
   sendReplyButtons,
   sendListMessage,
+  sendContactCard,
   markAsRead,
   getMediaUrl,
   downloadMedia,

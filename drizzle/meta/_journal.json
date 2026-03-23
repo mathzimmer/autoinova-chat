@@ -148,6 +148,20 @@
       "when": 1774231699437,
       "tag": "0020_quick_matthew_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "5",
+      "when": 1774308701670,
+      "tag": "0021_lying_prowler",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "5",
+      "when": 1774308986498,
+      "tag": "0022_omniscient_turbo",
+      "breakpoints": true
     }
   ]
 }

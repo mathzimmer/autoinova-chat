@@ -420,6 +420,7 @@ export const chatFlowNodes = mysqlTable("chatFlowNodes", {
     "wait_input",         // Aguardar resposta livre do cliente (texto)
     "end",                // Fim do fluxo
     "goto_flow",           // Ir para outro fluxo (subfluxo)
+    "assign_seller",       // Atribuir vendedor da fila (rodízio por loja)
   ]).notNull(),
   label: varchar("label", { length: 255 }), // Nome visual do nó
   data: json("data").notNull(), // Configuração específica do tipo de nó (JSON)
@@ -496,3 +497,58 @@ export const aiAgents = mysqlTable("aiAgents", {
 
 export type AiAgent = typeof aiAgents.$inferSelect;
 export type InsertAiAgent = typeof aiAgents.$inferInsert;
+
+
+/**
+ * Sellers — vendedores cadastrados por loja.
+ * Cada vendedor pertence a uma loja (storeLocation) e participa da fila de rodízio.
+ */
+export const sellers = mysqlTable("sellers", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  storeLocation: varchar("storeLocation", { length: 200 }).notNull(), // "Auto Inova" ou "Auto Inova - Loja 2"
+  isActive: boolean("isActive").default(true).notNull(),
+  sortOrder: int("sortOrder").default(0).notNull(), // Ordem na fila de rodízio
+  totalAssignments: int("totalAssignments").default(0).notNull(), // Total de atribuições (para métricas)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Seller = typeof sellers.$inferSelect;
+export type InsertSeller = typeof sellers.$inferInsert;
+
+/**
+ * Seller Queues — controle de rodízio por loja.
+ * Armazena o índice do próximo vendedor na fila para cada loja.
+ */
+export const sellerQueues = mysqlTable("sellerQueues", {
+  id: int("id").autoincrement().primaryKey(),
+  storeLocation: varchar("storeLocation", { length: 200 }).notNull().unique(),
+  currentIndex: int("currentIndex").default(0).notNull(), // Índice do próximo vendedor
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SellerQueue = typeof sellerQueues.$inferSelect;
+export type InsertSellerQueue = typeof sellerQueues.$inferInsert;
+
+/**
+ * Seller Assignments — histórico de atribuições de vendedores a conversas.
+ * Registra cada vez que um vendedor é atribuído a um cliente via rodízio.
+ */
+export const sellerAssignments = mysqlTable("sellerAssignments", {
+  id: int("id").autoincrement().primaryKey(),
+  sellerId: int("sellerId").notNull(),
+  conversationId: int("conversationId").notNull(),
+  storeLocation: varchar("storeLocation", { length: 200 }).notNull(),
+  vehicleId: int("vehicleId"), // Veículo que gerou o interesse
+  customerPhone: varchar("customerPhone", { length: 32 }),
+  customerName: varchar("customerName", { length: 255 }),
+  status: mysqlEnum("sellerAssignmentStatus", ["pending", "contacted", "completed", "expired"]).default("pending").notNull(),
+  assignedAt: timestamp("assignedAt").defaultNow().notNull(),
+  contactedAt: timestamp("contactedAt"),
+  completedAt: timestamp("completedAt"),
+});
+
+export type SellerAssignment = typeof sellerAssignments.$inferSelect;
+export type InsertSellerAssignment = typeof sellerAssignments.$inferInsert;
