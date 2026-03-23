@@ -419,6 +419,7 @@ export const chatFlowNodes = mysqlTable("chatFlowNodes", {
     "delay",              // Aguardar X segundos antes de continuar
     "wait_input",         // Aguardar resposta livre do cliente (texto)
     "end",                // Fim do fluxo
+    "goto_flow",           // Ir para outro fluxo (subfluxo)
   ]).notNull(),
   label: varchar("label", { length: 255 }), // Nome visual do nó
   data: json("data").notNull(), // Configuração específica do tipo de nó (JSON)

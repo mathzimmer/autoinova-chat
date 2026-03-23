@@ -1,0 +1,37 @@
+{
+  "query": "SELECT cfs.id, cfs.conversationId, cfs.flowId, cfs.currentNodeId, cfs.context, cfs.sessionStatus, cfs.startedAt \nFROM chatFlowSessions cfs \nJOIN conversations c ON c.id = cfs.conversationId \nWHERE c.contactName LIKE '%Matheus%' \nORDER BY cfs.startedAt DESC LIMIT 3",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT cfs.id, cfs.conversationId, cfs.flowId, cfs.currentNodeId, cfs.context, cfs.sessionStatus, cfs.startedAt \nFROM chatFlowSessions cfs \nJOIN conversations c ON c.id = cfs.conversationId \nWHERE c.contactName LIKE '%Matheus%' \nORDER BY cfs.startedAt DESC LIMIT 3",
+  "rows": [
+    {
+      "id": "150009",
+      "conversationId": "3960001",
+      "flowId": "30002",
+      "currentNodeId": "120004",
+      "context": "{\"aiInstruction\": \"verifique a resposta do cliente e mostre a foto da moto escolhida\", \"nodeAgentId\": 60006, \"pendingNextNodeId\": null, \"waitInputLabel\": \"resposta\", \"waitInputVariable\": \"veiculo_interesse\"}",
+      "sessionStatus": "paused",
+      "startedAt": "2026-03-23 01:54:27"
+    },
+    {
+      "id": "150008",
+      "conversationId": "3960001",
+      "flowId": "30002",
+      "currentNodeId": "120004",
+      "context": "{\"aiInstruction\": \"verifique a resposta do cliente e mostre a foto da moto escolhida\", \"nodeAgentId\": 60006, \"pendingNextNodeId\": null, \"waitInputLabel\": \"resposta\", \"waitInputVariable\": null}",
+      "sessionStatus": "paused",
+      "startedAt": "2026-03-23 01:48:37"
+    },
+    {
+      "id": "150007",
+      "conversationId": "3960001",
+      "flowId": "30002",
+      "currentNodeId": "30023",
+      "context": "{\"aiInstruction\": \"\\n\", \"nodeAgentId\": 5}",
+      "sessionStatus": "paused",
+      "startedAt": "2026-03-23 01:47:50"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tconversationId\tflowId\tcurrentNodeId\tcontext\tsessionStatus\tstartedAt\n150009\t3960001\t30002\t120004\t{\"aiInstruction\": \"verifique a resposta do cliente e mostre a foto da moto escolhida\", \"nodeAgentId\": 60006, \"pendingNextNodeId\": null, \"waitInputLabel\": \"resposta\", \"waitInputVariable\": \"veiculo_interesse\"}\tpaused\t2026-03-23 01:54:27\n150008\t3960001\t30002\t120004\t{\"aiInstruction\": \"verifique a resposta do cliente e mostre a foto da moto escolhida\", \"nodeAgentId\": 60006, \"pendingNextNodeId\": null, \"waitInputLabel\": \"resposta\", \"waitInputVariable\": null}\tpaused\t2026-03-23 01:48:37\n150007\t3960001\t30002\t30023\t{\"aiInstruction\": \"\\n\", \"nodeAgentId\": 5}\tpaused\t2026-03-23 01:47:50\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

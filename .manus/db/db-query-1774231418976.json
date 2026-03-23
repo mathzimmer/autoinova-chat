@@ -1,0 +1,45 @@
+{
+  "query": "SELECT id, sourceNodeId, targetNodeId, sourceHandle, edgeLabel FROM chatFlowEdges WHERE flowId = 30002 AND (sourceNodeId IN (30034, 120001, 120003, 120004, 120007, 60007) OR targetNodeId IN (120001, 120003, 120004, 120007)) ORDER BY id",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, sourceNodeId, targetNodeId, sourceHandle, edgeLabel FROM chatFlowEdges WHERE flowId = 30002 AND (sourceNodeId IN (30034, 120001, 120003, 120004, 120007, 60007) OR targetNodeId IN (120001, 120003, 120004, 120007)) ORDER BY id",
+  "rows": [
+    {
+      "id": "150181",
+      "sourceNodeId": "30034",
+      "targetNodeId": "30036",
+      "sourceHandle": "row_1",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "150190",
+      "sourceNodeId": "30034",
+      "targetNodeId": "120001",
+      "sourceHandle": "row_4",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "150191",
+      "sourceNodeId": "120001",
+      "targetNodeId": "120003",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "150192",
+      "sourceNodeId": "120003",
+      "targetNodeId": "120007",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    },
+    {
+      "id": "150193",
+      "sourceNodeId": "120007",
+      "targetNodeId": "120004",
+      "sourceHandle": "default",
+      "edgeLabel": "NULL"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tsourceNodeId\ttargetNodeId\tsourceHandle\tedgeLabel\n150181\t30034\t30036\trow_1\tNULL\n150190\t30034\t120001\trow_4\tNULL\n150191\t120001\t120003\tdefault\tNULL\n150192\t120003\t120007\tdefault\tNULL\n150193\t120007\t120004\tdefault\tNULL\n",
+  "stderr": "",
+  "execution_time_ms": 63
+}

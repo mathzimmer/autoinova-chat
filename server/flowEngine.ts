@@ -457,6 +457,54 @@ async function executeFromNode(
       break;
     }
 
+    case "goto_flow": {
+      // Ir para outro fluxo (subfluxo)
+      const targetFlowId = config.targetFlowId;
+      if (!targetFlowId) {
+        console.error(`[FlowEngine] goto_flow node ${node.id} has no targetFlowId`);
+        break;
+      }
+
+      // Encerrar sessão atual
+      await updateFlowSession(session.id, { status: "completed", completedAt: new Date() });
+      console.log(`[FlowEngine] goto_flow: ending session ${session.id}, starting flow ${targetFlowId}`);
+
+      // Carregar nós do fluxo destino
+      const targetNodes = await listChatFlowNodes(targetFlowId);
+      const targetStartNode = targetNodes.find(n => n.nodeType === "start");
+      if (!targetStartNode) {
+        console.error(`[FlowEngine] goto_flow: target flow ${targetFlowId} has no start node`);
+        result.flowCompleted = true;
+        break;
+      }
+
+      // Criar nova sessão no fluxo destino
+      const newSessionId = await createFlowSession({
+        conversationId: ctx.conversationId,
+        flowId: targetFlowId,
+        currentNodeId: targetStartNode.id,
+        status: "active",
+        context: {},
+      });
+
+      // Carregar edges do fluxo destino
+      const targetEdges = await listChatFlowEdges(targetFlowId);
+      const newSession = {
+        id: newSessionId,
+        conversationId: ctx.conversationId,
+        flowId: targetFlowId,
+        currentNodeId: targetStartNode.id,
+        context: {},
+      };
+
+      // Executar a partir do start node do fluxo destino
+      const startEdge = targetEdges.find(e => e.sourceNodeId === targetStartNode.id);
+      if (startEdge) {
+        await executeFromNode(startEdge.targetNodeId, targetNodes, targetEdges, newSession, ctx, result, 0);
+      }
+      break;
+    }
+
     default: {
       // Unknown node type, try to advance
       const nextEdge = edges.find(e => e.sourceNodeId === node.id);

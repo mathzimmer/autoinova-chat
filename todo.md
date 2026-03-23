@@ -1018,3 +1018,16 @@
 - [x] Atualizar tool buscar_veiculos na IA para incluir parâmetros categoria e tipo
 - [x] Excluir motos por padrão (só mostrar quando cliente pedir especificamente)
 - [x] Atualizar testes (276 passando, incluindo novos testes de motos/naked/esportiva)
+
+## Bug - Fluxo de seleção de motos: veículo errado + escolha não gravada
+- [ ] Após cliente escolher BMW R 1200 GS Adventure (moto), agente envia foto do Mercedes C-180 (carro errado)
+- [ ] A escolha do cliente no fluxo não está sendo passada corretamente ao agente de apresentação
+- [ ] Gravar a escolha do veículo no lead (vehicleInterest + vehicleId)
+
+## Feature - Sistema de Subfluxos (goto_flow)
+- [x] Adicionar tipo de nó 'goto_flow' no schema (nodeType enum) + migração
+- [x] Implementar execução de goto_flow no flowEngine (encerrar sessão atual, iniciar nova sessão no fluxo destino)
+- [x] Dados do lead são mantidos entre fluxos (lead é vinculado à conversa, não ao fluxo)
+- [x] Adicionar nó goto_flow no FlowEditor (UI) com seletor de fluxo destino
+- [x] Nó sem output handles (terminal como 'end') + display do nome do fluxo destino
+- [x] Testes (276 passando)

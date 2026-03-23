@@ -53,6 +53,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   delay: { label: "Delay", icon: Clock, color: "text-gray-400", bgColor: "border-gray-500/50 bg-gray-500/5", description: "Aguardar X segundos" },
   wait_input: { label: "Aguardar Resposta", icon: MessageCircle, color: "text-teal-400", bgColor: "border-teal-500/50 bg-teal-500/5", description: "Aguardar texto livre do cliente" },
   end: { label: "Fim", icon: Square, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Encerrar fluxo" },
+  goto_flow: { label: "Ir para Fluxo", icon: GitBranch, color: "text-amber-400", bgColor: "border-amber-500/50 bg-amber-500/5", description: "Redirecionar para outro fluxo" },
 };
 
 // ─── Custom Node Component ───────────────────────────────────
@@ -63,7 +64,7 @@ function FlowNode({ data, selected, id }: NodeProps) {
 
   // Determine output handles based on node type
   const getOutputHandles = () => {
-    if (nodeType === "end") return [];
+    if (nodeType === "end" || nodeType === "goto_flow") return [];
     if (nodeType === "send_buttons") {
       const buttons = ((data.config as any)?.buttons || []) as Array<{ text: string }>;
       if (buttons.length === 0) return [{ id: "default", label: "Próximo" }];
@@ -153,6 +154,11 @@ function FlowNode({ data, selected, id }: NodeProps) {
         )}
         {nodeType === "send_image" && (
           <p className="text-xs text-muted-foreground">{(data.config as any)?.caption || "Imagem"}</p>
+        )}
+        {nodeType === "goto_flow" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.targetFlowName || "Selecionar fluxo destino..."}
+          </p>
         )}
       </div>
 
@@ -654,8 +660,54 @@ function PropertiesPanel({
             </div>
           </>
         )}
+
+        {nodeType === "goto_flow" && (
+          <GotoFlowSelector config={config} onUpdate={onUpdate} node={node} />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Goto Flow Selector Component ───────────────────────────────
+function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const flowsQuery = trpc.flow.list.useQuery();
+  const flows = flowsQuery.data || [];
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label className="text-xs">Fluxo Destino</Label>
+        <Select
+          value={config.targetFlowId ? String(config.targetFlowId) : ""}
+          onValueChange={(v) => {
+            const flow = flows.find(f => String(f.id) === v);
+            onUpdate(node.id, {
+              ...node.data,
+              config: {
+                ...config,
+                targetFlowId: parseInt(v),
+                targetFlowName: flow?.name || "",
+              },
+            });
+          }}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue placeholder="Selecione o fluxo destino..." />
+          </SelectTrigger>
+          <SelectContent>
+            {flows.map(f => (
+              <SelectItem key={f.id} value={String(f.id)}>
+                {f.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          A conversa será redirecionada para o início deste fluxo. Os dados do lead são mantidos.
+        </p>
+      </div>
+    </div>
   );
 }
 

@@ -1,0 +1,76 @@
+{
+  "query": "SELECT id, nodeType, label, data FROM chatFlowNodes WHERE flowId = 30002 AND id >= 60005 ORDER BY id",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, nodeType, label, data FROM chatFlowNodes WHERE flowId = 30002 AND id >= 60005 ORDER BY id",
+  "rows": [
+    {
+      "id": "60005",
+      "nodeType": "wait_input",
+      "label": "Aguardar Resposta",
+      "data": "{\"promptText\": \"Para agilizar o atendimento com o vendedor me envie os dados para simular: \\nNome completo | CPF | Data de nascimento | Cidade\", \"variable\": \"notas\"}"
+    },
+    {
+      "id": "60006",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Recebemos suas informações! Em breve um de nossos vendedores entrará em contato! Obrigado\"}"
+    },
+    {
+      "id": "60007",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Digite o número da opção escolhida:\"}"
+    },
+    {
+      "id": "90001",
+      "nodeType": "delay",
+      "label": "Delay",
+      "data": "{\"seconds\": 4}"
+    },
+    {
+      "id": "90005",
+      "nodeType": "assign_agent",
+      "label": "Transferir",
+      "data": "{}"
+    },
+    {
+      "id": "90006",
+      "nodeType": "assign_agent",
+      "label": "Transferir",
+      "data": "{}"
+    },
+    {
+      "id": "90008",
+      "nodeType": "send_message",
+      "label": "Mensagem",
+      "data": "{\"text\": \"Inclusive a maioria dos nossos clientes negociam dando seus veículos na troca.\"}"
+    },
+    {
+      "id": "120001",
+      "nodeType": "ai_response",
+      "label": "IA Livre",
+      "data": "{\"agentId\": 60001, \"agentName\": \"Especialista em Motos\"}"
+    },
+    {
+      "id": "120003",
+      "nodeType": "wait_input",
+      "label": "Aguardar Resposta",
+      "data": "{\"promptText\": \"Qual opção você gostou? Digite o número:\", \"variable\": \"veiculo_interesse\"}"
+    },
+    {
+      "id": "120004",
+      "nodeType": "ai_response",
+      "label": "IA Livre",
+      "data": "{\"agentId\": 60006, \"agentName\": \"Mostra foto da moto\", \"instruction\": \"verifique a resposta do cliente e mostre a foto da moto escolhida\"}"
+    },
+    {
+      "id": "120007",
+      "nodeType": "ai_response",
+      "label": "IA Livre",
+      "data": "{\"instruction\": \"Envia a mensagem com ID da moto escolhida\"}"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tnodeType\tlabel\tdata\n60005\twait_input\tAguardar Resposta\t{\"promptText\": \"Para agilizar o atendimento com o vendedor me envie os dados para simular: \\nNome completo | CPF | Data de nascimento | Cidade\", \"variable\": \"notas\"}\n60006\tsend_message\tMensagem\t{\"text\": \"Recebemos suas informações! Em breve um de nossos vendedores entrará em contato! Obrigado\"}\n60007\tsend_message\tMensagem\t{\"text\": \"Digite o número da opção escolhida:\"}\n90001\tdelay\tDelay\t{\"seconds\": 4}\n90005\tassign_agent\tTransferir\t{}\n90006\tassign_agent\tTransferir\t{}\n90008\tsend_message\tMensagem\t{\"text\": \"Inclusive a maioria dos nossos clientes negociam dando seus veículos na troca.\"}\n120001\tai_response\tIA Livre\t{\"agentId\": 60001, \"agentName\": \"Especialista em Motos\"}\n120003\twait_input\tAguardar Resposta\t{\"promptText\": \"Qual opção você gostou? Digite o número:\", \"variable\": \"veiculo_interesse\"}\n120004\tai_response\tIA Livre\t{\"agentId\": 60006, \"agentName\": \"Mostra foto da moto\", \"instruction\": \"verifique a resposta do cliente e mostre a foto da moto escolhida\"}\n120007\tai_response\tIA Livre\t{\"instruction\": \"Envia a mensagem com ID da moto escolhida\"}\n",
+  "stderr": "",
+  "execution_time_ms": 62
+}
