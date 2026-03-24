@@ -1062,3 +1062,7 @@
 - [x] Frontend: campo de mensagem personalizável no nó assign_seller do FlowEditor
 - [x] Frontend: checkbox para ativar/desativar notificação ao vendedor no fluxo
 - [x] Testes Vitest (15 testes sellers, 291 total passando)
+
+## Bug - Foto do vendedor não aparece no contato WhatsApp
+- [x] Investigar sendContactCard: foto não aparece no vCard enviado ao cliente (WhatsApp Cloud API NÃO suporta foto no contacts message)
+- [x] Corrigido: foto agora é enviada como mensagem de imagem separada antes do cartão de contato

@@ -629,7 +629,7 @@ async function sendListMessage(
 /**
  * Send a contact card (vCard) to a WhatsApp number.
  * Used to share seller contact information with customers.
- * Supports optional photo URL for the contact card.
+ * Note: WhatsApp Cloud API does not support photos in contact cards. Send photo as separate image message.
  */
 async function sendContactCard(
   to: string,
@@ -637,7 +637,6 @@ async function sendContactCard(
     name: string;
     phone: string;
     organization?: string;
-    photoUrl?: string | null;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const { accessToken, phoneNumberId } = getConfig();
@@ -675,16 +674,6 @@ async function sendContactCard(
       contactObj.org = { company: contact.organization };
     }
 
-    // Add photo URL if provided
-    if (contact.photoUrl) {
-      contactObj.urls = [
-        {
-          url: contact.photoUrl,
-          type: "WORK",
-        },
-      ];
-    }
-
     const response = await axios.post(
       `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
       {
@@ -703,7 +692,7 @@ async function sendContactCard(
     );
 
     const messageId = response.data?.messages?.[0]?.id;
-    console.log(`[WhatsApp] Contact card sent to ${to} (${contact.name}), photo: ${contact.photoUrl ? 'yes' : 'no'}, ID: ${messageId}`);
+    console.log(`[WhatsApp] Contact card sent to ${to} (${contact.name}), ID: ${messageId}`);
     return { success: true, messageId };
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;

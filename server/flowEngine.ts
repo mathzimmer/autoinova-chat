@@ -549,14 +549,18 @@ async function executeFromNode(
       await sendTextMessage(ctx.phone, messageText);
       result.responses.push(messageText);
 
-      // Send contact card (with photo if available)
+      // Send seller photo as image message (WhatsApp API doesn't support photo in contact cards)
+      if (seller.photoUrl) {
+        await sendImageMessage(ctx.phone, seller.photoUrl, `${seller.name} - ${storeLocation}`);
+      }
+
+      // Send contact card
       const shouldSendContact = config.sendContact !== false;
       if (shouldSendContact) {
         await sendContactCard(ctx.phone, {
           name: seller.name,
           phone: seller.phone,
           organization: storeLocation,
-          photoUrl: seller.photoUrl || null,
         });
       }
 
