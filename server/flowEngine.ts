@@ -473,24 +473,45 @@ async function executeFromNode(
       // Se "auto", tentar detectar a loja pelo veículo no contexto do lead
       if (storeLocation === "auto") {
         const lead = await getLeadByConversationId(ctx.conversationId);
-        const vehicleInterest = lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
-        // Try to extract vehicle ID from interest text
-        const vehicleIdMatch = vehicleInterest.match(/ID\s*(\d+)/i);
-        if (vehicleIdMatch) {
-          const vehicleId = parseInt(vehicleIdMatch[1]);
-          const detectedStore = await getStoreLocationByVehicleId(vehicleId);
-          if (detectedStore) storeLocation = detectedStore;
+
+        // 1. Prioridade: usar vehicleId gravado no lead pela IA (atualizar_lead com veiculo_id)
+        if (lead?.vehicleId) {
+          const detectedStore = await getStoreLocationByVehicleId(lead.vehicleId);
+          if (detectedStore) {
+            storeLocation = detectedStore;
+            console.log(`[FlowEngine] assign_seller: detected store "${storeLocation}" from lead.vehicleId=${lead.vehicleId}`);
+          }
         }
-        // Fallback: check session context for vehicleId
+
+        // 2. Fallback: tentar extrair ID do texto de vehicleInterest (ex: "Hilux 2012 [ID:42]")
+        if (storeLocation === "auto") {
+          const vehicleInterest = lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
+          const vehicleIdMatch = vehicleInterest.match(/ID\s*:?\s*(\d+)/i);
+          if (vehicleIdMatch) {
+            const vehicleId = parseInt(vehicleIdMatch[1]);
+            const detectedStore = await getStoreLocationByVehicleId(vehicleId);
+            if (detectedStore) {
+              storeLocation = detectedStore;
+              console.log(`[FlowEngine] assign_seller: detected store "${storeLocation}" from vehicleInterest text ID=${vehicleId}`);
+            }
+          }
+        }
+
+        // 3. Fallback: verificar session context (pode ter sido setado por outro nó)
         const sessionCtx = (session.context as any) || {};
         if (storeLocation === "auto" && sessionCtx.vehicleId) {
           const detectedStore = await getStoreLocationByVehicleId(sessionCtx.vehicleId);
-          if (detectedStore) storeLocation = detectedStore;
+          if (detectedStore) {
+            storeLocation = detectedStore;
+            console.log(`[FlowEngine] assign_seller: detected store "${storeLocation}" from session.vehicleId=${sessionCtx.vehicleId}`);
+          }
         }
-        // Final fallback: use first available store
+
+        // 4. Final fallback: usar primeira loja disponível
         if (storeLocation === "auto") {
           const stores = await getDistinctStoreLocations();
           storeLocation = stores[0] || "Auto Inova";
+          console.log(`[FlowEngine] assign_seller: using fallback store "${storeLocation}"`);
         }
       }
 
@@ -507,15 +528,15 @@ async function executeFromNode(
         break;
       }
 
-      // Create assignment record
-      const lead = await getLeadByConversationId(ctx.conversationId);
+      // Create assignment record (inclui vehicleId se disponível)
+      const leadForAssignment = await getLeadByConversationId(ctx.conversationId);
       await createSellerAssignment({
         sellerId: seller.id,
         conversationId: ctx.conversationId,
         storeLocation,
-        vehicleId: null,
+        vehicleId: leadForAssignment?.vehicleId || null,
         customerPhone: ctx.phone,
-        customerName: ctx.contactName || lead?.name || null,
+        customerName: ctx.contactName || leadForAssignment?.name || null,
         status: "pending",
       });
 
