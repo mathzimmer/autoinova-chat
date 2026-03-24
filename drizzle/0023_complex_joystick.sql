@@ -1,0 +1,1 @@
+ALTER TABLE `sellers` ADD `photoUrl` text;

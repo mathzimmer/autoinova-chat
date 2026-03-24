@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,6 +39,8 @@ import {
   ArrowUpDown,
   BarChart3,
   Loader2,
+  Camera,
+  X,
 } from "lucide-react";
 
 interface SellerForm {
@@ -59,6 +61,10 @@ export default function Sellers() {
     sortOrder: 0,
   });
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Queries
   const sellersQuery = trpc.seller.list.useQuery(
@@ -96,6 +102,13 @@ export default function Sellers() {
     onError: (err) => toast.error(err.message),
   });
 
+  const uploadPhotoMutation = trpc.seller.uploadPhoto.useMutation({
+    onSuccess: () => {
+      utils.seller.list.invalidate();
+    },
+    onError: (err) => toast.error("Erro ao enviar foto: " + err.message),
+  });
+
   // Stats
   const sellers = sellersQuery.data || [];
   const stores = storesQuery.data || [];
@@ -120,6 +133,8 @@ export default function Sellers() {
       storeLocation: stores[0] || "Auto Inova",
       sortOrder: sellers.length,
     });
+    setPhotoPreview(null);
+    setPhotoFile(null);
     setDialogOpen(true);
   }
 
@@ -131,23 +146,76 @@ export default function Sellers() {
       storeLocation: seller.storeLocation,
       sortOrder: seller.sortOrder,
     });
+    setPhotoPreview(seller.photoUrl || null);
+    setPhotoFile(null);
     setDialogOpen(true);
   }
 
   function closeDialog() {
     setDialogOpen(false);
     setEditingId(null);
+    setPhotoPreview(null);
+    setPhotoFile(null);
   }
 
-  function handleSave() {
+  function handlePhotoSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("A foto deve ter no máximo 5MB");
+      return;
+    }
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = () => setPhotoPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  }
+
+  async function uploadPhoto(sellerId: number): Promise<string | undefined> {
+    if (!photoFile) return undefined;
+    setUploadingPhoto(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data:image/xxx;base64, prefix
+          resolve(result.split(",")[1]);
+        };
+        reader.readAsDataURL(photoFile);
+      });
+      const result = await uploadPhotoMutation.mutateAsync({
+        sellerId,
+        photoBase64: base64,
+        mimeType: photoFile.type,
+      });
+      return result.url;
+    } catch {
+      return undefined;
+    } finally {
+      setUploadingPhoto(false);
+    }
+  }
+
+  async function handleSave() {
     if (!form.name.trim() || !form.phone.trim() || !form.storeLocation.trim()) {
       toast.error("Preencha todos os campos obrigatórios");
       return;
     }
     if (editingId) {
       updateMutation.mutate({ id: editingId, ...form });
+      // Upload photo separately if changed
+      if (photoFile) {
+        await uploadPhoto(editingId);
+      }
     } else {
-      createMutation.mutate(form);
+      createMutation.mutate(form, {
+        onSuccess: async (data) => {
+          if (photoFile && data.id) {
+            await uploadPhoto(data.id);
+          }
+        },
+      });
     }
   }
 
@@ -155,7 +223,7 @@ export default function Sellers() {
     updateMutation.mutate({ id: seller.id, isActive: !seller.isActive });
   }
 
-  const isPending = createMutation.isPending || updateMutation.isPending;
+  const isPending = createMutation.isPending || updateMutation.isPending || uploadingPhoto;
 
   return (
     <div className="h-full overflow-y-auto">
@@ -275,7 +343,7 @@ export default function Sellers() {
                     <TableHead className="w-[50px]">
                       <ArrowUpDown className="h-3.5 w-3.5" />
                     </TableHead>
-                    <TableHead>Nome</TableHead>
+                    <TableHead>Vendedor</TableHead>
                     <TableHead>Telefone</TableHead>
                     <TableHead>Loja</TableHead>
                     <TableHead className="text-center">Atribuições</TableHead>
@@ -289,7 +357,22 @@ export default function Sellers() {
                       <TableCell className="text-muted-foreground text-sm">
                         #{seller.sortOrder + 1}
                       </TableCell>
-                      <TableCell className="font-medium">{seller.name}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          {seller.photoUrl ? (
+                            <img
+                              src={seller.photoUrl}
+                              alt={seller.name}
+                              className="h-9 w-9 rounded-full object-cover border border-border"
+                            />
+                          ) : (
+                            <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground">
+                              {seller.name.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="font-medium">{seller.name}</span>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1.5 text-sm">
                           <Phone className="h-3.5 w-3.5 text-muted-foreground" />
@@ -350,6 +433,54 @@ export default function Sellers() {
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
+              {/* Photo Upload */}
+              <div className="flex flex-col items-center gap-3">
+                <div className="relative">
+                  {photoPreview ? (
+                    <div className="relative">
+                      <img
+                        src={photoPreview}
+                        alt="Foto do vendedor"
+                        className="h-24 w-24 rounded-full object-cover border-2 border-border"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setPhotoPreview(null); setPhotoFile(null); }}
+                        className="absolute -top-1 -right-1 h-6 w-6 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:bg-destructive/90"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className="h-24 w-24 rounded-full bg-muted border-2 border-dashed border-border flex flex-col items-center justify-center cursor-pointer hover:bg-muted/80 transition-colors"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Camera className="h-6 w-6 text-muted-foreground" />
+                      <span className="text-[10px] text-muted-foreground mt-1">Foto</span>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoSelect}
+                  />
+                </div>
+                {photoPreview && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Camera className="h-3.5 w-3.5 mr-1" />
+                    Trocar foto
+                  </Button>
+                )}
+              </div>
+
               <div className="space-y-2">
                 <Label>Nome *</Label>
                 <Input
@@ -384,7 +515,6 @@ export default function Sellers() {
                         {store}
                       </SelectItem>
                     ))}
-                    {/* Allow custom store if needed */}
                     {!stores.includes("Auto Inova") && (
                       <SelectItem value="Auto Inova">Auto Inova</SelectItem>
                     )}

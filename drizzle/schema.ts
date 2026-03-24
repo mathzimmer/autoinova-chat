@@ -507,6 +507,7 @@ export const sellers = mysqlTable("sellers", {
   id: int("id").autoincrement().primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 32 }).notNull(),
+  photoUrl: text("photoUrl"), // URL da foto do vendedor (S3)
   storeLocation: varchar("storeLocation", { length: 200 }).notNull(), // "Auto Inova" ou "Auto Inova - Loja 2"
   isActive: boolean("isActive").default(true).notNull(),
   sortOrder: int("sortOrder").default(0).notNull(), // Ordem na fila de rodízio

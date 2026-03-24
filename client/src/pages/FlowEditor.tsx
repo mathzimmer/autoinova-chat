@@ -738,6 +738,37 @@ function AssignSellerConfig({ config, onUpdate, node }: { config: any; onUpdate:
           Enviar cartão de contato do vendedor
         </Label>
       </div>
+      <div className="border-t border-border pt-3 mt-3">
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            type="checkbox"
+            id="notifySeller"
+            checked={config.notifySeller !== false}
+            onChange={(e) => updateConfig("notifySeller", e.target.checked)}
+            className="rounded border-border"
+          />
+          <Label htmlFor="notifySeller" className="text-xs cursor-pointer font-medium">
+            Notificar vendedor sobre o novo lead
+          </Label>
+        </div>
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Envia uma mensagem ao vendedor com os dados do cliente (usa template para funcionar fora da janela de 24h).
+        </p>
+        {config.notifySeller !== false && (
+          <div>
+            <Label className="text-xs">Mensagem para o vendedor (opcional)</Label>
+            <Textarea
+              className="text-sm min-h-[100px] mt-1"
+              placeholder={`Deixe vazio para usar a mensagem padrão.\n\nOu personalize usando variáveis:\n{vendedor} - Nome do vendedor\n{cliente} - Nome do cliente\n{telefone} - Telefone do cliente\n{veiculo} - Veículo de interesse\n{resumo} - Resumo da conversa\n{loja} - Nome da loja`}
+              value={config.sellerMessage || ""}
+              onChange={(e) => updateConfig("sellerMessage", e.target.value)}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Variáveis: {'{vendedor}'}, {'{cliente}'}, {'{telefone}'}, {'{veiculo}'}, {'{resumo}'}, {'{loja}'}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

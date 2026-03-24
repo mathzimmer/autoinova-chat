@@ -288,4 +288,76 @@ describe("seller router", () => {
       }
     });
   });
+
+  describe("seller.create with photoUrl", () => {
+    it("creates a seller with optional photoUrl", async () => {
+      const ctx = createAdminContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.seller.create({
+        name: "Vendedor Com Foto",
+        phone: "5551999990010",
+        photoUrl: "https://example.com/photo.jpg",
+        storeLocation: "Auto Inova",
+        sortOrder: 99,
+      });
+
+      expect(result).toHaveProperty("id");
+
+      const seller = await caller.seller.getById({ id: result.id });
+      expect(seller.name).toBe("Vendedor Com Foto");
+      expect(seller.photoUrl).toBe("https://example.com/photo.jpg");
+
+      // Cleanup
+      await caller.seller.delete({ id: result.id });
+    });
+
+    it("creates a seller without photoUrl", async () => {
+      const ctx = createAdminContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const result = await caller.seller.create({
+        name: "Vendedor Sem Foto",
+        phone: "5551999990011",
+        storeLocation: "Auto Inova",
+        sortOrder: 99,
+      });
+
+      const seller = await caller.seller.getById({ id: result.id });
+      expect(seller.photoUrl).toBeNull();
+
+      // Cleanup
+      await caller.seller.delete({ id: result.id });
+    });
+  });
+
+  describe("seller.update with photoUrl", () => {
+    it("updates seller photoUrl", async () => {
+      const ctx = createAdminContext();
+      const caller = appRouter.createCaller(ctx);
+
+      const { id } = await caller.seller.create({
+        name: "Vendedor Foto Update",
+        phone: "5551999990012",
+        storeLocation: "Auto Inova",
+        sortOrder: 0,
+      });
+
+      await caller.seller.update({
+        id,
+        photoUrl: "https://example.com/new-photo.jpg",
+      });
+
+      const seller = await caller.seller.getById({ id });
+      expect(seller.photoUrl).toBe("https://example.com/new-photo.jpg");
+
+      // Can also clear the photo
+      await caller.seller.update({ id, photoUrl: null });
+      const sellerCleared = await caller.seller.getById({ id });
+      expect(sellerCleared.photoUrl).toBeNull();
+
+      // Cleanup
+      await caller.seller.delete({ id });
+    });
+  });
 });

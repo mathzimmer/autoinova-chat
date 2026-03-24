@@ -629,6 +629,7 @@ async function sendListMessage(
 /**
  * Send a contact card (vCard) to a WhatsApp number.
  * Used to share seller contact information with customers.
+ * Supports optional photo URL for the contact card.
  */
 async function sendContactCard(
   to: string,
@@ -636,6 +637,7 @@ async function sendContactCard(
     name: string;
     phone: string;
     organization?: string;
+    photoUrl?: string | null;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   const { accessToken, phoneNumberId } = getConfig();
@@ -652,6 +654,37 @@ async function sendContactCard(
     const firstName = nameParts[0] || contact.name;
     const lastName = nameParts.slice(1).join(" ") || "";
 
+    // Build contact object
+    const contactObj: any = {
+      name: {
+        formatted_name: contact.name,
+        first_name: firstName,
+        ...(lastName && { last_name: lastName }),
+      },
+      phones: [
+        {
+          phone: `+${formattedPhone}`,
+          type: "WORK",
+          wa_id: formattedPhone,
+        },
+      ],
+    };
+
+    // Add organization if provided
+    if (contact.organization) {
+      contactObj.org = { company: contact.organization };
+    }
+
+    // Add photo URL if provided
+    if (contact.photoUrl) {
+      contactObj.urls = [
+        {
+          url: contact.photoUrl,
+          type: "WORK",
+        },
+      ];
+    }
+
     const response = await axios.post(
       `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
       {
@@ -659,27 +692,7 @@ async function sendContactCard(
         recipient_type: "individual",
         to,
         type: "contacts",
-        contacts: [
-          {
-            name: {
-              formatted_name: contact.name,
-              first_name: firstName,
-              ...(lastName && { last_name: lastName }),
-            },
-            phones: [
-              {
-                phone: `+${formattedPhone}`,
-                type: "WORK",
-                wa_id: formattedPhone,
-              },
-            ],
-            ...(contact.organization && {
-              org: {
-                company: contact.organization,
-              },
-            }),
-          },
-        ],
+        contacts: [contactObj],
       },
       {
         headers: {
@@ -690,11 +703,89 @@ async function sendContactCard(
     );
 
     const messageId = response.data?.messages?.[0]?.id;
-    console.log(`[WhatsApp] Contact card sent to ${to} (${contact.name}), ID: ${messageId}`);
+    console.log(`[WhatsApp] Contact card sent to ${to} (${contact.name}), photo: ${contact.photoUrl ? 'yes' : 'no'}, ID: ${messageId}`);
     return { success: true, messageId };
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;
     console.error(`[WhatsApp] Failed to send contact card to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
+ * Send notification to seller about a new lead assignment.
+ * Uses WhatsApp template for messages outside the 24h window.
+ * Falls back to regular text message if within the window.
+ */
+async function sendSellerNotification(
+  sellerPhone: string,
+  data: {
+    sellerName: string;
+    customerName: string;
+    customerPhone: string;
+    vehicleInterest: string;
+    conversationSummary: string;
+    storeLocation: string;
+    customMessage?: string;
+  }
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+
+  if (!accessToken || !phoneNumberId) {
+    console.warn("[WhatsApp] Not configured. Seller notification not sent to:", sellerPhone);
+    return { success: false, error: "WhatsApp API not configured" };
+  }
+
+  try {
+    // Build the notification message
+    const defaultMessage = `🔔 *Novo Lead Atribuído*\n\n` +
+      `Olá ${data.sellerName}!\n\n` +
+      `Um novo cliente foi direcionado para você:\n\n` +
+      `👤 *Cliente:* ${data.customerName}\n` +
+      `📱 *Telefone:* ${data.customerPhone}\n` +
+      `🚗 *Veículo de interesse:* ${data.vehicleInterest}\n` +
+      `🏪 *Loja:* ${data.storeLocation}\n\n` +
+      `📋 *Resumo da conversa:*\n${data.conversationSummary}\n\n` +
+      `Entre em contato o mais rápido possível!`;
+
+    const message = data.customMessage
+      ? data.customMessage
+          .replace(/\{vendedor\}/gi, data.sellerName)
+          .replace(/\{cliente\}/gi, data.customerName)
+          .replace(/\{telefone\}/gi, data.customerPhone)
+          .replace(/\{veiculo\}/gi, data.vehicleInterest)
+          .replace(/\{resumo\}/gi, data.conversationSummary)
+          .replace(/\{loja\}/gi, data.storeLocation)
+      : defaultMessage;
+
+    // Try sending via template first (works outside 24h window)
+    const { sendWhatsAppTemplate } = await import("./whatsappTemplates");
+    const templateResult = await sendWhatsAppTemplate(
+      sellerPhone,
+      "novo_lead_vendedor",
+      [
+        data.sellerName,
+        data.customerName,
+        data.customerPhone,
+        data.vehicleInterest,
+        data.storeLocation,
+        data.conversationSummary || "Sem resumo disponível",
+      ],
+      "pt_BR"
+    );
+
+    if (templateResult.success) {
+      console.log(`[WhatsApp] Seller notification sent via template to ${sellerPhone}, ID: ${templateResult.messageId}`);
+      return templateResult;
+    }
+
+    // Fallback: try regular text message (only works within 24h window)
+    console.log(`[WhatsApp] Template failed for seller ${sellerPhone}, trying text message. Error: ${templateResult.error}`);
+    const textResult = await sendTextMessage(sellerPhone, message);
+    return textResult;
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send seller notification to ${sellerPhone}:`, errMsg);
     return { success: false, error: errMsg };
   }
 }
@@ -708,6 +799,7 @@ export {
   sendReplyButtons,
   sendListMessage,
   sendContactCard,
+  sendSellerNotification,
   markAsRead,
   getMediaUrl,
   downloadMedia,

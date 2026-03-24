@@ -2728,6 +2728,7 @@ const sellerRouter = router({
     .input(z.object({
       name: z.string().min(1),
       phone: z.string().min(1),
+      photoUrl: z.string().optional(),
       storeLocation: z.string().min(1),
       sortOrder: z.number().default(0),
     }))
@@ -2735,6 +2736,7 @@ const sellerRouter = router({
       const id = await createSeller({
         name: input.name,
         phone: input.phone,
+        photoUrl: input.photoUrl || null,
         storeLocation: input.storeLocation,
         sortOrder: input.sortOrder,
         isActive: true,
@@ -2748,6 +2750,7 @@ const sellerRouter = router({
       id: z.number(),
       name: z.string().min(1).optional(),
       phone: z.string().min(1).optional(),
+      photoUrl: z.string().nullable().optional(),
       storeLocation: z.string().min(1).optional(),
       isActive: z.boolean().optional(),
       sortOrder: z.number().optional(),
@@ -2756,6 +2759,24 @@ const sellerRouter = router({
       const { id, ...data } = input;
       await updateSeller(id, data as any);
       return { success: true };
+    }),
+
+  // Upload seller photo to S3
+  uploadPhoto: adminProcedure
+    .input(z.object({
+      sellerId: z.number(),
+      photoBase64: z.string(), // base64 encoded image
+      mimeType: z.string().default("image/jpeg"),
+    }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      const buffer = Buffer.from(input.photoBase64, "base64");
+      const ext = input.mimeType.includes("png") ? "png" : "jpg";
+      const randomSuffix = Math.random().toString(36).substring(2, 10);
+      const fileKey = `sellers/${input.sellerId}-photo-${randomSuffix}.${ext}`;
+      const { url } = await storagePut(fileKey, buffer, input.mimeType);
+      await updateSeller(input.sellerId, { photoUrl: url });
+      return { url };
     }),
 
   delete: adminProcedure

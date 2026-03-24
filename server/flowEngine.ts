@@ -17,7 +17,7 @@ import {
   getStoreLocationByVehicleId,
   getDistinctStoreLocations,
 } from "./db";
-import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard } from "./whatsapp";
+import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import type { ChatFlowNode, ChatFlowEdge } from "../drizzle/schema";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -549,17 +549,38 @@ async function executeFromNode(
       await sendTextMessage(ctx.phone, messageText);
       result.responses.push(messageText);
 
-      // Send contact card
+      // Send contact card (with photo if available)
       const shouldSendContact = config.sendContact !== false;
       if (shouldSendContact) {
         await sendContactCard(ctx.phone, {
           name: seller.name,
           phone: seller.phone,
           organization: storeLocation,
+          photoUrl: seller.photoUrl || null,
         });
       }
 
       console.log(`[FlowEngine] assign_seller: assigned ${seller.name} (${storeLocation}) to conversation ${ctx.conversationId}`);
+
+      // Send notification to the seller about the new lead
+      const notifySeller = config.notifySeller !== false;
+      if (notifySeller) {
+        const customerName = ctx.contactName || leadForAssignment?.name || "Cliente";
+        const customerPhone = ctx.phone;
+        const vehicleInterest = leadForAssignment?.vehicleInterest || ctx.leadData?.vehicleInterest || "N\u00e3o informado";
+        const conversationSummary = leadForAssignment?.notes || "Novo lead atribu\u00eddo via fluxo autom\u00e1tico.";
+
+        await sendSellerNotification(seller.phone, {
+          sellerName: seller.name,
+          customerName,
+          customerPhone,
+          vehicleInterest,
+          conversationSummary,
+          storeLocation,
+          customMessage: config.sellerMessage || undefined,
+        });
+        console.log(`[FlowEngine] assign_seller: notification sent to seller ${seller.name} (${seller.phone})`);
+      }
 
       // Pause the flow (transfer to human)
       await updateFlowSession(session.id, { status: "paused" });

@@ -1048,3 +1048,17 @@
 - [x] Mensagem automática ao cliente com dados do vendedor
 - [x] Integração com transferência para humano (handoff via pausa do fluxo)
 - [x] Testes Vitest para o sistema de vendedores (12 testes passando)
+
+## Feature - Foto no Contato e Notificação Personalizável ao Vendedor
+- [x] Adicionar campo photoUrl no schema sellers
+- [x] Migrar banco com pnpm db:push
+- [x] Upload de foto do vendedor para S3 (rota seller.uploadPhoto)
+- [x] Incluir foto no vCard (sendContactCard com photoUrl)
+- [x] Função sendSellerNotification no whatsapp.ts
+- [x] Envio via template WhatsApp (funciona fora da janela de 24h) com fallback para texto
+- [x] Mensagem ao vendedor personalizável com variáveis ({vendedor}, {cliente}, {telefone}, {veiculo}, {resumo}, {loja})
+- [x] Frontend: upload de foto no cadastro de vendedores (com preview e remoção)
+- [x] Frontend: exibir foto do vendedor na tabela de listagem
+- [x] Frontend: campo de mensagem personalizável no nó assign_seller do FlowEditor
+- [x] Frontend: checkbox para ativar/desativar notificação ao vendedor no fluxo
+- [x] Testes Vitest (15 testes sellers, 291 total passando)
