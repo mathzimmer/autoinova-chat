@@ -30,7 +30,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, X,
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
-  ChevronDown, GripVertical, Cpu, UserPlus,
+  ChevronDown, GripVertical, Cpu, UserPlus, Camera,
 } from "lucide-react";
 
 // ─── Node Type Definitions ───────────────────────────────────
@@ -55,6 +55,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   end: { label: "Fim", icon: Square, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Encerrar fluxo" },
   goto_flow: { label: "Ir para Fluxo", icon: GitBranch, color: "text-amber-400", bgColor: "border-amber-500/50 bg-amber-500/5", description: "Redirecionar para outro fluxo" },
   assign_seller: { label: "Falar c/ Vendedor", icon: UserPlus, color: "text-lime-400", bgColor: "border-lime-500/50 bg-lime-500/5", description: "Atribuir vendedor da fila (rodízio)" },
+  send_vehicle_photos: { label: "Fotos do Veículo", icon: Camera, color: "text-rose-400", bgColor: "border-rose-500/50 bg-rose-500/5", description: "Enviar fotos do veículo com legendas" },
 };
 
 // ─── Custom Node Component ───────────────────────────────────
@@ -166,6 +167,13 @@ function FlowNode({ data, selected, id }: NodeProps) {
             {(data.config as any)?.storeLocation === "auto"
               ? "Detectar loja automaticamente"
               : (data.config as any)?.storeLocation || "Fila de vendedores"}
+          </p>
+        )}
+        {nodeType === "send_vehicle_photos" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.photoSlots?.length
+              ? `${(data.config as any).photoSlots.length} foto(s) configurada(s)`
+              : "Configurar fotos e legendas..."}
           </p>
         )}
       </div>
@@ -675,6 +683,9 @@ function PropertiesPanel({
         {nodeType === "assign_seller" && (
           <AssignSellerConfig config={config} onUpdate={onUpdate} node={node} />
         )}
+        {nodeType === "send_vehicle_photos" && (
+          <SendVehiclePhotosConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
       </CardContent>
     </Card>
   );
@@ -773,7 +784,144 @@ function AssignSellerConfig({ config, onUpdate, node }: { config: any; onUpdate:
   );
 }
 
-// ─── Goto Flow Selector Component ───────────────────────────────
+// ─── Send Vehicle Photos Config Component ──────────────────────────────
+function SendVehiclePhotosConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const photoSlots: Array<{ position: number; caption: string }> = config.photoSlots || [
+    { position: 1, caption: "Vista frontal" },
+    { position: 2, caption: "Vista traseira" },
+    { position: 3, caption: "Interior" },
+    { position: 4, caption: "Painel" },
+  ];
+
+  const updateSlots = (newSlots: typeof photoSlots) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, photoSlots: newSlots },
+    });
+  };
+
+  const updateSlot = (index: number, field: string, value: any) => {
+    const newSlots = [...photoSlots];
+    newSlots[index] = { ...newSlots[index], [field]: value };
+    updateSlots(newSlots);
+  };
+
+  const addSlot = () => {
+    const nextPos = photoSlots.length > 0 ? Math.max(...photoSlots.map(s => s.position)) + 1 : 1;
+    updateSlots([...photoSlots, { position: nextPos, caption: `Foto ${nextPos}` }]);
+  };
+
+  const removeSlot = (index: number) => {
+    updateSlots(photoSlots.filter((_, i) => i !== index));
+  };
+
+  const updateConfig = (key: string, value: any) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, [key]: value },
+    });
+  };
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label className="text-xs">Origem das fotos</Label>
+        <Select
+          value={config.photoSource || "vehicle_interest"}
+          onValueChange={(v) => updateConfig("photoSource", v)}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="vehicle_interest">Veículo de interesse do cliente (automático)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Usa as fotos do veículo que o cliente demonstrou interesse (gravado pela IA).
+        </p>
+      </div>
+
+      <div>
+        <Label className="text-xs">Mensagem antes das fotos (opcional)</Label>
+        <Textarea
+          className="text-sm min-h-[60px]"
+          placeholder={`Ex: Aqui estão mais fotos do {{veiculo_interesse}} \ud83d\ude0d`}
+          value={config.introMessage || ""}
+          onChange={(e) => updateConfig("introMessage", e.target.value)}
+        />
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Variáveis: {'{{nome}}'}, {'{{veiculo_interesse}}'}, {'{{loja}}'}
+        </p>
+      </div>
+
+      <div className="border-t border-border pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <Label className="text-xs font-medium">Fotos e Legendas</Label>
+          <Button variant="outline" size="sm" className="h-6 text-xs px-2" onClick={addSlot}>
+            <Plus className="w-3 h-3 mr-1" /> Adicionar
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Defina a posição da foto (1 = primeira foto do veículo, 2 = segunda, etc.) e a legenda que aparecerá.
+        </p>
+
+        <div className="space-y-2">
+          {photoSlots.map((slot, idx) => (
+            <div key={idx} className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
+              <div className="flex-shrink-0 w-14">
+                <Label className="text-[10px] text-muted-foreground">Foto #</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={slot.position}
+                  onChange={(e) => updateSlot(idx, "position", parseInt(e.target.value) || 1)}
+                  className="h-7 text-xs w-full"
+                />
+              </div>
+              <div className="flex-1">
+                <Label className="text-[10px] text-muted-foreground">Legenda</Label>
+                <Input
+                  value={slot.caption}
+                  onChange={(e) => updateSlot(idx, "caption", e.target.value)}
+                  placeholder="Ex: Vista frontal"
+                  className="h-7 text-xs"
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 mt-4 text-destructive hover:text-destructive"
+                onClick={() => removeSlot(idx)}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {photoSlots.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-3">
+            Nenhuma foto configurada. Clique em "Adicionar" para definir quais fotos enviar.
+          </p>
+        )}
+      </div>
+
+      <div className="border-t border-border pt-3">
+        <Label className="text-xs">Mensagem se não houver veículo (fallback)</Label>
+        <Textarea
+          className="text-sm min-h-[50px] mt-1"
+          placeholder="Desculpe, não consegui identificar o veículo de interesse. Pode me dizer qual carro você gostou?"
+          value={config.fallbackMessage || ""}
+          onChange={(e) => updateConfig("fallbackMessage", e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Goto Flow Selector Component ───────────────────────────────────────
 function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
   const flowsQuery = trpc.flow.list.useQuery();
   const flows = flowsQuery.data || [];

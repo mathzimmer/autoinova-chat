@@ -1066,3 +1066,11 @@
 ## Bug - Foto do vendedor não aparece no contato WhatsApp
 - [x] Investigar sendContactCard: foto não aparece no vCard enviado ao cliente (WhatsApp Cloud API NÃO suporta foto no contacts message)
 - [x] Corrigido: foto agora é enviada como mensagem de imagem separada antes do cartão de contato
+
+## Feature - Nó de Fluxo: Enviar Fotos do Veículo com Legendas Personalizáveis
+- [x] Analisar estrutura de fotos dos veículos no schema/estoque (campo images: array de URLs, até 22 fotos)
+- [x] Adicionar tipo de nó 'send_vehicle_photos' no schema e migrar banco
+- [x] Backend: query getVehicleById para buscar fotos do veículo de interesse do lead
+- [x] FlowEngine: handler do nó send_vehicle_photos (envio de múltiplas fotos com legendas personalizáveis)
+- [x] FlowEditor: configuração do nó com slots de fotos (posição + legenda), mensagem intro e fallback
+- [x] Testes Vitest para o novo nó (7 testes, 298 total passando)

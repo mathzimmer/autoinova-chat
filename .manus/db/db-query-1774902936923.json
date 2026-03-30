@@ -1,0 +1,37 @@
+{
+  "query": "SELECT id, brand, model, imageUrl, JSON_LENGTH(images) as numImages, JSON_EXTRACT(images, '$[0]') as firstImage, JSON_EXTRACT(images, '$[1]') as secondImage FROM vehicles WHERE available = 1 AND images IS NOT NULL LIMIT 3;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, brand, model, imageUrl, JSON_LENGTH(images) as numImages, JSON_EXTRACT(images, '$[0]') as firstImage, JSON_EXTRACT(images, '$[1]') as secondImage FROM vehicles WHERE available = 1 AND images IS NOT NULL LIMIT 3;",
+  "rows": [
+    {
+      "id": "2",
+      "brand": "Hyundai",
+      "model": "HB20 Comf./C.Plus/C.Style 1.0 Flex 12V",
+      "imageUrl": "https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926538/80f8c7cc-3aaf-47bd-81b1-5e84bd9e7588.jpg",
+      "numImages": "16",
+      "firstImage": "\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926538/80f8c7cc-3aaf-47bd-81b1-5e84bd9e7588.jpg\"",
+      "secondImage": "\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926538/84b6bc96-437f-475b-975c-62e1df043bc6.jpg\""
+    },
+    {
+      "id": "3",
+      "brand": "Kia Motors",
+      "model": "Sportage EX 2.0 16V/ 2.0 16V Flex Aut.",
+      "imageUrl": "https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926528/17be0c22-34ee-4668-a3a5-8561cbb5a3e4.jpg",
+      "numImages": "22",
+      "firstImage": "\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926528/17be0c22-34ee-4668-a3a5-8561cbb5a3e4.jpg\"",
+      "secondImage": "\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926528/10058cb9-acd5-4fee-a52e-16f33f505b0e.jpg\""
+    },
+    {
+      "id": "5",
+      "brand": "Honda",
+      "model": "HR-V EX 1.8 Flexone 16V 5p Aut.",
+      "imageUrl": "https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/924078/8a61a86b-5a9c-4354-83e7-95b74552446a.jpg",
+      "numImages": "17",
+      "firstImage": "\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/924078/8a61a86b-5a9c-4354-83e7-95b74552446a.jpg\"",
+      "secondImage": "\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/924078/27ac5fc2-984d-4197-91fc-486e77014b1f.jpg\""
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tbrand\tmodel\timageUrl\tnumImages\tfirstImage\tsecondImage\n2\tHyundai\tHB20 Comf./C.Plus/C.Style 1.0 Flex 12V\thttps://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926538/80f8c7cc-3aaf-47bd-81b1-5e84bd9e7588.jpg\t16\t\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926538/80f8c7cc-3aaf-47bd-81b1-5e84bd9e7588.jpg\"\t\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926538/84b6bc96-437f-475b-975c-62e1df043bc6.jpg\"\n3\tKia Motors\tSportage EX 2.0 16V/ 2.0 16V Flex Aut.\thttps://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926528/17be0c22-34ee-4668-a3a5-8561cbb5a3e4.jpg\t22\t\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926528/17be0c22-34ee-4668-a3a5-8561cbb5a3e4.jpg\"\t\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/926528/10058cb9-acd5-4fee-a52e-16f33f505b0e.jpg\"\n5\tHonda\tHR-V EX 1.8 Flexone 16V 5p Aut.\thttps://resized-images.autoconf.com.br/1024x0/veiculos/fotos/924078/8a61a86b-5a9c-4354-83e7-95b74552446a.jpg\t17\t\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/924078/8a61a86b-5a9c-4354-83e7-95b74552446a.jpg\"\t\"https://resized-images.autoconf.com.br/1024x0/veiculos/fotos/924078/27ac5fc2-984d-4197-91fc-486e77014b1f.jpg\"\n",
+  "stderr": "",
+  "execution_time_ms": 111
+}

@@ -984,3 +984,15 @@ export async function getDistinctStoreLocations(): Promise<string[]> {
   const rows = await db.selectDistinct({ seller: vehicles.seller }).from(vehicles).where(eq(vehicles.available, true));
   return rows.map(r => r.seller).filter(Boolean) as string[];
 }
+
+
+/**
+ * Get a vehicle by ID with all photos (images array).
+ * Used by the send_vehicle_photos flow node.
+ */
+export async function getVehicleById(vehicleId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+  return rows[0] || null;
+}

@@ -16,6 +16,7 @@ import {
   createSellerAssignment,
   getStoreLocationByVehicleId,
   getDistinctStoreLocations,
+  getVehicleById,
 } from "./db";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import type { ChatFlowNode, ChatFlowEdge } from "../drizzle/schema";
@@ -588,6 +589,108 @@ async function executeFromNode(
 
       // Pause the flow (transfer to human)
       await updateFlowSession(session.id, { status: "paused" });
+      break;
+    }
+
+    case "send_vehicle_photos": {
+      /**
+       * Enviar fotos do veículo de interesse com legendas personalizáveis.
+       * config.photoSlots: array de { position: number, caption: string }
+       * config.introMessage: mensagem antes das fotos (opcional)
+       * config.fallbackMessage: mensagem se não houver veículo (opcional)
+       * config.photoSource: "vehicle_interest" (padrão)
+       */
+      const lead = await getLeadByConversationId(ctx.conversationId);
+      let vehicleId = lead?.vehicleId || null;
+
+      // Fallback: tentar extrair ID do vehicleInterest
+      if (!vehicleId) {
+        const vehicleInterest = lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
+        const idMatch = vehicleInterest.match(/ID\s*:?\s*(\d+)/i);
+        if (idMatch) vehicleId = parseInt(idMatch[1]);
+      }
+
+      // Fallback: session context
+      const sessionCtx = (session.context as any) || {};
+      if (!vehicleId && sessionCtx.vehicleId) {
+        vehicleId = sessionCtx.vehicleId;
+      }
+
+      if (!vehicleId) {
+        const fallback = config.fallbackMessage || "Desculpe, não consegui identificar o veículo de interesse. Pode me dizer qual carro você gostou?";
+        await sendTextMessage(ctx.phone, fallback);
+        result.responses.push(fallback);
+        const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+        if (nextEdge) {
+          await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+        }
+        break;
+      }
+
+      const vehicle = await getVehicleById(vehicleId);
+      if (!vehicle) {
+        const fallback = config.fallbackMessage || "Desculpe, não encontrei as fotos desse veículo no momento.";
+        await sendTextMessage(ctx.phone, fallback);
+        result.responses.push(fallback);
+        const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+        if (nextEdge) {
+          await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+        }
+        break;
+      }
+
+      const vehicleImages: string[] = Array.isArray(vehicle.images) ? vehicle.images : [];
+      const vehicleName = `${vehicle.brand} ${vehicle.model}`.trim();
+      const vehicleSeller = vehicle.seller || "";
+
+      // Send intro message if configured
+      if (config.introMessage) {
+        let intro = config.introMessage
+          .replace(/\{\{nome\}\}/gi, ctx.contactName || lead?.name || "")
+          .replace(/\{\{veiculo_interesse\}\}/gi, vehicleName)
+          .replace(/\{\{loja\}\}/gi, vehicleSeller);
+        intro = replaceVariables(intro, ctx);
+        await sendTextMessage(ctx.phone, intro);
+        result.responses.push(intro);
+      }
+
+      // Send photos with captions
+      const photoSlots: Array<{ position: number; caption: string }> = config.photoSlots || [
+        { position: 1, caption: "Vista frontal" },
+        { position: 2, caption: "Vista traseira" },
+        { position: 3, caption: "Interior" },
+        { position: 4, caption: "Painel" },
+      ];
+
+      let sentCount = 0;
+      for (const slot of photoSlots) {
+        const imgIndex = slot.position - 1; // position is 1-based
+        if (imgIndex >= 0 && imgIndex < vehicleImages.length) {
+          const imageUrl = vehicleImages[imgIndex];
+          let caption = slot.caption
+            .replace(/\{\{veiculo\}\}/gi, vehicleName)
+            .replace(/\{\{marca\}\}/gi, vehicle.brand || "")
+            .replace(/\{\{modelo\}\}/gi, vehicle.model || "")
+            .replace(/\{\{ano\}\}/gi, vehicle.year?.toString() || "")
+            .replace(/\{\{preco\}\}/gi, vehicle.price ? `R$ ${Number(vehicle.price).toLocaleString("pt-BR")}` : "")
+            .replace(/\{\{loja\}\}/gi, vehicleSeller);
+          await sendImageMessage(ctx.phone, imageUrl, caption);
+          sentCount++;
+          // Small delay between images to avoid rate limiting
+          if (sentCount < photoSlots.length) {
+            await new Promise(resolve => setTimeout(resolve, 500));
+          }
+        } else {
+          console.log(`[FlowEngine] send_vehicle_photos: skipping slot position ${slot.position} - vehicle has ${vehicleImages.length} images`);
+        }
+      }
+
+      console.log(`[FlowEngine] send_vehicle_photos: sent ${sentCount}/${photoSlots.length} photos for vehicle ${vehicleId} (${vehicleName})`);
+
+      const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+      if (nextEdge) {
+        await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+      }
       break;
     }
 
