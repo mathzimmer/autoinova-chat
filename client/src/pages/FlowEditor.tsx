@@ -637,6 +637,26 @@ function PropertiesPanel({
                 A resposta do cliente será salva automaticamente neste campo do lead
               </p>
             </div>
+            <div className="border-t border-border pt-3">
+              <Label className="text-xs">Aguardar múltiplas mensagens</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <Input
+                  type="number"
+                  min={0}
+                  max={120}
+                  step={5}
+                  value={config.groupTimeoutSeconds || 0}
+                  onChange={(e) => updateConfig("groupTimeoutSeconds", parseInt(e.target.value) || 0)}
+                  className="h-8 text-sm w-24"
+                />
+                <span className="text-xs text-muted-foreground">segundos (0 = desativado)</span>
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Quando ativado, o fluxo aguarda este tempo após a última mensagem do cliente antes de avançar.
+                Todas as mensagens enviadas nesse período são agrupadas em uma só resposta.
+                Ideal para perguntas que exigem várias mensagens (ex: dados do veículo de troca).
+              </p>
+            </div>
           </>
         )}
 

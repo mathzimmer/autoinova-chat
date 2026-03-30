@@ -1081,3 +1081,10 @@
 - [x] Corrigir flowEngine: botões/listas agora exigem clique exato (sem fallback para texto livre)
 - [x] Quando cliente envia texto em vez de clicar botão, re-envia os botões com mensagem de orientação
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Melhoria - Nó Aguardar Resposta com Agrupamento de Mensagens
+- [x] Implementar timeout configurável no wait_input para aguardar múltiplas mensagens (0-120s)
+- [x] Agrupar mensagens do cliente enviadas dentro do período de timeout em uma única resposta
+- [x] Campo de timeout (segundos) no FlowEditor para o nó wait_input
+- [x] Salvar todas as mensagens agrupadas no campo do lead
+- [x] Testes Vitest: 298 testes passando (21 arquivos)

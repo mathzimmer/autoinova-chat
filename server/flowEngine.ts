@@ -223,7 +223,156 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
   if (currentNode.nodeType === "wait_input") {
     const sessionCtx = (session.context as any) || {};
     const variable = sessionCtx.waitInputVariable;
+    const nodeConfig = (currentNode.data as any) || {};
     
+    // Timeout de agrupamento: aguarda X segundos após a última mensagem antes de avançar
+    const groupTimeout = (nodeConfig.groupTimeoutSeconds || 0) * 1000; // 0 = desativado (avança imediato)
+    
+    if (groupTimeout > 0) {
+      // === MODO AGRUPAMENTO: acumula mensagens até o timeout expirar ===
+      const collectedMessages: string[] = sessionCtx.waitInputCollectedMessages || [];
+      collectedMessages.push(ctx.customerMessage);
+      const now = Date.now();
+      
+      // Salvar mensagens acumuladas e timestamp no contexto da sessão
+      await updateFlowSession(session.id, {
+        context: {
+          ...sessionCtx,
+          waitInputCollectedMessages: collectedMessages,
+          waitInputLastMessageAt: now,
+        },
+      });
+      
+      console.log(`[FlowEngine] wait_input grouping: collected ${collectedMessages.length} message(s), waiting ${groupTimeout}ms for more...`);
+      
+      // Agendar verificação após o timeout
+      // Usamos o padrão de "verificar após timeout" - se nenhuma nova mensagem chegou, avançar
+      setTimeout(async () => {
+        try {
+          // Recarregar sessão para verificar se houve novas mensagens
+          const freshSession = await getActiveFlowSession(ctx.conversationId);
+          if (!freshSession || freshSession.id !== session.id) return; // sessão mudou
+          
+          const freshCtx = (freshSession.context as any) || {};
+          const lastMsgAt = freshCtx.waitInputLastMessageAt || 0;
+          
+          // Se o timestamp da última mensagem é o mesmo que salvamos, significa que não chegou nova mensagem
+          // Então podemos avançar
+          if (lastMsgAt !== now) {
+            console.log(`[FlowEngine] wait_input grouping: new message arrived since timeout was set, skipping advance`);
+            return; // Nova mensagem chegou, outro timeout vai ser criado
+          }
+          
+          const allMessages = freshCtx.waitInputCollectedMessages || [];
+          const groupedMessage = allMessages.join("\n");
+          
+          console.log(`[FlowEngine] wait_input grouping: timeout expired, advancing with ${allMessages.length} grouped message(s)`);
+          
+          // Salvar a resposta agrupada no lead
+          if (variable && groupedMessage) {
+            try {
+              const fieldMap: Record<string, string> = {
+                nome: "name", name: "name",
+                cidade: "city", city: "city",
+                veiculo_troca: "tradeVehicle", tradeVehicle: "tradeVehicle",
+                pagamento: "paymentMethod", paymentMethod: "paymentMethod",
+                entrada: "downPayment", downPayment: "downPayment",
+                veiculo_interesse: "vehicleInterest", vehicleInterest: "vehicleInterest",
+                notas: "notes", notes: "notes",
+                email: "email",
+                cpf: "cpf",
+              };
+              const leadField = fieldMap[variable] || variable;
+              const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf"];
+              if (validFields.includes(leadField)) {
+                await upsertLead({
+                  conversationId: ctx.conversationId,
+                  phone: ctx.phone,
+                  [leadField]: groupedMessage,
+                } as any);
+                console.log(`[FlowEngine] Saved grouped wait_input to lead.${leadField}: "${groupedMessage.substring(0, 100)}..."`);
+              }
+            } catch (err) {
+              console.error(`[FlowEngine] Failed to save grouped wait_input response:`, err);
+            }
+          }
+          
+          // Limpar contexto de agrupamento e avançar
+          const cleanCtx = { ...freshCtx };
+          delete cleanCtx.waitInputVariable;
+          delete cleanCtx.waitInputLabel;
+          delete cleanCtx.waitInputCollectedMessages;
+          delete cleanCtx.waitInputLastMessageAt;
+          await updateFlowSession(session.id, { context: cleanCtx });
+          
+          // Avançar para o próximo nó
+          const freshNodes = await listChatFlowNodes(freshSession.flowId);
+          const freshEdges = await listChatFlowEdges(freshSession.flowId);
+          const nextEdge = freshEdges.find(e => e.sourceNodeId === currentNode.id);
+          if (nextEdge) {
+            const advanceCtx: FlowContext = {
+              ...ctx,
+              customerMessage: groupedMessage,
+            };
+            const advanceResult: FlowResult = {
+              handled: true,
+              responses: [],
+              interactiveMessages: [],
+              waitingForInput: false,
+              flowCompleted: false,
+            };
+            await executeFromNode(nextEdge.targetNodeId, freshNodes, freshEdges, freshSession, advanceCtx, advanceResult);
+            
+            // Emitir respostas do fluxo (importar funções necessárias inline)
+            // As mensagens já foram enviadas pelo WhatsApp dentro do executeFromNode
+            // Precisamos salvar no banco e emitir via socket
+            const { createMessage, getConversationById } = await import("./db");
+            const { emitNewMessage } = await import("./socket");
+            
+            for (const response of advanceResult.responses) {
+              const botMsg = await createMessage({
+                conversationId: ctx.conversationId,
+                content: response,
+                senderType: "bot",
+                senderName: "Auto Inova IA",
+                messageType: "text",
+              });
+              emitNewMessage(ctx.conversationId, botMsg);
+            }
+            for (const im of advanceResult.interactiveMessages) {
+              const interactiveMetadata: any = { interactiveType: im.type, interactiveData: im.data };
+              let content = im.data.body || "";
+              if (im.type === "buttons" && im.data.buttons) {
+                content += `\n\n[Botões: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
+                interactiveMetadata.buttons = im.data.buttons;
+              } else if (im.type === "list" && im.data.sections) {
+                content += `\n\n[Lista: ${im.data.sections.flatMap((s: any) => (s.rows || []).map((r: any) => r.title)).join(" | ")}]`;
+                interactiveMetadata.sections = im.data.sections;
+                interactiveMetadata.buttonText = im.data.buttonText;
+              }
+              const flowInteractiveMsg = await createMessage({
+                conversationId: ctx.conversationId,
+                content,
+                senderType: "bot",
+                senderName: "Auto Inova IA",
+                messageType: "text",
+                metadata: interactiveMetadata,
+              });
+              emitNewMessage(ctx.conversationId, flowInteractiveMsg);
+            }
+          }
+        } catch (err) {
+          console.error(`[FlowEngine] wait_input grouping timeout error:`, err);
+        }
+      }, groupTimeout);
+      
+      // Retornar como "handled" mas sem avançar - estamos acumulando
+      result.handled = true;
+      result.waitingForInput = true;
+      return result;
+    }
+    
+    // === MODO IMEDIATO (padrão): avança na primeira mensagem ===
     // Save the customer's response to lead data if variable is specified
     if (variable && ctx.customerMessage) {
       try {
@@ -258,6 +407,8 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     const newCtx = { ...sessionCtx };
     delete newCtx.waitInputVariable;
     delete newCtx.waitInputLabel;
+    delete newCtx.waitInputCollectedMessages;
+    delete newCtx.waitInputLastMessageAt;
     await updateFlowSession(session.id, { context: newCtx });
 
     // Find next edge and continue
@@ -435,12 +586,15 @@ async function executeFromNode(
         result.responses.push(promptText);
       }
       // Wait for customer response - store which variable to save the response to
+      // Also store groupTimeoutSeconds for message grouping
       await updateFlowSession(session.id, {
         currentNodeId: node.id,
         context: {
           ...((session.context as any) || {}),
           waitInputVariable: config.variable || null,
           waitInputLabel: config.label || "resposta",
+          waitInputCollectedMessages: [], // Reset collected messages
+          waitInputLastMessageAt: null,
         },
       });
       result.waitingForInput = true;
