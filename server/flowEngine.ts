@@ -50,7 +50,12 @@ function replaceVariables(text: string, ctx: FlowContext): string {
     .replace(/\{\{veiculo\}\}/gi, ctx.leadData?.vehicleInterest || "")
     .replace(/\{\{cidade\}\}/gi, ctx.leadData?.city || "")
     .replace(/\{\{troca\}\}/gi, ctx.leadData?.tradeVehicle || "")
-    .replace(/\{\{pagamento\}\}/gi, ctx.leadData?.paymentMethod || "");
+    .replace(/\{\{pagamento\}\}/gi, ctx.leadData?.paymentMethod || "")
+    .replace(/\{\{entrada\}\}/gi, ctx.leadData?.downPayment || "")
+    .replace(/\{\{email\}\}/gi, ctx.leadData?.email || "")
+    .replace(/\{\{cpf\}\}/gi, ctx.leadData?.cpf || "")
+    .replace(/\{\{data_nascimento\}\}/gi, ctx.leadData?.birthDate || "")
+    .replace(/\{\{notas\}\}/gi, ctx.leadData?.notes || "");
 }
 
 // ─── Find Matching Flow ──────────────────────────────────────
@@ -281,9 +286,10 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
                 notas: "notes", notes: "notes",
                 email: "email",
                 cpf: "cpf",
+                data_nascimento: "birthDate", birthDate: "birthDate",
               };
               const leadField = fieldMap[variable] || variable;
-              const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf"];
+              const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf","birthDate"];
               if (validFields.includes(leadField)) {
                 await upsertLead({
                   conversationId: ctx.conversationId,
@@ -387,9 +393,10 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
           notas: "notes", notes: "notes",
           email: "email",
           cpf: "cpf",
+          data_nascimento: "birthDate", birthDate: "birthDate",
         };
         const leadField = fieldMap[variable] || variable;
-        const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf"];
+        const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf","birthDate"];
         if (validFields.includes(leadField)) {
           await upsertLead({
             conversationId: ctx.conversationId,

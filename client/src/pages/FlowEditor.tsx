@@ -630,6 +630,7 @@ function PropertiesPanel({
                   <SelectItem value="entrada">Valor de Entrada</SelectItem>
                   <SelectItem value="email">Email</SelectItem>
                   <SelectItem value="cpf">CPF</SelectItem>
+                  <SelectItem value="data_nascimento">Data de Nascimento</SelectItem>
                   <SelectItem value="notas">Notas</SelectItem>
                 </SelectContent>
               </Select>

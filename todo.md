@@ -1088,3 +1088,11 @@
 - [x] Campo de timeout (segundos) no FlowEditor para o nó wait_input
 - [x] Salvar todas as mensagens agrupadas no campo do lead
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Melhoria - Variáveis de Template e Campos do Lead
+- [x] Adicionar campos faltantes no schema: email, cpf, birthDate (data de nascimento)
+- [x] Adicionar variáveis faltantes no replaceVariables: {{cpf}}, {{email}}, {{entrada}}, {{data_nascimento}}, {{notas}}
+- [x] Adicionar novos campos no fieldMap do wait_input: data_nascimento
+- [x] Adicionar novas opções no select do FlowEditor: Data de Nascimento
+- [x] Migrar banco com pnpm db:push
+- [x] Testes Vitest: 298 testes passando (21 arquivos)

@@ -176,6 +176,13 @@
       "when": 1774903004099,
       "tag": "0024_fresh_raider",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1774912151866,
+      "tag": "0025_fresh_argent",
+      "breakpoints": true
     }
   ]
 }
