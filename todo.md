@@ -1096,3 +1096,11 @@
 - [x] Adicionar novas opções no select do FlowEditor: Data de Nascimento
 - [x] Migrar banco com pnpm db:push
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Melhoria - Upload de Foto e Link wa.me no Vendedor
+- [x] Verificar upload de foto no cadastro de vendedores (já funcional: preview, trocar, remover, S3)
+- [x] Adicionar opção no nó assign_seller: escolher entre cartão de contato (vCard) OU link wa.me
+- [x] Link wa.me com mensagem pré-configurada e personalizável com variáveis ({vendedor}, {loja}, {{veiculo}}, {{troca}}, etc.)
+- [x] Atualizar FlowEditor com select de modo (cartão vs link) e campo de template do link
+- [x] Atualizar flowEngine para enviar conforme modo escolhido + variável {link} na mensagem ao cliente
+- [x] Testes Vitest: 298 testes passando (21 arquivos)

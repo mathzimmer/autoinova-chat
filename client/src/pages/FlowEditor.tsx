@@ -746,29 +746,57 @@ function AssignSellerConfig({ config, onUpdate, node }: { config: any; onUpdate:
           "Auto" detecta a loja pelo veículo de interesse do cliente.
         </p>
       </div>
+
+      {/* Modo de contato: Cartão ou Link wa.me */}
+      <div className="border border-border rounded-lg p-3 space-y-3">
+        <Label className="text-xs font-medium">Modo de contato com o vendedor</Label>
+        <Select
+          value={config.contactMode || "contact_card"}
+          onValueChange={(v) => updateConfig("contactMode", v)}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="contact_card">📎 Cartão de contato (vCard)</SelectItem>
+            <SelectItem value="wa_link">🔗 Link wa.me (com resumo)</SelectItem>
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground">
+          {config.contactMode === "wa_link"
+            ? "Envia um link wa.me com mensagem pré-preenchida contendo os dados do lead."
+            : "Envia o cartão de contato do vendedor para o cliente salvar."}
+        </p>
+
+        {config.contactMode === "wa_link" && (
+          <div>
+            <Label className="text-xs">Mensagem do link wa.me (personalizável)</Label>
+            <Textarea
+              className="text-sm min-h-[100px] mt-1"
+              placeholder={`Olá {vendedor}, vim pelo atendimento da {loja}.\nMeu nome é {{nome}}.\nVeículo de interesse: {{veiculo}}\nTroca: {{troca}}\nPagamento: {{pagamento}}`}
+              value={config.waLinkMessage || ""}
+              onChange={(e) => updateConfig("waLinkMessage", e.target.value)}
+            />
+            <p className="text-[10px] text-muted-foreground mt-1">
+              Variáveis: {'{vendedor}'}, {'{loja}'}, {'{{nome}}'}, {'{{telefone}}'}, {'{{veiculo}}'}, {'{{troca}}'}, {'{{pagamento}}'}, {'{{entrada}}'}, {'{{cidade}}'}, {'{{cpf}}'}, {'{{email}}'}
+            </p>
+          </div>
+        )}
+      </div>
+
       <div>
-        <Label className="text-xs">Mensagem personalizada (opcional)</Label>
+        <Label className="text-xs">Mensagem para o cliente (opcional)</Label>
         <Textarea
           className="text-sm min-h-[80px]"
-          placeholder={`Perfeito! Vou te conectar com um dos nossos vendedores...\n\nUse {vendedor} para o nome e {loja} para a loja.`}
+          placeholder={config.contactMode === "wa_link"
+            ? `Perfeito! Clique no link abaixo para falar com {vendedor}...\n\nUse {link} para inserir o link wa.me`
+            : `Perfeito! Vou te conectar com um dos nossos vendedores...\n\nUse {vendedor} para o nome e {loja} para a loja.`}
           value={config.message || ""}
           onChange={(e) => updateConfig("message", e.target.value)}
         />
         <p className="text-[10px] text-muted-foreground mt-1">
-          Variáveis: {'{vendedor}'}, {'{loja}'}, {'{{nome}}'}, {'{{telefone}}'}
+          Variáveis: {'{vendedor}'}, {'{loja}'}, {config.contactMode === "wa_link" ? '{link}, ' : ''}{'{{nome}}'}, {'{{telefone}}'}
         </p>
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          id="sendContact"
-          checked={config.sendContact !== false}
-          onChange={(e) => updateConfig("sendContact", e.target.checked)}
-          className="rounded border-border"
-        />
-        <Label htmlFor="sendContact" className="text-xs cursor-pointer">
-          Enviar cartão de contato do vendedor
-        </Label>
       </div>
       <div className="border-t border-border pt-3 mt-3">
         <div className="flex items-center gap-2 mb-2">

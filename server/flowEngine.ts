@@ -737,9 +737,53 @@ async function executeFromNode(
       });
 
       // Build message
-      const defaultMsg = `Perfeito! Vou te conectar com um dos nossos vendedores \ud83d\udc47\n\nTe enviei o contato do *${seller.name}*.\n\nEle já vai te chamar para te atender melhor, mas se preferir você também pode chamar ele diretamente.`;
-      const messageText = config.message
-        ? replaceVariables(config.message.replace(/\{vendedor\}/gi, seller.name).replace(/\{loja\}/gi, storeLocation), ctx)
+      const contactMode = config.contactMode || "contact_card"; // "contact_card" | "wa_link"
+
+      // Build wa.me link if mode is wa_link
+      let waLink = "";
+      if (contactMode === "wa_link") {
+        const lead = await getLeadByConversationId(ctx.conversationId);
+        const linkVars: Record<string, string> = {
+          vendedor: seller.name,
+          loja: storeLocation,
+          nome: ctx.contactName || lead?.name || "Cliente",
+          telefone: ctx.phone,
+          veiculo: lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "",
+          troca: lead?.tradeVehicle || ctx.leadData?.tradeVehicle || "",
+          pagamento: lead?.paymentMethod || ctx.leadData?.paymentMethod || "",
+          entrada: lead?.downPayment || ctx.leadData?.downPayment || "",
+          cidade: lead?.city || ctx.leadData?.city || "",
+          cpf: lead?.cpf || "",
+          email: lead?.email || "",
+        };
+        const defaultLinkText = `Olá ${seller.name}, vim pelo atendimento da ${storeLocation}.\nMeu nome é ${linkVars.nome}.\nVeículo de interesse: ${linkVars.veiculo}`;
+        let linkText = config.waLinkMessage || defaultLinkText;
+        // Replace {var} placeholders in the link message
+        Object.entries(linkVars).forEach(([key, val]) => {
+          linkText = linkText.replace(new RegExp(`\\{${key}\\}`, "gi"), val);
+        });
+        // Also replace {{var}} template variables
+        linkText = replaceVariables(linkText, ctx);
+        const cleanPhone = seller.phone.replace(/\D/g, "");
+        waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(linkText)}`;
+      }
+
+      // Default messages differ by mode
+      let defaultMsg: string;
+      if (contactMode === "wa_link") {
+        defaultMsg = `Perfeito! Vou te conectar com um dos nossos vendedores \ud83d\udc47\n\nClique no link abaixo para falar diretamente com *${seller.name}*:\n\n${waLink}\n\nEle já vai te chamar para te atender melhor, mas se preferir você também pode chamar ele diretamente pelo link acima.`;
+      } else {
+        defaultMsg = `Perfeito! Vou te conectar com um dos nossos vendedores \ud83d\udc47\n\nTe enviei o contato do *${seller.name}*.\n\nEle já vai te chamar para te atender melhor, mas se preferir você também pode chamar ele diretamente.`;
+      }
+
+      let messageText = config.message
+        ? replaceVariables(
+            config.message
+              .replace(/\{vendedor\}/gi, seller.name)
+              .replace(/\{loja\}/gi, storeLocation)
+              .replace(/\{link\}/gi, waLink),
+            ctx
+          )
         : defaultMsg;
 
       await sendTextMessage(ctx.phone, messageText);
@@ -750,14 +794,16 @@ async function executeFromNode(
         await sendImageMessage(ctx.phone, seller.photoUrl, `${seller.name} - ${storeLocation}`);
       }
 
-      // Send contact card
-      const shouldSendContact = config.sendContact !== false;
-      if (shouldSendContact) {
-        await sendContactCard(ctx.phone, {
-          name: seller.name,
-          phone: seller.phone,
-          organization: storeLocation,
-        });
+      // Send contact card or wa.me link based on mode
+      if (contactMode === "contact_card") {
+        const shouldSendContact = config.sendContact !== false;
+        if (shouldSendContact) {
+          await sendContactCard(ctx.phone, {
+            name: seller.name,
+            phone: seller.phone,
+            organization: storeLocation,
+          });
+        }
       }
 
       console.log(`[FlowEngine] assign_seller: assigned ${seller.name} (${storeLocation}) to conversation ${ctx.conversationId}`);
