@@ -163,9 +163,43 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
       // Advance to next node and execute it
       await executeFromNode(nextNodeId, nodes, edges, session, ctx, result);
     } else {
-      // No match - re-send the interactive message
-      result.responses.push("Por favor, selecione uma das opções acima.");
+      // No match - client sent free text instead of clicking a button/list item
+      // Re-send the interactive message so they can select properly
+      const config = (currentNode.data as any) || {};
+      
+      if (currentNode.nodeType === "send_buttons") {
+        const body = replaceVariables(config.body || "", ctx);
+        const buttons = (config.buttons || []).map((b: any, i: number) => ({
+          id: `flow_btn_${currentNode.id}_${i}`,
+          title: replaceVariables(b.text || `Opção ${i + 1}`, ctx).substring(0, 20),
+        }));
+        const retryMsg = "☝️ Por favor, toque em uma das opções abaixo para continuar:";
+        await sendTextMessage(ctx.phone, retryMsg);
+        if (body && buttons.length > 0) {
+          await sendReplyButtons(ctx.phone, body, buttons);
+        }
+        result.responses.push(retryMsg);
+      } else if (currentNode.nodeType === "send_list") {
+        const body = replaceVariables(config.body || "", ctx);
+        const buttonText = config.buttonText || "Ver Opções";
+        const sections = (config.sections || []).map((s: any) => ({
+          title: replaceVariables(s.title || "", ctx),
+          rows: (s.rows || []).map((r: any, i: number) => ({
+            id: `flow_row_${currentNode.id}_${i}`,
+            title: replaceVariables(r.title || "", ctx).substring(0, 24),
+            description: replaceVariables(r.description || "", ctx).substring(0, 72),
+          })),
+        }));
+        const retryMsg = "☝️ Por favor, selecione uma das opções da lista para continuar:";
+        await sendTextMessage(ctx.phone, retryMsg);
+        if (body && sections.length > 0) {
+          await sendListMessage(ctx.phone, body, buttonText, sections);
+        }
+        result.responses.push(retryMsg);
+      }
+      
       result.waitingForInput = true;
+      console.log(`[FlowEngine] Button/list re-prompt: client sent free text "${ctx.customerMessage}" instead of selecting an option`);
     }
     return result;
   }
@@ -662,6 +696,9 @@ async function executeFromNode(
         { position: 4, caption: "Painel" },
       ];
 
+      // Delay configurável entre fotos (padrão: 1 segundo, máximo: 10 segundos)
+      const photoDelay = Math.min(Math.max((config.delayBetweenPhotos || 1) * 1000, 500), 10000);
+
       let sentCount = 0;
       for (const slot of photoSlots) {
         const imgIndex = slot.position - 1; // position is 1-based
@@ -676,9 +713,9 @@ async function executeFromNode(
             .replace(/\{\{loja\}\}/gi, vehicleSeller);
           await sendImageMessage(ctx.phone, imageUrl, caption);
           sentCount++;
-          // Small delay between images to avoid rate limiting
+          // Configurable delay between images
           if (sentCount < photoSlots.length) {
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, photoDelay));
           }
         } else {
           console.log(`[FlowEngine] send_vehicle_photos: skipping slot position ${slot.position} - vehicle has ${vehicleImages.length} images`);
@@ -763,35 +800,61 @@ function matchResponseToEdge(
 
   if (node.nodeType === "send_buttons") {
     const buttons = config.buttons || [];
-    // Try exact match on button text
+
+    // 1. Try exact match on button ID (WhatsApp interactive reply callback)
+    //    WhatsApp sends the button ID (e.g. "flow_btn_123_0") when user taps a button
     for (let i = 0; i < buttons.length; i++) {
-      const btnText = (buttons[i].text || "").toLowerCase().trim();
-      if (msgLower === btnText || msgLower.includes(btnText)) {
+      const expectedId = `flow_btn_${node.id}_${i}`;
+      if (msgLower === expectedId.toLowerCase()) {
         const edge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === `button_${i}`);
         if (edge) return edge.targetNodeId;
       }
     }
-    // Fallback: try first matching edge
+
+    // 2. Try exact match on button text (for when WhatsApp sends the button title)
+    for (let i = 0; i < buttons.length; i++) {
+      const btnText = (buttons[i].text || "").toLowerCase().trim();
+      if (btnText && msgLower === btnText) {
+        const edge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === `button_${i}`);
+        if (edge) return edge.targetNodeId;
+      }
+    }
+
+    // 3. NO FALLBACK for free text — buttons MUST be clicked
+    //    Only allow explicit "default" handle if configured
     const defaultEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === "default");
     if (defaultEdge) return defaultEdge.targetNodeId;
-    // Try any edge from this node
-    const anyEdge = edges.find(e => e.sourceNodeId === node.id);
-    return anyEdge?.targetNodeId || null;
+
+    // Return null = no match, flow will re-prompt the user
+    return null;
   }
 
   if (node.nodeType === "send_list") {
     const allRows = (config.sections || []).flatMap((s: any) => s.rows || []);
+
+    // 1. Try exact match on row ID (WhatsApp interactive list reply callback)
     for (let i = 0; i < allRows.length; i++) {
-      const rowTitle = (allRows[i].title || "").toLowerCase().trim();
-      if (msgLower === rowTitle || msgLower.includes(rowTitle)) {
+      const expectedId = `flow_row_${node.id}_${i}`;
+      if (msgLower === expectedId.toLowerCase()) {
         const edge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === `row_${i}`);
         if (edge) return edge.targetNodeId;
       }
     }
+
+    // 2. Try exact match on row title
+    for (let i = 0; i < allRows.length; i++) {
+      const rowTitle = (allRows[i].title || "").toLowerCase().trim();
+      if (rowTitle && msgLower === rowTitle) {
+        const edge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === `row_${i}`);
+        if (edge) return edge.targetNodeId;
+      }
+    }
+
+    // 3. NO FALLBACK for free text — list items MUST be selected
     const defaultEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === "default");
     if (defaultEdge) return defaultEdge.targetNodeId;
-    const anyEdge = edges.find(e => e.sourceNodeId === node.id);
-    return anyEdge?.targetNodeId || null;
+
+    return null;
   }
 
   return null;

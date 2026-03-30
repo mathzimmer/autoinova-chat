@@ -1074,3 +1074,10 @@
 - [x] FlowEngine: handler do nó send_vehicle_photos (envio de múltiplas fotos com legendas personalizáveis)
 - [x] FlowEditor: configuração do nó com slots de fotos (posição + legenda), mensagem intro e fallback
 - [x] Testes Vitest para o novo nó (7 testes, 298 total passando)
+
+## Melhoria - Delay entre Fotos e Botões Travando Fluxo
+- [x] Delay configurável entre envio de cada foto no nó send_vehicle_photos (0.5s a 10s, padrão 1s)
+- [x] Campo de delay (segundos) no FlowEditor para o nó send_vehicle_photos
+- [x] Corrigir flowEngine: botões/listas agora exigem clique exato (sem fallback para texto livre)
+- [x] Quando cliente envia texto em vez de clicar botão, re-envia os botões com mensagem de orientação
+- [x] Testes Vitest: 298 testes passando (21 arquivos)

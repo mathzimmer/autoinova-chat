@@ -909,6 +909,25 @@ function SendVehiclePhotosConfig({ config, onUpdate, node }: { config: any; onUp
       </div>
 
       <div className="border-t border-border pt-3">
+        <Label className="text-xs">Intervalo entre fotos (segundos)</Label>
+        <div className="flex items-center gap-2 mt-1">
+          <Input
+            type="number"
+            min={0.5}
+            max={10}
+            step={0.5}
+            value={config.delayBetweenPhotos || 1}
+            onChange={(e) => updateConfig("delayBetweenPhotos", parseFloat(e.target.value) || 1)}
+            className="h-8 text-sm w-24"
+          />
+          <span className="text-xs text-muted-foreground">segundos (0.5 a 10s)</span>
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Tempo de espera entre o envio de cada foto. Ajuda a evitar que as fotos cheguem fora de ordem.
+        </p>
+      </div>
+
+      <div className="border-t border-border pt-3">
         <Label className="text-xs">Mensagem se não houver veículo (fallback)</Label>
         <Textarea
           className="text-sm min-h-[50px] mt-1"
