@@ -46,6 +46,7 @@ function replaceVariables(text: string, ctx: FlowContext): string {
   if (!text) return text;
   return text
     .replace(/\{\{nome\}\}/gi, ctx.contactName || ctx.leadData?.name || "cliente")
+    .replace(/\{\{nome_completo\}\}/gi, ctx.leadData?.fullName || ctx.leadData?.name || ctx.contactName || "")
     .replace(/\{\{telefone\}\}/gi, ctx.phone)
     .replace(/\{\{veiculo\}\}/gi, ctx.leadData?.vehicleInterest || "")
     .replace(/\{\{cidade\}\}/gi, ctx.leadData?.city || "")
@@ -291,6 +292,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
             try {
               const fieldMap: Record<string, string> = {
                 nome: "name", name: "name",
+                nome_completo: "fullName", fullName: "fullName",
                 cidade: "city", city: "city",
                 veiculo_troca: "tradeVehicle", tradeVehicle: "tradeVehicle",
                 pagamento: "paymentMethod", paymentMethod: "paymentMethod",
@@ -302,7 +304,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
                 data_nascimento: "birthDate", birthDate: "birthDate",
               };
               const leadField = fieldMap[variable] || variable;
-              const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf","birthDate"];
+              const validFields = ["name","fullName","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf","birthDate"];
               if (validFields.includes(leadField)) {
                 await upsertLead({
                   conversationId: ctx.conversationId,
@@ -398,6 +400,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
         // Map variable names to lead fields
         const fieldMap: Record<string, string> = {
           nome: "name", name: "name",
+          nome_completo: "fullName", fullName: "fullName",
           cidade: "city", city: "city",
           veiculo_troca: "tradeVehicle", tradeVehicle: "tradeVehicle",
           pagamento: "paymentMethod", paymentMethod: "paymentMethod",
@@ -409,7 +412,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
           data_nascimento: "birthDate", birthDate: "birthDate",
         };
         const leadField = fieldMap[variable] || variable;
-        const validFields = ["name","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf","birthDate"];
+        const validFields = ["name","fullName","city","tradeVehicle","paymentMethod","downPayment","vehicleInterest","notes","email","cpf","birthDate"];
         if (validFields.includes(leadField)) {
           await upsertLead({
             conversationId: ctx.conversationId,
@@ -785,6 +788,7 @@ async function executeFromNode(
           vendedor: seller.name,
           loja: storeLocation,
           nome: ctx.contactName || lead?.name || "Cliente",
+          nome_completo: lead?.fullName || lead?.name || ctx.contactName || "Cliente",
           telefone: ctx.phone,
           veiculo: lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "",
           troca: lead?.tradeVehicle || ctx.leadData?.tradeVehicle || "",
@@ -793,6 +797,7 @@ async function executeFromNode(
           cidade: lead?.city || ctx.leadData?.city || "",
           cpf: lead?.cpf || "",
           email: lead?.email || "",
+          data_nascimento: lead?.birthDate || "",
         };
         const defaultLinkText = `Olá ${seller.name}, vim pelo atendimento da ${storeLocation}.\nMeu nome é ${linkVars.nome}.\nVeículo de interesse: ${linkVars.veiculo}`;
         let linkText = config.waLinkMessage || defaultLinkText;
@@ -849,7 +854,7 @@ async function executeFromNode(
       // Send notification to the seller about the new lead
       const notifySeller = config.notifySeller !== false;
       if (notifySeller) {
-        const customerName = ctx.contactName || leadForAssignment?.name || "Cliente";
+        const customerName = leadForAssignment?.fullName || ctx.contactName || leadForAssignment?.name || "Cliente";
         const customerPhone = ctx.phone;
         const vehicleInterest = leadForAssignment?.vehicleInterest || ctx.leadData?.vehicleInterest || "N\u00e3o informado";
         const conversationSummary = leadForAssignment?.notes || "Novo lead atribu\u00eddo via fluxo autom\u00e1tico.";

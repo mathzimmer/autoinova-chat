@@ -1115,3 +1115,14 @@
 - [x] Investigar: ctx.leadData era undefined porque não era carregado do banco no processFlowMessage
 - [x] Corrigido: leadData agora é recarregado do banco em 3 pontos: processFlowMessage, executeFromNode e continueFlowAfterAI
 - [x] Testes: 298 passando
+
+## Melhoria - Diferenciar Nome WhatsApp vs Nome Completo
+- [x] Adicionar campo fullName no schema de leads (nome completo fornecido pelo cliente)
+- [x] Manter campo name como nome do WhatsApp (perfil) → {{nome}}
+- [x] Criar variável {{nome_completo}} no replaceVariables
+- [x] Atualizar fieldMap do wait_input para mapear nome_completo → fullName
+- [x] Adicionar opção "Nome Completo" no select do FlowEditor wait_input
+- [x] Adicionar fullName no select de condições e nas linkVars do assign_seller
+- [x] Notificação ao vendedor agora usa fullName quando disponível
+- [x] Migrar banco com pnpm db:push
+- [x] Testes Vitest: 298 testes passando (21 arquivos)

@@ -1,0 +1,1 @@
+ALTER TABLE `leads` ADD `fullName` varchar(255);

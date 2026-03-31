@@ -183,6 +183,13 @@
       "when": 1774912151866,
       "tag": "0025_fresh_argent",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "5",
+      "when": 1774921473459,
+      "tag": "0026_burly_invaders",
+      "breakpoints": true
     }
   ]
 }

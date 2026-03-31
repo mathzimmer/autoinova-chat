@@ -76,6 +76,7 @@ export const leads = mysqlTable("leads", {
   conversationId: int("conversationId").notNull(),
   phone: varchar("phone", { length: 32 }).notNull(),
   name: varchar("name", { length: 255 }),
+  fullName: varchar("fullName", { length: 255 }),
   intention: varchar("intention", { length: 255 }),
   vehicleInterest: varchar("vehicleInterest", { length: 500 }),
   hasTrade: boolean("hasTrade"),

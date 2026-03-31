@@ -538,7 +538,8 @@ function PropertiesPanel({
                   <SelectItem value="vehicleInterest">Veículo de interesse</SelectItem>
                   <SelectItem value="paymentMethod">Forma de pagamento</SelectItem>
                   <SelectItem value="city">Cidade</SelectItem>
-                  <SelectItem value="name">Nome</SelectItem>
+                  <SelectItem value="name">Nome (WhatsApp)</SelectItem>
+                  <SelectItem value="fullName">Nome Completo</SelectItem>
                   <SelectItem value="status">Status do lead</SelectItem>
                   <SelectItem value="lastMessage">Última mensagem contém</SelectItem>
                 </SelectContent>
@@ -631,7 +632,8 @@ function PropertiesPanel({
                   <SelectValue placeholder="Selecione o campo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="nome">Nome</SelectItem>
+                  <SelectItem value="nome">Nome (WhatsApp)</SelectItem>
+                  <SelectItem value="nome_completo">Nome Completo</SelectItem>
                   <SelectItem value="cidade">Cidade</SelectItem>
                   <SelectItem value="veiculo_interesse">Veículo de Interesse</SelectItem>
                   <SelectItem value="veiculo_troca">Veículo de Troca</SelectItem>
