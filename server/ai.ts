@@ -207,6 +207,15 @@ VEÍCULOS: SÓ apresente veículos retornados por buscar_veiculos. PROIBIDO inve
 
 LEAD: Chame atualizar_lead SEMPRE que coletar dado novo. Ao mudar veículo: atualizar_lead(veiculo_interesse: novo, veiculo_id: null) → buscar_veiculos → apresentar.
 
+ETAPA DO FUNIL: Atualize etapa_funil em cada atualizar_lead conforme o progresso:
+- Primeiro contato → etapa_funil: "novo"
+- Demonstrou interesse em veículo → etapa_funil: "interesse_definido"
+- Informou forma de pagamento → etapa_funil: "pagamento_definido"
+- Informou cidade/dados pessoais → etapa_funil: "dados_pessoais"
+- Informou dados do veículo de troca → etapa_funil: "dados_troca"
+- Transferido para vendedor → etapa_funil: "encaminhado_vendedor"
+- Desistiu/não respondeu → etapa_funil: "perdido"
+
 MÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto. NUNCA diga "não consigo ver" ou mencione transcrição.
 
 LIMPEZA: Remova [ID:X], [FOTO], [IMAGEM] da resposta.
@@ -421,6 +430,7 @@ const TOOLS: Tool[] = [
           entrada: { type: "string", description: "Valor de entrada para financiamento" },
           cidade: { type: "string", description: "Cidade do cliente" },
           status: { type: "string", description: "Status: qualifying ou qualified" },
+          etapa_funil: { type: "string", enum: ["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "encaminhado_vendedor", "negociando", "fechado", "perdido"], description: "Etapa do funil de vendas. Atualize conforme o progresso: novo (primeiro contato), interesse_definido (demonstrou interesse em veículo), pagamento_definido (informou forma de pagamento), dados_pessoais (informou cidade/nome), dados_troca (informou dados do veículo de troca), encaminhado_vendedor (transferido para vendedor), negociando (em negociação ativa), fechado (venda concluída), perdido (desistiu)" },
           notas: { type: "string", description: "Resumo breve da conversa para o vendedor (ex: 'Cliente quer Hilux 2012, tem Gol 2011 150mil km para troca, quer financiar')" },
         },
         required: [],
@@ -667,6 +677,8 @@ export async function processAIMessage(
       if (existingLead.downPayment) contextBlock += `\n- Entrada: ${existingLead.downPayment}`;
       if (existingLead.city) contextBlock += `\n- Cidade: ${existingLead.city}`;
       if (existingLead.notes) contextBlock += `\n- Notas: ${existingLead.notes}`;
+      if (existingLead.funnelStatus) contextBlock += `\n- Etapa do Funil: ${existingLead.funnelStatus}`;
+      if (existingLead.temperature) contextBlock += `\n- Temperatura: ${existingLead.temperature}`;
       contextBlock += `\nSe a [MENSAGEM ATUAL] contradiz algum dado acima, a mensagem atual tem prioridade. Atualize com atualizar_lead.`;
     }
   } catch (e) {
@@ -896,6 +908,17 @@ export async function processAIMessage(
             if (args.status) leadUpdate.status = args.status;
             if (args.notas) leadUpdate.notes = args.notas;
             if (args.cidade) leadUpdate.city = args.cidade;
+            if (args.etapa_funil) {
+              leadUpdate.funnelStatus = args.etapa_funil;
+              // Auto-calculate temperature from funnel status
+              const tempMap: Record<string, string> = {
+                novo: "frio", perdido: "frio",
+                interesse_definido: "morno",
+                pagamento_definido: "quente", dados_pessoais: "quente", dados_troca: "quente",
+                encaminhado_vendedor: "muito_quente", negociando: "muito_quente", fechado: "muito_quente",
+              };
+              leadUpdate.temperature = tempMap[args.etapa_funil] || "frio";
+            }
 
             try {
               await upsertLead(leadUpdate);

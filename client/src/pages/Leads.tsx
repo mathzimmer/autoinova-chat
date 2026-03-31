@@ -14,6 +14,7 @@ import {
   Target, Phone, Car, CreditCard, ArrowLeftRight, Users, FileText,
   UserCheck, ExternalLink, Copy, MessageSquare, Pencil, ChevronDown,
   ChevronUp, MapPin, Calendar, ClipboardList, Search, X, Sparkles,
+  Thermometer,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -59,6 +60,8 @@ type LeadWithDetails = {
   downPayment: string | null;
   vehicleId: number | null;
   status: string;
+  funnelStatus: string | null;
+  temperature: string | null;
   score: number | null;
   city: string | null;
   notes: string | null;
@@ -198,6 +201,7 @@ export default function Leads() {
       phone: formatPhone(lead.phone),
       city: lead.city || "",
       intention: lead.intention || "",
+      funnelStatus: (lead as any).funnelStatus || "novo",
       vehicleInterest: lead.vehicleInterest || "",
       hasTrade: lead.hasTrade || false,
       tradeVehicle: lead.tradeVehicle || "",
@@ -226,6 +230,7 @@ export default function Leads() {
       downPayment: editForm.downPayment || undefined,
       notes: editForm.notes || undefined,
       status: editForm.status as any,
+      funnelStatus: editForm.funnelStatus as any,
     });
   }
 
@@ -333,11 +338,25 @@ export default function Leads() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-sm text-card-foreground truncate">{displayName}</span>
                       <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${cfg.bg} ${cfg.color}`}>
                         {cfg.label}
                       </Badge>
+                      {(lead as any).temperature && (
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                          (lead as any).temperature === "frio" ? "border-blue-500/30 bg-blue-500/10 text-blue-400" :
+                          (lead as any).temperature === "morno" ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400" :
+                          (lead as any).temperature === "quente" ? "border-orange-500/30 bg-orange-500/10 text-orange-400" :
+                          "border-red-500/30 bg-red-500/10 text-red-400"
+                        }`}>
+                          <Thermometer className="h-2.5 w-2.5 mr-0.5" />
+                          {(lead as any).temperature === "frio" ? "❄️ Frio" :
+                           (lead as any).temperature === "morno" ? "🌤️ Morno" :
+                           (lead as any).temperature === "quente" ? "🔥 Quente" :
+                           "🔥🔥 Muito Quente"}
+                        </Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
                       <span className="flex items-center gap-1">
@@ -598,18 +617,39 @@ export default function Leads() {
               </div>
             </div>
 
-            <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
-              <Select value={editForm.status} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {STATUS_OPTIONS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Status</label>
+                <Select value={editForm.status} onValueChange={(v) => setEditForm({ ...editForm, status: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Etapa do Funil</label>
+                <Select value={editForm.funnelStatus || "novo"} onValueChange={(v) => setEditForm({ ...editForm, funnelStatus: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="novo">❄️ Novo</SelectItem>
+                    <SelectItem value="interesse_definido">🌤️ Interesse Definido</SelectItem>
+                    <SelectItem value="pagamento_definido">💳 Pagamento Definido</SelectItem>
+                    <SelectItem value="dados_pessoais">📝 Dados Pessoais</SelectItem>
+                    <SelectItem value="dados_troca">🚗 Dados de Troca</SelectItem>
+                    <SelectItem value="encaminhado_vendedor">👤 Encaminhado ao Vendedor</SelectItem>
+                    <SelectItem value="negociando">🤝 Negociando</SelectItem>
+                    <SelectItem value="fechado">✅ Fechado</SelectItem>
+                    <SelectItem value="perdido">❌ Perdido</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div>

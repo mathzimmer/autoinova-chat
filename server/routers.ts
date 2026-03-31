@@ -1003,14 +1003,27 @@ const leadRouter = router({
       city: z.string().optional(),
       notes: z.string().optional(),
       status: z.enum(["new", "qualifying", "qualified", "contacted", "converted", "lost"]).optional(),
+      funnelStatus: z.enum(["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "encaminhado_vendedor", "negociando", "fechado", "perdido"]).optional(),
     }))
     .mutation(async ({ input }) => {
-      const { conversationId, ...data } = input;
+      const { conversationId, funnelStatus, ...data } = input;
       const conv = await getConversationById(conversationId);
+      const updateData: any = { ...data };
+      if (funnelStatus) {
+        updateData.funnelStatus = funnelStatus;
+        // Auto-calculate temperature from funnel status
+        const tempMap: Record<string, string> = {
+          novo: "frio", perdido: "frio",
+          interesse_definido: "morno",
+          pagamento_definido: "quente", dados_pessoais: "quente", dados_troca: "quente",
+          encaminhado_vendedor: "muito_quente", negociando: "muito_quente", fechado: "muito_quente",
+        };
+        updateData.temperature = tempMap[funnelStatus] || "frio";
+      }
       return upsertLead({
         conversationId,
         phone: conv?.phone || "",
-        ...data,
+        ...updateData,
       });
     }),
 });
@@ -2501,7 +2514,7 @@ const flowRouter = router({
       flowId: z.number(),
       nodes: z.array(z.object({
         id: z.number().optional(),
-        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation"]),
+        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status"]),
         label: z.string().optional(),
         data: z.any(),
         positionX: z.number(),

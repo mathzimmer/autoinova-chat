@@ -87,6 +87,18 @@ export const leads = mysqlTable("leads", {
   downPayment: varchar("downPayment", { length: 100 }),
   vehicleId: int("vehicleId"),
   status: mysqlEnum("leadStatus", ["new", "qualifying", "qualified", "contacted", "converted", "lost"]).default("new").notNull(),
+  funnelStatus: mysqlEnum("funnelStatus", [
+    "novo",                   // Acabou de chegar
+    "interesse_definido",      // Demonstrou interesse em veículo
+    "pagamento_definido",      // Definiu forma de pagamento
+    "dados_pessoais",          // Enviou dados pessoais (CPF, nome completo, etc.)
+    "dados_troca",             // Informou dados do veículo de troca
+    "encaminhado_vendedor",    // Foi encaminhado para vendedor
+    "negociando",              // Em negociação com vendedor
+    "fechado",                 // Negócio fechado
+    "perdido",                 // Lead perdido / desistiu
+  ]).default("novo").notNull(),
+  temperature: mysqlEnum("leadTemperature", ["frio", "morno", "quente", "muito_quente"]).default("frio").notNull(),
   score: int("score").default(0),
   city: varchar("city", { length: 255 }),
   email: varchar("email", { length: 320 }),
@@ -389,6 +401,7 @@ export const chatFlows = mysqlTable("chatFlows", {
     "manual",            // Ativado manualmente pelo agente
     "reactivation",      // Cliente retorna após inatividade
     "category_interest", // Cliente pergunta sobre categoria
+    "rescue",            // Gatilho de resgate (lead inativo por X minutos)
   ]).default("first_contact").notNull(),
   triggerValue: varchar("triggerValue", { length: 500 }), // Ex: palavra-chave, ID do botão
   active: boolean("active").default(false).notNull(),
@@ -427,6 +440,7 @@ export const chatFlowNodes = mysqlTable("chatFlowNodes", {
     "assign_seller",       // Atribuir vendedor da fila (rodízio por loja)
     "send_vehicle_photos", // Enviar fotos do veículo de interesse com legendas personalizáveis
     "vehicle_presentation", // Apresentação personalizada do veículo com dados do banco
+    "update_lead_status",   // Atualizar status/temperatura do lead no funil
   ]).notNull(),
   label: varchar("label", { length: 255 }), // Nome visual do nó
   data: json("data").notNull(), // Configuração específica do tipo de nó (JSON)
@@ -559,3 +573,22 @@ export const sellerAssignments = mysqlTable("sellerAssignments", {
 
 export type SellerAssignment = typeof sellerAssignments.$inferSelect;
 export type InsertSellerAssignment = typeof sellerAssignments.$inferInsert;
+
+/**
+ * Rescue Attempts — rastreia tentativas de resgate de leads inativos.
+ * Quando um lead fica sem responder por X minutos, o sistema dispara um fluxo de resgate.
+ */
+export const rescueAttempts = mysqlTable("rescueAttempts", {
+  id: int("id").autoincrement().primaryKey(),
+  conversationId: int("conversationId").notNull(),
+  leadId: int("leadId").notNull(),
+  flowId: int("flowId"),                  // Fluxo de resgate executado
+  attemptNumber: int("attemptNumber").default(1).notNull(),
+  status: mysqlEnum("rescueStatus", ["sent", "responded", "expired", "cancelled"]).default("sent").notNull(),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+  respondedAt: timestamp("respondedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type RescueAttempt = typeof rescueAttempts.$inferSelect;
+export type InsertRescueAttempt = typeof rescueAttempts.$inferInsert;

@@ -12,6 +12,7 @@ import {
   getChatFlowNodeById,
   getLeadByConversationId,
   upsertLead,
+  updateLeadFunnelStatus,
   getNextSellerInQueue,
   createSellerAssignment,
   getStoreLocationByVehicleId,
@@ -1096,6 +1097,32 @@ async function executeFromNode(
       const vpNextEdge = edges.find(e => e.sourceNodeId === node.id);
       if (vpNextEdge) {
         await executeFromNode(vpNextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+      }
+      break;
+    }
+
+    case "update_lead_status": {
+      /**
+       * Atualizar status/temperatura do lead no funil.
+       * config.funnelStatus: novo status do funil
+       * A temperatura é calculada automaticamente.
+       */
+      const newFunnelStatus = config.funnelStatus;
+      if (newFunnelStatus) {
+        try {
+          const updatedLead = await updateLeadFunnelStatus(ctx.conversationId, newFunnelStatus);
+          if (updatedLead) {
+            console.log(`[FlowEngine] update_lead_status: set funnel="${newFunnelStatus}" temp="${updatedLead.temperature}" for conversation ${ctx.conversationId}`);
+            // Update ctx.leadData so subsequent nodes see the new status
+            ctx.leadData = { ...ctx.leadData, ...updatedLead };
+          }
+        } catch (err) {
+          console.error(`[FlowEngine] update_lead_status error:`, err);
+        }
+      }
+      const ulsNextEdge = edges.find(e => e.sourceNodeId === node.id);
+      if (ulsNextEdge) {
+        await executeFromNode(ulsNextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
       }
       break;
     }

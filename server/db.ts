@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, like, or } from "drizzle-orm";
+import { eq, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   InsertUser, users,
@@ -23,6 +23,7 @@ import {
   sellers, InsertSeller,
   sellerQueues, InsertSellerQueue,
   sellerAssignments, InsertSellerAssignment,
+  rescueAttempts, InsertRescueAttempt,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -245,6 +246,34 @@ export async function getLeadByConversationId(conversationId: number) {
   return result[0];
 }
 
+// ─── Temperature Calculation ─────────────────────────────────
+/**
+ * Calcula a temperatura do lead automaticamente baseado no status do funil.
+ * frio: novo
+ * morno: interesse_definido
+ * quente: pagamento_definido, dados_pessoais, dados_troca
+ * muito_quente: encaminhado_vendedor, negociando, fechado
+ */
+export function calculateTemperature(funnelStatus: string): "frio" | "morno" | "quente" | "muito_quente" {
+  switch (funnelStatus) {
+    case "novo":
+    case "perdido":
+      return "frio";
+    case "interesse_definido":
+      return "morno";
+    case "pagamento_definido":
+    case "dados_pessoais":
+    case "dados_troca":
+      return "quente";
+    case "encaminhado_vendedor":
+    case "negociando":
+    case "fechado":
+      return "muito_quente";
+    default:
+      return "frio";
+  }
+}
+
 export async function upsertLead(data: InsertLead) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -257,11 +286,30 @@ export async function upsertLead(data: InsertLead) {
         updateData[key] = value;
       }
     }
+    // Auto-calculate temperature when funnelStatus changes
+    if (updateData.funnelStatus && typeof updateData.funnelStatus === "string") {
+      updateData.temperature = calculateTemperature(updateData.funnelStatus);
+    }
     await db.update(leads).set(updateData).where(eq(leads.id, existing.id));
     return { ...existing, ...updateData };
   }
+  // Auto-calculate temperature for new leads
+  if (data.funnelStatus) {
+    (data as any).temperature = calculateTemperature(data.funnelStatus);
+  }
   const result = await db.insert(leads).values(data);
   return { ...data, id: result[0].insertId };
+}
+
+// ─── Update Lead Funnel Status ───────────────────────────────
+export async function updateLeadFunnelStatus(conversationId: number, funnelStatus: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const lead = await getLeadByConversationId(conversationId);
+  if (!lead) return null;
+  const temperature = calculateTemperature(funnelStatus);
+  await db.update(leads).set({ funnelStatus: funnelStatus as any, temperature: temperature as any }).where(eq(leads.id, lead.id));
+  return { ...lead, funnelStatus, temperature };
 }
 
 // ─── Lead Summary Queries ─────────────────────────────────────
@@ -995,4 +1043,99 @@ export async function getVehicleById(vehicleId: number) {
   if (!db) return null;
   const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
   return rows[0] || null;
+}
+
+// ─── Rescue Attempts Queries ─────────────────────────────────
+export async function createRescueAttempt(data: Omit<InsertRescueAttempt, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const result = await db.insert(rescueAttempts).values(data as any);
+  return result[0].insertId;
+}
+
+export async function getRescueAttemptsByConversation(conversationId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(rescueAttempts)
+    .where(eq(rescueAttempts.conversationId, conversationId))
+    .orderBy(desc(rescueAttempts.sentAt));
+}
+
+export async function getLastRescueAttempt(conversationId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(rescueAttempts)
+    .where(eq(rescueAttempts.conversationId, conversationId))
+    .orderBy(desc(rescueAttempts.sentAt))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function updateRescueAttemptStatus(id: number, status: string, respondedAt?: Date) {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: Record<string, any> = { status };
+  if (respondedAt) updateData.respondedAt = respondedAt;
+  await db.update(rescueAttempts).set(updateData).where(eq(rescueAttempts.id, id));
+}
+
+/**
+ * Busca leads inativos que são candidatos para resgate.
+ * Critérios:
+ * - Conversa aberta (não resolvida/fechada)
+ * - Lead não está com funnelStatus "fechado" ou "perdido"
+ * - Lead não está encaminhado para vendedor
+ * - Última mensagem do cliente foi há mais de inactivityMinutes
+ * - Não excedeu o máximo de tentativas
+ */
+export async function getInactiveLeadsForRescue(
+  inactivityMinutes: number,
+  maxAttempts: number,
+  minIntervalMinutes: number,
+) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const cutoffTime = Date.now() - (inactivityMinutes * 60 * 1000);
+  const minIntervalTime = new Date(Date.now() - (minIntervalMinutes * 60 * 1000));
+
+  // Get all open conversations with leads that have been inactive
+  const allLeads = await db.select().from(leads)
+    .innerJoin(conversations, eq(leads.conversationId, conversations.id))
+    .where(
+      and(
+        // Conversa aberta ou pendente (não resolvida/fechada)
+        inArray(conversations.status, ["open", "pending"]),
+        // Lead não está fechado ou perdido
+        notInArray(leads.funnelStatus, ["fechado", "perdido", "encaminhado_vendedor"]),
+        // Última mensagem do cliente foi antes do cutoff
+        lt(conversations.lastCustomerMessageAt, cutoffTime),
+        // Tem última mensagem do cliente (não é conversa vazia)
+        isNotNull(conversations.lastCustomerMessageAt),
+      )
+    );
+
+  // Filter by rescue attempt count and interval
+  const results = [];
+  for (const row of allLeads) {
+    const attempts = await getRescueAttemptsByConversation(row.conversations.id);
+    const attemptCount = attempts.filter(a => a.status === "sent" || a.status === "responded").length;
+
+    // Skip if max attempts reached
+    if (attemptCount >= maxAttempts) continue;
+
+    // Skip if last attempt was too recent
+    if (attempts.length > 0) {
+      const lastAttempt = attempts[0]; // Already sorted by sentAt desc
+      if (lastAttempt.sentAt && lastAttempt.sentAt > minIntervalTime) continue;
+    }
+
+    results.push({
+      lead: row.leads,
+      conversation: row.conversations,
+      attemptCount,
+    });
+  }
+
+  return results;
 }

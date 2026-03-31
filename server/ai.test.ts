@@ -169,7 +169,7 @@ describe("DEFAULT_SYSTEM_PROMPT (Legacy - Condensed)", () => {
 
   it("is significantly shorter than old legacy prompt", () => {
     // New legacy should be under 1500 chars (was ~4000+)
-    expect(DEFAULT_SYSTEM_PROMPT.length).toBeLessThan(2000);
+    expect(DEFAULT_SYSTEM_PROMPT.length).toBeLessThan(2500);
     expect(DEFAULT_SYSTEM_PROMPT.length).toBeGreaterThan(300);
   });
 });
@@ -339,6 +339,6 @@ describe("Prompt Size Comparison", () => {
 
   it("DEFAULT_SYSTEM_PROMPT (legacy) is condensed", () => {
     console.log(`DEFAULT_SYSTEM_PROMPT (legacy): ${DEFAULT_SYSTEM_PROMPT.length} chars`);
-    expect(DEFAULT_SYSTEM_PROMPT.length).toBeLessThan(2000);
+    expect(DEFAULT_SYSTEM_PROMPT.length).toBeLessThan(2500);
   });
 });

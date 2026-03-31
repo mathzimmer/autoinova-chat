@@ -33,9 +33,29 @@ import {
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
   ChevronDown, GripVertical, Cpu, UserPlus, Camera, Car,
+  Thermometer,
 } from "lucide-react";
+// ─── Funnel Status Labels ─────────────────────────────────────
+const FUNNEL_STATUS_LABELS: Record<string, string> = {
+  novo: "❄️ Novo",
+  interesse_definido: "🌤️ Interesse Definido",
+  pagamento_definido: "💳 Pagamento Definido",
+  dados_pessoais: "📝 Dados Pessoais",
+  dados_troca: "🚗 Dados de Troca",
+  encaminhado_vendedor: "👤 Encaminhado ao Vendedor",
+  negociando: "🤝 Negociando",
+  fechado: "✅ Fechado",
+  perdido: "❌ Perdido",
+};
 
-// ─── Node Type Definitions ───────────────────────────────────
+const TEMPERATURE_LABELS: Record<string, { label: string; color: string }> = {
+  frio: { label: "❄️ Frio", color: "text-blue-400" },
+  morno: { label: "🌤️ Morno", color: "text-yellow-400" },
+  quente: { label: "🔥 Quente", color: "text-orange-400" },
+  muito_quente: { label: "🔥🔥 Muito Quente", color: "text-red-400" },
+};
+
+// ─── Node Type Definitions ───────────────────────────────────────
 const NODE_TYPES_CONFIG: Record<string, {
   label: string;
   icon: typeof MessageSquare;
@@ -59,6 +79,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   assign_seller: { label: "Falar c/ Vendedor", icon: UserPlus, color: "text-lime-400", bgColor: "border-lime-500/50 bg-lime-500/5", description: "Atribuir vendedor da fila (rodízio)" },
   send_vehicle_photos: { label: "Fotos do Veículo", icon: Camera, color: "text-rose-400", bgColor: "border-rose-500/50 bg-rose-500/5", description: "Enviar fotos do veículo com legendas" },
   vehicle_presentation: { label: "Apresentar Veículo", icon: Car, color: "text-indigo-400", bgColor: "border-indigo-500/50 bg-indigo-500/5", description: "Apresentação personalizada do veículo" },
+  update_lead_status: { label: "Status do Lead", icon: Thermometer, color: "text-amber-400", bgColor: "border-amber-500/50 bg-amber-500/5", description: "Atualizar etapa do funil e temperatura" },
 };
 
 // ─── Custom Node Component ───────────────────────────────────
@@ -184,6 +205,13 @@ function FlowNode({ data, selected, id }: NodeProps) {
             {(data.config as any)?.message
               ? `Mensagem + ${(data.config as any)?.photoSlots?.length || 0} foto(s)`
               : "Configurar apresentação..."}
+          </p>
+        )}
+        {nodeType === "update_lead_status" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.funnelStatus
+              ? `Funil: ${FUNNEL_STATUS_LABELS[(data.config as any).funnelStatus] || (data.config as any).funnelStatus}`
+              : "Configurar status..."}
           </p>
         )}
       </div>
@@ -729,6 +757,9 @@ function PropertiesPanel({
         {nodeType === "vehicle_presentation" && (
           <VehiclePresentationConfig config={config} onUpdate={onUpdate} node={node} />
         )}
+        {nodeType === "update_lead_status" && (
+          <UpdateLeadStatusConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
       </CardContent>
     </Card>
   );
@@ -1182,7 +1213,77 @@ function VehiclePresentationConfig({ config, onUpdate, node }: { config: any; on
   );
 }
 
-// ─── Goto Flow Selector Component ───────────────────────────────────────────────────────
+// ─── Update Lead Status Config Component ─────────────────────────────────────────────────────────
+function UpdateLeadStatusConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const updateConfig = (key: string, value: any) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, [key]: value },
+    });
+  };
+
+  // Calculate temperature preview
+  const selectedStatus = config.funnelStatus || "";
+  const tempMap: Record<string, string> = {
+    novo: "frio", perdido: "frio",
+    interesse_definido: "morno",
+    pagamento_definido: "quente", dados_pessoais: "quente", dados_troca: "quente",
+    encaminhado_vendedor: "muito_quente", negociando: "muito_quente", fechado: "muito_quente",
+  };
+  const calculatedTemp = tempMap[selectedStatus] || "";
+  const tempInfo = calculatedTemp ? TEMPERATURE_LABELS[calculatedTemp] : null;
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label className="text-xs">Etapa do Funil</Label>
+        <Select
+          value={config.funnelStatus || ""}
+          onValueChange={(v) => updateConfig("funnelStatus", v)}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue placeholder="Selecione a etapa..." />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(FUNNEL_STATUS_LABELS).map(([key, label]) => (
+              <SelectItem key={key} value={key}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Define em qual etapa do funil o lead se encontra. A temperatura é calculada automaticamente.
+        </p>
+      </div>
+
+      {/* Temperature preview */}
+      {tempInfo && (
+        <div className="bg-muted/30 rounded-md p-3 border border-border">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Temperatura calculada</p>
+              <p className={`text-sm font-semibold ${tempInfo.color}`}>{tempInfo.label}</p>
+            </div>
+            <Thermometer className={`h-5 w-5 ${tempInfo.color}`} />
+          </div>
+          <div className="mt-2 flex gap-1">
+            {["frio", "morno", "quente", "muito_quente"].map((t) => (
+              <div
+                key={t}
+                className={`h-1.5 flex-1 rounded-full transition-colors ${
+                  ["frio", "morno", "quente", "muito_quente"].indexOf(t) <= ["frio", "morno", "quente", "muito_quente"].indexOf(calculatedTemp)
+                    ? t === "frio" ? "bg-blue-400" : t === "morno" ? "bg-yellow-400" : t === "quente" ? "bg-orange-400" : "bg-red-400"
+                    : "bg-muted"
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Goto Flow Selector Component ─────────────────────────────────────────────────────────
 function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) { const flowsQuery = trpc.flow.list.useQuery();
   const flows = flowsQuery.data || [];
 
@@ -1474,6 +1575,7 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
     manual: "Manual",
     reactivation: "Reativação",
     category_interest: "Categoria",
+    rescue: "⏰ Resgate (Lead Inativo)",
   };
 
   // Load flow AI prompt, agent and trigger

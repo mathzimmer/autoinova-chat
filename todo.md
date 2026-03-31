@@ -1137,3 +1137,37 @@
 - [x] FlowEditor: painel VehiclePresentationConfig com tabela de variáveis, mensagem, fotos com legendas e delay
 - [x] FlowEditor: preview do nó no canvas
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Feature - Sistema de Status/Temperatura do Lead + Gatilho de Resgate
+
+### Status/Temperatura do Lead
+- [x] Adicionar campo funnelStatus no schema de leads (enum: novo, interesse_definido, pagamento_definido, dados_pessoais, dados_troca, encaminhado_vendedor, negociando, fechado, perdido)
+- [x] Adicionar campo temperature no schema de leads (enum: frio, morno, quente, muito_quente)
+- [x] Calcular temperatura automaticamente baseado no status (novo=frio, interesse=morno, pagamento/dados=quente, encaminhado/negociando=muito_quente)
+- [x] Novo nó update_lead_status no FlowEditor e FlowEngine
+- [x] Nó permite selecionar status da etapa do funil
+- [x] Temperatura é calculada automaticamente ao mudar status
+- [x] Exibir status e temperatura na lista de leads (badges coloridos)
+- [x] Exibir status e temperatura na lista de conversas (indicador visual)
+- [ ] Filtrar leads por status e temperatura (pendente - pode ser adicionado futuramente)
+
+### Gatilho de Tempo (Resgate de Leads Inativos)
+- [x] Criar tabela rescueAttempts no schema (leadId, conversationId, flowId, attemptNumber, sentAt, respondedAt)
+- [ ] Job periódico que verifica leads inativos (sem resposta há X minutos)
+- [ ] Configuração: tempo de inatividade mínimo (minutos)
+- [ ] Configuração: número máximo de tentativas de resgate (1-5)
+- [ ] Configuração: intervalo entre tentativas (minutos)
+- [ ] Não disparar resgate se lead estiver com status fechado ou perdido
+- [ ] Não disparar resgate se conversa estiver resolvida
+- [ ] Não disparar resgate se lead estiver atribuído a vendedor (encaminhado_vendedor)
+- [ ] Fluxo de resgate com contexto do histórico (variáveis do lead + último assunto)
+- [x] Novo trigger type: 'rescue' para fluxos de resgate no schema e FlowEditor
+- [ ] Frontend: configuração do gatilho de resgate na página de configurações ou fluxos
+
+### IA Tool - etapa_funil
+- [x] Adicionar campo etapa_funil na tool atualizar_lead (enum com 9 etapas)
+- [x] Handler da IA processa etapa_funil e calcula temperatura automaticamente
+- [x] Prompt comercial atualizado com instruções de etapa_funil por etapa da conversa
+- [x] Contexto do lead inclui funnelStatus e temperature para a IA
+- [x] Edit dialog de leads permite alterar etapa do funil manualmente
+- [x] 316 testes passando (22 arquivos)
