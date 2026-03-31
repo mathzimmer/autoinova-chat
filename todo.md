@@ -1231,3 +1231,6 @@
 - [x] Backend: buscar templates aprovados do WhatsApp Business API (já existente)
 - [x] Backend: enviar template de marketing para contato(s) (sendTemplate + sendTemplateBulk)
 - [x] Frontend: seletor de template com preview e envio em massa
+
+## Bug - Rate exceeded ao acessar site publicado
+- [x] Investigar e corrigir erro "Rate exceeded" - adicionado retry com backoff exponencial + página amigável com auto-redirect
