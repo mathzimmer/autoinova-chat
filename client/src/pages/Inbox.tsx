@@ -1,13 +1,27 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ConversationList from "@/components/ConversationList";
 import ChatView from "@/components/ChatView";
 import ConversationPanel from "@/components/ConversationPanel";
 import { MessageSquare, PanelRightOpen, PanelRightClose } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useSearch } from "wouter";
 
 export default function Inbox() {
   const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
   const [showPanel, setShowPanel] = useState(false);
+  const searchString = useSearch();
+
+  // Auto-select conversation from URL param ?conv=123
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const convId = params.get("conv");
+    if (convId) {
+      const id = parseInt(convId, 10);
+      if (!isNaN(id) && id > 0) {
+        setSelectedConversationId(id);
+      }
+    }
+  }, [searchString]);
 
   return (
     <div className="h-full flex overflow-hidden">

@@ -852,7 +852,7 @@ const leadRouter = router({
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
-      const { leads: leadsTable, conversations: convsTable, leadSummaries: summariesTable, vehicles: vehiclesTable, teamMembers: membersTable } = await import("../drizzle/schema");
+      const { leads: leadsTable, conversations: convsTable, leadSummaries: summariesTable, vehicles: vehiclesTable, teamMembers: membersTable, sellerAssignments: assignmentsTable, sellers: sellersTable, rescueAttempts: rescueTable } = await import("../drizzle/schema");
       const { eq, desc, inArray } = await import("drizzle-orm");
 
       // Get all leads
@@ -891,14 +891,48 @@ const leadRouter = router({
         agentMap = new Map(agents.map(a => [a.id, a]));
       }
 
+      // Batch fetch seller assignments (latest per conversation)
+      const allAssignments = convIds.length > 0
+        ? await db.select().from(assignmentsTable).where(inArray(assignmentsTable.conversationId, convIds)).orderBy(desc(assignmentsTable.assignedAt))
+        : [];
+      const assignmentMap = new Map<number, typeof allAssignments[0]>();
+      allAssignments.forEach(a => {
+        if (!assignmentMap.has(a.conversationId)) assignmentMap.set(a.conversationId, a);
+      });
+
+      // Batch fetch sellers for assignments
+      const sellerIds = Array.from(new Set(allAssignments.filter(a => a.sellerId).map(a => a.sellerId)));
+      let sellerMap = new Map<number, any>();
+      if (sellerIds.length > 0) {
+        const sllrs = await db.select().from(sellersTable).where(inArray(sellersTable.id, sellerIds));
+        sellerMap = new Map(sllrs.map(s => [s.id, s]));
+      }
+
+      // Batch fetch rescue attempts
+      const allRescues = leadIds.length > 0
+        ? await db.select().from(rescueTable).where(inArray(rescueTable.leadId, leadIds)).orderBy(desc(rescueTable.sentAt))
+        : [];
+      const rescueMap = new Map<number, typeof allRescues>();
+      allRescues.forEach(r => {
+        if (!rescueMap.has(r.leadId)) rescueMap.set(r.leadId, []);
+        rescueMap.get(r.leadId)!.push(r);
+      });
+
       return allLeads.map(lead => {
         const conv = convMap.get(lead.conversationId);
         const sums = summaryMap.get(lead.id) || [];
         const vehicle = lead.vehicleId ? vehicleMap.get(lead.vehicleId) : null;
         const agent = conv?.assignedTo ? agentMap.get(conv.assignedTo) : null;
-        // Build preview: latest summary, max 3 lines
-        const latestSummary = sums[0];
-        const summaryPreview = latestSummary?.summary?.split("\n").slice(0, 3).join("\n") || "";
+        // Build preview: combine all summaries into one (latest first), max 3 lines
+        const fullSummary = sums.map(s => s.summary).join("\n").trim();
+        const summaryPreview = fullSummary.split("\n").slice(0, 3).join("\n") || "";
+
+        // Seller assignment info
+        const assignment = assignmentMap.get(lead.conversationId);
+        const seller = assignment ? sellerMap.get(assignment.sellerId) : null;
+
+        // Rescue attempts info
+        const rescues = rescueMap.get(lead.id) || [];
 
         return {
           ...lead,
@@ -912,6 +946,7 @@ const leadRouter = router({
             lastMessageAt: conv.lastMessageAt,
           } : null,
           summaryPreview,
+          fullSummary,
           summaries: sums.map(s => ({ id: s.id, date: s.summaryDate, summary: s.summary, messageCount: s.messageCount })),
           linkedVehicle: vehicle ? {
             id: vehicle.id,
@@ -924,6 +959,25 @@ const leadRouter = router({
             url: vehicle.url,
           } : null,
           assignedAgent: agent ? { id: agent.id, name: agent.name, cargo: agent.cargo } : null,
+          sellerAssignment: assignment && seller ? {
+            sellerName: seller.name,
+            sellerPhone: seller.phone,
+            storeLocation: assignment.storeLocation,
+            status: assignment.status,
+            assignedAt: assignment.assignedAt?.getTime() || null,
+            contactedAt: assignment.contactedAt?.getTime() || null,
+          } : null,
+          rescueInfo: rescues.length > 0 ? {
+            totalAttempts: rescues.length,
+            lastAttemptAt: rescues[0].sentAt?.getTime() || null,
+            responded: rescues.some(r => r.status === "responded"),
+            attempts: rescues.map(r => ({
+              attemptNumber: r.attemptNumber,
+              status: r.status,
+              sentAt: r.sentAt?.getTime() || null,
+              respondedAt: r.respondedAt?.getTime() || null,
+            })),
+          } : null,
         };
       });
     }),

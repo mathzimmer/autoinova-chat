@@ -14,22 +14,26 @@ import {
   Target, Phone, Car, CreditCard, ArrowLeftRight, Users, FileText,
   UserCheck, ExternalLink, Copy, MessageSquare, Pencil, ChevronDown,
   ChevronUp, MapPin, Calendar, ClipboardList, Search, X, Sparkles,
-  Thermometer,
+  Thermometer, LifeBuoy, ShieldAlert, Store, Clock, Filter,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────
 function formatPhone(phone: string): string {
   if (!phone) return "";
-  // Remove +55 or 55 prefix
   let p = phone.replace(/\D/g, "");
   if (p.startsWith("55") && p.length > 11) p = p.substring(2);
   return p;
 }
 
 function formatDate(dateStr: string): string {
-  // dateStr is YYYY-MM-DD
   const [y, m, d] = dateStr.split("-");
   return `${d}/${m}/${y}`;
+}
+
+function formatTimestamp(ts: number | null | undefined): string {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
 function timeAgo(ts: number | null | undefined): string {
@@ -68,6 +72,7 @@ type LeadWithDetails = {
   createdAt: Date | string;
   updatedAt: Date | string;
   summaryPreview: string;
+  fullSummary: string;
   summaries: Array<{ id: number; date: string; summary: string; messageCount: number }>;
   conversation: {
     id: number;
@@ -89,6 +94,25 @@ type LeadWithDetails = {
     url: string | null;
   } | null;
   assignedAgent: { id: number; name: string; cargo: string } | null;
+  sellerAssignment: {
+    sellerName: string;
+    sellerPhone: string;
+    storeLocation: string;
+    status: string;
+    assignedAt: number | null;
+    contactedAt: number | null;
+  } | null;
+  rescueInfo: {
+    totalAttempts: number;
+    lastAttemptAt: number | null;
+    responded: boolean;
+    attempts: Array<{
+      attemptNumber: number;
+      status: string;
+      sentAt: number | null;
+      respondedAt: number | null;
+    }>;
+  } | null;
 };
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
@@ -109,6 +133,25 @@ const STATUS_OPTIONS = [
   { value: "lost", label: "Perdido" },
 ];
 
+const FUNNEL_CONFIG: Record<string, { label: string; icon: string; color: string; bg: string }> = {
+  novo: { label: "Novo", icon: "🆕", color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30" },
+  interesse_definido: { label: "Interesse Definido", icon: "🎯", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
+  pagamento_definido: { label: "Pagamento Definido", icon: "💳", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+  dados_pessoais: { label: "Dados Pessoais", icon: "📝", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+  dados_troca: { label: "Dados de Troca", icon: "🚗", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+  encaminhado_vendedor: { label: "Encaminhado", icon: "👤", color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+  negociando: { label: "Negociando", icon: "🤝", color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/30" },
+  fechado: { label: "Fechado", icon: "✅", color: "text-green-400", bg: "bg-green-500/10 border-green-500/30" },
+  perdido: { label: "Perdido", icon: "❌", color: "text-red-400", bg: "bg-red-500/10 border-red-500/30" },
+};
+
+const TEMP_CONFIG: Record<string, { label: string; icon: string; color: string; bg: string }> = {
+  frio: { label: "Frio", icon: "❄️", color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/30" },
+  morno: { label: "Morno", icon: "🌤️", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
+  quente: { label: "Quente", icon: "🔥", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/30" },
+  muito_quente: { label: "Muito Quente", icon: "🔥🔥", color: "text-red-400", bg: "bg-red-500/10 border-red-500/30" },
+};
+
 const CHANNEL_ICONS: Record<string, { icon: string; color: string }> = {
   whatsapp: { icon: "🟢", color: "text-green-400" },
   instagram: { icon: "📸", color: "text-pink-400" },
@@ -117,18 +160,25 @@ const CHANNEL_ICONS: Record<string, { icon: string; color: string }> = {
   webhook: { icon: "🔗", color: "text-muted-foreground" },
 };
 
+const FUNNEL_OPTIONS = Object.entries(FUNNEL_CONFIG).map(([value, cfg]) => ({ value, label: `${cfg.icon} ${cfg.label}` }));
+const TEMP_OPTIONS = Object.entries(TEMP_CONFIG).map(([value, cfg]) => ({ value, label: `${cfg.icon} ${cfg.label}` }));
+
 // ─── Main Component ───────────────────────────────────────────────
 export default function Leads() {
   const [statusFilter, setStatusFilter] = useState("all");
+  const [funnelFilter, setFunnelFilter] = useState("all");
+  const [tempFilter, setTempFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedLeadId, setExpandedLeadId] = useState<number | null>(null);
   const [editingLead, setEditingLead] = useState<LeadWithDetails | null>(null);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
+  const [summaryTab, setSummaryTab] = useState<"full" | "daily">("full");
+  const [showFilters, setShowFilters] = useState(false);
   const [, setLocation] = useLocation();
 
   const { data: leadsRaw, refetch } = trpc.lead.listWithDetails.useQuery(
     { status: statusFilter },
-    { refetchInterval: 15000 }
+    { refetchInterval: 10000 }
   );
 
   const updateLead = trpc.lead.update.useMutation({
@@ -137,11 +187,11 @@ export default function Leads() {
       refetch();
       setEditingLead(null);
     },
-    onError: (err) => toast.error(`Erro ao atualizar: ${err.message}`),
+    onError: (err: any) => toast.error(`Erro ao atualizar: ${err.message}`),
   });
 
   const generateSummary = trpc.lead.generateSummary.useMutation({
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       if (data) {
         toast.success("Resumo gerado com sucesso");
         refetch();
@@ -149,21 +199,37 @@ export default function Leads() {
         toast.info("Nenhuma mensagem hoje para resumir");
       }
     },
-    onError: (err) => toast.error(`Erro ao gerar resumo: ${err.message}`),
+    onError: (err: any) => toast.error(`Erro ao gerar resumo: ${err.message}`),
   });
 
   const leads = useMemo(() => {
     if (!leadsRaw) return [];
-    if (!searchQuery.trim()) return leadsRaw as unknown as LeadWithDetails[];
-    const q = searchQuery.toLowerCase();
-    return (leadsRaw as unknown as LeadWithDetails[]).filter((l) => {
-      const name = (l.name || l.conversation?.contactName || "").toLowerCase();
-      const phone = formatPhone(l.phone);
-      const vehicle = (l.vehicleInterest || "").toLowerCase();
-      const city = (l.city || "").toLowerCase();
-      return name.includes(q) || phone.includes(q) || vehicle.includes(q) || city.includes(q);
-    });
-  }, [leadsRaw, searchQuery]);
+    let filtered = leadsRaw as unknown as LeadWithDetails[];
+
+    // Funnel filter
+    if (funnelFilter !== "all") {
+      filtered = filtered.filter((l) => l.funnelStatus === funnelFilter);
+    }
+
+    // Temperature filter
+    if (tempFilter !== "all") {
+      filtered = filtered.filter((l) => l.temperature === tempFilter);
+    }
+
+    // Search
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter((l) => {
+        const name = (l.name || l.conversation?.contactName || "").toLowerCase();
+        const phone = formatPhone(l.phone);
+        const vehicle = (l.vehicleInterest || "").toLowerCase();
+        const city = (l.city || "").toLowerCase();
+        return name.includes(q) || phone.includes(q) || vehicle.includes(q) || city.includes(q);
+      });
+    }
+
+    return filtered;
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -171,25 +237,25 @@ export default function Leads() {
     parts.push(`Nome: ${lead.name || lead.conversation?.contactName || "N/A"}`);
     parts.push(`Telefone: ${formatPhone(lead.phone)}`);
     if (lead.city) parts.push(`Cidade: ${lead.city}`);
+    if (lead.funnelStatus) parts.push(`Etapa Funil: ${FUNNEL_CONFIG[lead.funnelStatus]?.label || lead.funnelStatus}`);
+    if (lead.temperature) parts.push(`Temperatura: ${TEMP_CONFIG[lead.temperature]?.label || lead.temperature}`);
     if (lead.vehicleInterest) parts.push(`Veículo de interesse: ${lead.vehicleInterest}`);
     if (lead.linkedVehicle) parts.push(`Veículo vinculado: ${lead.linkedVehicle.brand} ${lead.linkedVehicle.model} ${lead.linkedVehicle.year} - R$ ${lead.linkedVehicle.price?.toLocaleString("pt-BR")}`);
     if (lead.hasTrade && lead.tradeVehicle) parts.push(`Veículo de troca: ${lead.tradeVehicle} ${lead.tradeYear || ""} ${lead.tradeKm ? `(${lead.tradeKm} km)` : ""}`);
     if (lead.paymentMethod) parts.push(`Pagamento: ${lead.paymentMethod}${lead.downPayment ? ` - Entrada: ${lead.downPayment}` : ""}`);
+    if (lead.sellerAssignment) parts.push(`Vendedor: ${lead.sellerAssignment.sellerName} (${lead.sellerAssignment.storeLocation})`);
+    if (lead.rescueInfo) parts.push(`Resgate: ${lead.rescueInfo.totalAttempts} tentativa(s)`);
     parts.push(`Status: ${STATUS_CONFIG[lead.status]?.label || lead.status}`);
     navigator.clipboard.writeText(parts.join("\n"));
     toast.success("Lead copiado para a área de transferência");
   }
 
   function copySummary(lead: LeadWithDetails) {
-    if (!lead.summaries || lead.summaries.length === 0) {
+    const text = lead.fullSummary || lead.summaryPreview;
+    if (!text) {
       toast.info("Nenhum resumo disponível");
       return;
     }
-    const text = lead.summaries
-      .slice()
-      .reverse()
-      .map((s) => `[${formatDate(s.date)}] (${s.messageCount} msgs)\n${s.summary}`)
-      .join("\n\n---\n\n");
     navigator.clipboard.writeText(text);
     toast.success("Resumo copiado para a área de transferência");
   }
@@ -201,7 +267,7 @@ export default function Leads() {
       phone: formatPhone(lead.phone),
       city: lead.city || "",
       intention: lead.intention || "",
-      funnelStatus: (lead as any).funnelStatus || "novo",
+      funnelStatus: lead.funnelStatus || "novo",
       vehicleInterest: lead.vehicleInterest || "",
       hasTrade: lead.hasTrade || false,
       tradeVehicle: lead.tradeVehicle || "",
@@ -236,12 +302,14 @@ export default function Leads() {
 
   const statusTabs = [
     { value: "all", label: "Todos", count: leadsRaw?.length || 0 },
-      ...STATUS_OPTIONS.map((s) => ({
+    ...STATUS_OPTIONS.map((s) => ({
       value: s.value,
       label: s.label,
       count: (leadsRaw as unknown as LeadWithDetails[] | undefined)?.filter((l) => l.status === s.value).length || 0,
     })),
   ];
+
+  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all";
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto overflow-y-auto h-full pb-16">
@@ -254,23 +322,85 @@ export default function Leads() {
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
             {leads.length} lead{leads.length !== 1 ? "s" : ""} encontrado{leads.length !== 1 ? "s" : ""}
+            {hasActiveFilters && <span className="text-primary ml-1">(filtrado)</span>}
           </p>
         </div>
-        <div className="relative w-full sm:w-72">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por nome, telefone, veículo..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-9 h-9"
-          />
-          {searchQuery && (
-            <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2">
-              <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
-            </button>
-          )}
+        <div className="flex items-center gap-2">
+          <div className="relative w-full sm:w-64">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar nome, telefone, veículo..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 h-9"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2">
+                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              </button>
+            )}
+          </div>
+          <Button
+            variant={hasActiveFilters ? "default" : "outline"}
+            size="sm"
+            className="h-9 gap-1.5"
+            onClick={() => setShowFilters(!showFilters)}
+          >
+            <Filter className="h-3.5 w-3.5" />
+            Filtros
+            {hasActiveFilters && <span className="text-[10px] bg-white/20 rounded-full px-1.5">!</span>}
+          </Button>
         </div>
       </div>
+
+      {/* Advanced Filters */}
+      {showFilters && (
+        <Card className="bg-card border-border">
+          <CardContent className="p-3">
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="min-w-[180px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Etapa do Funil</label>
+                <Select value={funnelFilter} onValueChange={setFunnelFilter}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as etapas</SelectItem>
+                    {FUNNEL_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[160px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Temperatura</label>
+                <Select value={tempFilter} onValueChange={setTempFilter}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Todas" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    {TEMP_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {hasActiveFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 text-xs text-muted-foreground"
+                  onClick={() => { setFunnelFilter("all"); setTempFilter("all"); }}
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Limpar filtros
+                </Button>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Status Tabs */}
       <div className="flex gap-1 flex-wrap">
@@ -307,6 +437,8 @@ export default function Leads() {
             const displayName = lead.name || lead.conversation?.contactName || "Sem nome";
             const displayPhone = formatPhone(lead.phone);
             const channel = CHANNEL_ICONS[lead.conversation?.channel || "whatsapp"];
+            const funnel = FUNNEL_CONFIG[lead.funnelStatus || "novo"];
+            const temp = TEMP_CONFIG[lead.temperature || "frio"];
 
             return (
               <Card
@@ -338,24 +470,54 @@ export default function Leads() {
 
                   {/* Info */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-semibold text-sm text-card-foreground truncate">{displayName}</span>
-                      <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${cfg.bg} ${cfg.color}`}>
-                        {cfg.label}
-                      </Badge>
-                      {(lead as any).temperature && (
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
-                          (lead as any).temperature === "frio" ? "border-blue-500/30 bg-blue-500/10 text-blue-400" :
-                          (lead as any).temperature === "morno" ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400" :
-                          (lead as any).temperature === "quente" ? "border-orange-500/30 bg-orange-500/10 text-orange-400" :
-                          "border-red-500/30 bg-red-500/10 text-red-400"
-                        }`}>
-                          <Thermometer className="h-2.5 w-2.5 mr-0.5" />
-                          {(lead as any).temperature === "frio" ? "❄️ Frio" :
-                           (lead as any).temperature === "morno" ? "🌤️ Morno" :
-                           (lead as any).temperature === "quente" ? "🔥 Quente" :
-                           "🔥🔥 Muito Quente"}
+                      {/* Funnel Stage Badge */}
+                      {funnel && (
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${funnel.bg} ${funnel.color}`}>
+                          {funnel.icon} {funnel.label}
                         </Badge>
+                      )}
+                      {/* Temperature Badge */}
+                      {temp && (
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${temp.bg} ${temp.color}`}>
+                          <Thermometer className="h-2.5 w-2.5 mr-0.5" />
+                          {temp.icon} {temp.label}
+                        </Badge>
+                      )}
+                      {/* Rescue indicator */}
+                      {lead.rescueInfo && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-500/30 bg-amber-500/10 text-amber-400">
+                              <LifeBuoy className="h-2.5 w-2.5 mr-0.5" />
+                              Resgate {lead.rescueInfo.totalAttempts}x
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {lead.rescueInfo.totalAttempts} tentativa(s) de resgate
+                            {lead.rescueInfo.responded ? " - Respondeu" : " - Sem resposta"}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                      {/* Seller assignment indicator */}
+                      {lead.sellerAssignment && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-500/30 bg-violet-500/10 text-violet-400 hidden sm:flex">
+                              <Store className="h-2.5 w-2.5 mr-0.5" />
+                              {lead.sellerAssignment.sellerName.split(" ")[0]}
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Vendedor: {lead.sellerAssignment.sellerName}
+                            <br />
+                            Loja: {lead.sellerAssignment.storeLocation}
+                            {lead.sellerAssignment.assignedAt && (
+                              <><br />Atribuído: {formatTimestamp(lead.sellerAssignment.assignedAt)}</>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
@@ -376,7 +538,7 @@ export default function Leads() {
                         </span>
                       )}
                     </div>
-                    {/* Summary preview (3 lines max) */}
+                    {/* Summary preview */}
                     {lead.summaryPreview && (
                       <p className="text-xs text-muted-foreground/70 mt-1 line-clamp-2 leading-relaxed">
                         {lead.summaryPreview}
@@ -417,7 +579,7 @@ export default function Leads() {
                     <div className="flex flex-wrap gap-2 mt-3 mb-4">
                       <Button
                         size="sm"
-                        variant="outline"
+                        variant="default"
                         className="h-8 text-xs"
                         onClick={(e) => { e.stopPropagation(); setLocation(`/inbox?conv=${lead.conversationId}`); }}
                       >
@@ -541,6 +703,86 @@ export default function Leads() {
                           </div>
                         )}
 
+                        {/* Seller Assignment */}
+                        {lead.sellerAssignment && (
+                          <div className="p-3 rounded-lg bg-violet-500/5 border border-violet-500/20">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <Store className="h-3.5 w-3.5 text-violet-400" />
+                              <span className="text-[10px] text-violet-400 uppercase tracking-wider font-semibold">Vendedor Atribuído</span>
+                            </div>
+                            <p className="text-sm text-card-foreground font-medium">{lead.sellerAssignment.sellerName}</p>
+                            <div className="flex flex-col gap-1 mt-1 text-xs text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Phone className="h-3 w-3" />
+                                {lead.sellerAssignment.sellerPhone}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Store className="h-3 w-3" />
+                                {lead.sellerAssignment.storeLocation}
+                              </span>
+                              {lead.sellerAssignment.assignedAt && (
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  Atribuído em: {formatTimestamp(lead.sellerAssignment.assignedAt)}
+                                </span>
+                              )}
+                              {lead.sellerAssignment.contactedAt && (
+                                <span className="flex items-center gap-1 text-green-400">
+                                  <UserCheck className="h-3 w-3" />
+                                  Contatado em: {formatTimestamp(lead.sellerAssignment.contactedAt)}
+                                </span>
+                              )}
+                              <Badge variant="outline" className={`text-[10px] w-fit mt-0.5 ${
+                                lead.sellerAssignment.status === "completed" ? "border-green-500/30 text-green-400" :
+                                lead.sellerAssignment.status === "contacted" ? "border-blue-500/30 text-blue-400" :
+                                lead.sellerAssignment.status === "expired" ? "border-red-500/30 text-red-400" :
+                                "border-yellow-500/30 text-yellow-400"
+                              }`}>
+                                {lead.sellerAssignment.status === "completed" ? "Concluído" :
+                                 lead.sellerAssignment.status === "contacted" ? "Contatado" :
+                                 lead.sellerAssignment.status === "expired" ? "Expirado" : "Pendente"}
+                              </Badge>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Rescue Info */}
+                        {lead.rescueInfo && (
+                          <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20">
+                            <div className="flex items-center gap-1.5 mb-1.5">
+                              <LifeBuoy className="h-3.5 w-3.5 text-amber-400" />
+                              <span className="text-[10px] text-amber-400 uppercase tracking-wider font-semibold">Resgate de Lead</span>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm">
+                              <span className="text-card-foreground font-medium">
+                                {lead.rescueInfo.totalAttempts} tentativa{lead.rescueInfo.totalAttempts !== 1 ? "s" : ""}
+                              </span>
+                              <Badge variant="outline" className={`text-[10px] ${
+                                lead.rescueInfo.responded
+                                  ? "border-green-500/30 text-green-400"
+                                  : "border-amber-500/30 text-amber-400"
+                              }`}>
+                                {lead.rescueInfo.responded ? "Respondeu" : "Sem resposta"}
+                              </Badge>
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {lead.rescueInfo.attempts.map((a, i) => (
+                                <div key={i} className="flex items-center gap-2 text-xs text-muted-foreground">
+                                  <span className="font-mono text-[10px] bg-muted px-1 rounded">#{a.attemptNumber}</span>
+                                  <Clock className="h-3 w-3" />
+                                  <span>{a.sentAt ? formatTimestamp(a.sentAt) : "—"}</span>
+                                  {a.respondedAt && (
+                                    <span className="text-green-400 flex items-center gap-1">
+                                      <ShieldAlert className="h-3 w-3" />
+                                      Resp: {formatTimestamp(a.respondedAt)}
+                                    </span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
                         {/* Notes */}
                         {lead.notes && (
                           <div className="p-3 rounded-lg bg-muted/50 border border-border">
@@ -553,30 +795,71 @@ export default function Leads() {
                         )}
                       </div>
 
-                      {/* Right: Daily Summaries */}
+                      {/* Right: Summaries */}
                       <div className="space-y-3">
-                        <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                          <Calendar className="h-3.5 w-3.5" />
-                          Resumo da Conversa por Dia
-                        </h3>
-                        {lead.summaries && lead.summaries.length > 0 ? (
-                          <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                            {lead.summaries.map((s) => (
-                              <div key={s.id} className="p-3 rounded-lg bg-muted/30 border border-border">
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <span className="text-xs font-semibold text-card-foreground">{formatDate(s.date)}</span>
-                                  <span className="text-[10px] text-muted-foreground">{s.messageCount} msgs</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{s.summary}</p>
-                              </div>
-                            ))}
+                        <div className="flex items-center justify-between">
+                          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                            <Calendar className="h-3.5 w-3.5" />
+                            Resumo da Conversa
+                          </h3>
+                          <div className="flex gap-1">
+                            <button
+                              onClick={() => setSummaryTab("full")}
+                              className={`px-2 py-0.5 text-[10px] rounded font-medium transition-colors ${
+                                summaryTab === "full"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                              }`}
+                            >
+                              Completo
+                            </button>
+                            <button
+                              onClick={() => setSummaryTab("daily")}
+                              className={`px-2 py-0.5 text-[10px] rounded font-medium transition-colors ${
+                                summaryTab === "daily"
+                                  ? "bg-primary text-primary-foreground"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
+                              }`}
+                            >
+                              Por Dia
+                            </button>
                           </div>
+                        </div>
+
+                        {summaryTab === "full" ? (
+                          /* Full Summary */
+                          lead.fullSummary ? (
+                            <div className="p-3 rounded-lg bg-muted/30 border border-border max-h-80 overflow-y-auto">
+                              <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{lead.fullSummary}</p>
+                            </div>
+                          ) : (
+                            <div className="text-center py-6 text-muted-foreground/50">
+                              <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                              <p className="text-xs">Nenhum resumo disponível</p>
+                              <p className="text-[10px] mt-1">Clique em "Gerar resumo IA" para criar</p>
+                            </div>
+                          )
                         ) : (
-                          <div className="text-center py-6 text-muted-foreground/50">
-                            <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                            <p className="text-xs">Nenhum resumo disponível</p>
-                            <p className="text-[10px] mt-1">Clique em "Gerar resumo IA" para criar</p>
-                          </div>
+                          /* Daily Summaries */
+                          lead.summaries && lead.summaries.length > 0 ? (
+                            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                              {lead.summaries.map((s) => (
+                                <div key={s.id} className="p-3 rounded-lg bg-muted/30 border border-border">
+                                  <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-xs font-semibold text-card-foreground">{formatDate(s.date)}</span>
+                                    <span className="text-[10px] text-muted-foreground">{s.messageCount} msgs</span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{s.summary}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-center py-6 text-muted-foreground/50">
+                              <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                              <p className="text-xs">Nenhum resumo disponível</p>
+                              <p className="text-[10px] mt-1">Clique em "Gerar resumo IA" para criar</p>
+                            </div>
+                          )
                         )}
                       </div>
                     </div>
@@ -638,15 +921,9 @@ export default function Leads() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="novo">❄️ Novo</SelectItem>
-                    <SelectItem value="interesse_definido">🌤️ Interesse Definido</SelectItem>
-                    <SelectItem value="pagamento_definido">💳 Pagamento Definido</SelectItem>
-                    <SelectItem value="dados_pessoais">📝 Dados Pessoais</SelectItem>
-                    <SelectItem value="dados_troca">🚗 Dados de Troca</SelectItem>
-                    <SelectItem value="encaminhado_vendedor">👤 Encaminhado ao Vendedor</SelectItem>
-                    <SelectItem value="negociando">🤝 Negociando</SelectItem>
-                    <SelectItem value="fechado">✅ Fechado</SelectItem>
-                    <SelectItem value="perdido">❌ Perdido</SelectItem>
+                    {FUNNEL_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

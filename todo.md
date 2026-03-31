@@ -1200,3 +1200,12 @@
 ## Bug - vehicleInterest não atualiza quando vehicleId é vinculado
 - [x] Quando vehicleId é atualizado (via IA ou fluxo), sincronizar vehicleInterest com o título do veículo vinculado
 - [x] Quando fluxo inicia por ad_click e extrai vehicleId, atualizar vehicleInterest também
+
+## Feature - Melhorias na Página de Leads
+- [x] Etapa do funil ao vivo (badge colorido atualizado em tempo real)
+- [x] Resumo da conversa completa (não separado por dia, mas com opção de consultar por dia)
+- [x] Botão "Ir para conversa" abre a conversa correspondente do lead
+- [x] Filtro por etapa do funil
+- [x] Filtro por temperatura do lead
+- [x] Exibir se o lead caiu em resgate e quantas vezes foi acionado
+- [x] Exibir se o lead foi transferido para vendedor, qual vendedor e data/hora
