@@ -1171,3 +1171,20 @@
 - [x] Contexto do lead inclui funnelStatus e temperature para a IA
 - [x] Edit dialog de leads permite alterar etapa do funil manualmente
 - [x] 316 testes passando (22 arquivos)
+
+## Feature - Gatilho de Tempo (Resgate de Leads Inativos) - Implementação Completa
+- [x] Backend: job periódico (setInterval) que verifica leads inativos a cada 2 minutos
+- [x] Backend: lógica de detecção de inatividade (última mensagem do cliente > X minutos)
+- [x] Backend: respeitar limite de tentativas configurável (1-10)
+- [x] Backend: respeitar intervalo entre tentativas (minutos)
+- [x] Backend: não disparar se lead fechado/perdido ou conversa resolvida
+- [x] Backend: não disparar se lead encaminhado a vendedor
+- [x] Backend: executar fluxo de resgate com contexto do lead (variáveis)
+- [x] Backend: registrar tentativas na tabela rescueAttempts
+- [x] Backend: marcar respondedAt quando cliente responde após resgate
+- [x] Settings: configurações de resgate (ativo, tempo inatividade, max tentativas, intervalo, fluxo)
+- [x] UI: página dedicada de Resgate com configuração, histórico e variáveis
+- [x] UI: seletor de fluxo de resgate (apenas fluxos com trigger rescue)
+- [x] UI: toggle ativo/inativo, inputs numéricos para tempos e limites
+- [x] FlowEngine: variáveis de contexto do lead no fluxo de resgate (14 variáveis)
+- [x] Testes: cobertura do job de resgate e lógica de tentativas (348 testes passando)

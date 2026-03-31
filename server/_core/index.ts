@@ -13,6 +13,7 @@ import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
 import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
 import { startFollowUpJob } from "../followUp";
+import { startRescueJob } from "../rescueJob";
 import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
 import { emitNewMessage, emitConversationUpdate } from "../socket";
@@ -76,6 +77,9 @@ async function startServer() {
 
   // Follow-up automático de leads frios (a cada 6h)
   startFollowUpJob();
+
+  // Resgate de leads inativos (a cada 2 min)
+  startRescueJob();
 
   // Monitoramento periódico de tokens (a cada 30 min)
   startTokenMonitor();
@@ -213,6 +217,14 @@ async function startServer() {
         // Update lastCustomerMessageAt for 24h window tracking
         if (result.conversationId) {
           await updateLastCustomerMessageAt(result.conversationId, Date.now());
+
+          // Mark rescue attempt as responded if applicable
+          try {
+            const { markRescueResponded } = await import("../rescueJob");
+            await markRescueResponded(result.conversationId);
+          } catch (err) {
+            // Non-critical, don't fail the webhook
+          }
         }
 
         // Send AI response back to WhatsApp and track delivery

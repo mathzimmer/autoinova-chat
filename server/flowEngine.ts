@@ -57,7 +57,11 @@ function replaceVariables(text: string, ctx: FlowContext): string {
     .replace(/\{\{email\}\}/gi, ctx.leadData?.email || "")
     .replace(/\{\{cpf\}\}/gi, ctx.leadData?.cpf || "")
     .replace(/\{\{data_nascimento\}\}/gi, ctx.leadData?.birthDate || "")
-    .replace(/\{\{notas\}\}/gi, ctx.leadData?.notes || "");
+    .replace(/\{\{notas\}\}/gi, ctx.leadData?.notes || "")
+    .replace(/\{\{etapa_funil\}\}/gi, ctx.leadData?.funnelStatus || "novo")
+    .replace(/\{\{temperatura\}\}/gi, ctx.leadData?.temperature || "frio")
+    .replace(/\{\{intencao\}\}/gi, ctx.leadData?.intention || "")
+    .replace(/\{\{tentativa_resgate\}\}/gi, String(ctx.leadData?._rescueAttemptNumber || 1));
 }
 
 // ─── Find Matching Flow ──────────────────────────────────────

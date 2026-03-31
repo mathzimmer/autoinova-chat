@@ -16,6 +16,7 @@ import AppLayout from "./components/AppLayout";
 import AiAudit from "./pages/AiAudit";
 import MetaAdsPage from "./pages/MetaAds";
 import FollowUpPage from "./pages/FollowUp";
+import RescuePage from "./pages/Rescue";
 import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
@@ -68,6 +69,11 @@ function Router() {
        <Route path="/follow-up">
         <AppLayout>
           <FollowUpPage />
+        </AppLayout>
+      </Route>
+      <Route path="/rescue">
+        <AppLayout>
+          <RescuePage />
         </AppLayout>
       </Route>
       <Route path="/vendor-keys">
