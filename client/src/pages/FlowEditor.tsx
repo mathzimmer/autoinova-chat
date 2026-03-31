@@ -7,6 +7,8 @@ import {
   addEdge,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   Connection,
   Node,
   Edge,
@@ -27,7 +29,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import {
-  ArrowLeft, Save, Plus, Trash2, X,
+  ArrowLeft, Save, Plus, Trash2, X, Copy, Settings2,
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
   ChevronDown, GripVertical, Cpu, UserPlus, Camera,
@@ -277,11 +279,13 @@ function PropertiesPanel({
   node,
   onUpdate,
   onDelete,
+  onDuplicate,
   onClose,
 }: {
   node: Node;
   onUpdate: (id: string, data: any) => void;
   onDelete: (id: string) => void;
+  onDuplicate: (node: Node) => void;
   onClose: () => void;
 }) {
   const nodeType = node.data.nodeType as string;
@@ -308,6 +312,11 @@ function PropertiesPanel({
             Propriedades
           </CardTitle>
           <div className="flex gap-1">
+            {nodeType !== "start" && (
+              <Button variant="ghost" size="icon" className="h-7 w-7 text-blue-400 hover:text-blue-300" onClick={() => onDuplicate(node)} title="Duplicar nó">
+                <Copy className="h-3.5 w-3.5" />
+              </Button>
+            )}
             {nodeType !== "start" && (
               <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => onDelete(node.id)}>
                 <Trash2 className="h-3.5 w-3.5" />
@@ -1031,14 +1040,23 @@ function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (
   );
 }
 
-// ─── Main Editor Component ───────────────────────────────────
-export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack: () => void }) {
+// ─── Main Editor Wrapper (provides ReactFlowProvider) ───────────────────────────────────────
+export default function FlowEditor(props: { flowId: number; onBack: () => void }) {
+  return (
+    <ReactFlowProvider>
+      <FlowEditorInner {...props} />
+    </ReactFlowProvider>
+  );
+}
+
+function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => void }) {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [clipboard, setClipboard] = useState<Node | null>(null);
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-
+  const { getViewport } = useReactFlow();
   const flowQuery = trpc.flow.getById.useQuery({ id: flowId });
   const saveMutation = trpc.flow.saveFlow.useMutation({
     onSuccess: () => {
@@ -1106,7 +1124,18 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
     setSelectedNode(null);
   }, []);
 
-  // Add new node
+  // Get center of current viewport in flow coordinates
+  const getViewportCenter = () => {
+    const viewport = getViewport();
+    const wrapper = reactFlowWrapper.current;
+    if (!wrapper) return { x: 250, y: 200 };
+    const rect = wrapper.getBoundingClientRect();
+    const centerX = (rect.width / 2 - viewport.x) / viewport.zoom;
+    const centerY = (rect.height / 2 - viewport.y) / viewport.zoom;
+    return { x: centerX, y: centerY };
+  };
+
+  // Add new node at viewport center
   const addNode = (nodeType: string) => {
     const id = `new_${Date.now()}`;
     const config = NODE_TYPES_CONFIG[nodeType];
@@ -1125,10 +1154,11 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
       defaultData.seconds = 3;
     }
 
+    const center = getViewportCenter();
     const newNode: Node = {
       id,
       type: "flowNode",
-      position: { x: 250 + Math.random() * 200, y: 200 + nodes.length * 80 },
+      position: { x: center.x - 80 + Math.random() * 40, y: center.y - 40 + Math.random() * 40 },
       data: {
         nodeType,
         label: config?.label || nodeType,
@@ -1139,6 +1169,60 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
     setSelectedNode(newNode);
     setHasChanges(true);
   };
+
+  // Duplicate a node
+  const duplicateNode = (node: Node) => {
+    const id = `new_${Date.now()}`;
+    const newNode: Node = {
+      id,
+      type: "flowNode",
+      position: { x: node.position.x + 40, y: node.position.y + 60 },
+      data: {
+        ...JSON.parse(JSON.stringify(node.data)),
+        dbId: undefined,
+        label: `${node.data.label} (cópia)`,
+      },
+    };
+    setNodes((nds) => [...nds, newNode]);
+    setSelectedNode(newNode);
+    setHasChanges(true);
+    toast.success("Nó duplicado!");
+  };
+
+  // Keyboard shortcuts for copy/paste
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't capture when typing in inputs
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === "c" && selectedNode) {
+        e.preventDefault();
+        setClipboard(selectedNode);
+        toast.success("Nó copiado!");
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "v" && clipboard) {
+        e.preventDefault();
+        const center = getViewportCenter();
+        const id = `new_${Date.now()}`;
+        const newNode: Node = {
+          id,
+          type: "flowNode",
+          position: { x: center.x - 80 + Math.random() * 40, y: center.y - 40 + Math.random() * 40 },
+          data: {
+            ...JSON.parse(JSON.stringify(clipboard.data)),
+            dbId: undefined,
+            label: `${clipboard.data.label} (cópia)`,
+          },
+        };
+        setNodes((nds) => [...nds, newNode]);
+        setSelectedNode(newNode);
+        setHasChanges(true);
+        toast.success("Nó colado!");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedNode, clipboard]);
 
   // Update node data
   const updateNodeData = (nodeId: string, data: any) => {
@@ -1185,19 +1269,37 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
 
   const flow = flowQuery.data?.flow;
   const [showFlowSettings, setShowFlowSettings] = useState(false);
+  const [showTriggerSettings, setShowTriggerSettings] = useState(false);
   const [flowAiPrompt, setFlowAiPrompt] = useState("");
   const [flowAgentId, setFlowAgentId] = useState<number | null>(null);
+  const [flowTrigger, setFlowTrigger] = useState("");
+  const [flowTriggerValue, setFlowTriggerValue] = useState("");
   const updateFlowMutation = trpc.flow.update.useMutation({
-    onSuccess: () => toast.success("Configurações do fluxo salvas!"),
+    onSuccess: () => {
+      toast.success("Configurações do fluxo salvas!");
+      flowQuery.refetch();
+    },
   });
   const activeAgentsQuery = trpc.agent.listActive.useQuery();
   const activeAgents = activeAgentsQuery.data || [];
 
-  // Load flow AI prompt and agent
+  const TRIGGER_OPTIONS: Record<string, string> = {
+    first_contact: "Primeiro Contato",
+    keyword: "Palavra-chave",
+    button_click: "Clique em Botão",
+    ad_click: "Anúncio (ID)",
+    manual: "Manual",
+    reactivation: "Reativação",
+    category_interest: "Categoria",
+  };
+
+  // Load flow AI prompt, agent and trigger
   useEffect(() => {
     if (flow?.aiPrompt) setFlowAiPrompt(flow.aiPrompt);
     if (flow?.agentId) setFlowAgentId(flow.agentId);
-  }, [flow?.aiPrompt, flow?.agentId]);
+    if (flow?.trigger) setFlowTrigger(flow.trigger);
+    if (flow?.triggerValue) setFlowTriggerValue(flow.triggerValue);
+  }, [flow?.aiPrompt, flow?.agentId, flow?.trigger, flow?.triggerValue]);
 
   return (
     <div className="h-[calc(100vh-64px)] flex flex-col">
@@ -1219,7 +1321,11 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
           )}
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowFlowSettings(!showFlowSettings)}>
+          <Button variant="outline" size="sm" onClick={() => { setShowTriggerSettings(!showTriggerSettings); if (!showTriggerSettings) setShowFlowSettings(false); }}>
+            <Settings2 className="h-3.5 w-3.5 mr-1" />
+            Gatilho
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setShowFlowSettings(!showFlowSettings); if (!showFlowSettings) setShowTriggerSettings(false); }}>
             <Cpu className="h-3.5 w-3.5 mr-1" />
             Agente IA
           </Button>
@@ -1229,6 +1335,62 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
           </Button>
         </div>
       </div>
+
+      {/* Trigger Settings */}
+      {showTriggerSettings && (
+        <div className="border-b border-border bg-card/80 px-4 py-3">
+          <div className="max-w-3xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <Label className="text-sm font-medium flex items-center gap-1.5">
+                  <Settings2 className="h-3.5 w-3.5 text-primary" />
+                  Gatilho de Ativação
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Defina quando este fluxo deve ser ativado automaticamente.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  updateFlowMutation.mutate({
+                    id: flowId,
+                    trigger: flowTrigger as any,
+                    triggerValue: flowTriggerValue || undefined,
+                  });
+                }}
+                disabled={updateFlowMutation.isPending}
+              >
+                {updateFlowMutation.isPending ? "Salvando..." : "Salvar Gatilho"}
+              </Button>
+            </div>
+            <Select value={flowTrigger} onValueChange={(v) => setFlowTrigger(v)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione o gatilho" />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(TRIGGER_OPTIONS).map(([key, label]) => (
+                  <SelectItem key={key} value={key}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {(flowTrigger === "keyword" || flowTrigger === "category_interest" || flowTrigger === "ad_click") && (
+              <div>
+                <Label className="text-xs">
+                  {flowTrigger === "keyword" ? "Palavras-chave (separadas por vírgula)" : flowTrigger === "ad_click" ? "ID do Anúncio" : "Categoria"}
+                </Label>
+                <Input
+                  value={flowTriggerValue}
+                  onChange={(e) => setFlowTriggerValue(e.target.value)}
+                  placeholder={flowTrigger === "keyword" ? "financiar, financiamento, parcela" : flowTrigger === "ad_click" ? "ID do anúncio Meta" : "SUV, Sedan, Hatch"}
+                  className="h-8 text-sm"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Flow AI Agent & Prompt Settings */}
       {showFlowSettings && (
@@ -1354,6 +1516,7 @@ export default function FlowEditor({ flowId, onBack }: { flowId: number; onBack:
                 node={selectedNode}
                 onUpdate={updateNodeData}
                 onDelete={deleteNode}
+                onDuplicate={duplicateNode}
                 onClose={() => setSelectedNode(null)}
               />
             </div>

@@ -1104,3 +1104,9 @@
 - [x] Atualizar FlowEditor com select de modo (cartão vs link) e campo de template do link
 - [x] Atualizar flowEngine para enviar conforme modo escolhido + variável {link} na mensagem ao cliente
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Melhoria - Editor de Fluxos (UX)
+- [x] Copiar e colar nós (Ctrl+C/Ctrl+V + botão de duplicar no painel de propriedades)
+- [x] Alterar forma de ativação (trigger type) do fluxo depois de criado (botão "Gatilho" na toolbar)
+- [x] Novo nó aparece na viewport atual (centro da tela visível) em vez de ir para o final do fluxo
+- [x] Testes Vitest: 298 testes passando (21 arquivos)
