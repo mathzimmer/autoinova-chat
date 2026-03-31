@@ -1209,3 +1209,25 @@
 - [x] Filtro por temperatura do lead
 - [x] Exibir se o lead caiu em resgate e quantas vezes foi acionado
 - [x] Exibir se o lead foi transferido para vendedor, qual vendedor e data/hora
+
+## Feature - Melhorias no Módulo de Conversas
+### Foto do contato nos chats
+- [x] Exibir foto do contato na lista de conversas (já implementado)
+- [x] Exibir foto do contato no header do chat (já implementado)
+- [x] Exibir foto do contato nas mensagens recebidas (já implementado)
+
+### Fotos enviadas pelo agente
+- [x] Exibir imagens/fotos enviadas pelo agente dentro da conversa (salvar no banco com mediaUrl)
+- [x] Suporte a preview de imagem com lightbox/zoom (já implementado - abre em nova aba)
+
+### Agenda de Contatos
+- [x] Schema: tabela contacts (nome, telefone, email, tags, notas, createdAt) + tabela templateSends
+- [x] Backend: CRUD de contatos (listar, criar, editar, excluir)
+- [x] Backend: importação de contatos por Excel/CSV (bulkImport)
+- [x] Frontend: página de Agenda de Contatos com busca e filtros
+- [x] Frontend: formulário de adicionar/editar contato
+- [x] Frontend: importação por upload de Excel (xlsx)
+- [x] Frontend: botão "Enviar template" com seleção de template (individual e em massa)
+- [x] Backend: buscar templates aprovados do WhatsApp Business API (já existente)
+- [x] Backend: enviar template de marketing para contato(s) (sendTemplate + sendTemplateBulk)
+- [x] Frontend: seletor de template com preview e envio em massa

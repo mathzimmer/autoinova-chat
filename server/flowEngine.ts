@@ -34,6 +34,10 @@ interface FlowContext {
 interface FlowResult {
   handled: boolean;           // true = flow handled the message, don't pass to AI
   responses: string[];        // Text messages sent
+  imageMessages: Array<{      // Image messages sent (to save in DB)
+    imageUrl: string;
+    caption: string;
+  }>;
   interactiveMessages: Array<{
     type: "buttons" | "list";
     data: any;
@@ -105,6 +109,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
   const result: FlowResult = {
     handled: false,
     responses: [],
+    imageMessages: [],
     interactiveMessages: [],
     waitingForInput: false,
     flowCompleted: false,
@@ -370,6 +375,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
             const advanceResult: FlowResult = {
               handled: true,
               responses: [],
+              imageMessages: [],
               interactiveMessages: [],
               waitingForInput: false,
               flowCompleted: false,
@@ -391,6 +397,18 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
                 messageType: "text",
               });
               emitNewMessage(ctx.conversationId, botMsg);
+            }
+            // Save image messages to DB
+            for (const img of advanceResult.imageMessages) {
+              const imgMsg = await createMessage({
+                conversationId: ctx.conversationId,
+                content: img.caption || "[Imagem]",
+                senderType: "bot",
+                senderName: "Auto Inova IA",
+                messageType: "image",
+                metadata: { mediaUrl: img.imageUrl, caption: img.caption },
+              });
+              emitNewMessage(ctx.conversationId, imgMsg);
             }
             for (const im of advanceResult.interactiveMessages) {
               const interactiveMetadata: any = { interactiveType: im.type, interactiveData: im.data };
@@ -497,6 +515,7 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
   const result: FlowResult = {
     handled: false,
     responses: [],
+    imageMessages: [],
     interactiveMessages: [],
     waitingForInput: false,
     flowCompleted: false,
@@ -622,7 +641,7 @@ async function executeFromNode(
       const caption = replaceVariables(config.caption || "", ctx);
       if (imageUrl) {
         await sendImageMessage(ctx.phone, imageUrl, caption);
-        result.responses.push(caption || "[Imagem]");
+        result.imageMessages.push({ imageUrl, caption: caption || "[Imagem]" });
       }
       const nextEdge = edges.find(e => e.sourceNodeId === node.id);
       if (nextEdge) {
@@ -866,7 +885,9 @@ async function executeFromNode(
 
       // Send seller photo as image message (WhatsApp API doesn't support photo in contact cards)
       if (seller.photoUrl) {
-        await sendImageMessage(ctx.phone, seller.photoUrl, `${seller.name} - ${storeLocation}`);
+        const sellerCaption = `${seller.name} - ${storeLocation}`;
+        await sendImageMessage(ctx.phone, seller.photoUrl, sellerCaption);
+        result.imageMessages.push({ imageUrl: seller.photoUrl, caption: sellerCaption });
       }
 
       // Send contact card or wa.me link based on mode
@@ -1014,6 +1035,7 @@ async function executeFromNode(
             .replace(/\{\{preco\}\}/gi, vehicle.price ? `R$ ${Number(vehicle.price).toLocaleString("pt-BR")}` : "")
             .replace(/\{\{loja\}\}/gi, vehicleSeller);
           await sendImageMessage(ctx.phone, imageUrl, caption);
+          result.imageMessages.push({ imageUrl, caption });
           sentCount++;
           // Configurable delay between images
           if (sentCount < photoSlots.length) {
@@ -1154,6 +1176,7 @@ async function executeFromNode(
           const imageUrl = vpImages[imgIndex];
           const caption = replaceVehicleVars(slot.caption);
           await sendImageMessage(ctx.phone, imageUrl, caption);
+          result.imageMessages.push({ imageUrl, caption });
           vpSentCount++;
           if (vpSentCount < vpPhotoSlots.length) {
             await new Promise(resolve => setTimeout(resolve, vpPhotoDelay));

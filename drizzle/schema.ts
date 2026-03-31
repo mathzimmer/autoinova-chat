@@ -592,3 +592,43 @@ export const rescueAttempts = mysqlTable("rescueAttempts", {
 
 export type RescueAttempt = typeof rescueAttempts.$inferSelect;
 export type InsertRescueAttempt = typeof rescueAttempts.$inferInsert;
+
+/**
+ * Contacts — agenda de contatos para marketing e envio de templates.
+ * Contatos podem ser importados via Excel ou criados manualmente.
+ */
+export const contacts = mysqlTable("contacts", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  email: varchar("email", { length: 320 }),
+  tags: json("tags").$type<string[]>(),          // Tags para segmentação (ex: ["vip", "troca", "financiamento"])
+  notes: text("notes"),                           // Notas sobre o contato
+  source: mysqlEnum("contactSource", ["manual", "excel", "whatsapp", "lead"]).default("manual").notNull(),
+  conversationId: int("conversationId"),          // Vínculo com conversa existente (se houver)
+  leadId: int("leadId"),                          // Vínculo com lead existente (se houver)
+  isActive: boolean("isActive").default(true).notNull(),
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Contact = typeof contacts.$inferSelect;
+export type InsertContact = typeof contacts.$inferInsert;
+
+/**
+ * Template Sends — histórico de envios de templates de marketing para contatos.
+ */
+export const templateSends = mysqlTable("templateSends", {
+  id: int("id").autoincrement().primaryKey(),
+  contactId: int("contactId").notNull(),
+  templateName: varchar("templateName", { length: 255 }).notNull(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  status: mysqlEnum("templateSendStatus", ["pending", "sent", "delivered", "read", "failed"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+  sentBy: int("sentBy"),
+});
+
+export type TemplateSend = typeof templateSends.$inferSelect;
+export type InsertTemplateSend = typeof templateSends.$inferInsert;

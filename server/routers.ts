@@ -76,6 +76,11 @@ import { listTemplates, sendWhatsAppTemplate, isTemplateApproved, isTemplatesCon
 import { invokeLLM } from "./_core/llm";
 import { runTokenHealthCheck, getLastCheckResults } from "./tokenMonitor";
 import { processFlowMessage, cancelFlowSession, continueFlowAfterAI } from "./flowEngine";
+import {
+  listContacts, getContactById, getContactByPhone, createContact, updateContact,
+  deleteContact, bulkCreateContacts, getAllContactTags,
+  createTemplateSend, listTemplateSends, updateTemplateSendStatus,
+} from "./db";
 
 // ── Rescue Job imports ──────────────────────────────────────────────────────
 import {
@@ -148,6 +153,18 @@ async function initDebounce() {
               messageType: "text",
             });
             emitNewMessage(conversationId, botMsg);
+          }
+          // Save flow image messages to DB
+          for (const img of flowResult.imageMessages) {
+            const imgMsg = await createMessage({
+              conversationId,
+              content: img.caption || "[Imagem]",
+              senderType: "bot",
+              senderName: "Auto Inova IA",
+              messageType: "image",
+              metadata: { mediaUrl: img.imageUrl, caption: img.caption },
+            });
+            emitNewMessage(conversationId, imgMsg);
           }
           // Save flow interactive messages to DB with metadata
           for (const im of flowResult.interactiveMessages) {
@@ -354,6 +371,19 @@ async function initDebounce() {
                 messageType: "text",
               });
               emitNewMessage(conversationId, botMsg);
+            }
+
+            // Save flow continuation image messages to DB
+            for (const img of flowContinuation.imageMessages) {
+              const imgMsg = await createMessage({
+                conversationId,
+                content: img.caption || "[Imagem]",
+                senderType: "bot",
+                senderName: "Auto Inova IA",
+                messageType: "image",
+                metadata: { mediaUrl: img.imageUrl, caption: img.caption },
+              });
+              emitNewMessage(conversationId, imgMsg);
             }
 
             // Send flow continuation interactive messages (save to DB + emit socket only; flowEngine already sent via WhatsApp API)
@@ -2991,6 +3021,159 @@ const sellerRouter = router({
     }),
 });
 
+// ── Contacts Router ─────────────────────────────────────────────────────────
+
+const contactsRouter = router({
+  list: adminProcedure
+    .input(z.object({
+      search: z.string().optional(),
+      tag: z.string().optional(),
+      source: z.string().optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return listContacts(input || {});
+    }),
+
+  getById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return getContactById(input.id);
+    }),
+
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      phone: z.string().min(1),
+      email: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      notes: z.string().optional(),
+      source: z.enum(["manual", "excel", "whatsapp", "lead"]).default("manual"),
+    }))
+    .mutation(async ({ input }) => {
+      const existing = await getContactByPhone(input.phone);
+      if (existing) throw new Error("Contato com este telefone j\u00e1 existe");
+      return createContact(input);
+    }),
+
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      phone: z.string().optional(),
+      email: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      return updateContact(id, data);
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteContact(input.id);
+      return { success: true };
+    }),
+
+  bulkImport: adminProcedure
+    .input(z.object({
+      contacts: z.array(z.object({
+        name: z.string().min(1),
+        phone: z.string().min(1),
+        email: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        notes: z.string().optional(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      const rows = input.contacts.map(c => ({ ...c, source: "excel" as const }));
+      return bulkCreateContacts(rows);
+    }),
+
+  tags: adminProcedure.query(async () => {
+    return getAllContactTags();
+  }),
+
+  // Send template to a single contact
+  sendTemplate: adminProcedure
+    .input(z.object({
+      contactId: z.number(),
+      phone: z.string(),
+      templateName: z.string(),
+      bodyParams: z.array(z.string()).default([]),
+      language: z.string().default("pt_BR"),
+    }))
+    .mutation(async ({ input }) => {
+      const result = await sendWhatsAppTemplate(
+        input.phone,
+        input.templateName,
+        input.bodyParams,
+        input.language
+      );
+      const sendId = await createTemplateSend({
+        contactId: input.contactId,
+        templateName: input.templateName,
+        phone: input.phone,
+        status: result.success ? "sent" : "failed",
+        errorMessage: result.error || undefined,
+      });
+      if (!result.success) throw new Error(result.error ?? "Falha ao enviar template");
+      return { success: true, sendId };
+    }),
+
+  // Send template to multiple contacts (bulk)
+  sendTemplateBulk: adminProcedure
+    .input(z.object({
+      contactIds: z.array(z.number()),
+      templateName: z.string(),
+      bodyParams: z.array(z.string()).default([]),
+      language: z.string().default("pt_BR"),
+    }))
+    .mutation(async ({ input }) => {
+      let sent = 0;
+      let failed = 0;
+      for (const contactId of input.contactIds) {
+        const contact = await getContactById(contactId);
+        if (!contact) { failed++; continue; }
+        try {
+          const result = await sendWhatsAppTemplate(
+            contact.phone,
+            input.templateName,
+            input.bodyParams,
+            input.language
+          );
+          await createTemplateSend({
+            contactId,
+            templateName: input.templateName,
+            phone: contact.phone,
+            status: result.success ? "sent" : "failed",
+            errorMessage: result.error || undefined,
+          });
+          if (result.success) sent++; else failed++;
+          // Small delay between sends to avoid rate limiting
+          await new Promise(r => setTimeout(r, 500));
+        } catch {
+          failed++;
+        }
+      }
+      return { sent, failed, total: input.contactIds.length };
+    }),
+
+  // List template send history
+  sendHistory: adminProcedure
+    .input(z.object({
+      contactId: z.number().optional(),
+      templateName: z.string().optional(),
+      limit: z.number().optional(),
+    }).optional())
+    .query(async ({ input }) => {
+      return listTemplateSends(input || {});
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3022,6 +3205,7 @@ export const appRouter = router({
   agent: agentRouter,
   seller: sellerRouter,
   rescue: rescueRouter,
+  contact: contactsRouter,
 });
 
 export type AppRouter = typeof appRouter;

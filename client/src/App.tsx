@@ -17,6 +17,7 @@ import AiAudit from "./pages/AiAudit";
 import MetaAdsPage from "./pages/MetaAds";
 import FollowUpPage from "./pages/FollowUp";
 import RescuePage from "./pages/Rescue";
+import ContactsPage from "./pages/Contacts";
 import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
@@ -69,6 +70,11 @@ function Router() {
        <Route path="/follow-up">
         <AppLayout>
           <FollowUpPage />
+        </AppLayout>
+      </Route>
+      <Route path="/contacts">
+        <AppLayout>
+          <ContactsPage />
         </AppLayout>
       </Route>
       <Route path="/rescue">

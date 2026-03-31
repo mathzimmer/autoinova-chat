@@ -24,6 +24,8 @@ import {
   sellerQueues, InsertSellerQueue,
   sellerAssignments, InsertSellerAssignment,
   rescueAttempts, InsertRescueAttempt,
+  contacts, InsertContact,
+  templateSends, InsertTemplateSend,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1138,4 +1140,128 @@ export async function getInactiveLeadsForRescue(
   }
 
   return results;
+}
+
+// ─── Contacts ───────────────────────────────────────────────────────────────
+
+export async function listContacts(opts?: { search?: string; tag?: string; source?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { contacts: [], total: 0 };
+  const conditions: any[] = [eq(contacts.isActive, true)];
+  if (opts?.search) {
+    conditions.push(
+      or(
+        like(contacts.name, `%${opts.search}%`),
+        like(contacts.phone, `%${opts.search}%`),
+        like(contacts.email, `%${opts.search}%`)
+      )!
+    );
+  }
+  if (opts?.source) {
+    conditions.push(eq(contacts.source, opts.source as any));
+  }
+  const where = and(...conditions);
+  const [rows, countResult] = await Promise.all([
+    db.select().from(contacts).where(where).orderBy(desc(contacts.createdAt)).limit(opts?.limit || 50).offset(opts?.offset || 0),
+    db.select({ count: sql<number>`count(*)` }).from(contacts).where(where),
+  ]);
+  // Filter by tag in JS (JSON column)
+  let filtered = rows;
+  if (opts?.tag) {
+    filtered = rows.filter(c => c.tags && (c.tags as string[]).includes(opts.tag!));
+  }
+  return { contacts: filtered, total: Number(countResult[0]?.count || 0) };
+}
+
+export async function getContactById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(contacts).where(eq(contacts.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function getContactByPhone(phone: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(contacts).where(and(eq(contacts.phone, phone), eq(contacts.isActive, true))).limit(1);
+  return rows[0] || null;
+}
+
+export async function createContact(data: Omit<InsertContact, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(contacts).values(data);
+  const id = Number(result[0].insertId);
+  return getContactById(id);
+}
+
+export async function updateContact(id: number, data: Partial<InsertContact>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(contacts).set(data).where(eq(contacts.id, id));
+  return getContactById(id);
+}
+
+export async function deleteContact(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(contacts).set({ isActive: false }).where(eq(contacts.id, id));
+}
+
+export async function bulkCreateContacts(rows: Array<Omit<InsertContact, "id" | "createdAt" | "updatedAt">>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (rows.length === 0) return { created: 0, skipped: 0 };
+  let created = 0;
+  let skipped = 0;
+  for (const row of rows) {
+    const existing = await getContactByPhone(row.phone);
+    if (existing) {
+      skipped++;
+      continue;
+    }
+    await db.insert(contacts).values(row);
+    created++;
+  }
+  return { created, skipped };
+}
+
+export async function getAllContactTags() {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ tags: contacts.tags }).from(contacts).where(eq(contacts.isActive, true));
+  const tagSet = new Set<string>();
+  for (const row of rows) {
+    if (row.tags && Array.isArray(row.tags)) {
+      for (const tag of row.tags) tagSet.add(tag);
+    }
+  }
+  return Array.from(tagSet).sort();
+}
+
+// ─── Template Sends ─────────────────────────────────────────────────────────
+
+export async function createTemplateSend(data: Omit<InsertTemplateSend, "id" | "sentAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(templateSends).values(data);
+  return Number(result[0].insertId);
+}
+
+export async function listTemplateSends(opts?: { contactId?: number; templateName?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return [];
+  const conditions: any[] = [];
+  if (opts?.contactId) conditions.push(eq(templateSends.contactId, opts.contactId));
+  if (opts?.templateName) conditions.push(eq(templateSends.templateName, opts.templateName));
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  return db.select().from(templateSends).where(where).orderBy(desc(templateSends.sentAt)).limit(opts?.limit || 50).offset(opts?.offset || 0);
+}
+
+export async function updateTemplateSendStatus(id: number, status: string, errorMessage?: string) {
+  const db = await getDb();
+  if (!db) return;
+  const data: any = { status };
+  if (errorMessage) data.errorMessage = errorMessage;
+  await db.update(templateSends).set(data).where(eq(templateSends.id, id));
 }
