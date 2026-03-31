@@ -1196,3 +1196,7 @@
 - [x] Nó vehicle_presentation deve buscar veículo por ID a cada execução
 - [x] Permitir que cliente clique em diferentes anúncios e veja veículos diferentes
 - [x] Identificar o ID do veículo do contexto da conversa (anúncio clicado)
+
+## Bug - vehicleInterest não atualiza quando vehicleId é vinculado
+- [x] Quando vehicleId é atualizado (via IA ou fluxo), sincronizar vehicleInterest com o título do veículo vinculado
+- [x] Quando fluxo inicia por ad_click e extrai vehicleId, atualizar vehicleInterest também

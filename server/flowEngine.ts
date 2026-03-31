@@ -153,13 +153,21 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     if (extractedVehicleId) {
       sessionContext.vehicleId = extractedVehicleId;
       console.log(`[FlowEngine] Extracted vehicleId=${extractedVehicleId} from message, saving to session context`);
-      // Also update the lead's vehicleId so it's always fresh
+      // Also update the lead's vehicleId and vehicleInterest so it's always fresh
       try {
+        const linkedVehicle = await getVehicleById(extractedVehicleId);
+        const vehicleTitle = linkedVehicle
+          ? (linkedVehicle.title || `${linkedVehicle.brand || ""} ${linkedVehicle.model || ""}`.trim())
+          : undefined;
         await upsertLead({
           conversationId: ctx.conversationId,
           phone: ctx.phone,
           vehicleId: extractedVehicleId,
+          ...(vehicleTitle ? { vehicleInterest: vehicleTitle } : {}),
         });
+        if (vehicleTitle) {
+          console.log(`[FlowEngine] Auto-synced vehicleInterest to "${vehicleTitle}" from vehicleId=${extractedVehicleId}`);
+        }
       } catch (err) {
         console.error(`[FlowEngine] Failed to update lead vehicleId:`, err);
       }

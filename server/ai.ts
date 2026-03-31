@@ -1,6 +1,6 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById } from "./db";
+import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 
@@ -898,7 +898,22 @@ export async function processAIMessage(
             if (args.intencao) leadUpdate.intention = args.intencao;
             if (args.veiculo_interesse) leadUpdate.vehicleInterest = args.veiculo_interesse;
             // Allow null to explicitly clear vehicleId when customer changes vehicle interest
-            if (args.veiculo_id !== undefined) leadUpdate.vehicleId = args.veiculo_id;
+            if (args.veiculo_id !== undefined) {
+              leadUpdate.vehicleId = args.veiculo_id;
+              // Auto-sync vehicleInterest when vehicleId is set to a valid ID
+              if (args.veiculo_id && !args.veiculo_interesse) {
+                try {
+                  const linkedVehicle = await getVehicleById(args.veiculo_id);
+                  if (linkedVehicle) {
+                    const title = linkedVehicle.title || `${linkedVehicle.brand || ""} ${linkedVehicle.model || ""}`.trim();
+                    leadUpdate.vehicleInterest = title;
+                    console.log(`[AI] Auto-synced vehicleInterest to "${title}" from vehicleId=${args.veiculo_id}`);
+                  }
+                } catch (err) {
+                  console.error(`[AI] Failed to auto-sync vehicleInterest:`, err);
+                }
+              }
+            }
             if (args.tem_troca !== undefined) leadUpdate.hasTrade = args.tem_troca;
             if (args.veiculo_troca !== undefined) leadUpdate.tradeVehicle = args.veiculo_troca;
             if (args.ano_troca) leadUpdate.tradeYear = args.ano_troca;
