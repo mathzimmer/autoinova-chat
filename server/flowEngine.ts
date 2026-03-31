@@ -130,7 +130,9 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     // Check if a flow should be triggered
     const lead = await getLeadByConversationId(ctx.conversationId);
     const isFirstContact = !lead;
-    const hasVehicleId = /\bID\s*(\d+)\b/i.test(ctx.customerMessage);
+    const vehicleIdMatch = ctx.customerMessage.match(/\bID\s*:?\s*(\d+)\b/i);
+    const hasVehicleId = !!vehicleIdMatch;
+    const extractedVehicleId = vehicleIdMatch ? parseInt(vehicleIdMatch[1]) : null;
 
     const flowId = await findMatchingFlow(
       ctx.conversationId,
@@ -146,12 +148,29 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     const startNode = nodes.find(n => n.nodeType === "start");
     if (!startNode) return result;
 
+    // Save extracted vehicleId in session context so vehicle_presentation can use it
+    const sessionContext: Record<string, any> = {};
+    if (extractedVehicleId) {
+      sessionContext.vehicleId = extractedVehicleId;
+      console.log(`[FlowEngine] Extracted vehicleId=${extractedVehicleId} from message, saving to session context`);
+      // Also update the lead's vehicleId so it's always fresh
+      try {
+        await upsertLead({
+          conversationId: ctx.conversationId,
+          phone: ctx.phone,
+          vehicleId: extractedVehicleId,
+        });
+      } catch (err) {
+        console.error(`[FlowEngine] Failed to update lead vehicleId:`, err);
+      }
+    }
+
     const sessionId = await createFlowSession({
       conversationId: ctx.conversationId,
       flowId,
       currentNodeId: startNode.id,
       status: "active",
-      context: {},
+      context: sessionContext,
     });
 
     session = {
@@ -160,7 +179,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
       flowId,
       currentNodeId: startNode.id,
       status: "active",
-      context: {},
+      context: sessionContext,
       startedAt: new Date(),
       completedAt: null,
       updatedAt: new Date(),
@@ -889,20 +908,40 @@ async function executeFromNode(
        * config.fallbackMessage: mensagem se não houver veículo (opcional)
        * config.photoSource: "vehicle_interest" (padrão)
        */
+      // Always reload lead from DB to get the freshest vehicleId
       const lead = await getLeadByConversationId(ctx.conversationId);
-      let vehicleId = lead?.vehicleId || null;
+      let vehicleId: number | null = null;
 
-      // Fallback: tentar extrair ID do vehicleInterest
+      // Priority 1: session context vehicleId (set when flow started from ad_click)
+      const sessionCtx = (session.context as any) || {};
+      if (sessionCtx.vehicleId) {
+        vehicleId = sessionCtx.vehicleId;
+        console.log(`[FlowEngine] send_vehicle_photos: using vehicleId=${vehicleId} from session context`);
+      }
+
+      // Priority 2: lead.vehicleId (updated by AI or previous flow)
+      if (!vehicleId && lead?.vehicleId) {
+        vehicleId = lead.vehicleId;
+        console.log(`[FlowEngine] send_vehicle_photos: using vehicleId=${vehicleId} from lead record`);
+      }
+
+      // Priority 3: extract ID from customerMessage
+      if (!vehicleId) {
+        const msgIdMatch = ctx.customerMessage.match(/\bID\s*:?\s*(\d+)\b/i);
+        if (msgIdMatch) {
+          vehicleId = parseInt(msgIdMatch[1]);
+          console.log(`[FlowEngine] send_vehicle_photos: extracted vehicleId=${vehicleId} from customer message`);
+        }
+      }
+
+      // Priority 4: extract ID from vehicleInterest text
       if (!vehicleId) {
         const vehicleInterest = lead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
         const idMatch = vehicleInterest.match(/ID\s*:?\s*(\d+)/i);
-        if (idMatch) vehicleId = parseInt(idMatch[1]);
-      }
-
-      // Fallback: session context
-      const sessionCtx = (session.context as any) || {};
-      if (!vehicleId && sessionCtx.vehicleId) {
-        vehicleId = sessionCtx.vehicleId;
+        if (idMatch) {
+          vehicleId = parseInt(idMatch[1]);
+          console.log(`[FlowEngine] send_vehicle_photos: extracted vehicleId=${vehicleId} from vehicleInterest text`);
+        }
       }
 
       if (!vehicleId) {
@@ -998,20 +1037,40 @@ async function executeFromNode(
        *   {{v_loja}}, {{v_tipo}}, {{v_portas}}, {{v_titulo}}, {{v_versao}}, {{v_descricao}}
        *   + todas as variáveis do lead ({{nome}}, {{telefone}}, etc.)
        */
+      // Always reload lead from DB to get the freshest vehicleId
       const vpLead = await getLeadByConversationId(ctx.conversationId);
-      let vpVehicleId = vpLead?.vehicleId || null;
+      let vpVehicleId: number | null = null;
 
-      // Fallback: extrair ID do vehicleInterest
+      // Priority 1: session context vehicleId (set when flow started from ad_click)
+      const vpSessionCtx = (session.context as any) || {};
+      if (vpSessionCtx.vehicleId) {
+        vpVehicleId = vpSessionCtx.vehicleId;
+        console.log(`[FlowEngine] vehicle_presentation: using vehicleId=${vpVehicleId} from session context`);
+      }
+
+      // Priority 2: lead.vehicleId (updated by AI or previous flow)
+      if (!vpVehicleId && vpLead?.vehicleId) {
+        vpVehicleId = vpLead.vehicleId;
+        console.log(`[FlowEngine] vehicle_presentation: using vehicleId=${vpVehicleId} from lead record`);
+      }
+
+      // Priority 3: extract ID from customerMessage (in case of new ad click mid-flow)
+      if (!vpVehicleId) {
+        const msgIdMatch = ctx.customerMessage.match(/\bID\s*:?\s*(\d+)\b/i);
+        if (msgIdMatch) {
+          vpVehicleId = parseInt(msgIdMatch[1]);
+          console.log(`[FlowEngine] vehicle_presentation: extracted vehicleId=${vpVehicleId} from customer message`);
+        }
+      }
+
+      // Priority 4: extract ID from vehicleInterest text
       if (!vpVehicleId) {
         const vi = vpLead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
         const idMatch = vi.match(/ID\s*:?\s*(\d+)/i);
-        if (idMatch) vpVehicleId = parseInt(idMatch[1]);
-      }
-
-      // Fallback: session context
-      const vpSessionCtx = (session.context as any) || {};
-      if (!vpVehicleId && vpSessionCtx.vehicleId) {
-        vpVehicleId = vpSessionCtx.vehicleId;
+        if (idMatch) {
+          vpVehicleId = parseInt(idMatch[1]);
+          console.log(`[FlowEngine] vehicle_presentation: extracted vehicleId=${vpVehicleId} from vehicleInterest text`);
+        }
       }
 
       if (!vpVehicleId) {

@@ -1191,3 +1191,8 @@
 
 ## Bug - Gatilho "Resgate" não aparece no Editor de Fluxos
 - [x] Corrigir opção "Resgate" no seletor de trigger do FlowEditor e Flows.tsx
+
+## Feature - Nó Apresentar Veículo buscar por ID dinamicamente
+- [x] Nó vehicle_presentation deve buscar veículo por ID a cada execução
+- [x] Permitir que cliente clique em diferentes anúncios e veja veículos diferentes
+- [x] Identificar o ID do veículo do contexto da conversa (anúncio clicado)
