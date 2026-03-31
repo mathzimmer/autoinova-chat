@@ -104,6 +104,19 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     flowCompleted: false,
   };
 
+  // Always load lead data so variables work in all nodes
+  try {
+    const existingLead = await getLeadByConversationId(ctx.conversationId);
+    if (existingLead) {
+      ctx.leadData = existingLead;
+      if (existingLead.name && !ctx.contactName) {
+        ctx.contactName = existingLead.name;
+      }
+    }
+  } catch (err) {
+    console.error(`[FlowEngine] Failed to load lead data:`, err);
+  }
+
   // Check for active session
   let session = await getActiveFlowSession(ctx.conversationId);
 
@@ -454,6 +467,17 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
     flowCompleted: false,
   };
 
+  // Load lead data so variables work
+  try {
+    const lead = await getLeadByConversationId(conversationId);
+    if (lead) {
+      ctx.leadData = lead;
+      if (lead.name && !ctx.contactName) ctx.contactName = lead.name;
+    }
+  } catch (err) {
+    console.error(`[FlowEngine] Failed to load lead data in continueFlowAfterAI:`, err);
+  }
+
   const session = await getActiveFlowSession(conversationId);
   if (!session) return result;
 
@@ -489,6 +513,20 @@ async function executeFromNode(
 
   const node = nodes.find(n => n.id === nodeId);
   if (!node) return;
+
+  // Always reload lead data from DB so variables are up-to-date
+  try {
+    const freshLead = await getLeadByConversationId(ctx.conversationId);
+    if (freshLead) {
+      ctx.leadData = freshLead;
+      // Also update contactName from lead if available
+      if (freshLead.name && !ctx.contactName) {
+        ctx.contactName = freshLead.name;
+      }
+    }
+  } catch (err) {
+    console.error(`[FlowEngine] Failed to reload lead data:`, err);
+  }
 
   const config = (node.data as any) || {};
 

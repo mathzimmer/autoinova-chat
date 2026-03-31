@@ -1110,3 +1110,8 @@
 - [x] Alterar forma de ativação (trigger type) do fluxo depois de criado (botão "Gatilho" na toolbar)
 - [x] Novo nó aparece na viewport atual (centro da tela visível) em vez de ir para o final do fluxo
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Bug - Variáveis não substituídas nas mensagens do fluxo
+- [x] Investigar: ctx.leadData era undefined porque não era carregado do banco no processFlowMessage
+- [x] Corrigido: leadData agora é recarregado do banco em 3 pontos: processFlowMessage, executeFromNode e continueFlowAfterAI
+- [x] Testes: 298 passando
