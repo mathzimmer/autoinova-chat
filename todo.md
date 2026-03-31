@@ -1126,3 +1126,14 @@
 - [x] Notificação ao vendedor agora usa fullName quando disponível
 - [x] Migrar banco com pnpm db:push
 - [x] Testes Vitest: 298 testes passando (21 arquivos)
+
+## Feature - Nó Apresentação do Veículo (vehicle_presentation)
+- [x] Adicionar tipo vehicle_presentation no enum nodeType do schema
+- [x] Migrar banco com pnpm db:push
+- [x] Backend: getVehicleById retorna todos os campos do veículo
+- [x] FlowEngine: handler vehicle_presentation (buscar veículo, substituir 16 variáveis, enviar mensagem + fotos)
+- [x] 16 variáveis: {{v_marca}}, {{v_modelo}}, {{v_ano}}, {{v_km}}, {{v_preco}}, {{v_cor}}, {{v_cambio}}, {{v_combustivel}}, {{v_preco_normal}}, {{v_preco_promo}}, {{v_loja}}, {{v_tipo}}, {{v_portas}}, {{v_titulo}}, {{v_versao}}, {{v_descricao}}
+- [x] FlowEditor: NODE_TYPES_CONFIG com ícone Car e cor indigo
+- [x] FlowEditor: painel VehiclePresentationConfig com tabela de variáveis, mensagem, fotos com legendas e delay
+- [x] FlowEditor: preview do nó no canvas
+- [x] Testes Vitest: 298 testes passando (21 arquivos)

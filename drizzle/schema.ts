@@ -426,6 +426,7 @@ export const chatFlowNodes = mysqlTable("chatFlowNodes", {
     "goto_flow",           // Ir para outro fluxo (subfluxo)
     "assign_seller",       // Atribuir vendedor da fila (rodízio por loja)
     "send_vehicle_photos", // Enviar fotos do veículo de interesse com legendas personalizáveis
+    "vehicle_presentation", // Apresentação personalizada do veículo com dados do banco
   ]).notNull(),
   label: varchar("label", { length: 255 }), // Nome visual do nó
   data: json("data").notNull(), // Configuração específica do tipo de nó (JSON)

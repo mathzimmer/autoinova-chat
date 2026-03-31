@@ -32,7 +32,7 @@ import {
   ArrowLeft, Save, Plus, Trash2, X, Copy, Settings2,
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
-  ChevronDown, GripVertical, Cpu, UserPlus, Camera,
+  ChevronDown, GripVertical, Cpu, UserPlus, Camera, Car,
 } from "lucide-react";
 
 // ─── Node Type Definitions ───────────────────────────────────
@@ -58,6 +58,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   goto_flow: { label: "Ir para Fluxo", icon: GitBranch, color: "text-amber-400", bgColor: "border-amber-500/50 bg-amber-500/5", description: "Redirecionar para outro fluxo" },
   assign_seller: { label: "Falar c/ Vendedor", icon: UserPlus, color: "text-lime-400", bgColor: "border-lime-500/50 bg-lime-500/5", description: "Atribuir vendedor da fila (rodízio)" },
   send_vehicle_photos: { label: "Fotos do Veículo", icon: Camera, color: "text-rose-400", bgColor: "border-rose-500/50 bg-rose-500/5", description: "Enviar fotos do veículo com legendas" },
+  vehicle_presentation: { label: "Apresentar Veículo", icon: Car, color: "text-indigo-400", bgColor: "border-indigo-500/50 bg-indigo-500/5", description: "Apresentação personalizada do veículo" },
 };
 
 // ─── Custom Node Component ───────────────────────────────────
@@ -176,6 +177,13 @@ function FlowNode({ data, selected, id }: NodeProps) {
             {(data.config as any)?.photoSlots?.length
               ? `${(data.config as any).photoSlots.length} foto(s) configurada(s)`
               : "Configurar fotos e legendas..."}
+          </p>
+        )}
+        {nodeType === "vehicle_presentation" && (
+          <p className="text-xs text-muted-foreground">
+            {(data.config as any)?.message
+              ? `Mensagem + ${(data.config as any)?.photoSlots?.length || 0} foto(s)`
+              : "Configurar apresentação..."}
           </p>
         )}
       </div>
@@ -718,6 +726,9 @@ function PropertiesPanel({
         {nodeType === "send_vehicle_photos" && (
           <SendVehiclePhotosConfig config={config} onUpdate={onUpdate} node={node} />
         )}
+        {nodeType === "vehicle_presentation" && (
+          <VehiclePresentationConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
       </CardContent>
     </Card>
   );
@@ -1000,9 +1011,179 @@ function SendVehiclePhotosConfig({ config, onUpdate, node }: { config: any; onUp
   );
 }
 
-// ─── Goto Flow Selector Component ───────────────────────────────────────
-function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
-  const flowsQuery = trpc.flow.list.useQuery();
+// ─── Vehicle Presentation Config Component───────────────────────────────────────────────
+function VehiclePresentationConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const photoSlots: Array<{ position: number; caption: string }> = config.photoSlots || [];
+
+  const updateSlots = (newSlots: typeof photoSlots) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, photoSlots: newSlots },
+    });
+  };
+
+  const updateSlot = (index: number, field: string, value: any) => {
+    const newSlots = [...photoSlots];
+    newSlots[index] = { ...newSlots[index], [field]: value };
+    updateSlots(newSlots);
+  };
+
+  const addSlot = () => {
+    const nextPos = photoSlots.length > 0 ? Math.max(...photoSlots.map(s => s.position)) + 1 : 1;
+    updateSlots([...photoSlots, { position: nextPos, caption: `Foto ${nextPos}` }]);
+  };
+
+  const removeSlot = (index: number) => {
+    updateSlots(photoSlots.filter((_, i) => i !== index));
+  };
+
+  const updateConfig = (key: string, value: any) => {
+    onUpdate(node.id, {
+      ...node.data,
+      config: { ...config, [key]: value },
+    });
+  };
+
+  const vehicleVars = [
+    { var: "{{v_marca}}", desc: "Marca" },
+    { var: "{{v_modelo}}", desc: "Modelo" },
+    { var: "{{v_ano}}", desc: "Ano" },
+    { var: "{{v_km}}", desc: "Quilometragem" },
+    { var: "{{v_preco}}", desc: "Preço" },
+    { var: "{{v_cor}}", desc: "Cor" },
+    { var: "{{v_cambio}}", desc: "Câmbio" },
+    { var: "{{v_combustivel}}", desc: "Combustível" },
+    { var: "{{v_preco_normal}}", desc: "Preço Normal" },
+    { var: "{{v_preco_promo}}", desc: "Preço Promoção" },
+    { var: "{{v_loja}}", desc: "Loja" },
+    { var: "{{v_tipo}}", desc: "Tipo (carro/moto)" },
+    { var: "{{v_portas}}", desc: "Portas" },
+    { var: "{{v_titulo}}", desc: "Título completo" },
+    { var: "{{v_versao}}", desc: "Versão" },
+    { var: "{{v_descricao}}", desc: "Descrição" },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* Variáveis disponíveis */}
+      <div className="bg-indigo-500/10 border border-indigo-500/30 rounded-md p-2">
+        <p className="text-[10px] font-medium text-indigo-300 mb-1">📊 Variáveis do Veículo</p>
+        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+          {vehicleVars.map(v => (
+            <p key={v.var} className="text-[9px] text-muted-foreground">
+              <span className="font-mono text-indigo-400">{v.var}</span> {v.desc}
+            </p>
+          ))}
+        </div>
+        <p className="text-[9px] text-muted-foreground mt-1 border-t border-indigo-500/20 pt-1">
+          + variáveis do lead: {'{{nome}}'}, {'{{telefone}}'}, {'{{nome_completo}}'}, {'{{cpf}}'}, etc.
+        </p>
+      </div>
+
+      {/* Mensagem principal */}
+      <div>
+        <Label className="text-xs">Mensagem de apresentação</Label>
+        <Textarea
+          className="text-sm min-h-[120px] font-mono"
+          placeholder={`Ex:\n🚗 *{{v_marca}} {{v_modelo}} {{v_ano}}*\n\n🟢 Preço: {{v_preco}}\n📍 Loja: {{v_loja}}\n⚙️ Câmbio: {{v_cambio}}\n⛽ Combustível: {{v_combustivel}}\n🚨 Cor: {{v_cor}}\n📰 KM: {{v_km}}\n🚪 Portas: {{v_portas}}`}
+          value={config.message || ""}
+          onChange={(e) => updateConfig("message", e.target.value)}
+        />
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Use as variáveis acima para montar a mensagem. Suporta *negrito* e emojis.
+        </p>
+      </div>
+
+      {/* Fotos e legendas */}
+      <div className="border-t border-border pt-3">
+        <div className="flex items-center justify-between mb-2">
+          <Label className="text-xs font-medium">Fotos com Legendas (opcional)</Label>
+          <Button variant="outline" size="sm" className="h-6 text-xs px-2" onClick={addSlot}>
+            <Plus className="w-3 h-3 mr-1" /> Adicionar
+          </Button>
+        </div>
+        <p className="text-[10px] text-muted-foreground mb-2">
+          Envie fotos do veículo com legendas personalizáveis. A posição indica qual foto do veículo usar (1 = primeira, 2 = segunda, etc.).
+          As legendas também aceitam as variáveis do veículo.
+        </p>
+
+        <div className="space-y-2">
+          {photoSlots.map((slot, idx) => (
+            <div key={idx} className="flex items-center gap-2 bg-muted/30 rounded-md p-2">
+              <div className="flex-shrink-0 w-14">
+                <Label className="text-[10px] text-muted-foreground">Foto #</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={slot.position}
+                  onChange={(e) => updateSlot(idx, "position", parseInt(e.target.value) || 1)}
+                  className="h-7 text-xs w-full"
+                />
+              </div>
+              <div className="flex-1">
+                <Label className="text-[10px] text-muted-foreground">Legenda</Label>
+                <Input
+                  value={slot.caption}
+                  onChange={(e) => updateSlot(idx, "caption", e.target.value)}
+                  placeholder="Ex: {{v_marca}} {{v_modelo}} - Vista frontal"
+                  className="h-7 text-xs"
+                />
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 mt-4 text-destructive hover:text-destructive"
+                onClick={() => removeSlot(idx)}
+              >
+                <Trash2 className="w-3 h-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {photoSlots.length === 0 && (
+          <p className="text-xs text-muted-foreground text-center py-3">
+            Nenhuma foto configurada. Clique em "Adicionar" para incluir fotos na apresentação.
+          </p>
+        )}
+      </div>
+
+      {/* Delay entre fotos */}
+      {photoSlots.length > 0 && (
+        <div className="border-t border-border pt-3">
+          <Label className="text-xs">Intervalo entre fotos (segundos)</Label>
+          <div className="flex items-center gap-2 mt-1">
+            <Input
+              type="number"
+              min={0.5}
+              max={10}
+              step={0.5}
+              value={config.delayBetweenPhotos || 1}
+              onChange={(e) => updateConfig("delayBetweenPhotos", parseFloat(e.target.value) || 1)}
+              className="h-8 text-sm w-24"
+            />
+            <span className="text-xs text-muted-foreground">segundos (0.5 a 10s)</span>
+          </div>
+        </div>
+      )}
+
+      {/* Fallback */}
+      <div className="border-t border-border pt-3">
+        <Label className="text-xs">Mensagem se não houver veículo (fallback)</Label>
+        <Textarea
+          className="text-sm min-h-[50px] mt-1"
+          placeholder="Desculpe, não consegui identificar o veículo de interesse. Pode me dizer qual carro você gostou?"
+          value={config.fallbackMessage || ""}
+          onChange={(e) => updateConfig("fallbackMessage", e.target.value)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Goto Flow Selector Component ───────────────────────────────────────────────────────
+function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) { const flowsQuery = trpc.flow.list.useQuery();
   const flows = flowsQuery.data || [];
 
   return (

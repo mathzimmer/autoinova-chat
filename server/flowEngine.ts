@@ -981,6 +981,125 @@ async function executeFromNode(
       break;
     }
 
+    case "vehicle_presentation": {
+      /**
+       * Apresentação personalizada do veículo com dados do banco.
+       * config.message: mensagem principal com variáveis do veículo
+       * config.photoSlots: array de { position: number, caption: string }
+       * config.fallbackMessage: mensagem se não houver veículo identificado
+       * config.delayBetweenPhotos: delay em segundos entre fotos
+       * Variáveis disponíveis: {{v_marca}}, {{v_modelo}}, {{v_ano}}, {{v_km}}, {{v_preco}},
+       *   {{v_cor}}, {{v_cambio}}, {{v_combustivel}}, {{v_preco_normal}}, {{v_preco_promo}},
+       *   {{v_loja}}, {{v_tipo}}, {{v_portas}}, {{v_titulo}}, {{v_versao}}, {{v_descricao}}
+       *   + todas as variáveis do lead ({{nome}}, {{telefone}}, etc.)
+       */
+      const vpLead = await getLeadByConversationId(ctx.conversationId);
+      let vpVehicleId = vpLead?.vehicleId || null;
+
+      // Fallback: extrair ID do vehicleInterest
+      if (!vpVehicleId) {
+        const vi = vpLead?.vehicleInterest || ctx.leadData?.vehicleInterest || "";
+        const idMatch = vi.match(/ID\s*:?\s*(\d+)/i);
+        if (idMatch) vpVehicleId = parseInt(idMatch[1]);
+      }
+
+      // Fallback: session context
+      const vpSessionCtx = (session.context as any) || {};
+      if (!vpVehicleId && vpSessionCtx.vehicleId) {
+        vpVehicleId = vpSessionCtx.vehicleId;
+      }
+
+      if (!vpVehicleId) {
+        const fallback = config.fallbackMessage || "Desculpe, não consegui identificar o veículo de interesse. Pode me dizer qual carro você gostou?";
+        await sendTextMessage(ctx.phone, replaceVariables(fallback, ctx));
+        result.responses.push(fallback);
+        const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+        if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+        break;
+      }
+
+      const vpVehicle = await getVehicleById(vpVehicleId);
+      if (!vpVehicle) {
+        const fallback = config.fallbackMessage || "Desculpe, não encontrei os dados desse veículo no momento.";
+        await sendTextMessage(ctx.phone, replaceVariables(fallback, ctx));
+        result.responses.push(fallback);
+        const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+        if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+        break;
+      }
+
+      // Helper to format price
+      const formatPrice = (val: number | null | undefined) => val ? `R$ ${Number(val).toLocaleString("pt-BR")}` : "";
+      const formatKm = (val: number | null | undefined) => val != null ? `${Number(val).toLocaleString("pt-BR")} km` : "";
+
+      // Build vehicle variables map
+      const vpVars: Record<string, string> = {
+        v_marca: vpVehicle.brand || "",
+        v_modelo: vpVehicle.model || "",
+        v_ano: vpVehicle.year?.toString() || "",
+        v_km: formatKm(vpVehicle.mileage),
+        v_preco: formatPrice(vpVehicle.price),
+        v_cor: vpVehicle.color || "",
+        v_cambio: vpVehicle.transmission || "",
+        v_combustivel: vpVehicle.fuel || "",
+        v_preco_normal: formatPrice(vpVehicle.regularPrice),
+        v_preco_promo: formatPrice(vpVehicle.promotionPrice),
+        v_loja: vpVehicle.seller || "",
+        v_tipo: vpVehicle.vehicleType || "",
+        v_portas: vpVehicle.doors?.toString() || "",
+        v_titulo: vpVehicle.title || `${vpVehicle.brand} ${vpVehicle.model}`.trim(),
+        v_versao: vpVehicle.version || "",
+        v_descricao: vpVehicle.description || "",
+      };
+
+      // Replace vehicle variables in text
+      const replaceVehicleVars = (text: string): string => {
+        let result = text;
+        Object.entries(vpVars).forEach(([key, val]) => {
+          result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "gi"), val);
+        });
+        // Also replace lead variables
+        result = replaceVariables(result, ctx);
+        return result;
+      };
+
+      // Send main message if configured
+      if (config.message) {
+        const msg = replaceVehicleVars(config.message);
+        await sendTextMessage(ctx.phone, msg);
+        result.responses.push(msg);
+      }
+
+      // Send photos with captions
+      const vpImages: string[] = Array.isArray(vpVehicle.images) ? vpVehicle.images : [];
+      const vpPhotoSlots: Array<{ position: number; caption: string }> = config.photoSlots || [];
+      const vpPhotoDelay = Math.min(Math.max((config.delayBetweenPhotos || 1) * 1000, 500), 10000);
+
+      let vpSentCount = 0;
+      for (const slot of vpPhotoSlots) {
+        const imgIndex = slot.position - 1;
+        if (imgIndex >= 0 && imgIndex < vpImages.length) {
+          const imageUrl = vpImages[imgIndex];
+          const caption = replaceVehicleVars(slot.caption);
+          await sendImageMessage(ctx.phone, imageUrl, caption);
+          vpSentCount++;
+          if (vpSentCount < vpPhotoSlots.length) {
+            await new Promise(resolve => setTimeout(resolve, vpPhotoDelay));
+          }
+        } else {
+          console.log(`[FlowEngine] vehicle_presentation: skipping slot position ${slot.position} - vehicle has ${vpImages.length} images`);
+        }
+      }
+
+      console.log(`[FlowEngine] vehicle_presentation: presented vehicle ${vpVehicleId} (${vpVars.v_titulo}) - message: ${!!config.message}, photos: ${vpSentCount}/${vpPhotoSlots.length}`);
+
+      const vpNextEdge = edges.find(e => e.sourceNodeId === node.id);
+      if (vpNextEdge) {
+        await executeFromNode(vpNextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+      }
+      break;
+    }
+
     case "goto_flow": {
       // Ir para outro fluxo (subfluxo)
       const targetFlowId = config.targetFlowId;
