@@ -1188,3 +1188,6 @@
 - [x] UI: toggle ativo/inativo, inputs numéricos para tempos e limites
 - [x] FlowEngine: variáveis de contexto do lead no fluxo de resgate (14 variáveis)
 - [x] Testes: cobertura do job de resgate e lógica de tentativas (348 testes passando)
+
+## Bug - Gatilho "Resgate" não aparece no Editor de Fluxos
+- [x] Corrigir opção "Resgate" no seletor de trigger do FlowEditor e Flows.tsx

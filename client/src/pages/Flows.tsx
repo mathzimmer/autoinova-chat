@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import {
   Plus, GitBranch, Play, Pause, Trash2, Copy, Edit3, ArrowRight,
   MessageSquare, List, MousePointerClick, Megaphone, RotateCcw, Tag, Wrench,
-  MoreVertical
+  MoreVertical, LifeBuoy
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -31,6 +31,7 @@ const TRIGGER_LABELS: Record<string, { label: string; icon: typeof MessageSquare
   manual: { label: "Manual", icon: Wrench, color: "bg-gray-500/10 text-gray-400" },
   reactivation: { label: "Reativação", icon: RotateCcw, color: "bg-yellow-500/10 text-yellow-500" },
   category_interest: { label: "Categoria", icon: List, color: "bg-cyan-500/10 text-cyan-500" },
+  rescue: { label: "Resgate (Lead Inativo)", icon: LifeBuoy, color: "bg-red-500/10 text-red-500" },
 };
 
 export default function Flows() {

@@ -2508,7 +2508,7 @@ const flowRouter = router({
     .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
-      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest"]),
+      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue"]),
       triggerValue: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -2538,7 +2538,7 @@ const flowRouter = router({
       id: z.number(),
       name: z.string().optional(),
       description: z.string().optional(),
-      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest"]).optional(),
+      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue"]).optional(),
       triggerValue: z.string().optional(),
       active: z.boolean().optional(),
       priority: z.number().optional(),
