@@ -26,6 +26,8 @@ import {
   rescueAttempts, InsertRescueAttempt,
   contacts, InsertContact,
   templateSends, InsertTemplateSend,
+  campaigns, InsertCampaign,
+  campaignDispatches, InsertCampaignDispatch,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1264,4 +1266,157 @@ export async function updateTemplateSendStatus(id: number, status: string, error
   const data: any = { status };
   if (errorMessage) data.errorMessage = errorMessage;
   await db.update(templateSends).set(data).where(eq(templateSends.id, id));
+}
+
+// ─── Campaign Queries ──────────────────────────────────────────
+
+export async function createCampaign(data: Omit<InsertCampaign, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(campaigns).values(data);
+  const id = (result as any)[0]?.insertId;
+  return getCampaignById(id);
+}
+
+export async function getCampaignById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function listCampaigns(opts?: { status?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { campaigns: [], total: 0 };
+  const conditions: any[] = [];
+  if (opts?.status) conditions.push(eq(campaigns.status, opts.status as any));
+
+  const query = conditions.length > 0
+    ? db.select().from(campaigns).where(and(...conditions))
+    : db.select().from(campaigns);
+
+  const allRows = await query.orderBy(desc(campaigns.createdAt));
+  const total = allRows.length;
+  const limit = opts?.limit ?? 50;
+  const offset = opts?.offset ?? 0;
+  return { campaigns: allRows.slice(offset, offset + limit), total };
+}
+
+export async function updateCampaign(id: number, data: Partial<InsertCampaign>) {
+  const db = await getDb();
+  if (!db) return null;
+  await db.update(campaigns).set(data).where(eq(campaigns.id, id));
+  return getCampaignById(id);
+}
+
+export async function deleteCampaign(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  // Delete dispatches first
+  await db.delete(campaignDispatches).where(eq(campaignDispatches.campaignId, id));
+  await db.delete(campaigns).where(eq(campaigns.id, id));
+}
+
+// ─── Campaign Dispatch Queries ──────────────────────────────────
+
+export async function createCampaignDispatch(data: Omit<InsertCampaignDispatch, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(campaignDispatches).values(data);
+  return (result as any)[0]?.insertId;
+}
+
+export async function createCampaignDispatchesBatch(dispatches: Omit<InsertCampaignDispatch, "id" | "createdAt">[]) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  if (dispatches.length === 0) return;
+  await db.insert(campaignDispatches).values(dispatches);
+}
+
+export async function updateCampaignDispatch(id: number, data: Partial<InsertCampaignDispatch>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaignDispatches).set(data).where(eq(campaignDispatches.id, id));
+}
+
+export async function updateCampaignDispatchByWamid(wamid: string, data: Partial<InsertCampaignDispatch>) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(campaignDispatches).set(data).where(eq(campaignDispatches.whatsappMessageId, wamid));
+}
+
+export async function getCampaignDispatchesByCampaign(campaignId: number, opts?: { runNumber?: number; status?: string; limit?: number; offset?: number }) {
+  const db = await getDb();
+  if (!db) return { dispatches: [], total: 0 };
+  const conditions: any[] = [eq(campaignDispatches.campaignId, campaignId)];
+  if (opts?.runNumber) conditions.push(eq(campaignDispatches.runNumber, opts.runNumber));
+  if (opts?.status) conditions.push(eq(campaignDispatches.status, opts.status as any));
+
+  const allRows = await db.select().from(campaignDispatches)
+    .where(and(...conditions))
+    .orderBy(desc(campaignDispatches.createdAt));
+  const total = allRows.length;
+  const limit = opts?.limit ?? 100;
+  const offset = opts?.offset ?? 0;
+  return { dispatches: allRows.slice(offset, offset + limit), total };
+}
+
+export async function getCampaignDispatchStats(campaignId: number) {
+  const db = await getDb();
+  if (!db) return { total: 0, sent: 0, delivered: 0, read: 0, failed: 0, responded: 0, pending: 0 };
+
+  const rows = await db.select({
+    status: campaignDispatches.status,
+    count: sql<number>`count(*)`,
+  }).from(campaignDispatches)
+    .where(eq(campaignDispatches.campaignId, campaignId))
+    .groupBy(campaignDispatches.status);
+
+  const stats = { total: 0, sent: 0, delivered: 0, read: 0, failed: 0, responded: 0, pending: 0 };
+  for (const row of rows) {
+    const count = Number(row.count);
+    stats.total += count;
+    if (row.status === "sent") stats.sent = count;
+    else if (row.status === "delivered") stats.delivered = count;
+    else if (row.status === "read") stats.read = count;
+    else if (row.status === "failed") stats.failed = count;
+    else if (row.status === "responded") stats.responded = count;
+    else if (row.status === "pending") stats.pending = count;
+  }
+  return stats;
+}
+
+export async function getScheduledCampaigns() {
+  const db = await getDb();
+  if (!db) return [];
+  const now = Date.now();
+  return db.select().from(campaigns)
+    .where(
+      and(
+        eq(campaigns.status, "scheduled"),
+        sql`${campaigns.nextRunAt} <= ${now}`
+      )
+    );
+}
+
+export async function getCampaignDispatchByWamid(wamid: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(campaignDispatches)
+    .where(eq(campaignDispatches.whatsappMessageId, wamid))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function getCampaignDispatchByPhoneAndCampaign(phone: string, campaignId: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(campaignDispatches)
+    .where(and(
+      eq(campaignDispatches.phone, phone),
+      eq(campaignDispatches.campaignId, campaignId),
+    ))
+    .orderBy(desc(campaignDispatches.createdAt))
+    .limit(1);
+  return rows[0] || null;
 }

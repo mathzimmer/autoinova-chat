@@ -15,7 +15,7 @@ import TeamLogin from "./pages/TeamLogin";
 import AppLayout from "./components/AppLayout";
 import AiAudit from "./pages/AiAudit";
 import MetaAdsPage from "./pages/MetaAds";
-import FollowUpPage from "./pages/FollowUp";
+import CampaignsPage from "./pages/Campaigns";
 import RescuePage from "./pages/Rescue";
 import ContactsPage from "./pages/Contacts";
 import VendorApiKeys from "./pages/VendorApiKeys";
@@ -67,9 +67,9 @@ function Router() {
           <MetaAdsPage />
         </AppLayout>
       </Route>
-       <Route path="/follow-up">
+      <Route path="/campaigns">
         <AppLayout>
-          <FollowUpPage />
+          <CampaignsPage />
         </AppLayout>
       </Route>
       <Route path="/contacts">

@@ -1250,3 +1250,20 @@
 ## Feature - Melhorar botão copiar lead
 - [x] Incluir dados da troca (veículo de troca) no texto copiado
 - [x] Incluir dados pessoais completos (cidade, nome completo, CPF, nascimento, email) no texto copiado
+
+## Feature - Módulo de Envio em Massa (substituir Follow-up)
+- [x] Remover módulo Follow-up existente (página, router, serviço)
+- [x] Schema: tabela campaigns (nome, template, filtros, agendamento, fluxo vinculado, tag)
+- [x] Schema: tabela campaignDispatches (campanha, contato, status entrega, data envio)
+- [x] Backend: CRUD de campanhas com seleção de contatos (individual/massa/filtros)
+- [x] Backend: serviço de disparo em massa via WhatsApp templates aprovados Meta
+- [x] Backend: agendamento recorrente (enviar a cada X dias)
+- [x] Backend: acionamento de fluxo específico quando cliente responde ao disparo)
+- [x] Backend: tag automática nas conversas criadas por disparos
+- [x] Frontend: página de Campanhas com criação, edição, listagem
+- [x] Frontend: seletor de contatos (checkboxes, selecionar todos, filtros por tag)
+- [x] Frontend: seletor de template Meta aprovado
+- [x] Frontend: configuração de agendamento recorrente
+- [x] Frontend: seletor de fluxo para respostas
+- [x] Frontend: histórico de disparos com status de entrega
+- [x] Frontend: dashboard com métricas (enviados, entregues, respondidos)

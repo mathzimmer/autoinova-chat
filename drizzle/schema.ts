@@ -632,3 +632,69 @@ export const templateSends = mysqlTable("templateSends", {
 
 export type TemplateSend = typeof templateSends.$inferSelect;
 export type InsertTemplateSend = typeof templateSends.$inferInsert;
+
+
+/**
+ * Campaigns — campanhas de envio em massa de templates WhatsApp.
+ * Cada campanha define: template a enviar, contatos selecionados, agendamento recorrente,
+ * fluxo a acionar quando cliente responde, e tag para controle das conversas criadas.
+ */
+export const campaigns = mysqlTable("campaigns", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  // Template WhatsApp
+  templateName: varchar("templateName", { length: 255 }).notNull(),
+  templateLanguage: varchar("templateLanguage", { length: 10 }).default("pt_BR").notNull(),
+  bodyParams: json("bodyParams").$type<string[]>(),  // Parâmetros do body do template
+  // Seleção de contatos
+  contactIds: json("contactIds").$type<number[]>(),  // IDs dos contatos selecionados
+  filterTags: json("filterTags").$type<string[]>(),  // Tags para filtrar contatos (alternativa a IDs)
+  // Agendamento
+  scheduleType: mysqlEnum("scheduleType", ["once", "recurring"]).default("once").notNull(),
+  scheduledAt: bigint("scheduledAt", { mode: "number" }),  // Timestamp para envio único ou próximo envio
+  intervalDays: int("intervalDays"),  // Intervalo em dias para recorrente (ex: 7 = semanal)
+  lastRunAt: bigint("lastRunAt", { mode: "number" }),  // Último envio executado
+  nextRunAt: bigint("nextRunAt", { mode: "number" }),  // Próximo envio agendado
+  // Fluxo de resposta
+  responseFlowId: int("responseFlowId"),  // Fluxo a acionar quando cliente responde ao disparo
+  // Tag de controle
+  conversationTag: varchar("conversationTag", { length: 100 }),  // Tag aplicada às conversas criadas pelo disparo
+  // Status
+  status: mysqlEnum("campaignStatus", ["draft", "scheduled", "running", "paused", "completed"]).default("draft").notNull(),
+  totalContacts: int("totalContacts").default(0).notNull(),
+  // Metadata
+  createdBy: int("createdBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = typeof campaigns.$inferInsert;
+
+/**
+ * Campaign Dispatches — registro individual de cada envio dentro de uma campanha.
+ * Rastreia status de entrega por contato (enviado, entregue, lido, falhou, respondido).
+ */
+export const campaignDispatches = mysqlTable("campaignDispatches", {
+  id: int("id").autoincrement().primaryKey(),
+  campaignId: int("campaignId").notNull(),
+  contactId: int("contactId").notNull(),
+  phone: varchar("phone", { length: 32 }).notNull(),
+  contactName: varchar("contactName", { length: 255 }),
+  // Status de entrega
+  status: mysqlEnum("dispatchStatus", ["pending", "sent", "delivered", "read", "failed", "responded"]).default("pending").notNull(),
+  errorMessage: text("errorMessage"),
+  whatsappMessageId: varchar("whatsappMessageId", { length: 255 }),  // wamid para rastreamento
+  // Timestamps
+  sentAt: timestamp("sentAt"),
+  deliveredAt: timestamp("deliveredAt"),
+  readAt: timestamp("readAt"),
+  respondedAt: timestamp("respondedAt"),
+  // Metadata
+  runNumber: int("runNumber").default(1).notNull(),  // Número da execução (para campanhas recorrentes)
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CampaignDispatch = typeof campaignDispatches.$inferSelect;
+export type InsertCampaignDispatch = typeof campaignDispatches.$inferInsert;

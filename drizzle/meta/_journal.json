@@ -211,6 +211,13 @@
       "when": 1774970296640,
       "tag": "0029_perpetual_shen",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1775586833238,
+      "tag": "0030_mean_maelstrom",
+      "breakpoints": true
     }
   ]
 }

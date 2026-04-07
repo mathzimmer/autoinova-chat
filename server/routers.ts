@@ -63,15 +63,20 @@ import {
   createAdInExistingAdSet,
 } from "./metaAds";
 
-// ── Follow-Up imports ────────────────────────────────────────────────────────
+// ── Campaign (Envio em Massa) imports ────────────────────────────────────────
 import {
-  getFollowUpConfig,
-  saveFollowUpConfig,
-  getFollowUpHistory,
-  getFollowUpStats,
-  runFollowUpJob,
-  restartFollowUpJob,
-} from "./followUp";
+  executeCampaign,
+  handleCampaignResponse,
+} from "./campaignService";
+import {
+  createCampaign as createCampaignDb,
+  getCampaignById as getCampaignByIdDb,
+  listCampaigns as listCampaignsDb,
+  updateCampaign as updateCampaignDb,
+  deleteCampaign as deleteCampaignDb,
+  getCampaignDispatchesByCampaign,
+  getCampaignDispatchStats,
+} from "./db";
 import { listTemplates, sendWhatsAppTemplate, isTemplateApproved, isTemplatesConfigured } from "./whatsappTemplates";
 import { invokeLLM } from "./_core/llm";
 import { runTokenHealthCheck, getLastCheckResults } from "./tokenMonitor";
@@ -1753,51 +1758,156 @@ const rescueRouter = router({
   }),
 });
 
-// ── Follow-Up Router ─────────────────────────────────────────────────────────
+// ── Campaign (Envio em Massa) Router ────────────────────────────────────────
 
-const followUpRouter = router({
-  // Get current config
-  getConfig: adminProcedure.query(async () => {
-    return getFollowUpConfig();
-  }),
-
-  // Save config
-  saveConfig: adminProcedure
+const campaignRouter = router({
+  // List all campaigns
+  list: adminProcedure
     .input(z.object({
-      enabled: z.boolean().optional(),
-      maxAttempts: z.number().min(1).max(10).optional(),
-      inactiveHours: z.number().min(1).max(168).optional(),
-      intervalHours: z.number().min(1).max(72).optional(),
-      maxPerRun: z.number().min(1).max(100).optional(),
-      useTemplateAfter24h: z.boolean().optional(),
-      templateName: z.string().optional(),
-      messages: z.array(z.string()).optional(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const config = await saveFollowUpConfig(input, ctx.user.id);
-      restartFollowUpJob();
-      return config;
-    }),
-
-  // Get history
-  history: adminProcedure
-    .input(z.object({
+      status: z.string().optional(),
       limit: z.number().min(1).max(100).default(50),
       offset: z.number().min(0).default(0),
     }).optional())
     .query(async ({ input }) => {
-      return getFollowUpHistory(input?.limit ?? 50, input?.offset ?? 0);
+      return listCampaignsDb(input || {});
     }),
 
-  // Get stats
-  stats: adminProcedure.query(async () => {
-    return getFollowUpStats();
-  }),
+  // Get campaign by ID
+  getById: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const campaign = await getCampaignByIdDb(input.id);
+      if (!campaign) throw new Error("Campanha não encontrada");
+      return campaign;
+    }),
 
-  // Run job manually
-  runNow: adminProcedure.mutation(async () => {
-    const result = await runFollowUpJob();
-    return result;
+  // Create new campaign
+  create: adminProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      description: z.string().optional(),
+      templateName: z.string().min(1),
+      templateLanguage: z.string().default("pt_BR"),
+      bodyParams: z.array(z.string()).optional(),
+      contactIds: z.array(z.number()).optional(),
+      filterTags: z.array(z.string()).optional(),
+      scheduleType: z.enum(["once", "recurring"]).default("once"),
+      scheduledAt: z.number().optional(),
+      intervalDays: z.number().min(1).max(365).optional(),
+      responseFlowId: z.number().optional(),
+      conversationTag: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const nextRunAt = input.scheduledAt || undefined;
+      const campaign = await createCampaignDb({
+        ...input,
+        bodyParams: input.bodyParams || null,
+        contactIds: input.contactIds || null,
+        filterTags: input.filterTags || null,
+        nextRunAt,
+        status: input.scheduledAt ? "scheduled" : "draft",
+        totalContacts: input.contactIds?.length || 0,
+        createdBy: ctx.user.id,
+      });
+      return campaign;
+    }),
+
+  // Update campaign
+  update: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      templateName: z.string().optional(),
+      templateLanguage: z.string().optional(),
+      bodyParams: z.array(z.string()).optional(),
+      contactIds: z.array(z.number()).optional(),
+      filterTags: z.array(z.string()).optional(),
+      scheduleType: z.enum(["once", "recurring"]).optional(),
+      scheduledAt: z.number().optional(),
+      intervalDays: z.number().min(1).max(365).optional(),
+      responseFlowId: z.number().nullable().optional(),
+      conversationTag: z.string().nullable().optional(),
+      status: z.enum(["draft", "scheduled", "paused"]).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      const updateData: any = { ...data };
+      if (data.contactIds) updateData.totalContacts = data.contactIds.length;
+      if (data.scheduledAt) updateData.nextRunAt = data.scheduledAt;
+      return updateCampaignDb(id, updateData);
+    }),
+
+  // Delete campaign
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      await deleteCampaignDb(input.id);
+      return { success: true };
+    }),
+
+  // Execute campaign immediately
+  execute: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      return executeCampaign(input.id);
+    }),
+
+  // Schedule campaign (set status to scheduled)
+  schedule: adminProcedure
+    .input(z.object({
+      id: z.number(),
+      scheduledAt: z.number(),
+      intervalDays: z.number().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      return updateCampaignDb(input.id, {
+        status: "scheduled",
+        scheduledAt: input.scheduledAt,
+        nextRunAt: input.scheduledAt,
+        intervalDays: input.intervalDays,
+        scheduleType: input.intervalDays ? "recurring" : "once",
+      });
+    }),
+
+  // Pause campaign
+  pause: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      return updateCampaignDb(input.id, { status: "paused" });
+    }),
+
+  // Get dispatch history for a campaign
+  dispatches: adminProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      runNumber: z.number().optional(),
+      status: z.string().optional(),
+      limit: z.number().optional(),
+      offset: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      return getCampaignDispatchesByCampaign(input.campaignId, input);
+    }),
+
+  // Get stats for a campaign
+  stats: adminProcedure
+    .input(z.object({ campaignId: z.number() }))
+    .query(async ({ input }) => {
+      return getCampaignDispatchStats(input.campaignId);
+    }),
+
+  // List available flows for response trigger
+  availableFlows: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const { chatFlows } = await import("../drizzle/schema");
+    return db.select({
+      id: chatFlows.id,
+      name: chatFlows.name,
+      trigger: chatFlows.trigger,
+      active: chatFlows.active,
+    }).from(chatFlows);
   }),
 });
 
@@ -3292,7 +3402,7 @@ export const appRouter = router({
   activity: activityRouter,
   aiDecision: aiDecisionRouter,
   metaAds: metaAdsRouter,
-  followUp: followUpRouter,
+  campaign: campaignRouter,
   whatsappTemplate: whatsappTemplateRouter,
   tokenHealth: tokenHealthRouter,
   vendor: vendorRouter,

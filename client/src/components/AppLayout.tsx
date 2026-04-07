@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Zap, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -32,7 +32,7 @@ const navItems: NavItem[] = [
   { icon: Users, label: "Leads", path: "/leads" },
   { icon: UsersRound, label: "Equipe", path: "/team", allowedCargos: ["admin", "gerente"] },
   { icon: Megaphone, label: "Meta Ads", path: "/meta-ads", allowedCargos: ["admin", "gerente"] },
-  { icon: Zap, label: "Follow-Up", path: "/follow-up", allowedCargos: ["admin", "gerente"] },
+  { icon: Send, label: "Campanhas", path: "/campaigns", allowedCargos: ["admin", "gerente"] },
   { icon: LifeBuoy, label: "Resgate", path: "/rescue", allowedCargos: ["admin", "gerente"] },
   { icon: BookUser, label: "Contatos", path: "/contacts", allowedCargos: ["admin", "gerente"] },
   { icon: GitBranch, label: "Fluxos", path: "/flows", allowedCargos: ["admin", "gerente"] },

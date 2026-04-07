@@ -1,0 +1,41 @@
+CREATE TABLE `campaignDispatches` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`campaignId` int NOT NULL,
+	`contactId` int NOT NULL,
+	`phone` varchar(32) NOT NULL,
+	`contactName` varchar(255),
+	`dispatchStatus` enum('pending','sent','delivered','read','failed','responded') NOT NULL DEFAULT 'pending',
+	`errorMessage` text,
+	`whatsappMessageId` varchar(255),
+	`sentAt` timestamp,
+	`deliveredAt` timestamp,
+	`readAt` timestamp,
+	`respondedAt` timestamp,
+	`runNumber` int NOT NULL DEFAULT 1,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	CONSTRAINT `campaignDispatches_id` PRIMARY KEY(`id`)
+);
+--> statement-breakpoint
+CREATE TABLE `campaigns` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`description` text,
+	`templateName` varchar(255) NOT NULL,
+	`templateLanguage` varchar(10) NOT NULL DEFAULT 'pt_BR',
+	`bodyParams` json,
+	`contactIds` json,
+	`filterTags` json,
+	`scheduleType` enum('once','recurring') NOT NULL DEFAULT 'once',
+	`scheduledAt` bigint,
+	`intervalDays` int,
+	`lastRunAt` bigint,
+	`nextRunAt` bigint,
+	`responseFlowId` int,
+	`conversationTag` varchar(100),
+	`campaignStatus` enum('draft','scheduled','running','paused','completed') NOT NULL DEFAULT 'draft',
+	`totalContacts` int NOT NULL DEFAULT 0,
+	`createdBy` int,
+	`createdAt` timestamp NOT NULL DEFAULT (now()),
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `campaigns_id` PRIMARY KEY(`id`)
+);

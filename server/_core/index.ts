@@ -11,8 +11,8 @@ import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
-import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
-import { startFollowUpJob } from "../followUp";
+import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, getConversationByPhone, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
+import { startCampaignScheduler, handleCampaignDeliveryStatus, handleCampaignResponse } from "../campaignService";
 import { startRescueJob } from "../rescueJob";
 import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
@@ -75,8 +75,8 @@ async function startServer() {
   // Start automatic stock synchronization (every 30 minutes)
   startAutoSync();
 
-  // Follow-up automático de leads frios (a cada 6h)
-  startFollowUpJob();
+  // Scheduler de campanhas de envio em massa (verifica a cada 5 min)
+  startCampaignScheduler();
 
   // Resgate de leads inativos (a cada 2 min)
   startRescueJob();
@@ -225,6 +225,45 @@ async function startServer() {
           } catch (err) {
             // Non-critical, don't fail the webhook
           }
+
+          // Check if this is a response to a campaign dispatch
+          try {
+            const campaignResult = await handleCampaignResponse(phone);
+            if (campaignResult) {
+              console.log(`[Campaign] Resposta detectada de ${phone} para campanha ${campaignResult.campaignId}`);
+              // Apply conversation tag if set
+              if (campaignResult.conversationTag) {
+                const conv = await getConversationByPhone(phone);
+                if (conv) {
+                  const existingMeta = (conv.metadata as any) || {};
+                  const tags = existingMeta.tags || [];
+                  if (!tags.includes(campaignResult.conversationTag)) {
+                    tags.push(campaignResult.conversationTag);
+                  }
+                  await updateConversation(conv.id, { metadata: { ...existingMeta, tags, campaignId: campaignResult.campaignId } });
+                }
+              }
+              // Trigger response flow if configured
+              if (campaignResult.responseFlowId && result.conversationId) {
+                try {
+                  const { processFlowMessage } = await import("../flowEngine");
+                  // Start the response flow for this conversation
+                  const { createFlowSession } = await import("../db");
+                  await createFlowSession({
+                    conversationId: result.conversationId,
+                    flowId: campaignResult.responseFlowId,
+                    status: "active",
+                    context: { source: "campaign", campaignId: campaignResult.campaignId },
+                  });
+                  console.log(`[Campaign] Fluxo ${campaignResult.responseFlowId} acionado para conversa ${result.conversationId}`);
+                } catch (flowErr) {
+                  console.error(`[Campaign] Erro ao acionar fluxo:`, flowErr);
+                }
+              }
+            }
+          } catch (campErr) {
+            // Non-critical
+          }
         }
 
         // Send AI response back to WhatsApp and track delivery
@@ -278,6 +317,13 @@ async function startServer() {
             if (mappedStatus) {
               const errorDetail = errorCode ? `${errorCode}: ${errorTitle || errorMessage || 'Unknown error'}` : undefined;
               await updateMessageDeliveryStatus(wamid, mappedStatus, errorDetail);
+              
+              // Also track campaign dispatch delivery status
+              try {
+                await handleCampaignDeliveryStatus(wamid, mappedStatus);
+              } catch (e) {
+                // Non-critical
+              }
               
               // If error 131047, mark conversation window as expired
               if (errorCode === 131047 || errorCode === '131047') {
