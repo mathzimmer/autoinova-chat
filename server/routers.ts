@@ -1257,17 +1257,25 @@ const webhookRouter = router({
         }
       }
 
-      // Find or create conversation
+      // Normalize phone for consistent matching
+      const { normalizePhone: normPhone } = await import("./phoneNormalize");
+      const normalizedPhone = normPhone(input.phone);
+
+      // Find or create conversation (tries phone variations automatically)
       let conversation = await getConversationByPhone(input.phone);
       if (!conversation) {
         conversation = await createConversation({
-          phone: input.phone,
+          phone: normalizedPhone || input.phone,
           contactName: input.name || null,
           channel: "whatsapp",
           status: "open",
           aiActive: true,
           lastMessageAt: Date.now(),
         });
+      } else if (conversation.phone !== normalizedPhone && normalizedPhone.length >= 12) {
+        // Update conversation phone to normalized form for future exact matches
+        console.log(`[Webhook] Normalizing conversation phone: ${conversation.phone} → ${normalizedPhone}`);
+        await updateConversation(conversation.id, { phone: normalizedPhone });
       }
 
       if (!conversation) throw new Error("Failed to create conversation");
@@ -1278,12 +1286,12 @@ const webhookRouter = router({
         if (!existingContact) {
           await createContact({
             name: input.name || conversation.contactName || "Cliente",
-            phone: input.phone,
+            phone: normalizedPhone || input.phone,
             conversationId: conversation.id,
             source: "whatsapp",
             isActive: true,
           });
-          console.log(`[Webhook] Auto-sync: contato criado na agenda para ${input.phone}`);
+          console.log(`[Webhook] Auto-sync: contato criado na agenda para ${normalizedPhone}`);
         } else {
           // Atualizar conversationId se não tinha
           if (!existingContact.conversationId && conversation.id) {
@@ -1292,6 +1300,11 @@ const webhookRouter = router({
           // Atualizar nome se mudou
           if (input.name && input.name !== existingContact.name && existingContact.name === "Cliente") {
             await updateContact(existingContact.id, { name: input.name });
+          }
+          // Normalize phone on existing contact if different
+          if (existingContact.phone !== normalizedPhone && normalizedPhone.length >= 12) {
+            console.log(`[Webhook] Normalizing contact phone: ${existingContact.phone} → ${normalizedPhone}`);
+            await updateContact(existingContact.id, { phone: normalizedPhone });
           }
         }
       } catch (err) {
@@ -3308,6 +3321,147 @@ const contactsRouter = router({
     }).optional())
     .query(async ({ input }) => {
       return listTemplateSends(input || {});
+    }),
+
+  // Detect duplicate contacts by normalized phone
+  findDuplicates: adminProcedure
+    .query(async () => {
+      const db = await getDb();
+      if (!db) return [];
+      const { normalizePhone } = await import("./phoneNormalize");
+      const { contacts: contactsTable } = await import("../drizzle/schema");
+      const allContacts = await db.select().from(contactsTable).where(eq(contactsTable.isActive, true));
+
+      // Group by normalized phone
+      const groups = new Map<string, typeof allContacts>();
+      for (const c of allContacts) {
+        const norm = normalizePhone(c.phone);
+        if (!norm) continue;
+        const existing = groups.get(norm) || [];
+        existing.push(c);
+        groups.set(norm, existing);
+      }
+
+      // Return only groups with duplicates
+      const duplicates: Array<{ normalizedPhone: string; contacts: typeof allContacts }> = [];
+      for (const [norm, group] of Array.from(groups.entries())) {
+        if (group.length > 1) {
+          duplicates.push({ normalizedPhone: norm, contacts: group });
+        }
+      }
+      return duplicates;
+    }),
+
+  // Merge two contacts: keep primary, merge data from secondary, deactivate secondary
+  merge: adminProcedure
+    .input(z.object({
+      primaryId: z.number(),
+      secondaryId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const primary = await getContactById(input.primaryId);
+      const secondary = await getContactById(input.secondaryId);
+      if (!primary || !secondary) throw new Error("Contato não encontrado");
+
+      const { normalizePhone } = await import("./phoneNormalize");
+      const updates: Record<string, any> = {};
+
+      // Merge name: prefer non-generic
+      if ((!primary.name || primary.name === "Cliente") && secondary.name && secondary.name !== "Cliente") {
+        updates.name = secondary.name;
+      }
+      // Merge email
+      if (!primary.email && secondary.email) updates.email = secondary.email;
+      // Merge notes
+      if (secondary.notes) {
+        updates.notes = primary.notes ? `${primary.notes}\n---\n${secondary.notes}` : secondary.notes;
+      }
+      // Merge tags
+      const primaryTags = primary.tags || [];
+      const secondaryTags = secondary.tags || [];
+      const mergedTags = Array.from(new Set([...primaryTags, ...secondaryTags]));
+      if (mergedTags.length > primaryTags.length) updates.tags = mergedTags;
+      // Merge conversationId
+      if (!primary.conversationId && secondary.conversationId) updates.conversationId = secondary.conversationId;
+      // Merge leadId
+      if (!primary.leadId && secondary.leadId) updates.leadId = secondary.leadId;
+      // Normalize phone
+      const normPhone = normalizePhone(primary.phone);
+      if (normPhone && normPhone !== primary.phone) updates.phone = normPhone;
+
+      if (Object.keys(updates).length > 0) {
+        await updateContact(primary.id, updates);
+      }
+
+      // Deactivate secondary
+      await deleteContact(secondary.id);
+
+      return { success: true, primaryId: primary.id };
+    }),
+
+  // Auto-merge all detected duplicates
+  autoMerge: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      const { normalizePhone } = await import("./phoneNormalize");
+      const { contacts: contactsTable } = await import("../drizzle/schema");
+      const allContacts = await db.select().from(contactsTable).where(eq(contactsTable.isActive, true));
+
+      const groups = new Map<string, typeof allContacts>();
+      for (const c of allContacts) {
+        const norm = normalizePhone(c.phone);
+        if (!norm) continue;
+        const existing = groups.get(norm) || [];
+        existing.push(c);
+        groups.set(norm, existing);
+      }
+
+      let merged = 0;
+      for (const [norm, group] of Array.from(groups.entries())) {
+        if (group.length <= 1) continue;
+
+        // Pick the best primary: prefer one with conversationId, then most data
+        const sorted = [...group].sort((a, b) => {
+          if (a.conversationId && !b.conversationId) return -1;
+          if (!a.conversationId && b.conversationId) return 1;
+          if (a.leadId && !b.leadId) return -1;
+          if (!a.leadId && b.leadId) return 1;
+          const aScore = (a.name && a.name !== "Cliente" ? 1 : 0) + (a.email ? 1 : 0) + (a.notes ? 1 : 0);
+          const bScore = (b.name && b.name !== "Cliente" ? 1 : 0) + (b.email ? 1 : 0) + (b.notes ? 1 : 0);
+          return bScore - aScore;
+        });
+
+        const primary = sorted[0];
+        for (let i = 1; i < sorted.length; i++) {
+          const secondary = sorted[i];
+          const updates: Record<string, any> = {};
+          if ((!primary.name || primary.name === "Cliente") && secondary.name && secondary.name !== "Cliente") {
+            updates.name = secondary.name;
+          }
+          if (!primary.email && secondary.email) updates.email = secondary.email;
+          if (secondary.notes) {
+            updates.notes = primary.notes ? `${primary.notes}\n---\n${secondary.notes}` : secondary.notes;
+          }
+          const pTags = primary.tags || [];
+          const sTags = secondary.tags || [];
+          const mTags = Array.from(new Set([...pTags, ...sTags]));
+          if (mTags.length > pTags.length) updates.tags = mTags;
+          if (!primary.conversationId && secondary.conversationId) updates.conversationId = secondary.conversationId;
+          if (!primary.leadId && secondary.leadId) updates.leadId = secondary.leadId;
+          updates.phone = norm; // Normalize
+
+          if (Object.keys(updates).length > 0) {
+            await updateContact(primary.id, updates);
+            // Update primary in memory for next iteration
+            Object.assign(primary, updates);
+          }
+          await deleteContact(secondary.id);
+          merged++;
+        }
+      }
+
+      return { merged };
     }),
 
   // Sync contacts from existing conversations/leads

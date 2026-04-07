@@ -1267,3 +1267,12 @@
 - [x] Frontend: seletor de fluxo para respostas
 - [x] Frontend: histórico de disparos com status de entrega
 - [x] Frontend: dashboard com métricas (enviados, entregues, respondidos)
+
+## Feature - Agrupamento Automático de Contatos Duplicados
+- [x] Criar função de normalização de telefone (remover formatação, tratar 9 dígito)
+- [x] Detectar contatos duplicados por número normalizado
+- [x] Merge automático de contatos duplicados (manter dados mais completos)
+- [x] Integrar detecção no webhook: agrupar quando cliente manda nova mensagem
+- [x] Integrar detecção na criação de contatos (manual e importação)
+- [x] Interface: indicador visual de contatos agrupados/duplicados
+- [x] Testes vitest para normalização e merge

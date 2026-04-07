@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import {
   Users, Plus, Search, Upload, Send, Trash2, Edit, Phone, Mail,
   Tag, FileSpreadsheet, CheckCircle, XCircle, MessageSquare, Filter,
-  ChevronLeft, ChevronRight, X, Download,
+  ChevronLeft, ChevronRight, X, Download, GitMerge, AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -93,6 +93,8 @@ export default function ContactsPage() {
 
   // Template state
   const [selectedTemplate, setSelectedTemplate] = useState("");
+  // Duplicates state
+  const [showDuplicatesDialog, setShowDuplicatesDialog] = useState(false);
 
   const LIMIT = 50;
 
@@ -167,6 +169,31 @@ export default function ContactsPage() {
       contactsQuery.refetch();
     },
     onError: (err) => toast.error("Erro na sincronização: " + err.message),
+  });
+
+  const duplicatesQuery = trpc.contact.findDuplicates.useQuery(undefined, {
+    enabled: showDuplicatesDialog,
+  });
+
+  const mergeMutation = trpc.contact.merge.useMutation({
+    onSuccess: () => {
+      toast.success("Contatos mesclados com sucesso");
+      duplicatesQuery.refetch();
+      contactsQuery.refetch();
+    },
+    onError: (err) => toast.error("Erro ao mesclar: " + err.message),
+  });
+
+  const autoMergeMutation = trpc.contact.autoMerge.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Auto-merge concluído: ${result.merged} contatos mesclados`);
+      duplicatesQuery.refetch();
+      contactsQuery.refetch();
+      if (result.merged === 0) {
+        setShowDuplicatesDialog(false);
+      }
+    },
+    onError: (err) => toast.error("Erro no auto-merge: " + err.message),
   });
 
   const contacts = contactsQuery.data?.contacts || [];
@@ -307,6 +334,14 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowDuplicatesDialog(true)}
+          >
+            <GitMerge className="h-4 w-4 mr-1" />
+            Duplicados
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -679,6 +714,102 @@ export default function ContactsPage() {
             <Button onClick={handleImport} disabled={bulkImportMutation.isPending}>
               {bulkImportMutation.isPending ? "Importando..." : `Importar ${importData.length} contatos`}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Duplicates Dialog */}
+      <Dialog open={showDuplicatesDialog} onOpenChange={setShowDuplicatesDialog}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="h-5 w-5" />
+              Contatos Duplicados
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {duplicatesQuery.isLoading ? (
+              <p className="text-center text-muted-foreground py-8">Analisando contatos...</p>
+            ) : !duplicatesQuery.data || duplicatesQuery.data.length === 0 ? (
+              <div className="text-center py-8">
+                <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-3" />
+                <p className="font-medium">Nenhum duplicado encontrado!</p>
+                <p className="text-sm text-muted-foreground mt-1">Todos os contatos possuem telefones únicos.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    <AlertTriangle className="h-4 w-4 inline mr-1 text-amber-500" />
+                    {duplicatesQuery.data.length} grupo(s) de duplicados encontrado(s)
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="default"
+                    onClick={() => autoMergeMutation.mutate()}
+                    disabled={autoMergeMutation.isPending}
+                  >
+                    <GitMerge className="h-4 w-4 mr-1" />
+                    {autoMergeMutation.isPending ? "Mesclando..." : "Mesclar Todos Automaticamente"}
+                  </Button>
+                </div>
+                {duplicatesQuery.data.map((group: any) => (
+                  <Card key={group.normalizedPhone} className="border-amber-500/30">
+                    <CardHeader className="pb-2 pt-3">
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Phone className="h-4 w-4" />
+                        {formatPhone(group.normalizedPhone)}
+                        <Badge variant="secondary" className="text-xs">{group.contacts.length} registros</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="pb-3">
+                      <div className="space-y-2">
+                        {group.contacts.map((contact: Contact, idx: number) => (
+                          <div key={contact.id} className="flex items-center justify-between p-2 rounded bg-muted/50 text-sm">
+                            <div className="flex-1">
+                              <div className="font-medium">{contact.name}</div>
+                              <div className="text-xs text-muted-foreground">
+                                Tel: {contact.phone} | Origem: {SOURCE_LABELS[contact.source] || contact.source}
+                                {contact.email && ` | Email: ${contact.email}`}
+                                {contact.conversationId && " | Com conversa"}
+                              </div>
+                              {contact.tags && contact.tags.length > 0 && (
+                                <div className="flex gap-1 mt-1">
+                                  {contact.tags.map(tag => (
+                                    <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                            {idx > 0 && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="ml-2"
+                                onClick={() => mergeMutation.mutate({
+                                  primaryId: group.contacts[0].id,
+                                  secondaryId: contact.id,
+                                })}
+                                disabled={mergeMutation.isPending}
+                              >
+                                <GitMerge className="h-3 w-3 mr-1" />
+                                Mesclar com #{group.contacts[0].id}
+                              </Button>
+                            )}
+                            {idx === 0 && (
+                              <Badge variant="default" className="text-xs">Principal</Badge>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDuplicatesDialog(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

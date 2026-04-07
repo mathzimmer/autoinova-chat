@@ -112,8 +112,18 @@ export async function getConversationById(id: number) {
 export async function getConversationByPhone(phone: string) {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.select().from(conversations).where(eq(conversations.phone, phone)).limit(1);
-  return result[0];
+  // Try exact match first
+  const exact = await db.select().from(conversations).where(eq(conversations.phone, phone)).limit(1);
+  if (exact[0]) return exact[0];
+  // Try all phone variations (handles 9th digit, formatting differences)
+  const { phoneVariations } = await import("./phoneNormalize");
+  const variations = phoneVariations(phone);
+  for (const v of variations) {
+    if (v === phone) continue; // already tried
+    const row = await db.select().from(conversations).where(eq(conversations.phone, v)).limit(1);
+    if (row[0]) return row[0];
+  }
+  return undefined;
 }
 
 export async function getConversationByPlatformUserId(platformUserId: string, channel: "instagram" | "facebook") {
@@ -1185,8 +1195,18 @@ export async function getContactById(id: number) {
 export async function getContactByPhone(phone: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(contacts).where(and(eq(contacts.phone, phone), eq(contacts.isActive, true))).limit(1);
-  return rows[0] || null;
+  // Try exact match first
+  const exact = await db.select().from(contacts).where(and(eq(contacts.phone, phone), eq(contacts.isActive, true))).limit(1);
+  if (exact[0]) return exact[0];
+  // Try all phone variations (handles 9th digit, formatting differences)
+  const { phoneVariations } = await import("./phoneNormalize");
+  const variations = phoneVariations(phone);
+  for (const v of variations) {
+    if (v === phone) continue;
+    const row = await db.select().from(contacts).where(and(eq(contacts.phone, v), eq(contacts.isActive, true))).limit(1);
+    if (row[0]) return row[0];
+  }
+  return null;
 }
 
 export async function createContact(data: Omit<InsertContact, "id" | "createdAt" | "updatedAt">) {
@@ -1213,19 +1233,47 @@ export async function deleteContact(id: number) {
 export async function bulkCreateContacts(rows: Array<Omit<InsertContact, "id" | "createdAt" | "updatedAt">>) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  if (rows.length === 0) return { created: 0, skipped: 0 };
+  if (rows.length === 0) return { created: 0, skipped: 0, merged: 0 };
+  const { normalizePhone } = await import("./phoneNormalize");
   let created = 0;
   let skipped = 0;
+  let merged = 0;
   for (const row of rows) {
+    // Normalize the phone before checking
+    const normalizedPhone = normalizePhone(row.phone);
     const existing = await getContactByPhone(row.phone);
     if (existing) {
-      skipped++;
+      // Merge: update existing with better data if available
+      const updates: Partial<InsertContact> = {};
+      if (row.name && row.name !== "Cliente" && (!existing.name || existing.name === "Cliente")) {
+        updates.name = row.name;
+      }
+      if (row.email && !existing.email) updates.email = row.email;
+      if (row.notes && !existing.notes) updates.notes = row.notes;
+      if (row.conversationId && !existing.conversationId) updates.conversationId = row.conversationId;
+      // Merge tags
+      if (row.tags && row.tags.length > 0) {
+        const existingTags = existing.tags || [];
+        const mergedTags = Array.from(new Set([...existingTags, ...row.tags]));
+        if (mergedTags.length > existingTags.length) updates.tags = mergedTags;
+      }
+      // Normalize phone on existing record if different
+      if (existing.phone !== normalizedPhone && normalizedPhone.length >= 12) {
+        updates.phone = normalizedPhone;
+      }
+      if (Object.keys(updates).length > 0) {
+        await db.update(contacts).set(updates).where(eq(contacts.id, existing.id));
+        merged++;
+      } else {
+        skipped++;
+      }
       continue;
     }
-    await db.insert(contacts).values(row);
+    // Store with normalized phone
+    await db.insert(contacts).values({ ...row, phone: normalizedPhone || row.phone });
     created++;
   }
-  return { created, skipped };
+  return { created, skipped, merged };
 }
 
 export async function getAllContactTags() {
