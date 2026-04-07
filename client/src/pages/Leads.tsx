@@ -54,6 +54,10 @@ type LeadWithDetails = {
   conversationId: number;
   phone: string;
   name: string | null;
+  fullName: string | null;
+  email: string | null;
+  cpf: string | null;
+  birthDate: string | null;
   intention: string | null;
   vehicleInterest: string | null;
   hasTrade: boolean | null;
@@ -234,18 +238,73 @@ export default function Leads() {
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
     const parts: string[] = [];
-    parts.push(`Nome: ${lead.name || lead.conversation?.contactName || "N/A"}`);
+    
+    // ─── Dados Pessoais ──────────────────────────────────────
+    parts.push("═══ DADOS DO LEAD ═══");
+    parts.push(`Nome: ${lead.fullName || lead.name || lead.conversation?.contactName || "N/A"}`);
     parts.push(`Telefone: ${formatPhone(lead.phone)}`);
+    if (lead.email) parts.push(`Email: ${lead.email}`);
+    if (lead.cpf) parts.push(`CPF: ${lead.cpf}`);
+    if (lead.birthDate) parts.push(`Nascimento: ${lead.birthDate}`);
     if (lead.city) parts.push(`Cidade: ${lead.city}`);
+    
+    // ─── Status ──────────────────────────────────────────────
+    parts.push("");
+    parts.push("═══ STATUS ═══");
+    parts.push(`Status: ${STATUS_CONFIG[lead.status]?.label || lead.status}`);
     if (lead.funnelStatus) parts.push(`Etapa Funil: ${FUNNEL_CONFIG[lead.funnelStatus]?.label || lead.funnelStatus}`);
     if (lead.temperature) parts.push(`Temperatura: ${TEMP_CONFIG[lead.temperature]?.label || lead.temperature}`);
-    if (lead.vehicleInterest) parts.push(`Veículo de interesse: ${lead.vehicleInterest}`);
-    if (lead.linkedVehicle) parts.push(`Veículo vinculado: ${lead.linkedVehicle.brand} ${lead.linkedVehicle.model} ${lead.linkedVehicle.year} - R$ ${lead.linkedVehicle.price?.toLocaleString("pt-BR")}`);
-    if (lead.hasTrade && lead.tradeVehicle) parts.push(`Veículo de troca: ${lead.tradeVehicle} ${lead.tradeYear || ""} ${lead.tradeKm ? `(${lead.tradeKm} km)` : ""}`);
-    if (lead.paymentMethod) parts.push(`Pagamento: ${lead.paymentMethod}${lead.downPayment ? ` - Entrada: ${lead.downPayment}` : ""}`);
-    if (lead.sellerAssignment) parts.push(`Vendedor: ${lead.sellerAssignment.sellerName} (${lead.sellerAssignment.storeLocation})`);
-    if (lead.rescueInfo) parts.push(`Resgate: ${lead.rescueInfo.totalAttempts} tentativa(s)`);
-    parts.push(`Status: ${STATUS_CONFIG[lead.status]?.label || lead.status}`);
+    
+    // ─── Veículo de Interesse ────────────────────────────────
+    if (lead.vehicleInterest || lead.linkedVehicle) {
+      parts.push("");
+      parts.push("═══ VEÍCULO DE INTERESSE ═══");
+      if (lead.vehicleInterest) parts.push(`Veículo: ${lead.vehicleInterest}`);
+      if (lead.linkedVehicle) {
+        parts.push(`Vinculado: ${lead.linkedVehicle.brand} ${lead.linkedVehicle.model} ${lead.linkedVehicle.year}`);
+        if (lead.linkedVehicle.price) parts.push(`Valor: R$ ${lead.linkedVehicle.price.toLocaleString("pt-BR")}`);
+      }
+    }
+    
+    // ─── Dados da Troca ──────────────────────────────────────
+    if (lead.hasTrade) {
+      parts.push("");
+      parts.push("═══ VEÍCULO DE TROCA ═══");
+      if (lead.tradeVehicle) parts.push(`Veículo: ${lead.tradeVehicle}`);
+      if (lead.tradeYear) parts.push(`Ano: ${lead.tradeYear}`);
+      if (lead.tradeKm) parts.push(`KM: ${lead.tradeKm}`);
+    }
+    
+    // ─── Pagamento ───────────────────────────────────────────
+    if (lead.paymentMethod) {
+      parts.push("");
+      parts.push("═══ PAGAMENTO ═══");
+      parts.push(`Forma: ${lead.paymentMethod}`);
+      if (lead.downPayment) parts.push(`Entrada: ${lead.downPayment}`);
+    }
+    
+    // ─── Vendedor ────────────────────────────────────────────
+    if (lead.sellerAssignment) {
+      parts.push("");
+      parts.push("═══ VENDEDOR ═══");
+      parts.push(`Nome: ${lead.sellerAssignment.sellerName}`);
+      if (lead.sellerAssignment.storeLocation) parts.push(`Loja: ${lead.sellerAssignment.storeLocation}`);
+      if (lead.sellerAssignment.assignedAt) parts.push(`Atribuído em: ${new Date(lead.sellerAssignment.assignedAt).toLocaleString("pt-BR")}`);
+    }
+    
+    // ─── Resgate ─────────────────────────────────────────────
+    if (lead.rescueInfo && lead.rescueInfo.totalAttempts > 0) {
+      parts.push("");
+      parts.push(`Resgate: ${lead.rescueInfo.totalAttempts} tentativa(s)`);
+    }
+    
+    // ─── Notas ───────────────────────────────────────────────
+    if (lead.notes) {
+      parts.push("");
+      parts.push("═══ NOTAS ═══");
+      parts.push(lead.notes);
+    }
+    
     navigator.clipboard.writeText(parts.join("\n"));
     toast.success("Lead copiado para a área de transferência");
   }

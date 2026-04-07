@@ -1246,3 +1246,7 @@
 - [x] Importar contatos existentes via botão "Sincronizar Conversas" na página de Contatos
 - [x] Vincular contato à conversa e ao lead (conversationId, leadId)
 - [x] Enriquecer contato com dados do lead (nome, email, notas)
+
+## Feature - Melhorar botão copiar lead
+- [x] Incluir dados da troca (veículo de troca) no texto copiado
+- [x] Incluir dados pessoais completos (cidade, nome completo, CPF, nascimento, email) no texto copiado
