@@ -1267,6 +1267,33 @@ const webhookRouter = router({
 
       if (!conversation) throw new Error("Failed to create conversation");
 
+      // === AUTO-SYNC CONTATO NA AGENDA ===
+      try {
+        const existingContact = await getContactByPhone(input.phone);
+        if (!existingContact) {
+          await createContact({
+            name: input.name || conversation.contactName || "Cliente",
+            phone: input.phone,
+            conversationId: conversation.id,
+            source: "whatsapp",
+            isActive: true,
+          });
+          console.log(`[Webhook] Auto-sync: contato criado na agenda para ${input.phone}`);
+        } else {
+          // Atualizar conversationId se não tinha
+          if (!existingContact.conversationId && conversation.id) {
+            await updateContact(existingContact.id, { conversationId: conversation.id });
+          }
+          // Atualizar nome se mudou
+          if (input.name && input.name !== existingContact.name && existingContact.name === "Cliente") {
+            await updateContact(existingContact.id, { name: input.name });
+          }
+        }
+      } catch (err) {
+        // Non-critical, don't fail the webhook
+        console.error(`[Webhook] Auto-sync contato falhou:`, err);
+      }
+
       // === REATIVAÇÃO AUTOMÁTICA ===
       // Se a conversa estava resolved/closed e o cliente mandou nova mensagem,
       // reabrir automaticamente com IA ativa
@@ -3171,6 +3198,74 @@ const contactsRouter = router({
     }).optional())
     .query(async ({ input }) => {
       return listTemplateSends(input || {});
+    }),
+
+  // Sync contacts from existing conversations/leads
+  syncFromConversations: adminProcedure
+    .mutation(async () => {
+      const db = await getDb();
+      if (!db) throw new Error("DB not available");
+      const { conversations, leads } = await import("../drizzle/schema");
+
+      // Get all conversations with phone numbers
+      const allConversations = await db.select({
+        id: conversations.id,
+        phone: conversations.phone,
+        contactName: conversations.contactName,
+        contactPhoto: conversations.contactPhoto,
+        channel: conversations.channel,
+      }).from(conversations);
+
+      let created = 0;
+      let skipped = 0;
+      let updated = 0;
+
+      for (const conv of allConversations) {
+        if (!conv.phone) { skipped++; continue; }
+        
+        try {
+          const existing = await getContactByPhone(conv.phone);
+          if (existing) {
+            // Atualizar dados se necessário
+            const updates: Record<string, any> = {};
+            if (!existing.conversationId && conv.id) updates.conversationId = conv.id;
+            if (conv.contactName && existing.name === "Cliente") updates.name = conv.contactName;
+            if (Object.keys(updates).length > 0) {
+              await updateContact(existing.id, updates);
+              updated++;
+            } else {
+              skipped++;
+            }
+          } else {
+            // Buscar lead vinculado para enriquecer dados
+            const lead = await db.select({
+              id: leads.id,
+              name: leads.name,
+              email: leads.email,
+              notes: leads.notes,
+            }).from(leads).where(eq(leads.conversationId, conv.id as any)).limit(1);
+
+            const leadData = lead[0];
+
+            await createContact({
+              name: conv.contactName || leadData?.name || "Cliente",
+              phone: conv.phone,
+              email: leadData?.email || undefined,
+              notes: leadData?.notes || undefined,
+              conversationId: conv.id,
+              leadId: leadData?.id || undefined,
+              source: (conv.channel || "whatsapp") as any,
+              isActive: true,
+            });
+            created++;
+          }
+        } catch (err) {
+          console.error(`[ContactSync] Erro ao sincronizar ${conv.phone}:`, err);
+          skipped++;
+        }
+      }
+
+      return { created, updated, skipped, total: allConversations.length };
     }),
 });
 

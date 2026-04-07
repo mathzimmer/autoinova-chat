@@ -161,6 +161,14 @@ export default function ContactsPage() {
     onError: (err) => toast.error("Erro no envio em massa: " + err.message),
   });
 
+  const syncMutation = trpc.contact.syncFromConversations.useMutation({
+    onSuccess: (result) => {
+      toast.success(`Sincronização concluída: ${result.created} criados, ${result.updated} atualizados, ${result.skipped} já existiam`);
+      contactsQuery.refetch();
+    },
+    onError: (err) => toast.error("Erro na sincronização: " + err.message),
+  });
+
   const contacts = contactsQuery.data?.contacts || [];
   const total = contactsQuery.data?.total || 0;
   const tags = tagsQuery.data || [];
@@ -299,6 +307,15 @@ export default function ContactsPage() {
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending}
+          >
+            <Users className="h-4 w-4 mr-1" />
+            {syncMutation.isPending ? "Sincronizando..." : "Sincronizar Conversas"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4 mr-1" /> Importar Excel
           </Button>

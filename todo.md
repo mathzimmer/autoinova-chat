@@ -1234,3 +1234,15 @@
 
 ## Bug - Rate exceeded ao acessar site publicado
 - [x] Investigar e corrigir erro "Rate exceeded" - adicionado retry com backoff exponencial + página amigável com auto-redirect
+
+## Bug - Variável {{pagamento}} não funciona no fluxo
+- [x] Verificado: mapeamento correto (pagamento → paymentMethod). Usuário confirmou que funciona.
+
+## Bug/Feature - Debounce de mensagens para evitar fluxo duplicado
+- [x] Debounce já existente no sistema - usuário ajustou o delay nas configurações
+
+## Feature - Auto-sync contatos na agenda
+- [x] Auto-sync: quando nova conversa é criada no webhook, criar contato na agenda automaticamente
+- [x] Importar contatos existentes via botão "Sincronizar Conversas" na página de Contatos
+- [x] Vincular contato à conversa e ao lead (conversationId, leadId)
+- [x] Enriquecer contato com dados do lead (nome, email, notas)
