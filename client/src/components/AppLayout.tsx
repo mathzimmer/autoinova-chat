@@ -101,7 +101,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center max-w-sm">
           <Bot className="h-12 w-12 text-primary mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-foreground mb-2">Auto Inova Chat</h2>
+          <h2 className="text-xl font-semibold text-foreground mb-2">Auto Inova - Matriz Chat</h2>
           <p className="text-sm text-muted-foreground mb-6">Faça login para acessar o painel de atendimento.</p>
           <div className="space-y-3">
             <Button onClick={() => window.location.href = getLoginUrl()} size="lg" className="w-full">

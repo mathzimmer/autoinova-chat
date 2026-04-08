@@ -1,5 +1,5 @@
 /**
- * Token Health Monitor — AutoInova Chat
+ * Token Health Monitor — Auto Inova - Matriz Chat
  *
  * Periodically checks the health of all external API tokens (WhatsApp, Meta Ads)
  * and notifies the owner when any token fails or becomes invalid.
@@ -160,7 +160,7 @@ export async function runTokenHealthCheck(): Promise<TokenStatus[]> {
       .map(f => `- ${f.name} (${f.envVar}): ${f.message}`)
       .join("\n");
 
-    const title = `⚠️ Auto Inova Chat — ${failures.length} token(s) com problema`;
+    const title = `⚠️ Auto Inova - Matriz Chat — ${failures.length} token(s) com problema`;
     const content = `Os seguintes tokens estão com problema e precisam de atenção:\n\n${failureDetails}\n\nAcesse o Meta Business Manager para verificar e gerar novos tokens se necessário.\n\nVerificação realizada em: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`;
 
     try {

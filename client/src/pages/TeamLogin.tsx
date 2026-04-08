@@ -40,7 +40,7 @@ export default function TeamLogin() {
           <div className="mx-auto h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center mb-2">
             <Bot className="h-6 w-6 text-primary" />
           </div>
-          <CardTitle className="text-xl">Auto Inova Chat</CardTitle>
+          <CardTitle className="text-xl">Auto Inova - Matriz Chat</CardTitle>
           <CardDescription>Login da equipe de atendimento</CardDescription>
         </CardHeader>
         <CardContent>

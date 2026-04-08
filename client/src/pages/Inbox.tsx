@@ -64,7 +64,7 @@ export default function Inbox() {
               <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
                 <MessageSquare className="h-10 w-10 text-primary" />
               </div>
-              <h2 className="text-lg font-semibold text-foreground mb-2">Auto Inova Chat</h2>
+              <h2 className="text-lg font-semibold text-foreground mb-2">Auto Inova - Matriz Chat</h2>
               <p className="text-sm text-muted-foreground max-w-xs">
                 Selecione uma conversa para visualizar as mensagens e gerenciar o atendimento.
               </p>

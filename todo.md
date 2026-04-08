@@ -1276,3 +1276,9 @@
 - [x] Integrar detecção na criação de contatos (manual e importação)
 - [x] Interface: indicador visual de contatos agrupados/duplicados
 - [x] Testes vitest para normalização e merge
+
+## Feature - Renomear Auto Inova para Auto Inova - Matriz
+- [x] Localizar todas as referências a "Auto Inova" no código
+- [x] Atualizar nome da loja no banco de dados (tabela de configurações/vendedores)
+- [x] Atualizar referências no código frontend e backend
+- [x] Atualizar ficha de vendedor

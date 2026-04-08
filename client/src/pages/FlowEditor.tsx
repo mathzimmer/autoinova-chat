@@ -1732,7 +1732,7 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
                 <Textarea
                   value={flowAiPrompt}
                   onChange={(e) => setFlowAiPrompt(e.target.value)}
-                  placeholder={`Ex: Você é um consultor de vendas da Auto Inova...`}
+                  placeholder={`Ex: Você é um consultor de vendas da Auto Inova - Matriz...`}
                   rows={5}
                   className="text-sm font-mono"
                 />

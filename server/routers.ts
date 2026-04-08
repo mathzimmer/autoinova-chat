@@ -133,7 +133,7 @@ async function initDebounce() {
       // === END GLOBAL TOGGLE CHECK ===
 
       console.log(`[Debounce] Conversa ${conversationId}: processando ${messages.length} mensagem(ns) agrupada(s)`);
-      emitTypingIndicator(conversationId, true, "Auto Inova IA");
+      emitTypingIndicator(conversationId, true, "Auto Inova - Matriz IA");
 
       // === FLOW ENGINE: Tentar processar via fluxo programado ===
       if (globalFlowsEnabled) try {
@@ -146,7 +146,7 @@ async function initDebounce() {
 
         if (flowResult.handled) {
           console.log(`[Debounce] Conversa ${conversationId}: processado pelo Flow Engine (${flowResult.responses.length} respostas, waiting: ${flowResult.waitingForInput})`);
-          emitTypingIndicator(conversationId, false, "Auto Inova IA");
+          emitTypingIndicator(conversationId, false, "Auto Inova - Matriz IA");
 
           // Save flow responses to DB and emit
           for (const response of flowResult.responses) {
@@ -154,7 +154,7 @@ async function initDebounce() {
               conversationId,
               content: response,
               senderType: "bot",
-              senderName: "Auto Inova IA",
+              senderName: "Auto Inova - Matriz IA",
               messageType: "text",
             });
             emitNewMessage(conversationId, botMsg);
@@ -165,7 +165,7 @@ async function initDebounce() {
               conversationId,
               content: img.caption || "[Imagem]",
               senderType: "bot",
-              senderName: "Auto Inova IA",
+              senderName: "Auto Inova - Matriz IA",
               messageType: "image",
               metadata: { mediaUrl: img.imageUrl, caption: img.caption },
             });
@@ -187,7 +187,7 @@ async function initDebounce() {
               conversationId,
               content,
               senderType: "bot",
-              senderName: "Auto Inova IA",
+              senderName: "Auto Inova - Matriz IA",
               messageType: "text",
               metadata: interactiveMetadata,
             });
@@ -203,7 +203,7 @@ async function initDebounce() {
       // Check if AI is globally enabled before processing
       if (!globalAiEnabled) {
         console.log(`[Debounce] Conversa ${conversationId}: IA DESATIVADA globalmente, ignorando processamento IA`);
-        emitTypingIndicator(conversationId, false, "Auto Inova IA");
+        emitTypingIndicator(conversationId, false, "Auto Inova - Matriz IA");
         return;
       }
 
@@ -268,14 +268,14 @@ async function initDebounce() {
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent, flowAiOptions);
       console.log(`[Debounce] Conversa ${conversationId}: IA respondeu, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
 
-      emitTypingIndicator(conversationId, false, "Auto Inova IA");
+      emitTypingIndicator(conversationId, false, "Auto Inova - Matriz IA");
 
       if (aiResult.response) {
         const botMsg = await createMessage({
           conversationId,
           content: aiResult.response,
           senderType: "bot",
-          senderName: "Auto Inova IA",
+          senderName: "Auto Inova - Matriz IA",
           messageType: "text",
         });
 
@@ -332,7 +332,7 @@ async function initDebounce() {
                     conversationId,
                     content: im.caption || im.body || "[Imagem do ve\u00edculo]",
                     senderType: "bot",
-                    senderName: "Auto Inova IA",
+                    senderName: "Auto Inova - Matriz IA",
                     messageType: "image",
                     metadata: { imageUrl: im.imageUrl, caption: im.caption },
                   });
@@ -372,7 +372,7 @@ async function initDebounce() {
                 conversationId,
                 content: response,
                 senderType: "bot",
-                senderName: "Auto Inova IA",
+                senderName: "Auto Inova - Matriz IA",
                 messageType: "text",
               });
               emitNewMessage(conversationId, botMsg);
@@ -384,7 +384,7 @@ async function initDebounce() {
                 conversationId,
                 content: img.caption || "[Imagem]",
                 senderType: "bot",
-                senderName: "Auto Inova IA",
+                senderName: "Auto Inova - Matriz IA",
                 messageType: "image",
                 metadata: { mediaUrl: img.imageUrl, caption: img.caption },
               });
@@ -407,7 +407,7 @@ async function initDebounce() {
                 conversationId,
                 content,
                 senderType: "bot",
-                senderName: "Auto Inova IA",
+                senderName: "Auto Inova - Matriz IA",
                 messageType: "text",
                 metadata: interactiveMetadata,
               });
@@ -472,7 +472,7 @@ async function initDebounce() {
                   conversationId,
                   content: `${im.body}\n\n${interactiveContent}`,
                   senderType: "bot",
-                  senderName: "Auto Inova IA",
+                  senderName: "Auto Inova - Matriz IA",
                   messageType: "text",
                   metadata: interactiveMetadata,
                 });
@@ -489,7 +489,7 @@ async function initDebounce() {
       }
     } catch (err) {
       console.error(`[Debounce] Erro ao processar conversa ${conversationId}:`, err);
-      emitTypingIndicator(conversationId, false, "Auto Inova IA");
+      emitTypingIndicator(conversationId, false, "Auto Inova - Matriz IA");
     }
   });
 
@@ -2401,7 +2401,7 @@ Retorne um JSON com:
             message: { autofill_message: { content }, text } }
         });
         const attempts = [
-          { content: `Olá! Vi o anúncio do ${v.brand} ${v.model} ${v.year} e tenho interesse!`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
+          { content: `Olá! Vi o anúncio do ${v.brand} ${v.model} ${v.year} e tenho interesse!`, text: `Olá! Bem-vindo à Auto Inova - Matriz! 👋` },
           { content: `Interesse no ${v.brand} ${v.model} ${v.year}`, text: `Olá!` },
           { content: "Olá, tenho interesse!", text: "" },
         ];

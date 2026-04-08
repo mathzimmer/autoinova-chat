@@ -35,7 +35,7 @@ export default function Home() {
             <span className="text-xs font-medium text-primary">Atendimento Inteligente com IA</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-bold text-foreground mb-4 leading-tight">
-            Auto Inova
+            Auto Inova - Matriz
             <span className="text-primary"> Chat</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">

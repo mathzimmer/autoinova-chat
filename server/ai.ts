@@ -173,7 +173,7 @@ NUNCA diga "vou verificar" ou "só um momento". Apresente resultados na mesma re
 // ============================================================================
 export const DEFAULT_PERSONALITY_PROMPT = `=== PERSONALIDADE E ESTRATÉGIA ===
 
-Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
+Você é a assistente virtual da Auto Inova - Matriz, uma concessionária de veículos localizada em Ivoti - RS.
 Seu papel é fazer atendimento de pré-venda pelo WhatsApp, ajudando clientes a encontrar o veículo ideal.
 
 TOM DE VOZ:
@@ -190,7 +190,7 @@ INFORMAÇÕES DA LOJA:
 // já salvos no banco de dados (que são monolíticos).
 // ============================================================================
 // Legacy prompt kept for backward compatibility with old DB entries
-export const DEFAULT_SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova, uma concessionária de veículos localizada em Ivoti - RS.
+export const DEFAULT_SYSTEM_PROMPT = `Você é a assistente virtual da Auto Inova - Matriz, uma concessionária de veículos localizada em Ivoti - RS.
 Seu papel é fazer atendimento de pré-venda pelo WhatsApp, ajudando clientes a encontrar o veículo ideal.
 
 FORMATO: Escreva como WhatsApp normal, texto corrido. PROIBIDO markdown (*, _, -, #, bullets). Máximo 3 parágrafos curtos. Máximo 1-2 emojis.
@@ -374,7 +374,7 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos disponíveis no estoque REAL da Auto Inova. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. IMPORTANTE: use 'categoria' para filtrar carros ou motos, 'tipo' para filtrar por carroceria (picape, hatch, sedan, SUV, naked, esportiva, etc.), e 'cambio' para filtrar por transmissão (automatico, manual). Cada resultado inclui [ID:X] para vincular ao lead.",
+      description: "Busca veículos disponíveis no estoque REAL da Auto Inova - Matriz. Use quando o cliente perguntar sobre um veículo específico ou quiser ver opções. IMPORTANTE: use 'categoria' para filtrar carros ou motos, 'tipo' para filtrar por carroceria (picape, hatch, sedan, SUV, naked, esportiva, etc.), e 'cambio' para filtrar por transmissão (automatico, manual). Cada resultado inclui [ID:X] para vincular ao lead.",
       parameters: {
         type: "object",
         properties: {
@@ -401,7 +401,7 @@ const TOOLS: Tool[] = [
     type: "function",
     function: {
       name: "resumo_estoque",
-      description: "Obtém um resumo geral do estoque atual da Auto Inova: quantos veículos, marcas disponíveis, faixa de preço.",
+      description: "Obtém um resumo geral do estoque atual da Auto Inova - Matriz: quantos veículos, marcas disponíveis, faixa de preço.",
       parameters: {
         type: "object",
         properties: {},
@@ -475,7 +475,7 @@ const TOOLS: Tool[] = [
             },
           },
           cabecalho: { type: "string", description: "Cabeçalho opcional (máx 60 chars)" },
-          rodape: { type: "string", description: "Rodapé opcional (máx 60 chars, ex: 'Auto Inova - Ivoti/RS')" },
+          rodape: { type: "string", description: "Rodapé opcional (máx 60 chars, ex: 'Auto Inova - Matriz - Ivoti/RS')" },
         },
         required: ["texto", "botoes"],
         additionalProperties: false,

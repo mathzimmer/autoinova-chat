@@ -393,7 +393,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
                 conversationId: ctx.conversationId,
                 content: response,
                 senderType: "bot",
-                senderName: "Auto Inova IA",
+                senderName: "Auto Inova - Matriz IA",
                 messageType: "text",
               });
               emitNewMessage(ctx.conversationId, botMsg);
@@ -404,7 +404,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
                 conversationId: ctx.conversationId,
                 content: img.caption || "[Imagem]",
                 senderType: "bot",
-                senderName: "Auto Inova IA",
+                senderName: "Auto Inova - Matriz IA",
                 messageType: "image",
                 metadata: { mediaUrl: img.imageUrl, caption: img.caption },
               });
@@ -425,7 +425,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
                 conversationId: ctx.conversationId,
                 content,
                 senderType: "bot",
-                senderName: "Auto Inova IA",
+                senderName: "Auto Inova - Matriz IA",
                 messageType: "text",
                 metadata: interactiveMetadata,
               });
@@ -798,7 +798,7 @@ async function executeFromNode(
         // 4. Final fallback: usar primeira loja disponível
         if (storeLocation === "auto") {
           const stores = await getDistinctStoreLocations();
-          storeLocation = stores[0] || "Auto Inova";
+          storeLocation = stores[0] || "Auto Inova - Matriz";
           console.log(`[FlowEngine] assign_seller: using fallback store "${storeLocation}"`);
         }
       }

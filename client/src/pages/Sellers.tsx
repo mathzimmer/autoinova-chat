@@ -130,7 +130,7 @@ export default function Sellers() {
     setForm({
       name: "",
       phone: "",
-      storeLocation: stores[0] || "Auto Inova",
+      storeLocation: stores[0] || "Auto Inova - Matriz",
       sortOrder: sellers.length,
     });
     setPhotoPreview(null);
@@ -515,8 +515,8 @@ export default function Sellers() {
                         {store}
                       </SelectItem>
                     ))}
-                    {!stores.includes("Auto Inova") && (
-                      <SelectItem value="Auto Inova">Auto Inova</SelectItem>
+                    {!stores.includes("Auto Inova - Matriz") && (
+                      <SelectItem value="Auto Inova - Matriz">Auto Inova - Matriz</SelectItem>
                     )}
                     {!stores.includes("Auto Inova - Loja 2") && (
                       <SelectItem value="Auto Inova - Loja 2">Auto Inova - Loja 2</SelectItem>

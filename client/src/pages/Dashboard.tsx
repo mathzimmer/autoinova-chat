@@ -32,7 +32,7 @@ export default function Dashboard() {
     <div className="p-6 pb-16 space-y-6 max-w-7xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Visão geral do atendimento Auto Inova</p>
+        <p className="text-sm text-muted-foreground mt-1">Visão geral do atendimento Auto Inova - Matriz</p>
       </div>
 
       {/* Token Health Alert Banner */}

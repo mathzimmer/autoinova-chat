@@ -202,7 +202,7 @@ async function executeRescueForLead(
             conversationId: conversation.id,
             content: text,
             senderType: "bot",
-            senderName: "Auto Inova IA (Resgate)",
+            senderName: "Auto Inova - Matriz IA (Resgate)",
             messageType: "text",
           });
           messagesSent++;
@@ -223,7 +223,7 @@ async function executeRescueForLead(
             conversationId: conversation.id,
             content: btnText,
             senderType: "bot",
-            senderName: "Auto Inova IA (Resgate)",
+            senderName: "Auto Inova - Matriz IA (Resgate)",
             messageType: "text",
           });
           messagesSent++;
@@ -240,7 +240,7 @@ async function executeRescueForLead(
             conversationId: conversation.id,
             content: caption || "[Imagem]",
             senderType: "bot",
-            senderName: "Auto Inova IA (Resgate)",
+            senderName: "Auto Inova - Matriz IA (Resgate)",
             messageType: "image",
             metadata: { mediaUrl: imageUrl },
           });
