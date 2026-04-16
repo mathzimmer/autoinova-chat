@@ -708,6 +708,9 @@ async function executeFromNode(
         if (field === "status") updateData.status = value;
         else if (field === "vehicleInterest") updateData.vehicleInterest = value;
         else if (field === "hasTrade") updateData.hasTrade = value === "true" || value === "sim";
+        else if (field === "tradeVehicle") updateData.tradeVehicle = value;
+        else if (field === "tradeYear") updateData.tradeYear = parseInt(value) || null;
+        else if (field === "tradeKm") updateData.tradeKm = parseInt(value) || null;
         else if (field === "paymentMethod") updateData.paymentMethod = value;
         else if (field === "intention") updateData.intention = value;
         else if (field === "notes") updateData.notes = value;

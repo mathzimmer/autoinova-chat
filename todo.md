@@ -1282,3 +1282,8 @@
 - [x] Atualizar nome da loja no banco de dados (tabela de configurações/vendedores)
 - [x] Atualizar referências no código frontend e backend
 - [x] Atualizar ficha de vendedor
+
+## Feature - Atualizar Veículo da Troca no Nó Atualizar Lead
+- [x] Adicionar campos de veículo da troca no nó Atualizar Lead (frontend)
+- [x] Atualizar backend para processar atualização de veículo da troca
+- [x] Testar a funcionalidade no editor de fluxos
