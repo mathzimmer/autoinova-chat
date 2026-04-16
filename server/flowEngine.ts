@@ -49,6 +49,14 @@ interface FlowResult {
 // ─── Template Variables ──────────────────────────────────────
 function replaceVariables(text: string, ctx: FlowContext): string {
   if (!text) return text;
+  
+  // Consolidar dados de troca em um formato legível
+  const tradeDataParts: string[] = [];
+  if (ctx.leadData?.tradeVehicle) tradeDataParts.push(`Veículo: ${ctx.leadData.tradeVehicle}`);
+  if (ctx.leadData?.tradeYear) tradeDataParts.push(`Ano: ${ctx.leadData.tradeYear}`);
+  if (ctx.leadData?.tradeKm) tradeDataParts.push(`KM: ${ctx.leadData.tradeKm}`);
+  const tradeDataConsolidated = tradeDataParts.length > 0 ? tradeDataParts.join(" | ") : "";
+  
   return text
     .replace(/\{\{nome\}\}/gi, ctx.contactName || ctx.leadData?.name || "cliente")
     .replace(/\{\{nome_completo\}\}/gi, ctx.leadData?.fullName || ctx.leadData?.name || ctx.contactName || "")
@@ -56,6 +64,7 @@ function replaceVariables(text: string, ctx: FlowContext): string {
     .replace(/\{\{veiculo\}\}/gi, ctx.leadData?.vehicleInterest || "")
     .replace(/\{\{cidade\}\}/gi, ctx.leadData?.city || "")
     .replace(/\{\{troca\}\}/gi, ctx.leadData?.tradeVehicle || "")
+    .replace(/\{\{troca_completa\}\}/gi, tradeDataConsolidated)
     .replace(/\{\{pagamento\}\}/gi, ctx.leadData?.paymentMethod || "")
     .replace(/\{\{entrada\}\}/gi, ctx.leadData?.downPayment || "")
     .replace(/\{\{email\}\}/gi, ctx.leadData?.email || "")
@@ -711,6 +720,10 @@ async function executeFromNode(
         else if (field === "tradeVehicle") updateData.tradeVehicle = value;
         else if (field === "tradeYear") updateData.tradeYear = parseInt(value) || null;
         else if (field === "tradeKm") updateData.tradeKm = parseInt(value) || null;
+        else if (field === "tradeDataConsolidated") {
+          // Parse consolidated trade data (format: "Veículo: X | Ano: Y | KM: Z")
+          updateData.notes = (updateData.notes || "") + (updateData.notes ? "\n" : "") + `Troca: ${value}`;
+        }
         else if (field === "paymentMethod") updateData.paymentMethod = value;
         else if (field === "intention") updateData.intention = value;
         else if (field === "notes") updateData.notes = value;

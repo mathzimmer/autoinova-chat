@@ -1,5 +1,6 @@
-import { trpc } from "@/lib/trpc";
+'use client';
 import { useState, useEffect } from "react";
+import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -7,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2 } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2, Copy } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -163,6 +164,60 @@ export default function ConversationPanel({ conversationId }: Props) {
     setEditingLead(false);
   };
 
+  const handleCopyLead = async () => {
+    if (!lead || !conversation) return;
+    
+    // Consolidar dados de troca
+    const tradeDataParts: string[] = [];
+    if (lead.tradeVehicle) tradeDataParts.push(`Veículo: ${lead.tradeVehicle}`);
+    if (lead.tradeYear) tradeDataParts.push(`Ano: ${lead.tradeYear}`);
+    if (lead.tradeKm) tradeDataParts.push(`KM: ${lead.tradeKm}`);
+    const tradeData = tradeDataParts.length > 0 ? tradeDataParts.join(" | ") : "";
+    
+    // Mapear status
+    const statusLabel = lead.status === "new" ? "Novo" : 
+                        lead.status === "qualifying" ? "Qualificando" : 
+                        lead.status === "qualified" ? "Qualificado" : 
+                        lead.status === "contacted" ? "Contatado" : 
+                        lead.status === "converted" ? "Convertido" : 
+                        lead.status === "lost" ? "Perdido" : lead.status;
+    
+    // Montar texto completo
+    const leadText = `
+═══ DADOS DO LEAD ═══
+Nome: ${conversation.contactName || "N/A"}
+Telefone: ${conversation.phone}
+
+═══ STATUS ═══
+Status: ${statusLabel}
+Etapa Funil: ${lead.funnelStatus || "N/A"}
+Temperatura: ${lead.temperature || "N/A"}
+
+═══ VEÍCULO DE INTERESSE ═══
+Veículo: ${lead.vehicleInterest || "N/A"}
+${linkedVehicle ? `Vinculado: ${linkedVehicle.brand} ${linkedVehicle.model} ${linkedVehicle.year}
+Valor: R$ ${linkedVehicle.price?.toLocaleString("pt-BR") || "N/A"}` : ""}
+
+═══ TROCA ═══
+Tem Troca: ${lead.hasTrade ? "Sim" : "Não"}
+${tradeData ? `Dados: ${tradeData}` : ""}
+
+═══ PAGAMENTO ═══
+Forma: ${lead.paymentMethod || "N/A"}
+Entrada: ${lead.downPayment || "N/A"}
+
+═══ NOTAS ═══
+${(lead as any).notes || "N/A"}
+    `.trim();
+    
+    try {
+      await navigator.clipboard.writeText(leadText);
+      toast.success("Lead copiado para clipboard!");
+    } catch (err) {
+      toast.error("Erro ao copiar lead");
+    }
+  };
+
   if (!conversation) return null;
 
   return (
@@ -198,74 +253,10 @@ export default function ConversationPanel({ conversationId }: Props) {
               Reativar IA
             </Button>
           )}
-          <div className="flex items-center gap-2 p-2 rounded-md bg-secondary/50">
-            {conversation.aiActive ? (
-              <>
-                <Zap className="h-4 w-4 text-primary" />
-                <span className="text-xs text-primary font-medium">IA respondendo automaticamente</span>
-              </>
-            ) : (
-              <>
-                <ZapOff className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">IA pausada - atendimento humano</span>
-              </>
-            )}
-          </div>
         </div>
       </div>
 
-      {/* Status */}
-      <div className="p-4 border-b border-border shrink-0">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Status da Conversa</h4>
-        <Select
-          value={conversation.status}
-          onValueChange={(value) => updateStatus.mutate({ id: conversationId, status: value as any })}
-        >
-          <SelectTrigger className="bg-input border-border">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="open">Aberta</SelectItem>
-            <SelectItem value="pending">Pendente</SelectItem>
-            <SelectItem value="resolved">Resolvida</SelectItem>
-            <SelectItem value="closed">Fechada</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Agent Assignment */}
-      <div className="p-4 border-b border-border shrink-0">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-          <UserCog className="h-3.5 w-3.5" />
-          Atribuído a
-        </h4>
-        <Select
-          value={conversation.assignedTo?.toString() || "none"}
-          onValueChange={(val) => assignAgent.mutate({ id: conversationId, agentId: val === "none" ? null : parseInt(val) })}
-        >
-          <SelectTrigger className="bg-input border-border">
-            <SelectValue placeholder="Nenhum agente" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">Nenhum (IA responde)</SelectItem>
-            {teamMembers && teamMembers.map((m: any) => (
-              <SelectItem key={m.id} value={m.id.toString()}>
-                {m.name} ({m.cargo})
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {conversation.assignedTo && teamMembers && (
-          <div className="mt-2 flex items-center gap-2 p-2 rounded-md bg-blue-500/10">
-            <UserCheck className="h-3.5 w-3.5 text-blue-400" />
-            <span className="text-xs text-blue-400 font-medium">
-              {teamMembers.find((m: any) => m.id === conversation.assignedTo)?.name || "Agente"} está atendendo
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Contact Info */}
+      {/* Contact Info - Editable */}
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Contato</h4>
@@ -290,8 +281,7 @@ export default function ConversationPanel({ conversationId }: Props) {
         {editingContact ? (
           <div className="space-y-2.5">
             <FieldInput label="Nome" value={contactName} onChange={setContactName} placeholder="Nome do contato" />
-            <FieldInput label="Telefone" value={conversation.phone} disabled />
-            <FieldInput label="E-mail" value={contactEmail} onChange={setContactEmail} placeholder="email@exemplo.com" />
+            <FieldInput label="Email" value={contactEmail} onChange={setContactEmail} placeholder="email@example.com" />
             <div>
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Observações</label>
               <Textarea
@@ -333,10 +323,16 @@ export default function ConversationPanel({ conversationId }: Props) {
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dados do Lead</h4>
           {!editingLead ? (
-            <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground hover:text-primary" onClick={() => setEditingLead(true)}>
-              <Pencil className="h-3 w-3 mr-1" />
-              Editar
-            </Button>
+            <div className="flex gap-1">
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground hover:text-primary" onClick={() => setEditingLead(true)}>
+                <Pencil className="h-3 w-3 mr-1" />
+                Editar
+              </Button>
+              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-muted-foreground hover:text-primary" onClick={handleCopyLead} title="Copiar dados do lead para vendedor">
+                <Copy className="h-3 w-3 mr-1" />
+                Copiar
+              </Button>
+            </div>
           ) : (
             <div className="flex gap-1">
               <Button variant="ghost" size="sm" className="h-6 px-2 text-xs text-primary" onClick={handleSaveLead} disabled={updateLead.isPending}>
@@ -352,10 +348,10 @@ export default function ConversationPanel({ conversationId }: Props) {
 
         {editingLead ? (
           <div className="space-y-2.5">
-            <FieldInput label="Intenu00e7u00e3o" value={leadIntention} onChange={setLeadIntention} placeholder="compra, troca, informau00e7u00e3o..." />
-            <FieldInput label="Veu00edculo de Interesse (Texto)" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
+            <FieldInput label="Intenção" value={leadIntention} onChange={setLeadIntention} placeholder="compra, troca, informação..." />
+            <FieldInput label="Veículo de Interesse (Texto)" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Veu00edculo do Estoque</label>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Veículo do Estoque</label>
               <Select value={leadVehicleId?.toString() || "none"} onValueChange={(val) => setLeadVehicleId(val === "none" ? null : parseInt(val))}>
                 <SelectTrigger className="h-8 text-sm bg-input border-border">
                   <SelectValue placeholder="Selecione um veículo..." />
@@ -500,9 +496,9 @@ function FieldInput({ label, value, onChange, placeholder, disabled }: { label: 
 
 function InfoRow({ icon, value }: { icon: React.ReactNode; value: string }) {
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className="text-muted-foreground shrink-0">{icon}</span>
-      <span className="text-card-foreground">{value}</span>
+    <div className="flex items-center gap-2">
+      <span className="text-muted-foreground">{icon}</span>
+      <span className="text-sm text-card-foreground break-all">{value}</span>
     </div>
   );
 }
@@ -512,8 +508,8 @@ function LeadField({ icon, label, value }: { icon: React.ReactNode; label: strin
     <div className="flex items-start gap-2">
       <span className="text-muted-foreground mt-0.5 shrink-0">{icon}</span>
       <div className="min-w-0">
-        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{label}</p>
-        <p className="text-sm text-card-foreground">{value}</p>
+        <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-semibold">{label}</p>
+        <p className="text-sm text-card-foreground break-words">{value}</p>
       </div>
     </div>
   );

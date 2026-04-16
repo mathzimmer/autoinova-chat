@@ -631,6 +631,7 @@ function PropertiesPanel({
                   <SelectItem value="tradeVehicle">Veículo da troca</SelectItem>
                   <SelectItem value="tradeYear">Ano da troca</SelectItem>
                   <SelectItem value="tradeKm">KM da troca</SelectItem>
+                  <SelectItem value="tradeDataConsolidated">Dados da Troca (Consolidado)</SelectItem>
                   <SelectItem value="paymentMethod">Forma de pagamento</SelectItem>
                   <SelectItem value="intention">Intenção</SelectItem>
                   <SelectItem value="notes">Notas</SelectItem>

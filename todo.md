@@ -1287,3 +1287,9 @@
 - [x] Adicionar campos de veículo da troca no nó Atualizar Lead (frontend)
 - [x] Atualizar backend para processar atualização de veículo da troca
 - [x] Testar a funcionalidade no editor de fluxos
+
+## Feature - Função {{troca_completa}} no Nó Atualizar Lead
+- [x] Implementar função {{troca_completa}} que consolida todos os dados de troca (veículo, ano, km)
+- [x] Adicionar opção "Dados da Troca (Consolidado)" no nó Atualizar Lead
+- [x] Integrar dados de troca consolidados no botão Copiar Lead para vendedor
+- [x] Testar {{troca_completa}} com dados de troca completos
