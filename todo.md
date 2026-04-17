@@ -1293,3 +1293,6 @@
 - [x] Adicionar opção "Dados da Troca (Consolidado)" no nó Atualizar Lead
 - [x] Integrar dados de troca consolidados no botão Copiar Lead para vendedor
 - [x] Testar {{troca_completa}} com dados de troca completos
+
+## Feature - Restaurar Seletor de Estado da Conversa
+- [x] Restaurar seletor de estado (Aberta, Pendente, Resolvida, Fechada) no ConversationPanel

@@ -256,6 +256,22 @@ ${(lead as any).notes || "N/A"}
         </div>
       </div>
 
+      {/* Conversation Status */}
+      <div className="p-4 border-b border-border shrink-0">
+        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Estado da Conversa</label>
+        <Select value={conversation.status} onValueChange={(val) => updateStatus.mutate({ id: conversationId, status: val as any })}>
+          <SelectTrigger className="h-8 text-sm bg-input border-border">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="open">Aberta</SelectItem>
+            <SelectItem value="pending">Pendente</SelectItem>
+            <SelectItem value="resolved">Resolvida</SelectItem>
+            <SelectItem value="closed">Fechada</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Contact Info - Editable */}
       <div className="p-4 border-b border-border shrink-0">
         <div className="flex items-center justify-between mb-3">
