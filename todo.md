@@ -1303,3 +1303,8 @@
 - [x] Adicionar ícone de campanha ativa nos contatos
 - [ ] Adicionar histórico de campanhas que o contato participou (TODO: backend)
 - [ ] Backend: endpoints para vincular/desvincular contatos de campanhas
+
+## Feature - Seleção de Campanhas para Contatos
+- [x] Backend: endpoints para vincular/desvincular contatos de campanhas (addContact, removeContact)
+- [x] Frontend: implementar seleção de campanhas no dialog de contatos individuais
+- [x] Frontend: implementar seleção em massa de contatos para uma campanha

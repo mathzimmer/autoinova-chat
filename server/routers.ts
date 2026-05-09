@@ -1922,6 +1922,84 @@ const campaignRouter = router({
       active: chatFlows.active,
     }).from(chatFlows);
   }),
+
+  // Add contact to campaign
+  addContact: adminProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      contactId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const campaign = await getCampaignByIdDb(input.campaignId);
+      if (!campaign) throw new Error("Campanha nao encontrada");
+      
+      const currentIds = campaign.contactIds || [];
+      if (!currentIds.includes(input.contactId)) {
+        currentIds.push(input.contactId);
+      }
+      
+      return updateCampaignDb(input.campaignId, {
+        contactIds: currentIds,
+        totalContacts: currentIds.length,
+      });
+    }),
+
+  // Remove contact from campaign
+  removeContact: adminProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      contactId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const campaign = await getCampaignByIdDb(input.campaignId);
+      if (!campaign) throw new Error("Campanha nao encontrada");
+      
+      const currentIds = (campaign.contactIds || []).filter(id => id !== input.contactId);
+      
+      return updateCampaignDb(input.campaignId, {
+        contactIds: currentIds,
+        totalContacts: currentIds.length,
+      });
+    }),
+
+  // Add multiple contacts to campaign
+  addContacts: adminProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      contactIds: z.array(z.number()),
+    }))
+    .mutation(async ({ input }) => {
+      const campaign = await getCampaignByIdDb(input.campaignId);
+      if (!campaign) throw new Error("Campanha nao encontrada");
+      
+      const currentIds = campaign.contactIds || [];
+      const newIds = new Set([...currentIds, ...input.contactIds]);
+      const mergedIds = Array.from(newIds);
+      
+      return updateCampaignDb(input.campaignId, {
+        contactIds: mergedIds,
+        totalContacts: mergedIds.length,
+      });
+    }),
+
+  // Remove multiple contacts from campaign
+  removeContacts: adminProcedure
+    .input(z.object({
+      campaignId: z.number(),
+      contactIds: z.array(z.number()),
+    }))
+    .mutation(async ({ input }) => {
+      const campaign = await getCampaignByIdDb(input.campaignId);
+      if (!campaign) throw new Error("Campanha nao encontrada");
+      
+      const removeSet = new Set(input.contactIds);
+      const currentIds = (campaign.contactIds || []).filter(id => !removeSet.has(id));
+      
+      return updateCampaignDb(input.campaignId, {
+        contactIds: currentIds,
+        totalContacts: currentIds.length,
+      });
+    }),
 });
 
 // ── WhatsApp Templates Router ─────────────────────────────────────────────────

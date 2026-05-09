@@ -98,6 +98,8 @@ export default function ContactsPage() {
   // Campaign state
   const [showCampaignDialog, setShowCampaignDialog] = useState(false);
   const [selectedContactForCampaign, setSelectedContactForCampaign] = useState<Contact | null>(null);
+  const [showBulkCampaignDialog, setShowBulkCampaignDialog] = useState(false);
+  const [selectedBulkCampaignId, setSelectedBulkCampaignId] = useState<string>("");
 
   const LIMIT = 50;
 
@@ -171,6 +173,30 @@ export default function ContactsPage() {
       setSelectedContacts(new Set());
     },
     onError: (err) => toast.error("Erro no envio em massa: " + err.message),
+  });
+
+  const addContactToCampaignMutation = trpc.campaign.addContact.useMutation({
+    onSuccess: () => {
+      toast.success("Contato adicionado a campanha");
+      campaignsQuery.refetch();
+    },
+    onError: (err) => toast.error("Erro: " + err.message),
+  });
+
+  const removeContactFromCampaignMutation = trpc.campaign.removeContact.useMutation({
+    onSuccess: () => {
+      toast.success("Contato removido da campanha");
+      campaignsQuery.refetch();
+    },
+    onError: (err) => toast.error("Erro: " + err.message),
+  });
+
+  const addContactsToCampaignMutation = trpc.campaign.addContacts.useMutation({
+    onSuccess: () => {
+      toast.success("Contatos adicionados a campanha");
+      campaignsQuery.refetch();
+    },
+    onError: (err) => toast.error("Erro: " + err.message),
   });
 
   const syncMutation = trpc.contact.syncFromConversations.useMutation({
@@ -372,9 +398,14 @@ export default function ContactsPage() {
             onChange={handleFileUpload}
           />
           {selectedContacts.size > 0 && (
-            <Button size="sm" variant="default" onClick={() => setShowTemplateDialog(true)}>
-              <Send className="h-4 w-4 mr-1" /> Enviar Template ({selectedContacts.size})
-            </Button>
+            <>
+              <Button size="sm" variant="default" onClick={() => setShowTemplateDialog(true)}>
+                <Send className="h-4 w-4 mr-1" /> Enviar Template ({selectedContacts.size})
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setShowBulkCampaignDialog(true)}>
+                <MessageSquare className="h-4 w-4 mr-1" /> Adicionar a Campanha ({selectedContacts.size})
+              </Button>
+            </>
           )}
           <Button size="sm" onClick={() => { resetForm(); setShowCreateDialog(true); }}>
             <Plus className="h-4 w-4 mr-1" /> Novo Contato
@@ -911,7 +942,17 @@ export default function ContactsPage() {
                       <Checkbox
                         checked={(campaign.contactIds || []).includes(selectedContactForCampaign?.id || 0)}
                         onCheckedChange={(checked) => {
-                          // TODO: Implementar vincular/desvincular contato de campanha
+                          if (checked) {
+                            addContactToCampaignMutation.mutate({
+                              campaignId: campaign.id,
+                              contactId: selectedContactForCampaign?.id || 0,
+                            });
+                          } else {
+                            removeContactFromCampaignMutation.mutate({
+                              campaignId: campaign.id,
+                              contactId: selectedContactForCampaign?.id || 0,
+                            });
+                          }
                         }}
                       />
                       <div className="flex-1">
@@ -941,6 +982,55 @@ export default function ContactsPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCampaignDialog(false)}>Fechar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Campaign Dialog */}
+      <Dialog open={showBulkCampaignDialog} onOpenChange={setShowBulkCampaignDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Adicionar Contatos a Campanha</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Selecionar Campanha</Label>
+              <Select value={selectedBulkCampaignId} onValueChange={setSelectedBulkCampaignId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Escolha uma campanha" />
+                </SelectTrigger>
+                <SelectContent>
+                  {campaignsQuery.data?.campaigns?.map((campaign: any) => (
+                    <SelectItem key={campaign.id} value={campaign.id.toString()}>
+                      {campaign.name} ({campaign.totalContacts || 0} contatos)
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+              <p className="text-sm text-blue-400">
+                <strong>Contatos selecionados:</strong> {selectedContacts.size}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBulkCampaignDialog(false)}>Cancelar</Button>
+            <Button
+              onClick={() => {
+                if (selectedBulkCampaignId) {
+                  addContactsToCampaignMutation.mutate({
+                    campaignId: parseInt(selectedBulkCampaignId),
+                    contactIds: Array.from(selectedContacts),
+                  });
+                  setShowBulkCampaignDialog(false);
+                  setSelectedContacts(new Set());
+                }
+              }}
+              disabled={!selectedBulkCampaignId || addContactsToCampaignMutation.isPending}
+            >
+              {addContactsToCampaignMutation.isPending ? "Adicionando..." : "Adicionar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
