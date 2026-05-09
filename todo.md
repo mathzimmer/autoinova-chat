@@ -1308,3 +1308,8 @@
 - [x] Backend: endpoints para vincular/desvincular contatos de campanhas (addContact, removeContact)
 - [x] Frontend: implementar seleção de campanhas no dialog de contatos individuais
 - [x] Frontend: implementar seleção em massa de contatos para uma campanha
+
+## Feature - Filtro e Exibição de Campanhas na Lista de Contatos
+- [x] Adicionar filtro "Em Campanhas Ativas" no módulo de Contatos
+- [x] Exibir nome da campanha na tabela de contatos com badge visível
+- [x] Mostrar múltiplas campanhas se contato estiver em mais de uma

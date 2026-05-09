@@ -100,6 +100,7 @@ export default function ContactsPage() {
   const [selectedContactForCampaign, setSelectedContactForCampaign] = useState<Contact | null>(null);
   const [showBulkCampaignDialog, setShowBulkCampaignDialog] = useState(false);
   const [selectedBulkCampaignId, setSelectedBulkCampaignId] = useState<string>("");
+  const [filterByCampaign, setFilterByCampaign] = useState<string>(""); // "all", "active", or campaign ID
 
   const LIMIT = 50;
 
@@ -451,6 +452,21 @@ export default function ContactsPage() {
                 <SelectItem value="lead">Lead</SelectItem>
               </SelectContent>
             </Select>
+            <Select value={filterByCampaign} onValueChange={v => { setFilterByCampaign(v); setPage(0); }}>
+              <SelectTrigger className="w-[200px]">
+                <MessageSquare className="h-4 w-4 mr-1" />
+                <SelectValue placeholder="Campanhas" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">Todas as campanhas</SelectItem>
+                <SelectItem value="active">Em campanhas ativas</SelectItem>
+                {campaignsQuery.data?.campaigns?.map((campaign: any) => (
+                  <SelectItem key={campaign.id} value={campaign.id.toString()}>
+                    {campaign.name} ({campaign.totalContacts || 0})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -554,6 +570,25 @@ export default function ContactsPage() {
                         {SOURCE_LABELS[contact.source] || contact.source}
                       </Badge>
                     </td>
+                    <td className="p-3">
+                      <div className="flex flex-col gap-1">
+                        {(() => {
+                          const activeCampaigns = campaignsQuery.data?.campaigns?.filter((c: any) => 
+                            (c.contactIds || []).includes(contact.id) && (c.status === 'running' || c.status === 'scheduled')
+                          ) || [];
+                          
+                          if (activeCampaigns.length === 0) {
+                            return <span className="text-xs text-muted-foreground">-</span>;
+                          }
+                          
+                          return activeCampaigns.map((campaign: any) => (
+                            <Badge key={campaign.id} variant="default" className="text-xs bg-blue-600 hover:bg-blue-700">
+                              {campaign.name}
+                            </Badge>
+                          ));
+                        })()}
+                      </div>
+                    </td>
                     <td className="p-3 hidden md:table-cell">
                       <Button
                         variant="ghost"
@@ -562,7 +597,7 @@ export default function ContactsPage() {
                         onClick={() => openCampaignDialog(contact)}
                       >
                         <MessageSquare className="h-3 w-3 mr-1" />
-                        Campanhas
+                        Gerenciar
                       </Button>
                     </td>
                     <td className="p-3 text-right">
