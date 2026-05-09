@@ -1296,3 +1296,10 @@
 
 ## Feature - Restaurar Seletor de Estado da Conversa
 - [x] Restaurar seletor de estado (Aberta, Pendente, Resolvida, Fechada) no ConversationPanel
+
+## Feature - Refatoração de Campanhas (Seleção de Contatos no Módulo de Contatos)
+- [x] Refatorar página de Campanhas para apenas parâmetros (remover seletor de contatos)
+- [x] Adicionar interface de seleção de contatos no módulo de Contatos
+- [x] Adicionar ícone de campanha ativa nos contatos
+- [ ] Adicionar histórico de campanhas que o contato participou (TODO: backend)
+- [ ] Backend: endpoints para vincular/desvincular contatos de campanhas

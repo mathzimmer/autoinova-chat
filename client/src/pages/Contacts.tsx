@@ -95,8 +95,16 @@ export default function ContactsPage() {
   const [selectedTemplate, setSelectedTemplate] = useState("");
   // Duplicates state
   const [showDuplicatesDialog, setShowDuplicatesDialog] = useState(false);
+  // Campaign state
+  const [showCampaignDialog, setShowCampaignDialog] = useState(false);
+  const [selectedContactForCampaign, setSelectedContactForCampaign] = useState<Contact | null>(null);
 
   const LIMIT = 50;
+
+  const openCampaignDialog = (contact: Contact) => {
+    setSelectedContactForCampaign(contact);
+    setShowCampaignDialog(true);
+  };
 
   // Queries
   const contactsQuery = trpc.contact.list.useQuery({
@@ -109,6 +117,8 @@ export default function ContactsPage() {
   const tagsQuery = trpc.contact.tags.useQuery();
   const templatesQuery = trpc.whatsappTemplate.list.useQuery();
   const templatesConfigured = trpc.whatsappTemplate.isConfigured.useQuery();
+  const campaignsQuery = trpc.campaign.list.useQuery();
+  // TODO: Implementar endpoint contactHistory no backend para histórico de campanhas por contato
 
   // Mutations
   const createMutation = trpc.contact.create.useMutation({
@@ -460,6 +470,7 @@ export default function ContactsPage() {
                   <th className="p-3 text-left font-medium hidden md:table-cell">Email</th>
                   <th className="p-3 text-left font-medium hidden lg:table-cell">Tags</th>
                   <th className="p-3 text-left font-medium hidden sm:table-cell">Origem</th>
+                  <th className="p-3 text-left font-medium hidden md:table-cell">Campanhas</th>
                   <th className="p-3 text-right font-medium">Ações</th>
                 </tr>
               </thead>
@@ -511,6 +522,17 @@ export default function ContactsPage() {
                       <Badge variant="outline" className="text-xs">
                         {SOURCE_LABELS[contact.source] || contact.source}
                       </Badge>
+                    </td>
+                    <td className="p-3 hidden md:table-cell">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => openCampaignDialog(contact)}
+                      >
+                        <MessageSquare className="h-3 w-3 mr-1" />
+                        Campanhas
+                      </Button>
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -861,6 +883,64 @@ export default function ContactsPage() {
             >
               {sendBulkMutation.isPending ? "Enviando..." : `Enviar para ${selectedContacts.size} contatos`}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Campaign Dialog */}
+      <Dialog open={showCampaignDialog} onOpenChange={setShowCampaignDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5" />
+              Campanhas: {selectedContactForCampaign?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            {/* Available Campaigns */}
+            <div>
+              <Label className="text-sm font-semibold mb-2 block">Selecionar Campanhas</Label>
+              <div className="border rounded-lg p-3 max-h-[200px] overflow-y-auto space-y-2">
+                {campaignsQuery.isLoading ? (
+                  <p className="text-sm text-muted-foreground">Carregando campanhas...</p>
+                ) : !campaignsQuery.data?.campaigns || campaignsQuery.data.campaigns.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma campanha disponível</p>
+                ) : (
+                  campaignsQuery.data?.campaigns?.map((campaign: any) => (
+                    <label key={campaign.id} className="flex items-center gap-2 p-2 rounded hover:bg-muted/50 cursor-pointer">
+                      <Checkbox
+                        checked={(campaign.contactIds || []).includes(selectedContactForCampaign?.id || 0)}
+                        onCheckedChange={(checked) => {
+                          // TODO: Implementar vincular/desvincular contato de campanha
+                        }}
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium">{campaign.name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {campaign.status === 'running' ? (
+                            <span className="text-amber-500">🔴 Ativa</span>
+                          ) : campaign.status === 'completed' ? (
+                            <span className="text-green-500">✓ Concluída</span>
+                          ) : (
+                            <span className="text-muted-foreground">{campaign.status}</span>
+                          )}
+                        </div>
+                      </div>
+                    </label>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Campaign History - TODO: Implementar no backend */}
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+              <p className="text-sm text-blue-400">
+                <strong>ℹ️ Histórico:</strong> Em desenvolvimento. Será exibido o histórico de campanhas que este contato participou.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCampaignDialog(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
