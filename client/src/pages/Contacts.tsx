@@ -452,13 +452,13 @@ export default function ContactsPage() {
                 <SelectItem value="lead">Lead</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={filterByCampaign} onValueChange={v => { setFilterByCampaign(v); setPage(0); }}>
+            <Select value={filterByCampaign || "all"} onValueChange={v => { setFilterByCampaign(v === "all" ? "" : v); setPage(0); }}>
               <SelectTrigger className="w-[200px]">
                 <MessageSquare className="h-4 w-4 mr-1" />
                 <SelectValue placeholder="Campanhas" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Todas as campanhas</SelectItem>
+                <SelectItem value="all">Todas as campanhas</SelectItem>
                 <SelectItem value="active">Em campanhas ativas</SelectItem>
                 {campaignsQuery.data?.campaigns?.map((campaign: any) => (
                   <SelectItem key={campaign.id} value={campaign.id.toString()}>
