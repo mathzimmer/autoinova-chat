@@ -80,6 +80,8 @@ import {
   evolutionRestartInstance,
   evolutionSetWebhook,
   evolutionSendText,
+  evolutionSendMedia,
+  evolutionGetProfilePic,
   evolutionFetchChats,
   evolutionFetchMessages,
 } from "./evolutionService";
@@ -3808,6 +3810,194 @@ const evolutionRouter = router({
         });
       }
       return { success: true, result };
+    }),
+
+  // Send media (image/video/document/audio) from URL
+  sendMedia: protectedProcedure
+    .input(z.object({
+      instanceName: z.string(),
+      remoteJid: z.string(),
+      mediaUrl: z.string(),
+      mediaType: z.enum(["image", "video", "audio", "document"]),
+      caption: z.string().optional(),
+      fileName: z.string().optional(),
+      conversationId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await evolutionSendMedia(
+        input.instanceName,
+        input.remoteJid,
+        input.mediaUrl,
+        input.mediaType,
+        input.caption,
+        input.fileName
+      );
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (inst && input.conversationId) {
+        await createEvolutionMessage({
+          instanceId: inst.id,
+          instanceName: input.instanceName,
+          conversationId: input.conversationId,
+          remoteJid: input.remoteJid,
+          messageId: (result as any)?.key?.id as string || undefined,
+          content: input.caption || `[${input.mediaType}]`,
+          messageType: input.mediaType,
+          mediaUrl: input.mediaUrl,
+          direction: "outbound",
+          senderName: ctx.user?.name || "Vendedor",
+          status: "sent",
+          timestamp: Date.now(),
+        });
+        await updateEvolutionConversation(input.conversationId, {
+          lastMessageAt: Date.now(),
+          lastMessagePreview: input.caption || `[${input.mediaType}]`,
+        });
+      }
+      return { success: true, result };
+    }),
+
+  // Upload media file and send
+  uploadAndSendMedia: protectedProcedure
+    .input(z.object({
+      instanceName: z.string(),
+      remoteJid: z.string(),
+      fileBase64: z.string(),
+      mimeType: z.string(),
+      fileName: z.string(),
+      caption: z.string().optional(),
+      conversationId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      // Upload to S3
+      const buf = Buffer.from(input.fileBase64, "base64");
+      const ext = input.fileName.split(".").pop() || "bin";
+      const key = `evolution-media/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { url } = await storagePut(key, buf, input.mimeType);
+
+      // Determine media type
+      const mime = input.mimeType.toLowerCase();
+      const mediaType: "image" | "video" | "audio" | "document" =
+        mime.startsWith("image/") ? "image" :
+        mime.startsWith("video/") ? "video" :
+        mime.startsWith("audio/") ? "audio" : "document";
+
+      const result = await evolutionSendMedia(
+        input.instanceName,
+        input.remoteJid,
+        url,
+        mediaType,
+        input.caption,
+        input.fileName
+      );
+
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (inst && input.conversationId) {
+        await createEvolutionMessage({
+          instanceId: inst.id,
+          instanceName: input.instanceName,
+          conversationId: input.conversationId,
+          remoteJid: input.remoteJid,
+          messageId: (result as any)?.key?.id as string || undefined,
+          content: input.caption || input.fileName,
+          messageType: mediaType,
+          mediaUrl: url,
+          direction: "outbound",
+          senderName: ctx.user?.name || "Vendedor",
+          status: "sent",
+          timestamp: Date.now(),
+        });
+        await updateEvolutionConversation(input.conversationId, {
+          lastMessageAt: Date.now(),
+          lastMessagePreview: input.caption || `[${mediaType}]`,
+        });
+      }
+      return { success: true, url, mediaType };
+    }),
+
+  // Start a new conversation (send first message)
+  startConversation: protectedProcedure
+    .input(z.object({
+      instanceName: z.string(),
+      phone: z.string(),
+      text: z.string(),
+      contactName: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (!inst) throw new Error("Instância não encontrada");
+
+      // Normalize phone
+      const phone = input.phone.replace(/\D/g, "");
+      const remoteJid = `${phone}@s.whatsapp.net`;
+
+      // Send message
+      const result = await evolutionSendText(input.instanceName, phone, input.text);
+
+      // Upsert conversation
+      const convId = await upsertEvolutionConversation({
+        instanceId: inst.id,
+        instanceName: input.instanceName,
+        remoteJid,
+        phone,
+        contactName: input.contactName || phone,
+        lastMessageAt: Date.now(),
+        lastMessagePreview: input.text.slice(0, 100),
+        unreadCount: 0,
+        status: "open",
+      });
+
+      // Save message
+      await createEvolutionMessage({
+        instanceId: inst.id,
+        instanceName: input.instanceName,
+        conversationId: convId,
+        remoteJid,
+        messageId: (result as any)?.key?.id as string || undefined,
+        content: input.text,
+        messageType: "text",
+        direction: "outbound",
+        senderName: ctx.user?.name || "Vendedor",
+        status: "sent",
+        timestamp: Date.now(),
+      });
+
+      return { success: true, conversationId: convId, remoteJid };
+    }),
+
+  // Get profile picture of a contact
+  getProfilePic: protectedProcedure
+    .input(z.object({ instanceName: z.string(), phone: z.string() }))
+    .query(async ({ input }) => {
+      try {
+        const result = await evolutionGetProfilePic(input.instanceName, input.phone) as any;
+        return { url: result?.profilePictureUrl || result?.url || null };
+      } catch {
+        return { url: null };
+      }
+    }),
+
+  // Update conversation (status, contactName, notes)
+  updateConversation: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      status: z.enum(["open", "pending", "resolved", "closed"]).optional(),
+      contactName: z.string().optional(),
+      notes: z.string().optional(),
+      leadStatus: z.string().optional(),
+      vehicleInterest: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateEvolutionConversation(id, data);
+      return { success: true };
+    }),
+
+  // Mark conversation as read
+  markAsRead: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .mutation(async ({ input }) => {
+      await updateEvolutionConversation(input.conversationId, { unreadCount: 0 });
+      return { success: true };
     }),
 
   // Webhook endpoint for Evolution API events

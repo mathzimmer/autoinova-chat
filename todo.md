@@ -1325,3 +1325,28 @@
 - [x] Frontend: inbox por vendedor (filtrado por instância)
 - [x] Frontend: visão consolidada para gestor (todas as instâncias)
 - [ ] Frontend: CRM integrado com ferramentas para vendedores (próxima fase)
+
+## Feature - Painel de Conversa Completo para Vendedores (Evolution Inbox)
+- [x] Backend: endpoint para envio de texto via Evolution
+- [x] Backend: endpoint para envio de imagem/vídeo/documento via Evolution (upload S3 + envio)
+- [x] Backend: endpoint para envio de sticker via Evolution
+- [x] Backend: endpoint para envio de áudio via Evolution
+- [x] Backend: endpoint para criar nova conversa (iniciar chat com número)
+- [x] Backend: endpoint para buscar mensagens de uma conversa com paginação
+- [x] Backend: endpoint para salvar/criar contato a partir da conversa
+- [x] Backend: buscar foto de perfil do contato via Evolution
+- [x] Frontend: reescrever EvolutionInbox com painel completo (lista + chat)
+- [x] Frontend: exibir fotos/imagens nas mensagens
+- [x] Frontend: exibir stickers nas mensagens
+- [x] Frontend: exibir áudios com player
+- [x] Frontend: exibir documentos com download
+- [x] Frontend: input de mensagem com emoji picker
+- [x] Frontend: botão de anexar (foto, vídeo, documento)
+- [x] Frontend: botão de sticker
+- [x] Frontend: botão de gravar áudio
+- [x] Frontend: dialog para iniciar nova conversa
+- [x] Frontend: dialog para salvar/criar contato
+- [x] Frontend: exibir nome e foto do contato no chat
+- [x] Frontend: status de mensagem (enviado, entregue, lido)
+- [x] Frontend: scroll automático para última mensagem
+- [x] Frontend: indicador de digitando
