@@ -3315,8 +3315,43 @@ const contactsRouter = router({
     }))
     .mutation(async ({ input }) => {
       const existing = await getContactByPhone(input.phone);
-      if (existing) throw new Error("Contato com este telefone j\u00e1 existe");
+      if (existing) throw new Error("Contato com este telefone já existe");
       return createContact(input);
+    }),
+
+  // Accessible by all authenticated users (vendors can save contacts from inbox)
+  createFromInbox: protectedProcedure
+    .input(z.object({
+      name: z.string().min(1),
+      phone: z.string().min(1),
+      email: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const cleanPhone = input.phone.replace(/\D/g, "");
+      const existing = await getContactByPhone(cleanPhone);
+      if (existing) {
+        // Update name if it's better
+        if (input.name && input.name !== existing.name) {
+          await updateContact(existing.id, { name: input.name });
+        }
+        return { ...existing, updated: true };
+      }
+      const contact = await createContact({
+        name: input.name,
+        phone: cleanPhone,
+        email: input.email,
+        notes: input.notes,
+        source: "whatsapp" as const,
+      });
+      return { ...contact, updated: false };
+    }),
+
+  // Accessible by all authenticated users (vendors can list contacts for lookup)
+  listForInbox: protectedProcedure
+    .input(z.object({ search: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      return listContacts({ search: input?.search, limit: 50 });
     }),
 
   update: adminProcedure

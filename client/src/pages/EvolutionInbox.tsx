@@ -169,6 +169,35 @@ function MessageBubble({ msg, formatTime }: { msg: Message; formatTime: (ts: num
   );
 }
 
+// ─── Helper functions (outside component to avoid TDZ issues) ─────────────────
+
+// Format phone number for display: remove @lid/@s.whatsapp.net suffix and show cleanly
+function formatPhone(phone: string | null | undefined, remoteJid?: string | null): string {
+  const raw = phone || remoteJid || "";
+  const clean = raw.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/@lid$/, "");
+  if (/^\d+$/.test(clean)) {
+    if (clean.startsWith("55") && clean.length >= 12) {
+      const local = clean.slice(2);
+      if (local.length === 11) {
+        return `+55 (${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`;
+      } else if (local.length === 10) {
+        return `+55 (${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`;
+      }
+      return `+55 ${local}`;
+    }
+    return clean;
+  }
+  return clean || "Número desconhecido";
+}
+
+// Get display name: prefer contactName, then formatted phone
+function getDisplayName(conv: { contactName?: string | null; phone?: string | null; remoteJid?: string | null }): string {
+  if (conv.contactName && conv.contactName !== conv.phone && !conv.contactName.includes("@lid")) {
+    return conv.contactName;
+  }
+  return formatPhone(conv.phone, conv.remoteJid);
+}
+
 export default function EvolutionInbox() {
   const [location] = useLocation();
   const searchParams = new URLSearchParams(location.split("?")[1] || "");
@@ -193,6 +222,7 @@ export default function EvolutionInbox() {
   const [newConvText, setNewConvText] = useState("");
   const [saveContactName, setSaveContactName] = useState("");
   const [saveContactPhone, setSaveContactPhone] = useState("");
+  const [saveContactNotes, setSaveContactNotes] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "pending" | "resolved">("all");
   const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -297,12 +327,17 @@ export default function EvolutionInbox() {
 
   const markAsReadMutation = trpc.evolution.markAsRead.useMutation();
 
-  const saveContactMutation = trpc.contact.create.useMutation({
-    onSuccess: () => {
-      toast.success(`Contato "${saveContactName}" salvo com sucesso!`);
+  const saveContactMutation = trpc.contact.createFromInbox.useMutation({
+    onSuccess: (data) => {
+      if ((data as any).updated) {
+        toast.success(`Contato "${saveContactName}" atualizado com sucesso!`);
+      } else {
+        toast.success(`Contato "${saveContactName}" salvo com sucesso!`);
+      }
       setShowSaveContactDialog(false);
       setSaveContactName("");
       setSaveContactPhone("");
+      setSaveContactNotes("");
     },
     onError: (e: { message: string }) => toast.error("Erro ao salvar contato: " + e.message),
   });
@@ -398,36 +433,6 @@ export default function EvolutionInbox() {
       id: selectedConversation.id,
       contactName: contactNameInput.trim(),
     });
-  };
-
-  // Format phone number for display: remove @lid/@s.whatsapp.net suffix and show cleanly
-  const formatPhone = (phone: string | null | undefined, remoteJid?: string | null): string => {
-    const raw = phone || remoteJid || "";
-    // Remove WhatsApp suffixes
-    const clean = raw.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/@lid$/, "");
-    // If it's a pure number (Brazilian format), format it nicely
-    if (/^\d+$/.test(clean)) {
-      if (clean.startsWith("55") && clean.length >= 12) {
-        const local = clean.slice(2); // remove country code
-        if (local.length === 11) {
-          return `+55 (${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`;
-        } else if (local.length === 10) {
-          return `+55 (${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`;
-        }
-        return `+55 ${local}`;
-      }
-      return clean;
-    }
-    // Not a recognizable phone — show raw but without @lid
-    return clean || "Número desconhecido";
-  };
-
-  // Get display name: prefer contactName, then pushName from messages, then formatted phone
-  const getDisplayName = (conv: Conversation): string => {
-    if (conv.contactName && conv.contactName !== conv.phone && !conv.contactName.includes("@lid")) {
-      return conv.contactName;
-    }
-    return formatPhone(conv.phone, conv.remoteJid);
   };
 
   const formatTime = (ts: number) => {
@@ -1007,13 +1012,22 @@ export default function EvolutionInbox() {
                     className="w-full bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30"
                     variant="outline"
                     onClick={() => {
-                      setSaveContactName(selectedConversation.contactName || "");
+                      setSaveContactName(getDisplayName(selectedConversation));
                       setSaveContactPhone(selectedConversation.phone || "");
+                      setSaveContactNotes("");
                       setShowSaveContactDialog(true);
                     }}
                   >
                     <UserPlus className="w-4 h-4 mr-2" />
                     Salvar como Contato
+                  </Button>
+                  <Button
+                    className="w-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30"
+                    variant="outline"
+                    onClick={() => window.open("/contacts", "_blank")}
+                  >
+                    <Users className="w-4 h-4 mr-2" />
+                    Ver Módulo de Contatos
                   </Button>
                 </div>
               </div>
@@ -1107,45 +1121,77 @@ export default function EvolutionInbox() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <UserCheck className="w-5 h-5 text-green-400" />
-                Salvar Contato
+                Salvar no Módulo de Contatos
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div>
-                <Label className="text-[#aebac1] text-xs mb-1.5 block">Nome</Label>
+                <Label className="text-[#aebac1] text-xs mb-1.5 block">Nome *</Label>
                 <Input
                   value={saveContactName}
                   onChange={e => setSaveContactName(e.target.value)}
                   placeholder="Nome do contato"
                   className="bg-[#2a3942] border-[#3a4a52] text-[#e9edef] placeholder:text-[#8696a0]"
+                  autoFocus
                 />
               </div>
               <div>
-                <Label className="text-[#aebac1] text-xs mb-1.5 block">Telefone</Label>
+                <Label className="text-[#aebac1] text-xs mb-1.5 block">Telefone WhatsApp *</Label>
                 <Input
                   value={saveContactPhone}
                   onChange={e => setSaveContactPhone(e.target.value)}
                   placeholder="5551999999999"
                   className="bg-[#2a3942] border-[#3a4a52] text-[#e9edef] placeholder:text-[#8696a0]"
                 />
+                <p className="text-xs text-[#8696a0] mt-1">Somente números, com DDD e código do país (55)</p>
+              </div>
+              <div>
+                <Label className="text-[#aebac1] text-xs mb-1.5 block">Observações (opcional)</Label>
+                <Textarea
+                  value={saveContactNotes}
+                  onChange={e => setSaveContactNotes(e.target.value)}
+                  placeholder="Notas sobre o contato..."
+                  className="bg-[#2a3942] border-[#3a4a52] text-[#e9edef] placeholder:text-[#8696a0] text-sm resize-none h-16"
+                />
+              </div>
+              <div className="flex items-center gap-2 p-2 bg-[#1a2730] rounded-lg">
+                <Info className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                <p className="text-xs text-[#8696a0]">
+                  O contato será salvo no{" "}
+                  <a href="/contacts" target="_blank" className="text-blue-400 hover:underline">Módulo de Contatos</a>
+                  {" "}e poderá receber campanhas e templates.
+                </p>
               </div>
             </div>
-            <DialogFooter>
+            <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button variant="ghost" onClick={() => setShowSaveContactDialog(false)} className="text-[#aebac1]">
                 Cancelar
               </Button>
               <Button
-                className="bg-green-500 hover:bg-green-600 text-white"
-                disabled={!saveContactName.trim() || !saveContactPhone.trim()}
-              onClick={() => {
-                saveContactMutation.mutate({
-                  name: saveContactName.trim(),
-                  phone: saveContactPhone.trim(),
-                });
-              }}
+                variant="outline"
+                className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                onClick={() => { setShowSaveContactDialog(false); window.open("/contacts", "_blank"); }}
               >
-                <UserCheck className="w-4 h-4 mr-2" />
-                Salvar
+                <User className="w-4 h-4 mr-2" />
+                Ver Contatos
+              </Button>
+              <Button
+                className="bg-green-500 hover:bg-green-600 text-white"
+                disabled={!saveContactName.trim() || !saveContactPhone.trim() || saveContactMutation.isPending}
+                onClick={() => {
+                  saveContactMutation.mutate({
+                    name: saveContactName.trim(),
+                    phone: saveContactPhone.trim(),
+                    notes: saveContactNotes.trim() || undefined,
+                  });
+                }}
+              >
+                {saveContactMutation.isPending ? (
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <UserCheck className="w-4 h-4 mr-2" />
+                )}
+                Salvar Contato
               </Button>
             </DialogFooter>
           </DialogContent>
