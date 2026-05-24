@@ -22,6 +22,8 @@ import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
 import Sellers from "./pages/Sellers";
+import EvolutionInstances from "./pages/EvolutionInstances";
+import EvolutionInbox from "./pages/EvolutionInbox";
 
 function Router() {
   return (
@@ -100,6 +102,16 @@ function Router() {
       <Route path="/sellers">
         <AppLayout>
           <Sellers />
+        </AppLayout>
+      </Route>
+      <Route path="/evolution-instances">
+        <AppLayout>
+          <EvolutionInstances />
+        </AppLayout>
+      </Route>
+      <Route path="/evolution-inbox">
+        <AppLayout>
+          <EvolutionInbox />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />

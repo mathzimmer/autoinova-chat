@@ -1313,3 +1313,15 @@
 - [x] Adicionar filtro "Em Campanhas Ativas" no módulo de Contatos
 - [x] Exibir nome da campanha na tabela de contatos com badge visível
 - [x] Mostrar múltiplas campanhas se contato estiver em mais de uma
+
+## Feature - Integração Evolution API (Multi-Número Vendedores)
+- [x] Verificar conexão com Evolution API e listar instâncias
+- [x] Schema: tabela evolutionInstances (nome, número, status, vendedor vinculado)
+- [x] Schema: tabela evolutionMessages (instância, contato, mensagem, direção, timestamp)
+- [x] Backend: CRUD de instâncias (criar, conectar via QR, desconectar, deletar)
+- [x] Backend: webhook para receber mensagens da Evolution API
+- [x] Backend: envio de mensagens via Evolution API
+- [x] Frontend: página de gerenciamento de instâncias com QR code
+- [x] Frontend: inbox por vendedor (filtrado por instância)
+- [x] Frontend: visão consolidada para gestor (todas as instâncias)
+- [ ] Frontend: CRM integrado com ferramentas para vendedores (próxima fase)

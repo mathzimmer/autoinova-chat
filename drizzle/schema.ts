@@ -698,3 +698,76 @@ export const campaignDispatches = mysqlTable("campaignDispatches", {
 
 export type CampaignDispatch = typeof campaignDispatches.$inferSelect;
 export type InsertCampaignDispatch = typeof campaignDispatches.$inferInsert;
+
+/**
+ * Evolution API instances - each instance = one WhatsApp number (vendor/seller)
+ */
+export const evolutionInstances = mysqlTable("evolutionInstances", {
+  id: int("id").autoincrement().primaryKey(),
+  instanceName: varchar("instanceName", { length: 100 }).notNull().unique(),
+  displayName: varchar("displayName", { length: 255 }),
+  phone: varchar("phone", { length: 32 }),
+  sellerId: int("sellerId"),          // linked seller (optional)
+  assignedUserId: int("assignedUserId"), // linked system user (optional)
+  status: mysqlEnum("status", ["connecting", "connected", "disconnected", "qr_code"]).default("disconnected").notNull(),
+  qrCode: text("qrCode"),             // base64 QR code when connecting
+  profilePicUrl: varchar("profilePicUrl", { length: 512 }),
+  webhookConfigured: boolean("webhookConfigured").default(false).notNull(),
+  lastConnectedAt: bigint("lastConnectedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EvolutionInstance = typeof evolutionInstances.$inferSelect;
+export type InsertEvolutionInstance = typeof evolutionInstances.$inferInsert;
+
+/**
+ * Evolution conversations - chats from vendor WhatsApp numbers
+ */
+export const evolutionConversations = mysqlTable("evolutionConversations", {
+  id: int("id").autoincrement().primaryKey(),
+  instanceId: int("instanceId").notNull(),
+  instanceName: varchar("instanceName", { length: 100 }).notNull(),
+  remoteJid: varchar("remoteJid", { length: 100 }).notNull(), // phone@s.whatsapp.net
+  phone: varchar("phone", { length: 32 }),
+  contactName: varchar("contactName", { length: 255 }),
+  contactPhoto: varchar("contactPhoto", { length: 512 }),
+  lastMessageAt: bigint("lastMessageAt", { mode: "number" }),
+  lastMessagePreview: varchar("lastMessagePreview", { length: 500 }),
+  unreadCount: int("unreadCount").default(0).notNull(),
+  status: mysqlEnum("status", ["open", "pending", "resolved", "closed"]).default("open").notNull(),
+  // CRM fields
+  leadStatus: varchar("leadStatus", { length: 50 }),
+  vehicleInterest: varchar("vehicleInterest", { length: 255 }),
+  notes: text("notes"),
+  tags: json("tags"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EvolutionConversation = typeof evolutionConversations.$inferSelect;
+export type InsertEvolutionConversation = typeof evolutionConversations.$inferInsert;
+
+/**
+ * Evolution messages - messages from vendor WhatsApp numbers
+ */
+export const evolutionMessages = mysqlTable("evolutionMessages", {
+  id: int("id").autoincrement().primaryKey(),
+  instanceId: int("instanceId").notNull(),
+  instanceName: varchar("instanceName", { length: 100 }).notNull(),
+  conversationId: int("conversationId"),
+  remoteJid: varchar("remoteJid", { length: 100 }).notNull(),
+  messageId: varchar("messageId", { length: 255 }).unique(), // WhatsApp message ID
+  content: text("content"),
+  messageType: mysqlEnum("messageType", ["text", "audio", "image", "document", "video", "sticker", "reaction", "system"]).default("text").notNull(),
+  mediaUrl: varchar("mediaUrl", { length: 512 }),
+  direction: mysqlEnum("direction", ["inbound", "outbound"]).notNull(),
+  senderName: varchar("senderName", { length: 255 }),
+  status: mysqlEnum("status", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
+  timestamp: bigint("timestamp", { mode: "number" }).notNull(),
+  rawPayload: json("rawPayload"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type EvolutionMessage = typeof evolutionMessages.$inferSelect;
+export type InsertEvolutionMessage = typeof evolutionMessages.$inferInsert;

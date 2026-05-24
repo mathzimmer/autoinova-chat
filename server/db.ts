@@ -28,6 +28,9 @@ import {
   templateSends, InsertTemplateSend,
   campaigns, InsertCampaign,
   campaignDispatches, InsertCampaignDispatch,
+  evolutionInstances, InsertEvolutionInstance,
+  evolutionConversations, InsertEvolutionConversation,
+  evolutionMessages, InsertEvolutionMessage,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -1467,4 +1470,115 @@ export async function getCampaignDispatchByPhoneAndCampaign(phone: string, campa
     .orderBy(desc(campaignDispatches.createdAt))
     .limit(1);
   return rows[0] || null;
+}
+
+// ─── Evolution Instance Queries ──────────────────────────────────
+
+export async function listEvolutionInstances() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(evolutionInstances).orderBy(evolutionInstances.createdAt);
+}
+
+export async function getEvolutionInstanceById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(evolutionInstances).where(eq(evolutionInstances.id, id)).limit(1);
+  return rows[0] || null;
+}
+
+export async function getEvolutionInstanceByName(instanceName: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(evolutionInstances).where(eq(evolutionInstances.instanceName, instanceName)).limit(1);
+  return rows[0] || null;
+}
+
+export async function createEvolutionInstance(data: Omit<InsertEvolutionInstance, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const result = await db.insert(evolutionInstances).values(data);
+  return result[0].insertId as number;
+}
+
+export async function updateEvolutionInstance(id: number, data: Partial<InsertEvolutionInstance>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(evolutionInstances).set(data).where(eq(evolutionInstances.id, id));
+}
+
+export async function deleteEvolutionInstance(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.delete(evolutionInstances).where(eq(evolutionInstances.id, id));
+}
+
+// ─── Evolution Conversation Queries ──────────────────────────────
+
+export async function listEvolutionConversations(instanceId?: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const query = db.select().from(evolutionConversations);
+  if (instanceId) {
+    return query.where(eq(evolutionConversations.instanceId, instanceId))
+      .orderBy(desc(evolutionConversations.lastMessageAt));
+  }
+  return query.orderBy(desc(evolutionConversations.lastMessageAt));
+}
+
+export async function getEvolutionConversationByJid(instanceId: number, remoteJid: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(evolutionConversations)
+    .where(and(
+      eq(evolutionConversations.instanceId, instanceId),
+      eq(evolutionConversations.remoteJid, remoteJid),
+    ))
+    .limit(1);
+  return rows[0] || null;
+}
+
+export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConversation, "id" | "createdAt" | "updatedAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  const existing = await getEvolutionConversationByJid(data.instanceId, data.remoteJid);
+  if (existing) {
+    await db.update(evolutionConversations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(evolutionConversations.id, existing.id));
+    return existing.id;
+  }
+  const result = await db.insert(evolutionConversations).values(data);
+  return result[0].insertId as number;
+}
+
+export async function updateEvolutionConversation(id: number, data: Partial<InsertEvolutionConversation>) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  await db.update(evolutionConversations).set(data).where(eq(evolutionConversations.id, id));
+}
+
+// ─── Evolution Message Queries ────────────────────────────────────
+
+export async function listEvolutionMessages(conversationId: number, limit = 50) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(evolutionMessages)
+    .where(eq(evolutionMessages.conversationId, conversationId))
+    .orderBy(evolutionMessages.timestamp)
+    .limit(limit);
+}
+
+export async function createEvolutionMessage(data: Omit<InsertEvolutionMessage, "id" | "createdAt">) {
+  const db = await getDb();
+  if (!db) throw new Error("DB not available");
+  // Avoid duplicates by messageId
+  if (data.messageId) {
+    const existing = await db.select().from(evolutionMessages)
+      .where(eq(evolutionMessages.messageId, data.messageId))
+      .limit(1);
+    if (existing.length > 0) return existing[0].id;
+  }
+  const result = await db.insert(evolutionMessages).values(data);
+  return result[0].insertId as number;
 }

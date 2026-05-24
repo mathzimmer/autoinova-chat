@@ -218,6 +218,13 @@
       "when": 1775586833238,
       "tag": "0030_mean_maelstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "5",
+      "when": 1779585661475,
+      "tag": "0031_rich_jackpot",
+      "breakpoints": true
     }
   ]
 }

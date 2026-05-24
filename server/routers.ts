@@ -68,6 +68,35 @@ import {
   executeCampaign,
   handleCampaignResponse,
 } from "./campaignService";
+
+// ── Evolution API imports ─────────────────────────────────────────────────────
+import {
+  evolutionFetchInstances,
+  evolutionCreateInstance,
+  evolutionGetQrCode,
+  evolutionGetInstanceStatus,
+  evolutionDeleteInstance,
+  evolutionLogoutInstance,
+  evolutionRestartInstance,
+  evolutionSetWebhook,
+  evolutionSendText,
+  evolutionFetchChats,
+  evolutionFetchMessages,
+} from "./evolutionService";
+import {
+  listEvolutionInstances,
+  getEvolutionInstanceById,
+  getEvolutionInstanceByName,
+  createEvolutionInstance,
+  updateEvolutionInstance,
+  deleteEvolutionInstance as deleteEvolutionInstanceDb,
+  listEvolutionConversations,
+  getEvolutionConversationByJid,
+  upsertEvolutionConversation,
+  updateEvolutionConversation,
+  listEvolutionMessages,
+  createEvolutionMessage,
+} from "./db";
 import {
   createCampaign as createCampaignDb,
   getCampaignById as getCampaignByIdDb,
@@ -3611,6 +3640,243 @@ const contactsRouter = router({
     }),
 });
 
+// ─── Evolution Router ─────────────────────────────────────────────────────────
+const evolutionRouter = router({
+  // List all instances stored in DB
+  listInstances: protectedProcedure.query(async () => {
+    return listEvolutionInstances();
+  }),
+
+  // Sync instances from Evolution API into DB
+  syncInstances: protectedProcedure.mutation(async () => {
+    const apiInstances = await evolutionFetchInstances() as Array<{ instance: { instanceName: string; owner?: string; profilePictureUrl?: string; connectionStatus?: string } }>;
+    const dbInstances = await listEvolutionInstances();
+    const dbMap = new Map(dbInstances.map(i => [i.instanceName, i]));
+
+    for (const item of apiInstances) {
+      const name = item.instance?.instanceName;
+      if (!name) continue;
+      const status = item.instance?.connectionStatus === "open" ? "connected" : "disconnected";
+      const existing = dbMap.get(name);
+      if (existing) {
+        await updateEvolutionInstance(existing.id, { status: status as "connected" | "disconnected", phone: item.instance?.owner });
+      } else {
+        await createEvolutionInstance({
+          instanceName: name,
+          displayName: name,
+          phone: item.instance?.owner,
+          status: status as "connected" | "disconnected",
+          profilePicUrl: item.instance?.profilePictureUrl,
+          webhookConfigured: false,
+        });
+      }
+    }
+    return listEvolutionInstances();
+  }),
+
+  // Create a new instance
+  createInstance: protectedProcedure
+    .input(z.object({ instanceName: z.string().min(2), displayName: z.string().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      const webhookUrl = `${process.env.VITE_OAUTH_PORTAL_URL?.replace("portal", "api") || ""}/webhook/evolution`;
+      const appUrl = (ctx.req as { headers: Record<string, string> }).headers?.origin || "";
+      const wh = `${appUrl}/api/webhook/evolution`;
+
+      // Create in Evolution API
+      const result = await evolutionCreateInstance(input.instanceName, wh) as any;
+      const qrCode = (result?.qrcode?.base64 as string) || "";
+
+      // Save to DB
+      const id = await createEvolutionInstance({
+        instanceName: input.instanceName,
+        displayName: input.displayName || input.instanceName,
+        status: "connecting",
+        qrCode,
+        webhookConfigured: true,
+      });
+      return { id, qrCode, instanceName: input.instanceName };
+    }),
+
+  // Get QR code for an instance
+  getQrCode: protectedProcedure
+    .input(z.object({ instanceName: z.string() }))
+    .query(async ({ input }) => {
+      const result = await evolutionGetQrCode(input.instanceName);
+      const qrCode = (result as Record<string, unknown>)?.base64 as string || (result as Record<string, unknown>)?.code as string || "";
+      // Update DB
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (inst) await updateEvolutionInstance(inst.id, { qrCode, status: "qr_code" });
+      return { qrCode };
+    }),
+
+  // Get connection status
+  getStatus: protectedProcedure
+    .input(z.object({ instanceName: z.string() }))
+    .query(async ({ input }) => {
+      const result = await evolutionGetInstanceStatus(input.instanceName) as Record<string, unknown>;
+      const state = (result?.instance as Record<string, unknown>)?.state as string || "close";
+      const status = state === "open" ? "connected" : state === "connecting" ? "connecting" : "disconnected";
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (inst) await updateEvolutionInstance(inst.id, { status: status as "connected" | "disconnected" | "connecting" });
+      return { status, state };
+    }),
+
+  // Logout (disconnect) instance
+  logoutInstance: protectedProcedure
+    .input(z.object({ instanceName: z.string() }))
+    .mutation(async ({ input }) => {
+      await evolutionLogoutInstance(input.instanceName);
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (inst) await updateEvolutionInstance(inst.id, { status: "disconnected", qrCode: null });
+      return { success: true };
+    }),
+
+  // Restart instance
+  restartInstance: protectedProcedure
+    .input(z.object({ instanceName: z.string() }))
+    .mutation(async ({ input }) => {
+      await evolutionRestartInstance(input.instanceName);
+      return { success: true };
+    }),
+
+  // Delete instance
+  deleteInstance: protectedProcedure
+    .input(z.object({ id: z.number(), instanceName: z.string() }))
+    .mutation(async ({ input }) => {
+      try { await evolutionDeleteInstance(input.instanceName); } catch { /* ignore if not in API */ }
+      await deleteEvolutionInstanceDb(input.id);
+      return { success: true };
+    }),
+
+  // Update instance metadata (displayName, sellerId, assignedUserId)
+  updateInstance: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      displayName: z.string().optional(),
+      sellerId: z.number().nullable().optional(),
+      assignedUserId: z.number().nullable().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { id, ...data } = input;
+      await updateEvolutionInstance(id, data);
+      return { success: true };
+    }),
+
+  // List conversations for an instance
+  listConversations: protectedProcedure
+    .input(z.object({ instanceId: z.number().optional() }))
+    .query(async ({ input }) => {
+      return listEvolutionConversations(input.instanceId);
+    }),
+
+  // List messages for a conversation
+  listMessages: protectedProcedure
+    .input(z.object({ conversationId: z.number(), limit: z.number().default(50) }))
+    .query(async ({ input }) => {
+      return listEvolutionMessages(input.conversationId, input.limit);
+    }),
+
+  // Send a text message
+  sendMessage: protectedProcedure
+    .input(z.object({
+      instanceName: z.string(),
+      remoteJid: z.string(),
+      text: z.string(),
+      conversationId: z.number().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const result = await evolutionSendText(input.instanceName, input.remoteJid, input.text);
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (inst && input.conversationId) {
+        await createEvolutionMessage({
+          instanceId: inst.id,
+          instanceName: input.instanceName,
+          conversationId: input.conversationId,
+          remoteJid: input.remoteJid,
+          messageId: (result as any)?.key?.id as string || undefined,
+          content: input.text,
+          messageType: "text",
+          direction: "outbound",
+          senderName: ctx.user?.name || "Vendedor",
+          status: "sent",
+          timestamp: Date.now(),
+          rawPayload: result as Record<string, unknown>,
+        });
+        await updateEvolutionConversation(input.conversationId, {
+          lastMessageAt: Date.now(),
+          lastMessagePreview: input.text.slice(0, 100),
+        });
+      }
+      return { success: true, result };
+    }),
+
+  // Webhook endpoint for Evolution API events
+  webhook: publicProcedure
+    .input(z.any())
+    .mutation(async ({ input }) => {
+      try {
+        const payload = input as { event: string; instance: string; data: Record<string, unknown> };
+        const { parseWebhookMessage } = await import("./evolutionService");
+        const parsed = parseWebhookMessage(payload);
+        if (!parsed) return { ok: true };
+
+        if (parsed.type === "qrcode") {
+          const inst = await getEvolutionInstanceByName(parsed.instanceName);
+          if (inst) await updateEvolutionInstance(inst.id, { qrCode: parsed.qrCode, status: "qr_code" });
+        }
+
+        if (parsed.type === "connection") {
+          const inst = await getEvolutionInstanceByName(parsed.instanceName);
+          if (inst) {
+            const status = parsed.state === "open" ? "connected" : "disconnected";
+            await updateEvolutionInstance(inst.id, {
+              status: status as "connected" | "disconnected",
+              qrCode: parsed.state === "open" ? null : inst.qrCode,
+              lastConnectedAt: parsed.state === "open" ? Date.now() : inst.lastConnectedAt,
+            });
+          }
+        }
+
+        if (parsed.type === "message") {
+          const inst = await getEvolutionInstanceByName(parsed.instanceName);
+          if (!inst) return { ok: true };
+
+          // Upsert conversation
+          const convId = await upsertEvolutionConversation({
+            instanceId: inst.id,
+            instanceName: parsed.instanceName,
+            remoteJid: parsed.remoteJid,
+            phone: parsed.phone,
+            contactName: parsed.senderName || parsed.phone,
+            lastMessageAt: parsed.timestamp,
+            lastMessagePreview: parsed.content?.slice(0, 100),
+            unreadCount: parsed.direction === "inbound" ? 1 : 0,
+            status: "open",
+          });
+
+          // Save message
+          await createEvolutionMessage({
+            instanceId: inst.id,
+            instanceName: parsed.instanceName,
+            conversationId: convId,
+            remoteJid: parsed.remoteJid,
+            messageId: parsed.messageId,
+            content: parsed.content,
+            messageType: parsed.messageType,
+            direction: parsed.direction,
+            senderName: parsed.senderName,
+            status: "delivered",
+            timestamp: parsed.timestamp,
+            rawPayload: parsed.rawPayload as any,
+          });
+        }
+      } catch (err) {
+        console.error("[Evolution Webhook] Error:", err);
+      }
+      return { ok: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -3643,6 +3909,7 @@ export const appRouter = router({
   seller: sellerRouter,
   rescue: rescueRouter,
   contact: contactsRouter,
+  evolution: evolutionRouter,
 });
 
 export type AppRouter = typeof appRouter;
