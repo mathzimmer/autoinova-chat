@@ -1,0 +1,9 @@
+{
+  "query": "\nUPDATE evolutionConversations ec\nJOIN (\n  SELECT em.conversationId, em.senderName\n  FROM evolutionMessages em\n  INNER JOIN (\n    SELECT conversationId, MAX(timestamp) as maxTs\n    FROM evolutionMessages\n    WHERE direction = 'inbound' AND senderName IS NOT NULL AND senderName != '' AND senderName != 'Vendedor'\n    GROUP BY conversationId\n  ) latest ON em.conversationId = latest.conversationId AND em.timestamp = latest.maxTs AND em.direction = 'inbound'\n  WHERE em.senderName IS NOT NULL AND em.senderName != '' AND em.senderName != 'Vendedor'\n) AS sender_info ON ec.id = sender_info.conversationId\nSET ec.contactName = sender_info.senderName\nWHERE ec.remoteJid LIKE '%@lid' AND (ec.contactName IS NULL OR ec.contactName = 'Vendedor' OR ec.contactName LIKE '%@lid');\n",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute \nUPDATE evolutionConversations ec\nJOIN (\n  SELECT em.conversationId, em.senderName\n  FROM evolutionMessages em\n  INNER JOIN (\n    SELECT conversationId, MAX(timestamp) as maxTs\n    FROM evolutionMessages\n    WHERE direction = 'inbound' AND senderName IS NOT NULL AND senderName != '' AND senderName != 'Vendedor'\n    GROUP BY conversationId\n  ) latest ON em.conversationId = latest.conversationId AND em.timestamp = latest.maxTs AND em.direction = 'inbound'\n  WHERE em.senderName IS NOT NULL AND em.senderName != '' AND em.senderName != 'Vendedor'\n) AS sender_info ON ec.id = sender_info.conversationId\nSET ec.contactName = sender_info.senderName\nWHERE ec.remoteJid LIKE '%@lid' AND (ec.contactName IS NULL OR ec.contactName = 'Vendedor' OR ec.contactName LIKE '%@lid');\n",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 277
+}

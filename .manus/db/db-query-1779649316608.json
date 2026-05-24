@@ -1,0 +1,40 @@
+{
+  "query": "SELECT id, remoteJid, phone, contactName FROM evolutionConversations;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, remoteJid, phone, contactName FROM evolutionConversations;",
+  "rows": [
+    {
+      "id": "1",
+      "remoteJid": "5551999999999@s.whatsapp.net",
+      "phone": "5551999999999",
+      "contactName": "Cliente Teste"
+    },
+    {
+      "id": "2",
+      "remoteJid": "124017247781085@lid",
+      "phone": "124017247781085",
+      "contactName": "Vendedor"
+    },
+    {
+      "id": "30001",
+      "remoteJid": "25366144008235@lid",
+      "phone": "25366144008235",
+      "contactName": "Luiz"
+    },
+    {
+      "id": "30002",
+      "remoteJid": "210694100271304@lid",
+      "phone": "210694100271304",
+      "contactName": "Vendedor"
+    },
+    {
+      "id": "30003",
+      "remoteJid": "5551997566259@s.whatsapp.net",
+      "phone": "5551997566259",
+      "contactName": "5551997566259"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tremoteJid\tphone\tcontactName\n1\t5551999999999@s.whatsapp.net\t5551999999999\tCliente Teste\n2\t124017247781085@lid\t124017247781085\tVendedor\n30001\t25366144008235@lid\t25366144008235\tLuiz\n30002\t210694100271304@lid\t210694100271304\tVendedor\n30003\t5551997566259@s.whatsapp.net\t5551997566259\t5551997566259\n",
+  "stderr": "",
+  "execution_time_ms": 275
+}

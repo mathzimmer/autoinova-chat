@@ -281,12 +281,15 @@ export default function EvolutionInbox() {
   // Set contact name input when conversation changes
   useEffect(() => {
     if (selectedConversation) {
-      setContactNameInput(selectedConversation.contactName || selectedConversation.phone || "");
+      setContactNameInput(getDisplayName(selectedConversation));
     }
   }, [selectedConversation?.id]);
 
   const filteredConversations = conversations.filter(c => {
-    const matchSearch = !search || (c.contactName || c.phone || "").toLowerCase().includes(search.toLowerCase());
+    const displayName = getDisplayName(c);
+    const matchSearch = !search || displayName.toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone || "").includes(search) ||
+      (c.contactName || "").toLowerCase().includes(search.toLowerCase());
     const matchStatus = filterStatus === "all" || c.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -347,6 +350,36 @@ export default function EvolutionInbox() {
       id: selectedConversation.id,
       contactName: contactNameInput.trim(),
     });
+  };
+
+  // Format phone number for display: remove @lid/@s.whatsapp.net suffix and show cleanly
+  const formatPhone = (phone: string | null | undefined, remoteJid?: string | null): string => {
+    const raw = phone || remoteJid || "";
+    // Remove WhatsApp suffixes
+    const clean = raw.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/@lid$/, "");
+    // If it's a pure number (Brazilian format), format it nicely
+    if (/^\d+$/.test(clean)) {
+      if (clean.startsWith("55") && clean.length >= 12) {
+        const local = clean.slice(2); // remove country code
+        if (local.length === 11) {
+          return `+55 (${local.slice(0,2)}) ${local.slice(2,7)}-${local.slice(7)}`;
+        } else if (local.length === 10) {
+          return `+55 (${local.slice(0,2)}) ${local.slice(2,6)}-${local.slice(6)}`;
+        }
+        return `+55 ${local}`;
+      }
+      return clean;
+    }
+    // Not a recognizable phone — show raw but without @lid
+    return clean || "Número desconhecido";
+  };
+
+  // Get display name: prefer contactName, then pushName from messages, then formatted phone
+  const getDisplayName = (conv: Conversation): string => {
+    if (conv.contactName && conv.contactName !== conv.phone && !conv.contactName.includes("@lid")) {
+      return conv.contactName;
+    }
+    return formatPhone(conv.phone, conv.remoteJid);
   };
 
   const formatTime = (ts: number) => {
@@ -518,11 +551,11 @@ export default function EvolutionInbox() {
                     selectedConversation?.id === conv.id && "bg-[#2a3942]"
                   )}
                 >
-                  <Avatar name={conv.contactName || conv.phone} photo={conv.contactPhoto} size="md" />
+                  <Avatar name={getDisplayName(conv)} photo={conv.contactPhoto} size="md" />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-sm font-medium text-[#e9edef] truncate">
-                        {conv.contactName || conv.phone || conv.remoteJid}
+                        {getDisplayName(conv)}
                       </span>
                       <div className="flex items-center gap-1 flex-shrink-0 ml-1">
                         {conv.lastMessageAt && (
@@ -572,7 +605,7 @@ export default function EvolutionInbox() {
                   onClick={() => setShowContactInfo(!showContactInfo)}
                 >
                   <Avatar
-                    name={selectedConversation.contactName || selectedConversation.phone}
+                    name={getDisplayName(selectedConversation)}
                     photo={selectedConversation.contactPhoto}
                     size="md"
                   />
@@ -598,7 +631,7 @@ export default function EvolutionInbox() {
                       ) : (
                         <>
                           <p className="font-medium text-sm text-[#e9edef] truncate">
-                            {selectedConversation.contactName || selectedConversation.phone || selectedConversation.remoteJid}
+                            {getDisplayName(selectedConversation)}
                           </p>
                           <button
                             onClick={e => { e.stopPropagation(); setEditingContactName(true); }}
@@ -611,7 +644,7 @@ export default function EvolutionInbox() {
                     </div>
                     <p className="text-xs text-[#8696a0] flex items-center gap-1">
                       <Phone className="w-3 h-3" />
-                      {selectedConversation.phone} · {selectedConversation.instanceName}
+                      {formatPhone(selectedConversation.phone, selectedConversation.remoteJid)} · {selectedConversation.instanceName}
                     </p>
                   </div>
                 </button>
@@ -814,14 +847,14 @@ export default function EvolutionInbox() {
             <ScrollArea className="flex-1 p-4">
               <div className="flex flex-col items-center mb-6">
                 <Avatar
-                  name={selectedConversation.contactName || selectedConversation.phone}
+                  name={getDisplayName(selectedConversation)}
                   photo={selectedConversation.contactPhoto}
                   size="lg"
                 />
                 <p className="font-semibold mt-3 text-[#e9edef]">
-                  {selectedConversation.contactName || selectedConversation.phone}
+                  {getDisplayName(selectedConversation)}
                 </p>
-                <p className="text-xs text-[#8696a0] mt-1">{selectedConversation.phone}</p>
+                <p className="text-xs text-[#8696a0] mt-1">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</p>
                 {statusBadge(selectedConversation.status)}
               </div>
 
@@ -830,7 +863,7 @@ export default function EvolutionInbox() {
                   <p className="text-xs text-[#8696a0] uppercase font-semibold mb-2">Número</p>
                   <p className="text-sm text-[#e9edef] flex items-center gap-2">
                     <Phone className="w-4 h-4 text-green-400" />
-                    {selectedConversation.phone || selectedConversation.remoteJid}
+                    {formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}
                   </p>
                 </div>
                 <div>

@@ -1,0 +1,50 @@
+{
+  "query": "SELECT id, instanceName, remoteJid, phone, contactName, lastMessageAt FROM evolutionConversations LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, instanceName, remoteJid, phone, contactName, lastMessageAt FROM evolutionConversations LIMIT 20;",
+  "rows": [
+    {
+      "id": "1",
+      "instanceName": "matheus",
+      "remoteJid": "5551999999999@s.whatsapp.net",
+      "phone": "5551999999999",
+      "contactName": "Cliente Teste",
+      "lastMessageAt": "1716520000000"
+    },
+    {
+      "id": "2",
+      "instanceName": "matheus",
+      "remoteJid": "124017247781085@lid",
+      "phone": "124017247781085@lid",
+      "contactName": "Vendedor",
+      "lastMessageAt": "1779595960000"
+    },
+    {
+      "id": "30001",
+      "instanceName": "matheus",
+      "remoteJid": "25366144008235@lid",
+      "phone": "25366144008235@lid",
+      "contactName": "Vendedor",
+      "lastMessageAt": "1779634698000"
+    },
+    {
+      "id": "30002",
+      "instanceName": "matheus",
+      "remoteJid": "210694100271304@lid",
+      "phone": "210694100271304@lid",
+      "contactName": "Vendedor",
+      "lastMessageAt": "1779649001000"
+    },
+    {
+      "id": "30003",
+      "instanceName": "matheus",
+      "remoteJid": "5551997566259@s.whatsapp.net",
+      "phone": "5551997566259",
+      "contactName": "5551997566259",
+      "lastMessageAt": "1779649073717"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tinstanceName\tremoteJid\tphone\tcontactName\tlastMessageAt\n1\tmatheus\t5551999999999@s.whatsapp.net\t5551999999999\tCliente Teste\t1716520000000\n2\tmatheus\t124017247781085@lid\t124017247781085@lid\tVendedor\t1779595960000\n30001\tmatheus\t25366144008235@lid\t25366144008235@lid\tVendedor\t1779634698000\n30002\tmatheus\t210694100271304@lid\t210694100271304@lid\tVendedor\t1779649001000\n30003\tmatheus\t5551997566259@s.whatsapp.net\t5551997566259\t5551997566259\t1779649073717\n",
+  "stderr": "",
+  "execution_time_ms": 307
+}

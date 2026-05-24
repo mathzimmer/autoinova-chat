@@ -155,19 +155,23 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
 
   if (event === "messages.upsert") {
     const msg = data as {
-      key: { remoteJid: string; fromMe: boolean; id: string };
+      key: { remoteJid: string; fromMe: boolean; id: string; participant?: string };
       message: Record<string, unknown>;
       messageType: string;
       messageTimestamp: number;
       pushName?: string;
+      notifyName?: string;
       status?: string;
+      // Evolution API v2 may include these
+      participant?: string;
+      phoneNumber?: string;
     };
 
     const remoteJid = msg.key?.remoteJid || "";
     const fromMe = msg.key?.fromMe || false;
     const messageId = msg.key?.id || "";
     const timestamp = (msg.messageTimestamp || Date.now() / 1000) * 1000;
-    const pushName = msg.pushName || "";
+    const pushName = msg.pushName || msg.notifyName || "";
 
     // Extract text content
     let content = "";
@@ -207,20 +211,57 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
     // Skip status messages
     if (remoteJid === "status@broadcast") return null;
 
-    const phone = remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+    // ── Resolve real phone number ──────────────────────────────────────────
+    // Evolution API in linked-device mode returns @lid JIDs (internal WhatsApp IDs)
+    // instead of real phone numbers. We need to extract the real phone from:
+    // 1. remoteJid if it's @s.whatsapp.net or @c.us (already a real number)
+    // 2. key.participant if present (used in some group/linked-device scenarios)
+    // 3. msg.phoneNumber if Evolution provides it
+    // 4. Extract numeric part from @lid and use as fallback
+    let phone = "";
+    let resolvedJid = remoteJid; // The JID to use for sending messages back
+
+    if (remoteJid.endsWith("@s.whatsapp.net") || remoteJid.endsWith("@c.us")) {
+      // Normal case: real phone number in JID
+      phone = remoteJid.replace("@s.whatsapp.net", "").replace("@c.us", "");
+      resolvedJid = remoteJid;
+    } else if (remoteJid.endsWith("@lid")) {
+      // Linked-device mode: @lid JID — try to find real number from other fields
+      const participant = msg.key?.participant || msg.participant || "";
+      const phoneNumberField = msg.phoneNumber || "";
+
+      if (participant && (participant.endsWith("@s.whatsapp.net") || participant.endsWith("@c.us"))) {
+        phone = participant.replace("@s.whatsapp.net", "").replace("@c.us", "");
+        resolvedJid = participant;
+      } else if (phoneNumberField) {
+        phone = phoneNumberField.replace(/\D/g, "");
+        resolvedJid = `${phone}@s.whatsapp.net`;
+      } else {
+        // Last resort: use numeric part of @lid as phone (may not be real number)
+        // but store the @lid as remoteJid so we can still track the conversation
+        phone = remoteJid.replace("@lid", "");
+        resolvedJid = remoteJid; // keep @lid — will need manual resolution
+        console.warn(`[Evolution] @lid JID without real phone: ${remoteJid}, pushName: ${pushName}`);
+      }
+    } else {
+      // Unknown format — extract numeric part
+      phone = remoteJid.split("@")[0];
+      resolvedJid = remoteJid;
+    }
 
     return {
       type: "message" as const,
       instanceName: instance,
-      remoteJid,
-      phone,
+      remoteJid,         // original JID from Evolution (may be @lid)
+      resolvedJid,       // JID to use for sending (should be @s.whatsapp.net)
+      phone,             // clean phone number without @suffix
       fromMe,
       messageId,
       timestamp,
       content,
       messageType,
       mediaUrl,
-      senderName: fromMe ? "Vendedor" : pushName,
+      senderName: fromMe ? "Vendedor" : (pushName || phone),
       direction: fromMe ? ("outbound" as const) : ("inbound" as const),
       rawPayload: payload,
     };
@@ -302,13 +343,19 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       return;
     }
 
-    // Upsert conversation
+    // Use resolvedJid for the conversation key (prefer @s.whatsapp.net over @lid)
+    const jidForConversation = parsed.resolvedJid || parsed.remoteJid;
+
+    // Upsert conversation — use resolvedJid so sending works correctly
     const conversation = await upsertEvolutionConversation({
       instanceId: instance.id,
       instanceName,
-      remoteJid: parsed.remoteJid,
+      remoteJid: jidForConversation,
       phone: parsed.phone,
-      contactName: parsed.senderName || parsed.phone,
+      // Only update contactName if we have a real name from pushName (not just a number)
+      contactName: (parsed.senderName && parsed.senderName !== parsed.phone && !parsed.fromMe)
+        ? parsed.senderName
+        : undefined,
       lastMessageAt: parsed.timestamp,
       lastMessagePreview: parsed.content.substring(0, 500),
       unreadCount: parsed.direction === "inbound" ? 1 : 0,
@@ -322,7 +369,7 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       instanceId: instance.id,
       instanceName,
       conversationId,
-      remoteJid: parsed.remoteJid,
+      remoteJid: jidForConversation,
       messageId: parsed.messageId,
       content: parsed.content,
       messageType: parsed.messageType,
@@ -333,7 +380,7 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       status: "delivered",
     });
 
-    console.log(`[Evolution] Message saved: ${parsed.direction} | ${parsed.phone} | ${parsed.content.substring(0, 50)}`);
+    console.log(`[Evolution] Message saved: ${parsed.direction} | ${parsed.phone} | jid=${jidForConversation} | ${parsed.content.substring(0, 50)}`);
 
     // Emit real-time event
     if (io) {

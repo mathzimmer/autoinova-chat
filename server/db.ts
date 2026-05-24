@@ -1526,6 +1526,15 @@ export async function listEvolutionConversations(instanceId?: number) {
   return query.orderBy(desc(evolutionConversations.lastMessageAt));
 }
 
+export async function getEvolutionConversationById(id: number) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db.select().from(evolutionConversations)
+    .where(eq(evolutionConversations.id, id))
+    .limit(1);
+  return rows[0] || null;
+}
+
 export async function getEvolutionConversationByJid(instanceId: number, remoteJid: string) {
   const db = await getDb();
   if (!db) return null;
@@ -1543,12 +1552,22 @@ export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConv
   if (!db) throw new Error("DB not available");
   const existing = await getEvolutionConversationByJid(data.instanceId, data.remoteJid);
   if (existing) {
+    // Don't overwrite existing contactName with undefined/null — preserve the name already saved
+    const updateData = { ...data, updatedAt: new Date() };
+    if (data.contactName === undefined || data.contactName === null) {
+      delete updateData.contactName;
+    }
     await db.update(evolutionConversations)
-      .set({ ...data, updatedAt: new Date() })
+      .set(updateData)
       .where(eq(evolutionConversations.id, existing.id));
     return existing.id;
   }
-  const result = await db.insert(evolutionConversations).values(data);
+  // For new conversations, set contactName to phone if not provided
+  const insertData = { ...data };
+  if (!insertData.contactName) {
+    insertData.contactName = data.phone || data.remoteJid;
+  }
+  const result = await db.insert(evolutionConversations).values(insertData);
   return result[0].insertId as number;
 }
 

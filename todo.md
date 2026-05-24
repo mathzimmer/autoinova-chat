@@ -1350,3 +1350,13 @@
 - [x] Frontend: status de mensagem (enviado, entregue, lido)
 - [x] Frontend: scroll automático para última mensagem
 - [x] Frontend: indicador de digitando
+
+## Bug Fix - JID @lid Evolution Inbox
+- [x] Corrigir parseWebhookMessage para extrair número real quando JID é @lid (linked-device mode)
+- [x] Corrigir upsertEvolutionConversation para preservar contactName existente (não sobrescrever com undefined)
+- [x] Adicionar getEvolutionConversationById no db.ts
+- [x] Corrigir sendMessage para resolver @lid -> @s.whatsapp.net antes de enviar (evitar erro 400)
+- [x] Adicionar formatPhone() helper no EvolutionInbox (formata número brasileiro com máscara)
+- [x] Adicionar getDisplayName() helper no EvolutionInbox (prioriza contactName, fallback para número formatado)
+- [x] Atualizar lista de conversas, header do chat e painel de informações para usar helpers
+- [x] Corrigir banco de dados: phone sem @lid, contactName do pushName inbound (SQL UPDATE)

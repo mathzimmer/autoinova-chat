@@ -1,0 +1,114 @@
+{
+  "query": "SELECT conversationId, remoteJid, senderName, direction, content, timestamp FROM evolutionMessages WHERE conversationId IN (2, 30001, 30002) ORDER BY timestamp DESC LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT conversationId, remoteJid, senderName, direction, content, timestamp FROM evolutionMessages WHERE conversationId IN (2, 30001, 30002) ORDER BY timestamp DESC LIMIT 20;",
+  "rows": [
+    {
+      "conversationId": "30002",
+      "remoteJid": "210694100271304@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "[Imagem]",
+      "timestamp": "1779649001000"
+    },
+    {
+      "conversationId": "30002",
+      "remoteJid": "210694100271304@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Teste",
+      "timestamp": "1779647183000"
+    },
+    {
+      "conversationId": "30001",
+      "remoteJid": "25366144008235@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "[Sticker]",
+      "timestamp": "1779634698000"
+    },
+    {
+      "conversationId": "30001",
+      "remoteJid": "25366144008235@lid",
+      "senderName": "Luiz",
+      "direction": "inbound",
+      "content": "[Imagem]",
+      "timestamp": "1779634315000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "[Vídeo]",
+      "timestamp": "1779595960000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "[Imagem]",
+      "timestamp": "1779595946000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Ivi ivuvuv",
+      "timestamp": "1779595623000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Uvucucuv",
+      "timestamp": "1779595621000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Jcjcuciu ivi",
+      "timestamp": "1779595620000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Jjjhh",
+      "timestamp": "1779595604000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Jjjh",
+      "timestamp": "1779595603000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Kkkk",
+      "timestamp": "1779595601000"
+    },
+    {
+      "conversationId": "2",
+      "remoteJid": "124017247781085@lid",
+      "senderName": "Vendedor",
+      "direction": "outbound",
+      "content": "Ollls",
+      "timestamp": "1779595543000"
+    }
+  ],
+  "messages": [],
+  "stdout": "conversationId\tremoteJid\tsenderName\tdirection\tcontent\ttimestamp\n30002\t210694100271304@lid\tVendedor\toutbound\t[Imagem]\t1779649001000\n30002\t210694100271304@lid\tVendedor\toutbound\tTeste\t1779647183000\n30001\t25366144008235@lid\tVendedor\toutbound\t[Sticker]\t1779634698000\n30001\t25366144008235@lid\tLuiz\tinbound\t[Imagem]\t1779634315000\n2\t124017247781085@lid\tVendedor\toutbound\t[Vídeo]\t1779595960000\n2\t124017247781085@lid\tVendedor\toutbound\t[Imagem]\t1779595946000\n2\t124017247781085@lid\tVendedor\toutbound\tIvi ivuvuv\t1779595623000\n2\t124017247781085@lid\tVendedor\toutbound\tUvucucuv\t1779595621000\n2\t124017247781085@lid\tVendedor\toutbound\tJcjcuciu ivi\t1779595620000\n2\t124017247781085@lid\tVendedor\toutbound\tJjjhh\t1779595604000\n2\t124017247781085@lid\tVendedor\toutbound\tJjjh\t1779595603000\n2\t124017247781085@lid\tVendedor\toutbound\tKkkk\t1779595601000\n2\t124017247781085@lid\tVendedor\toutbound\tOllls\t1779595543000\n",
+  "stderr": "",
+  "execution_time_ms": 272
+}

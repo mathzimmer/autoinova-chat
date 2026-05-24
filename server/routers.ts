@@ -93,6 +93,7 @@ import {
   updateEvolutionInstance,
   deleteEvolutionInstance as deleteEvolutionInstanceDb,
   listEvolutionConversations,
+  getEvolutionConversationById,
   getEvolutionConversationByJid,
   upsertEvolutionConversation,
   updateEvolutionConversation,
@@ -3787,14 +3788,23 @@ const evolutionRouter = router({
       conversationId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const result = await evolutionSendText(input.instanceName, input.remoteJid, input.text);
+      // Resolve real phone number: if remoteJid is @lid, use the phone field from the conversation
+      let sendTo = input.remoteJid;
+      if (input.remoteJid.endsWith("@lid") && input.conversationId) {
+        const conv = await getEvolutionConversationById(input.conversationId);
+        if (conv?.phone) {
+          sendTo = `${conv.phone}@s.whatsapp.net`;
+          console.log(`[Evolution] Resolved @lid ${input.remoteJid} -> ${sendTo}`);
+        }
+      }
+      const result = await evolutionSendText(input.instanceName, sendTo, input.text);
       const inst = await getEvolutionInstanceByName(input.instanceName);
       if (inst && input.conversationId) {
         await createEvolutionMessage({
           instanceId: inst.id,
           instanceName: input.instanceName,
           conversationId: input.conversationId,
-          remoteJid: input.remoteJid,
+          remoteJid: sendTo,
           messageId: (result as any)?.key?.id as string || undefined,
           content: input.text,
           messageType: "text",
