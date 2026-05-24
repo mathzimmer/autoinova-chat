@@ -1360,3 +1360,14 @@
 - [x] Adicionar getDisplayName() helper no EvolutionInbox (prioriza contactName, fallback para número formatado)
 - [x] Atualizar lista de conversas, header do chat e painel de informações para usar helpers
 - [x] Corrigir banco de dados: phone sem @lid, contactName do pushName inbound (SQL UPDATE)
+
+## Feature - Resolução de Número Real @lid Evolution Inbox
+- [x] Endpoint backend resolveContactPhone: busca número real via Evolution API /contact/findContacts
+- [x] Endpoint backend syncContacts: sincroniza todos os contatos da instância (resolve @lid em lote)
+- [x] Endpoint backend updateConversation: suporta atualização de phone + remoteJid
+- [x] Frontend: botão "Sincronizar contatos" no header da sidebar (ícone Users)
+- [x] Frontend: auto-resolução ao abrir conversa @lid (chamada em background)
+- [x] Frontend: botão "Buscar número real" no painel de informações (visível apenas para @lid)
+- [x] Frontend: edição manual do telefone no painel de informações (ícone lápis)
+- [x] Frontend: número @lid exibido em amarelo com aviso ⚠️ quando não resolvido
+- [x] evolutionCheckWhatsAppNumber e evolutionFetchAllContacts adicionados ao evolutionService.ts

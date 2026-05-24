@@ -142,6 +142,34 @@ export async function evolutionGetProfilePic(instanceName: string, number: strin
   }
 }
 
+/**
+ * Check if a phone number is valid on WhatsApp via Evolution API.
+ * Returns { exists: boolean, jid: string, number: string } or null on error.
+ */
+export async function evolutionCheckWhatsAppNumber(instanceName: string, numbers: string[]) {
+  try {
+    const result = await evolutionRequest(`/chat/whatsappNumbers/${instanceName}`, "POST", { numbers });
+    return result as Array<{ exists: boolean; jid: string; number: string }>;
+  } catch (err) {
+    console.warn(`[Evolution] checkWhatsAppNumber failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch all contacts from the Evolution instance.
+ * Returns array of { id, pushName, profilePictureUrl, ... }
+ */
+export async function evolutionFetchAllContacts(instanceName: string) {
+  try {
+    const result = await evolutionRequest(`/contact/findContacts/${instanceName}`, "POST", {});
+    return result as Array<{ id: string; pushName?: string; name?: string; profilePictureUrl?: string; phone?: string }>;
+  } catch (err) {
+    console.warn(`[Evolution] fetchAllContacts failed:`, err);
+    return [];
+  }
+}
+
 // ─── Webhook Payload Parser ───────────────────────────────────────────────────
 
 export interface EvolutionWebhookPayload {

@@ -185,6 +185,9 @@ export default function EvolutionInbox() {
   const [showSaveContactDialog, setShowSaveContactDialog] = useState(false);
   const [editingContactName, setEditingContactName] = useState(false);
   const [contactNameInput, setContactNameInput] = useState("");
+  const [editingContactPhone, setEditingContactPhone] = useState(false);
+  const [contactPhoneInput, setContactPhoneInput] = useState("");
+  const [isSyncingContacts, setIsSyncingContacts] = useState(false);
   const [newConvPhone, setNewConvPhone] = useState("");
   const [newConvName, setNewConvName] = useState("");
   const [newConvText, setNewConvText] = useState("");
@@ -245,12 +248,50 @@ export default function EvolutionInbox() {
   });
 
   const updateConvMutation = trpc.evolution.updateConversation.useMutation({
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       conversationsQuery.refetch();
       if (selectedConversation) {
-        setSelectedConversation(prev => prev ? { ...prev, contactName: contactNameInput } : prev);
+        setSelectedConversation(prev => prev ? {
+          ...prev,
+          contactName: vars.contactName !== undefined ? vars.contactName : prev.contactName,
+          phone: vars.phone !== undefined ? vars.phone.replace(/\D/g, "") : prev.phone,
+          remoteJid: vars.phone !== undefined ? `${vars.phone.replace(/\D/g, "")}@s.whatsapp.net` : prev.remoteJid,
+        } : prev);
       }
       setEditingContactName(false);
+      setEditingContactPhone(false);
+    },
+  });
+
+  const resolvePhoneMutation = trpc.evolution.resolveContactPhone.useMutation({
+    onSuccess: (data) => {
+      if (data.resolved) {
+        toast.success(`Número resolvido: ${data.phone}`);
+        conversationsQuery.refetch();
+        if (selectedConversation) {
+          setSelectedConversation(prev => prev ? {
+            ...prev,
+            phone: data.phone || prev.phone,
+            remoteJid: data.jid || prev.remoteJid,
+            contactName: data.name || prev.contactName,
+          } : prev);
+        }
+      } else {
+        toast.info(data.message || "Não foi possível resolver automaticamente. Use a edição manual.");
+      }
+    },
+    onError: (e) => toast.error("Erro ao resolver número: " + e.message),
+  });
+
+  const syncContactsMutation = trpc.evolution.syncContacts.useMutation({
+    onSuccess: (data) => {
+      setIsSyncingContacts(false);
+      toast.success(data.message || "Contatos sincronizados!");
+      conversationsQuery.refetch();
+    },
+    onError: (e) => {
+      setIsSyncingContacts(false);
+      toast.error("Erro ao sincronizar: " + e.message);
     },
   });
 
@@ -275,6 +316,13 @@ export default function EvolutionInbox() {
   useEffect(() => {
     if (selectedConversation && selectedConversation.unreadCount > 0) {
       markAsReadMutation.mutate({ conversationId: selectedConversation.id });
+    }
+    // Auto-resolve @lid when opening a conversation (non-blocking, background)
+    if (selectedConversation?.remoteJid?.endsWith("@lid") && selectedConversation.instanceName) {
+      resolvePhoneMutation.mutate({
+        conversationId: selectedConversation.id,
+        instanceName: selectedConversation.instanceName,
+      });
     }
   }, [selectedConversation?.id]);
 
@@ -460,6 +508,20 @@ export default function EvolutionInbox() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>Nova conversa</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="w-8 h-8 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
+                    disabled={isSyncingContacts || !selectedInstanceName}
+                    onClick={() => {
+                      if (!selectedInstanceName) { toast.info("Selecione uma instância primeiro"); return; }
+                      setIsSyncingContacts(true);
+                      syncContactsMutation.mutate({ instanceName: selectedInstanceName });
+                    }}>
+                    <Users className={cn("w-4 h-4", isSyncingContacts && "animate-spin")} />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Sincronizar contatos (resolver números @lid)</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -859,13 +921,74 @@ export default function EvolutionInbox() {
               </div>
 
               <div className="space-y-4">
+                {/* Phone number section */}
                 <div>
-                  <p className="text-xs text-[#8696a0] uppercase font-semibold mb-2">Número</p>
-                  <p className="text-sm text-[#e9edef] flex items-center gap-2">
-                    <Phone className="w-4 h-4 text-green-400" />
-                    {formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}
-                  </p>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-[#8696a0] uppercase font-semibold">Número WhatsApp</p>
+                    {!editingContactPhone && (
+                      <button onClick={() => { setEditingContactPhone(true); setContactPhoneInput(selectedConversation.phone || ""); }}
+                        className="text-[#8696a0] hover:text-white">
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
+                  {editingContactPhone ? (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        value={contactPhoneInput}
+                        onChange={e => setContactPhoneInput(e.target.value)}
+                        placeholder="5551999999999"
+                        className="h-7 text-xs bg-[#2a3942] border-none text-white flex-1"
+                        autoFocus
+                      />
+                      <Button size="icon" variant="ghost" className="w-6 h-6 text-green-400 flex-shrink-0"
+                        onClick={() => {
+                          if (!contactPhoneInput.trim()) return;
+                          updateConvMutation.mutate({ id: selectedConversation.id, phone: contactPhoneInput.trim() });
+                        }}>
+                        <Save className="w-3 h-3" />
+                      </Button>
+                      <Button size="icon" variant="ghost" className="w-6 h-6 text-red-400 flex-shrink-0"
+                        onClick={() => setEditingContactPhone(false)}>
+                        <X className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-[#e9edef] flex items-center gap-2">
+                        <Phone className="w-4 h-4 text-green-400 flex-shrink-0" />
+                        <span className={cn(
+                          selectedConversation.remoteJid?.endsWith("@lid") ? "text-yellow-400" : "text-[#e9edef]"
+                        )}>
+                          {formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}
+                        </span>
+                      </p>
+                      {selectedConversation.remoteJid?.endsWith("@lid") && (
+                        <div className="space-y-1">
+                          <p className="text-xs text-yellow-400/80">⚠️ ID interno (@lid) — número real não resolvido</p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full h-7 text-xs bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border-yellow-500/30"
+                            disabled={resolvePhoneMutation.isPending}
+                            onClick={() => resolvePhoneMutation.mutate({
+                              conversationId: selectedConversation.id,
+                              instanceName: selectedConversation.instanceName,
+                            })}
+                          >
+                            {resolvePhoneMutation.isPending ? (
+                              <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
+                            ) : (
+                              <Phone className="w-3 h-3 mr-1" />
+                            )}
+                            Buscar número real
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
+
                 <div>
                   <p className="text-xs text-[#8696a0] uppercase font-semibold mb-2">Instância</p>
                   <p className="text-sm text-[#e9edef] flex items-center gap-2">
@@ -879,7 +1002,7 @@ export default function EvolutionInbox() {
                     <p className="text-xs text-[#e9edef]">{formatFullTime(selectedConversation.lastMessageAt)}</p>
                   </div>
                 )}
-                <div className="pt-2 border-t border-[#2a3942]">
+                <div className="pt-2 border-t border-[#2a3942] space-y-2">
                   <Button
                     className="w-full bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30"
                     variant="outline"

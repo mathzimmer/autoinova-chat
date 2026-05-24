@@ -84,6 +84,8 @@ import {
   evolutionGetProfilePic,
   evolutionFetchChats,
   evolutionFetchMessages,
+  evolutionCheckWhatsAppNumber,
+  evolutionFetchAllContacts,
 } from "./evolutionService";
 import {
   listEvolutionInstances,
@@ -3986,20 +3988,168 @@ const evolutionRouter = router({
       }
     }),
 
-  // Update conversation (status, contactName, notes)
+  // Update conversation (status, contactName, phone, notes)
   updateConversation: protectedProcedure
     .input(z.object({
       id: z.number(),
       status: z.enum(["open", "pending", "resolved", "closed"]).optional(),
       contactName: z.string().optional(),
+      phone: z.string().optional(),
       notes: z.string().optional(),
       leadStatus: z.string().optional(),
       vehicleInterest: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
+      // If phone is being updated, also update remoteJid to @s.whatsapp.net
+      if (data.phone) {
+        const cleanPhone = data.phone.replace(/\D/g, "");
+        (data as any).phone = cleanPhone;
+        (data as any).remoteJid = `${cleanPhone}@s.whatsapp.net`;
+      }
       await updateEvolutionConversation(id, data);
       return { success: true };
+    }),
+
+  // Resolve real WhatsApp number for a @lid conversation via Evolution API
+  resolveContactPhone: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      instanceName: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const conv = await getEvolutionConversationById(input.conversationId);
+      if (!conv) throw new Error("Conversa não encontrada");
+
+      // Only try to resolve if it's a @lid conversation
+      if (!conv.remoteJid?.endsWith("@lid")) {
+        return { success: true, resolved: false, message: "Já possui número real" };
+      }
+
+      // The @lid numeric part is NOT a real phone — we need to check via Evolution API
+      // Try the contacts endpoint first to find a matching contact
+      const contacts = await evolutionFetchAllContacts(input.instanceName);
+      const lidId = conv.remoteJid.replace("@lid", "");
+
+      // Look for a contact whose id matches the @lid
+      const match = contacts.find((c: any) => {
+        const contactId = (c.id || "").replace("@lid", "").replace("@s.whatsapp.net", "").replace("@c.us", "");
+        return contactId === lidId;
+      });
+
+      if (match) {
+        // Extract real phone from the contact's id or phone field
+        let realPhone = "";
+        let realJid = "";
+
+        if (match.id && (match.id.endsWith("@s.whatsapp.net") || match.id.endsWith("@c.us"))) {
+          realPhone = match.id.replace("@s.whatsapp.net", "").replace("@c.us", "");
+          realJid = `${realPhone}@s.whatsapp.net`;
+        } else if (match.phone) {
+          realPhone = match.phone.replace(/\D/g, "");
+          realJid = `${realPhone}@s.whatsapp.net`;
+        }
+
+        if (realPhone) {
+          const contactName = match.pushName || match.name || conv.contactName || realPhone;
+          await updateEvolutionConversation(input.conversationId, {
+            phone: realPhone,
+            remoteJid: realJid,
+            contactName: (contactName !== "Vendedor" && contactName !== conv.phone) ? contactName : conv.contactName || realPhone,
+          });
+          // Also update all messages in this conversation
+          const db = await import("../drizzle/schema").then(s => s);
+          console.log(`[Evolution] Resolved @lid ${conv.remoteJid} -> ${realJid} (${contactName})`);
+          return { success: true, resolved: true, phone: realPhone, jid: realJid, name: contactName };
+        }
+      }
+
+      return { success: true, resolved: false, message: "Não foi possível resolver o número via API. Use a edição manual." };
+    }),
+
+  // Sync all contacts from Evolution instance — resolves @lid conversations
+  syncContacts: protectedProcedure
+    .input(z.object({ instanceName: z.string() }))
+    .mutation(async ({ input }) => {
+      const inst = await getEvolutionInstanceByName(input.instanceName);
+      if (!inst) throw new Error("Instância não encontrada");
+
+      // Fetch all contacts from Evolution
+      const contacts = await evolutionFetchAllContacts(input.instanceName);
+      if (!contacts || contacts.length === 0) {
+        return { success: true, updated: 0, message: "Nenhum contato encontrado na instância" };
+      }
+
+      // Build a map: lid_id -> { phone, name }
+      const lidMap = new Map<string, { phone: string; jid: string; name: string }>();
+      const phoneMap = new Map<string, { name: string }>();
+
+      for (const c of contacts) {
+        const id = c.id || "";
+        const name = c.pushName || c.name || "";
+
+        if (id.endsWith("@lid")) {
+          const lidId = id.replace("@lid", "");
+          // @lid contacts don't have real phone in id — skip for now
+          // but store the name if we find a matching @s.whatsapp.net contact later
+          lidMap.set(lidId, { phone: "", jid: id, name });
+        } else if (id.endsWith("@s.whatsapp.net") || id.endsWith("@c.us")) {
+          const phone = id.replace("@s.whatsapp.net", "").replace("@c.us", "");
+          phoneMap.set(phone, { name });
+          // Check if there's a corresponding @lid in the map
+          // (Evolution sometimes returns both @lid and @s.whatsapp.net for the same contact)
+        }
+      }
+
+      // Get all @lid conversations for this instance
+      const allConvs = await listEvolutionConversations(inst.id);
+      const lidConvs = allConvs.filter((c: any) => c.remoteJid?.endsWith("@lid"));
+
+      let updated = 0;
+      let nameUpdated = 0;
+
+      for (const conv of lidConvs) {
+        const lidId = conv.remoteJid.replace("@lid", "");
+        const contactInfo = lidMap.get(lidId);
+
+        if (contactInfo?.phone) {
+          // We have a real phone for this @lid
+          const updateData: any = {
+            phone: contactInfo.phone,
+            remoteJid: contactInfo.jid,
+          };
+          if (contactInfo.name && contactInfo.name !== "Vendedor") {
+            updateData.contactName = contactInfo.name;
+          }
+          await updateEvolutionConversation(conv.id, updateData);
+          updated++;
+        } else if (contactInfo?.name && contactInfo.name !== "Vendedor" && contactInfo.name !== conv.contactName) {
+          // At least update the name
+          await updateEvolutionConversation(conv.id, { contactName: contactInfo.name });
+          nameUpdated++;
+        }
+      }
+
+      // Also update names for @s.whatsapp.net conversations that have no name
+      const normalConvs = allConvs.filter((c: any) =>
+        !c.remoteJid?.endsWith("@lid") &&
+        (!c.contactName || c.contactName === c.phone || c.contactName === c.remoteJid)
+      );
+      for (const conv of normalConvs) {
+        const info = phoneMap.get(conv.phone || "");
+        if (info?.name && info.name !== "Vendedor") {
+          await updateEvolutionConversation(conv.id, { contactName: info.name });
+          nameUpdated++;
+        }
+      }
+
+      return {
+        success: true,
+        updated,
+        nameUpdated,
+        totalContacts: contacts.length,
+        message: `${updated} números resolvidos, ${nameUpdated} nomes atualizados de ${contacts.length} contatos`,
+      };
     }),
 
   // Mark conversation as read
