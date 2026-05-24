@@ -13,6 +13,7 @@ import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
 import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, getConversationByPhone, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
 import { startCampaignScheduler, handleCampaignDeliveryStatus, handleCampaignResponse } from "../campaignService";
+import { handleEvolutionWebhook } from "../evolutionService";
 import { startRescueJob } from "../rescueJob";
 import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
@@ -622,6 +623,28 @@ async function startServer() {
       }
     } catch (error) {
       console.error("[Instagram/Facebook Webhook] Error:", error);
+    }
+  });
+
+  // Evolution API webhook endpoint (multi-instance WhatsApp)
+  app.post("/api/webhook/evolution", async (req, res) => {
+    try {
+      const body = req.body;
+      const event = body.event as string;
+      const instanceName = body.instance as string;
+      const data = body.data;
+
+      console.log(`[Evolution Webhook] Event: ${event} | Instance: ${instanceName}`);
+
+      if (!event || !instanceName) {
+        return res.status(400).json({ error: "Missing event or instance" });
+      }
+
+      await handleEvolutionWebhook({ event, instanceName, data, io: (req as any).io });
+      res.json({ success: true });
+    } catch (error) {
+      console.error("[Evolution Webhook] Error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
