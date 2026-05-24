@@ -898,21 +898,20 @@ export default function EvolutionInbox() {
                   {/* Text input */}
                   <Textarea
                     ref={textareaRef}
-                    placeholder={isLidConversation ? "⚠️ Informe o número real acima para enviar..." : "Digite uma mensagem..."}
+                    placeholder={isLidConversation ? "⚠️ Número @lid — a mensagem será enviada via ID interno" : "Digite uma mensagem..."}
                     value={messageText}
                     onChange={e => setMessageText(e.target.value)}
                     onKeyDown={handleKeyDown}
                     rows={1}
-                    disabled={isLidConversation}
-                    className="flex-1 min-h-[40px] max-h-32 resize-none bg-[#2a3942] border-none text-[#e9edef] placeholder:text-[#8696a0] focus-visible:ring-0 rounded-xl py-2.5 px-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex-1 min-h-[40px] max-h-32 resize-none bg-[#2a3942] border-none text-[#e9edef] placeholder:text-[#8696a0] focus-visible:ring-0 rounded-xl py-2.5 px-4 text-sm"
                     style={{ scrollbarWidth: "none" }}
                   />
 
                   {/* Send button */}
                   <Button
                     onClick={handleSend}
-                    disabled={!messageText.trim() || sendMutation.isPending || isLidConversation}
-                    className="w-9 h-9 bg-green-500 hover:bg-green-600 text-white rounded-full flex-shrink-0 p-0 disabled:opacity-50"
+                    disabled={!messageText.trim() || sendMutation.isPending}
+                    className="w-9 h-9 bg-green-500 hover:bg-green-600 text-white rounded-full flex-shrink-0 p-0"
                   >
                     <Send className="w-4 h-4" />
                   </Button>

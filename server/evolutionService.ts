@@ -91,8 +91,9 @@ export async function evolutionSetWebhook(instanceName: string, webhookUrl: stri
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
 export async function evolutionSendText(instanceName: string, to: string, text: string) {
-  // Ensure phone is in correct format: 5511999999999@s.whatsapp.net
-  const number = to.includes("@") ? to.split("@")[0] : to;
+  // @lid JIDs must be sent as-is — Baileys routes them internally via linked-device table
+  // Normal JIDs (@s.whatsapp.net / @c.us): strip suffix, send only digits
+  const number = to.endsWith("@lid") ? to : (to.includes("@") ? to.split("@")[0] : to);
   return evolutionRequest(`/message/sendText/${instanceName}`, "POST", {
     number,
     text,
@@ -107,7 +108,8 @@ export async function evolutionSendMedia(
   caption?: string,
   fileName?: string
 ) {
-  const number = to.includes("@") ? to.split("@")[0] : to;
+  // @lid JIDs must be sent as-is — Baileys routes them internally via linked-device table
+  const number = to.endsWith("@lid") ? to : (to.includes("@") ? to.split("@")[0] : to);
   return evolutionRequest(`/message/sendMedia/${instanceName}`, "POST", {
     number,
     mediatype: mediaType,
