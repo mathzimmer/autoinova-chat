@@ -1,0 +1,45 @@
+{
+  "query": "SELECT id, remoteJid, phone, contactName, instanceName FROM evolutionConversations WHERE remoteJid LIKE '%@lid%' OR phone LIKE '%@lid%' OR phone LIKE '%269861%' OR remoteJid LIKE '%269861%' LIMIT 20;",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway04.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 4EWQC24NqsipcrS.e9fd18c13e30 --database WRYbLJeRQcsg6cNcJJnu32 --execute SELECT id, remoteJid, phone, contactName, instanceName FROM evolutionConversations WHERE remoteJid LIKE '%@lid%' OR phone LIKE '%@lid%' OR phone LIKE '%269861%' OR remoteJid LIKE '%269861%' LIMIT 20;",
+  "rows": [
+    {
+      "id": "2",
+      "remoteJid": "124017247781085@lid",
+      "phone": "124017247781085",
+      "contactName": "Vendedor",
+      "instanceName": "matheus"
+    },
+    {
+      "id": "30001",
+      "remoteJid": "25366144008235@lid",
+      "phone": "25366144008235",
+      "contactName": "Luiz",
+      "instanceName": "matheus"
+    },
+    {
+      "id": "30002",
+      "remoteJid": "210694100271304@lid",
+      "phone": "210694100271304",
+      "contactName": "Vendedor",
+      "instanceName": "matheus"
+    },
+    {
+      "id": "30004",
+      "remoteJid": "269861485822179@lid",
+      "phone": "269861485822179",
+      "contactName": "Lucas Zimmer",
+      "instanceName": "matheus"
+    },
+    {
+      "id": "30005",
+      "remoteJid": "164020590006303@lid",
+      "phone": "164020590006303",
+      "contactName": "Delano",
+      "instanceName": "matheus"
+    }
+  ],
+  "messages": [],
+  "stdout": "id\tremoteJid\tphone\tcontactName\tinstanceName\n2\t124017247781085@lid\t124017247781085\tVendedor\tmatheus\n30001\t25366144008235@lid\t25366144008235\tLuiz\tmatheus\n30002\t210694100271304@lid\t210694100271304\tVendedor\tmatheus\n30004\t269861485822179@lid\t269861485822179\tLucas Zimmer\tmatheus\n30005\t164020590006303@lid\t164020590006303\tDelano\tmatheus\n",
+  "stderr": "",
+  "execution_time_ms": 266
+}

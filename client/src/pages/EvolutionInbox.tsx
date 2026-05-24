@@ -225,7 +225,11 @@ export default function EvolutionInbox() {
   const [saveContactNotes, setSaveContactNotes] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "pending" | "resolved">("all");
   const [isUploading, setIsUploading] = useState(false);
+  const [lidPhoneInput, setLidPhoneInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Detect if selected conversation has unresolved @lid JID
+  const isLidConversation = !!(selectedConversation?.remoteJid?.endsWith("@lid"));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -709,9 +713,14 @@ export default function EvolutionInbox() {
                         </>
                       )}
                     </div>
-                    <p className="text-xs text-[#8696a0] flex items-center gap-1">
-                      <Phone className="w-3 h-3" />
-                      {formatPhone(selectedConversation.phone, selectedConversation.remoteJid)} · {selectedConversation.instanceName}
+                    <p className="text-xs flex items-center gap-1">
+                      <Phone className="w-3 h-3 text-[#8696a0]" />
+                      {isLidConversation ? (
+                        <span className="text-yellow-400 font-medium">⚠️ Número não resolvido (ID interno)</span>
+                      ) : (
+                        <span className="text-[#8696a0]">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</span>
+                      )}
+                      <span className="text-[#8696a0]"> · {selectedConversation.instanceName}</span>
                     </p>
                   </div>
                 </button>
@@ -789,6 +798,46 @@ export default function EvolutionInbox() {
 
               {/* Message input */}
               <div className="px-4 py-3 bg-[#202c33] border-t border-[#2a3942]">
+
+                {/* @lid warning banner */}
+                {isLidConversation && (
+                  <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
+                    <div className="flex items-start gap-2 mb-2">
+                      <span className="text-yellow-400 text-sm">⚠️</span>
+                      <div className="flex-1">
+                        <p className="text-yellow-300 text-xs font-semibold">Número real não identificado</p>
+                        <p className="text-yellow-200/70 text-xs mt-0.5">
+                          Esta conversa usa um ID interno da Evolution (<code className="bg-yellow-500/20 px-1 rounded text-yellow-300">{selectedConversation?.remoteJid}</code>).
+                          Para enviar mensagens, informe o número real do WhatsApp do cliente.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        value={lidPhoneInput}
+                        onChange={e => setLidPhoneInput(e.target.value.replace(/\D/g, ""))}
+                        placeholder="Número WhatsApp (ex: 5551999999999)"
+                        className="flex-1 h-8 text-xs bg-[#2a3942] border-yellow-500/30 text-[#e9edef] placeholder:text-[#8696a0]"
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8 bg-yellow-500 hover:bg-yellow-600 text-black text-xs px-3"
+                        disabled={lidPhoneInput.length < 10 || updateConvMutation.isPending}
+                        onClick={() => {
+                          if (!selectedConversation || lidPhoneInput.length < 10) return;
+                          updateConvMutation.mutate({
+                            id: selectedConversation.id,
+                            phone: lidPhoneInput,
+                          });
+                          setLidPhoneInput("");
+                        }}
+                      >
+                        {updateConvMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Salvar número"}
+                      </Button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Emoji picker */}
                 {showEmojiPicker && (
                   <div className="mb-2 p-2 bg-[#233138] rounded-xl border border-[#2a3942] flex flex-wrap gap-1">
@@ -849,20 +898,21 @@ export default function EvolutionInbox() {
                   {/* Text input */}
                   <Textarea
                     ref={textareaRef}
-                    placeholder="Digite uma mensagem..."
+                    placeholder={isLidConversation ? "⚠️ Informe o número real acima para enviar..." : "Digite uma mensagem..."}
                     value={messageText}
                     onChange={e => setMessageText(e.target.value)}
                     onKeyDown={handleKeyDown}
                     rows={1}
-                    className="flex-1 min-h-[40px] max-h-32 resize-none bg-[#2a3942] border-none text-[#e9edef] placeholder:text-[#8696a0] focus-visible:ring-0 rounded-xl py-2.5 px-4 text-sm"
+                    disabled={isLidConversation}
+                    className="flex-1 min-h-[40px] max-h-32 resize-none bg-[#2a3942] border-none text-[#e9edef] placeholder:text-[#8696a0] focus-visible:ring-0 rounded-xl py-2.5 px-4 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     style={{ scrollbarWidth: "none" }}
                   />
 
                   {/* Send button */}
                   <Button
                     onClick={handleSend}
-                    disabled={!messageText.trim() || sendMutation.isPending}
-                    className="w-9 h-9 bg-green-500 hover:bg-green-600 text-white rounded-full flex-shrink-0 p-0"
+                    disabled={!messageText.trim() || sendMutation.isPending || isLidConversation}
+                    className="w-9 h-9 bg-green-500 hover:bg-green-600 text-white rounded-full flex-shrink-0 p-0 disabled:opacity-50"
                   >
                     <Send className="w-4 h-4" />
                   </Button>
@@ -921,7 +971,13 @@ export default function EvolutionInbox() {
                 <p className="font-semibold mt-3 text-[#e9edef]">
                   {getDisplayName(selectedConversation)}
                 </p>
-                <p className="text-xs text-[#8696a0] mt-1">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</p>
+                <p className="text-xs mt-1">
+                  {isLidConversation ? (
+                    <span className="text-yellow-400">⚠️ Número não resolvido</span>
+                  ) : (
+                    <span className="text-[#8696a0]">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</span>
+                  )}
+                </p>
                 {statusBadge(selectedConversation.status)}
               </div>
 
