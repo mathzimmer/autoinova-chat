@@ -771,3 +771,75 @@ export const evolutionMessages = mysqlTable("evolutionMessages", {
 
 export type EvolutionMessage = typeof evolutionMessages.$inferSelect;
 export type InsertEvolutionMessage = typeof evolutionMessages.$inferInsert;
+
+/**
+ * WhatsApp Numbers — múltiplos números WhatsApp Cloud API (Meta oficial).
+ * Cada linha representa um número verificado na WABA do cliente.
+ * Substitui evolutionInstances para o inbox dos vendedores.
+ */
+export const whatsappNumbers = mysqlTable("whatsappNumbers", {
+  id: int("id").autoincrement().primaryKey(),
+  phoneNumberId: varchar("phoneNumberId", { length: 64 }).notNull().unique(), // Meta phone_number_id
+  displayName: varchar("displayName", { length: 255 }).notNull(),             // Nome amigável (ex: "Vendedor João")
+  phoneDisplay: varchar("phoneDisplay", { length: 32 }),                      // Número formatado (ex: +55 51 99999-9999)
+  accessToken: text("accessToken"),                                            // Token específico do número (opcional — usa WHATSAPP_SYSTEM_USER_TOKEN se null)
+  sellerId: int("sellerId"),                                                   // Vendedor responsável (tabela sellers)
+  assignedUserId: int("assignedUserId"),                                       // Usuário do sistema responsável (tabela teamMembers)
+  isActive: boolean("isActive").default(true).notNull(),
+  notes: text("notes"),                                                        // Observações internas
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WhatsappNumber = typeof whatsappNumbers.$inferSelect;
+export type InsertWhatsappNumber = typeof whatsappNumbers.$inferInsert;
+
+/**
+ * WhatsApp Number Conversations — conversas dos números dos vendedores via Cloud API.
+ * Similar a evolutionConversations mas usando Cloud API oficial (sem @lid).
+ */
+export const whatsappNumberConversations = mysqlTable("whatsappNumberConversations", {
+  id: int("id").autoincrement().primaryKey(),
+  whatsappNumberId: int("whatsappNumberId").notNull(),  // FK -> whatsappNumbers
+  phoneNumberId: varchar("phoneNumberId", { length: 64 }).notNull(),  // Meta phone_number_id (denormalized for fast lookup)
+  customerPhone: varchar("customerPhone", { length: 32 }).notNull(),  // Número real do cliente (sempre disponível via Cloud API)
+  contactName: varchar("contactName", { length: 255 }),
+  contactPhoto: varchar("contactPhoto", { length: 512 }),
+  lastMessageAt: bigint("lastMessageAt", { mode: "number" }),
+  lastMessagePreview: varchar("lastMessagePreview", { length: 500 }),
+  unreadCount: int("unreadCount").default(0).notNull(),
+  status: mysqlEnum("wnConvStatus", ["open", "pending", "resolved", "closed"]).default("open").notNull(),
+  windowExpired: boolean("windowExpired").default(false).notNull(),  // 24h window expired
+  // CRM fields
+  leadStatus: varchar("leadStatus", { length: 50 }),
+  vehicleInterest: varchar("vehicleInterest", { length: 255 }),
+  notes: text("notes"),
+  tags: json("tags"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type WhatsappNumberConversation = typeof whatsappNumberConversations.$inferSelect;
+export type InsertWhatsappNumberConversation = typeof whatsappNumberConversations.$inferInsert;
+
+/**
+ * WhatsApp Number Messages — mensagens das conversas dos vendedores via Cloud API.
+ */
+export const whatsappNumberMessages = mysqlTable("whatsappNumberMessages", {
+  id: int("id").autoincrement().primaryKey(),
+  whatsappNumberId: int("whatsappNumberId").notNull(),
+  conversationId: int("conversationId").notNull(),
+  externalMessageId: varchar("externalMessageId", { length: 255 }).unique(), // wamid
+  content: text("content"),
+  messageType: mysqlEnum("wnMsgType", ["text", "audio", "image", "document", "video", "sticker", "reaction", "system"]).default("text").notNull(),
+  mediaUrl: varchar("mediaUrl", { length: 512 }),
+  direction: mysqlEnum("wnDirection", ["inbound", "outbound"]).notNull(),
+  senderName: varchar("senderName", { length: 255 }),
+  status: mysqlEnum("wnMsgStatus", ["sent", "delivered", "read", "failed"]).default("sent").notNull(),
+  timestamp: bigint("timestamp", { mode: "number" }).notNull(),
+  rawPayload: json("rawPayload"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type WhatsappNumberMessage = typeof whatsappNumberMessages.$inferSelect;
+export type InsertWhatsappNumberMessage = typeof whatsappNumberMessages.$inferInsert;

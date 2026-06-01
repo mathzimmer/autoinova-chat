@@ -14,6 +14,7 @@ import { startAutoSync } from "../stockSync";
 import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, getConversationByPhone, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
 import { startCampaignScheduler, handleCampaignDeliveryStatus, handleCampaignResponse } from "../campaignService";
 import { handleEvolutionWebhook } from "../evolutionService";
+import { handleWNWebhook } from "../whatsappMultiNumber";
 import { startRescueJob } from "../rescueJob";
 import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
@@ -106,6 +107,16 @@ async function startServer() {
           return res.status(200).send(req.query["hub.challenge"]);
         }
         return res.sendStatus(403);
+      }
+
+      // ── Multi-number routing: check if this phone_number_id is a registered WA number ──
+      const phoneNumberId = body?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+      if (phoneNumberId) {
+        const handled = await handleWNWebhook(body);
+        if (handled) {
+          return res.sendStatus(200);
+        }
+        // Not handled by multi-number → fall through to main handler
       }
 
       // Process incoming messages from WhatsApp Cloud API

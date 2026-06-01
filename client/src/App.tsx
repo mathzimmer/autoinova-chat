@@ -24,6 +24,8 @@ import Agents from "./pages/Agents";
 import Sellers from "./pages/Sellers";
 import EvolutionInstances from "./pages/EvolutionInstances";
 import EvolutionInbox from "./pages/EvolutionInbox";
+import WhatsAppNumbers from "./pages/WhatsAppNumbers";
+import WhatsAppInbox from "./pages/WhatsAppInbox";
 
 function Router() {
   return (
@@ -112,6 +114,16 @@ function Router() {
       <Route path="/evolution-inbox">
         <AppLayout>
           <EvolutionInbox />
+        </AppLayout>
+      </Route>
+      <Route path="/whatsapp-numbers">
+        <AppLayout>
+          <WhatsAppNumbers />
+        </AppLayout>
+      </Route>
+      <Route path="/whatsapp-inbox">
+        <AppLayout>
+          <WhatsAppInbox />
         </AppLayout>
       </Route>
       <Route path="/team-login" component={TeamLogin} />
