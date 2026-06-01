@@ -3309,6 +3309,7 @@ const contactsRouter = router({
       source: z.string().optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
+      campaignParticipant: z.boolean().optional(),
     }).optional())
     .query(async ({ input }) => {
       return listContacts(input || {});

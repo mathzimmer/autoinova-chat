@@ -102,7 +102,7 @@ export default function ContactsPage() {
   const [selectedBulkCampaignId, setSelectedBulkCampaignId] = useState<string>("");
   const [filterByCampaign, setFilterByCampaign] = useState<string>(""); // "all", "active", or campaign ID
 
-  const LIMIT = 50;
+  const [pageSize, setPageSize] = useState(50);
 
   const openCampaignDialog = (contact: Contact) => {
     setSelectedContactForCampaign(contact);
@@ -114,8 +114,9 @@ export default function ContactsPage() {
     search: search || undefined,
     tag: selectedTag || undefined,
     source: selectedSource || undefined,
-    limit: LIMIT,
-    offset: page * LIMIT,
+    limit: pageSize,
+    offset: page * pageSize,
+    campaignParticipant: filterByCampaign === "active" ? true : undefined,
   });
   const tagsQuery = trpc.contact.tags.useQuery();
   const templatesQuery = trpc.whatsappTemplate.list.useQuery();
@@ -353,7 +354,7 @@ export default function ContactsPage() {
     }
   };
 
-  const totalPages = Math.ceil(total / LIMIT);
+  const totalPages = Math.ceil(total / pageSize);
 
   if (!user) return null;
 
@@ -458,13 +459,24 @@ export default function ContactsPage() {
                 <SelectValue placeholder="Campanhas" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todas as campanhas</SelectItem>
-                <SelectItem value="active">Em campanhas ativas</SelectItem>
+                <SelectItem value="all">Todos os contatos</SelectItem>
+                <SelectItem value="active">Participaram de campanhas</SelectItem>
                 {campaignsQuery.data?.campaigns?.map((campaign: any) => (
                   <SelectItem key={campaign.id} value={campaign.id.toString()}>
                     {campaign.name} ({campaign.totalContacts || 0})
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+            <Select value={pageSize.toString()} onValueChange={v => { setPageSize(Number(v)); setPage(0); }}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="Por página" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="50">50 por página</SelectItem>
+                <SelectItem value="100">100 por página</SelectItem>
+                <SelectItem value="500">500 por página</SelectItem>
+                <SelectItem value="1000">1000 por página</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -638,7 +650,7 @@ export default function ContactsPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between p-3 border-t">
               <span className="text-xs text-muted-foreground">
-                {page * LIMIT + 1}-{Math.min((page + 1) * LIMIT, total)} de {total}
+                {page * pageSize + 1}-{Math.min((page + 1) * pageSize, total)} de {total}
               </span>
               <div className="flex gap-1">
                 <Button variant="outline" size="icon" className="h-7 w-7" disabled={page === 0} onClick={() => setPage(p => p - 1)}>

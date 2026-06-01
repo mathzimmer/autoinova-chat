@@ -1371,3 +1371,7 @@
 - [x] Frontend: edição manual do telefone no painel de informações (ícone lápis)
 - [x] Frontend: número @lid exibido em amarelo com aviso ⚠️ quando não resolvido
 - [x] evolutionCheckWhatsAppNumber e evolutionFetchAllContacts adicionados ao evolutionService.ts
+
+## Feature - Lista de Contatos Melhorada
+- [x] Aumentar limite da lista de contatos para 1000
+- [x] Adicionar filtro de contatos que já participaram de campanhas

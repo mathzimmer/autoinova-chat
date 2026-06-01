@@ -1159,7 +1159,7 @@ export async function getInactiveLeadsForRescue(
 
 // ─── Contacts ───────────────────────────────────────────────────────────────
 
-export async function listContacts(opts?: { search?: string; tag?: string; source?: string; limit?: number; offset?: number }) {
+export async function listContacts(opts?: { search?: string; tag?: string; source?: string; limit?: number; offset?: number; campaignParticipant?: boolean }) {
   const db = await getDb();
   if (!db) return { contacts: [], total: 0 };
   const conditions: any[] = [eq(contacts.isActive, true)];
@@ -1174,6 +1174,12 @@ export async function listContacts(opts?: { search?: string; tag?: string; sourc
   }
   if (opts?.source) {
     conditions.push(eq(contacts.source, opts.source as any));
+  }
+  // Filter contacts that participated in campaigns
+  if (opts?.campaignParticipant) {
+    conditions.push(
+      sql`${contacts.id} IN (SELECT DISTINCT contactId FROM campaignDispatches)`
+    );
   }
   const where = and(...conditions);
   const [rows, countResult] = await Promise.all([
