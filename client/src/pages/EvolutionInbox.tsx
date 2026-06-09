@@ -83,10 +83,10 @@ function Avatar({ name, photo, size = "md" }: { name?: string | null; photo?: st
 
 function MessageStatusIcon({ status, direction }: { status: Message["status"]; direction: Message["direction"] }) {
   if (direction !== "outbound") return null;
-  if (status === "read") return <CheckCheck className="w-3.5 h-3.5 text-blue-400" />;
-  if (status === "delivered") return <CheckCheck className="w-3.5 h-3.5 text-green-200" />;
-  if (status === "sent") return <Check className="w-3.5 h-3.5 text-green-200" />;
-  return <Clock className="w-3.5 h-3.5 text-green-200" />;
+  if (status === "read") return <CheckCheck className="w-3.5 h-3.5 text-blue-500" />;
+  if (status === "delivered") return <CheckCheck className="w-3.5 h-3.5 text-gray-500" />;
+  if (status === "sent") return <Check className="w-3.5 h-3.5 text-gray-500" />;
+  return <Clock className="w-3.5 h-3.5 text-gray-400" />;
 }
 
 function MessageBubble({ msg, formatTime }: { msg: Message; formatTime: (ts: number) => string }) {
@@ -154,12 +154,12 @@ function MessageBubble({ msg, formatTime }: { msg: Message; formatTime: (ts: num
         "relative max-w-[75%]",
         isSticker || isReaction ? "" : cn(
           "rounded-2xl px-3 py-2 shadow-sm",
-          isOut ? "bg-[#005c4b] text-white rounded-br-sm" : "bg-[#202c33] text-[#e9edef] rounded-bl-sm"
+          isOut ? "bg-[#d9fdd3] text-gray-900 rounded-br-sm" : "bg-white text-gray-900 rounded-bl-sm shadow-sm"
         )
       )}>
         {renderContent()}
         {!isSticker && !isReaction && (
-          <div className={cn("flex items-center justify-end gap-1 mt-1", isOut ? "text-green-200/70" : "text-[#8696a0]")}>
+          <div className={cn("flex items-center justify-end gap-1 mt-1", isOut ? "text-gray-500" : "text-gray-400")}>
             <span className="text-[10px]">{formatTime(msg.timestamp)}</span>
             <MessageStatusIcon status={msg.status} direction={msg.direction} />
           </div>
@@ -331,17 +331,22 @@ export default function EvolutionInbox() {
 
   const markAsReadMutation = trpc.evolution.markAsRead.useMutation();
 
-  const saveContactMutation = trpc.contact.createFromInbox.useMutation({
+  // Query linked contact for selected conversation
+  const linkedContactQuery = trpc.evolution.getLinkedContact.useQuery(
+    { conversationId: selectedConversation?.id || 0 },
+    { enabled: !!selectedConversation }
+  );
+  const linkedContact = linkedContactQuery.data as { id: number; name: string; phone: string; notes?: string | null; source?: string | null } | null;
+
+  const saveContactMutation = trpc.evolution.saveAndLinkContact.useMutation({
     onSuccess: (data) => {
-      if ((data as any).updated) {
-        toast.success(`Contato "${saveContactName}" atualizado com sucesso!`);
-      } else {
-        toast.success(`Contato "${saveContactName}" salvo com sucesso!`);
-      }
+      toast.success(`Contato "${saveContactName}" salvo e vinculado!`);
       setShowSaveContactDialog(false);
       setSaveContactName("");
       setSaveContactPhone("");
       setSaveContactNotes("");
+      linkedContactQuery.refetch();
+      conversationsQuery.refetch();
     },
     onError: (e: { message: string }) => toast.error("Erro ao salvar contato: " + e.message),
   });
@@ -660,7 +665,12 @@ export default function EvolutionInbox() {
                         {statusBadge(conv.status)}
                       </div>
                     </div>
-                    <p className="text-[10px] text-[#8696a0]/60 mt-0.5">{conv.instanceName}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <p className="text-[10px] text-[#8696a0]/60">{conv.instanceName}</p>
+                      {conv.remoteJid?.endsWith("@lid") && (
+                        <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-1 rounded">@lid</span>
+                      )}
+                    </div>
                   </div>
                 </button>
               ))
@@ -669,9 +679,8 @@ export default function EvolutionInbox() {
         </div>
 
         {/* ── Main Chat Area ── */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#0b141a]" style={{
-          backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)",
-          backgroundSize: "24px 24px"
+        <div className="flex-1 flex flex-col min-w-0 bg-[#e5ddd5]" style={{
+          backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"200\" height=\"200\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cdefs%3E%3Cpattern id=\"p\" width=\"40\" height=\"40\" patternUnits=\"userSpaceOnUse\"%3E%3Cpath d=\"M0 20h40M20 0v40\" stroke=\"rgba(0,0,0,0.03)\" fill=\"none\"/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\"200\" height=\"200\" fill=\"url(%23p)\"/%3E%3C/svg%3E')"
         }}>
           {selectedConversation ? (
             <>
@@ -713,7 +722,7 @@ export default function EvolutionInbox() {
                       ) : (
                         <>
                           <p className="font-medium text-sm text-[#e9edef] truncate">
-                            {getDisplayName(selectedConversation)}
+                            {linkedContact ? linkedContact.name : getDisplayName(selectedConversation)}
                           </p>
                           <button
                             onClick={e => { e.stopPropagation(); setEditingContactName(true); }}
@@ -726,7 +735,9 @@ export default function EvolutionInbox() {
                     </div>
                     <p className="text-xs flex items-center gap-1">
                       <Phone className="w-3 h-3 text-[#8696a0]" />
-                      {isLidConversation ? (
+                      {linkedContact ? (
+                        <span className="text-[#8696a0]">{formatPhone(linkedContact.phone)}</span>
+                      ) : isLidConversation ? (
                         <span className="text-yellow-400 font-medium">⚠️ Número não resolvido (ID interno)</span>
                       ) : (
                         <span className="text-[#8696a0]">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</span>
@@ -787,7 +798,7 @@ export default function EvolutionInbox() {
                     <div key={group.date}>
                       {/* Date separator */}
                       <div className="flex items-center justify-center my-4">
-                        <span className="bg-[#182229] text-[#8696a0] text-xs px-3 py-1 rounded-full">
+                        <span className="bg-white/80 text-gray-600 text-xs px-3 py-1 rounded-full shadow-sm">
                           {group.date}
                         </span>
                       </div>
@@ -799,7 +810,7 @@ export default function EvolutionInbox() {
                     </div>
                   ))}
                   {messages.length === 0 && !messagesQuery.isLoading && (
-                    <div className="text-center py-12 text-[#8696a0] text-sm">
+                    <div className="text-center py-12 text-gray-500 text-sm">
                       Nenhuma mensagem ainda. Inicie a conversa!
                     </div>
                   )}
@@ -1082,28 +1093,64 @@ export default function EvolutionInbox() {
                     <p className="text-xs text-[#e9edef]">{formatFullTime(selectedConversation.lastMessageAt)}</p>
                   </div>
                 )}
+                {/* Linked Contact Section */}
                 <div className="pt-2 border-t border-[#2a3942] space-y-2">
-                  <Button
-                    className="w-full bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30"
-                    variant="outline"
-                    onClick={() => {
-                      setSaveContactName(getDisplayName(selectedConversation));
-                      setSaveContactPhone(selectedConversation.phone || "");
-                      setSaveContactNotes("");
-                      setShowSaveContactDialog(true);
-                    }}
-                  >
-                    <UserPlus className="w-4 h-4 mr-2" />
-                    Salvar como Contato
-                  </Button>
-                  <Button
-                    className="w-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30"
-                    variant="outline"
-                    onClick={() => window.open("/contacts", "_blank")}
-                  >
-                    <Users className="w-4 h-4 mr-2" />
-                    Ver Módulo de Contatos
-                  </Button>
+                  {linkedContact ? (
+                    <div className="space-y-2">
+                      <p className="text-xs text-[#8696a0] uppercase font-semibold">Contato Vinculado</p>
+                      <div className="p-3 bg-green-500/10 border border-green-500/20 rounded-lg">
+                        <div className="flex items-center gap-2 mb-1">
+                          <UserCheck className="w-4 h-4 text-green-400" />
+                          <span className="text-sm font-medium text-green-300">{linkedContact.name}</span>
+                        </div>
+                        <p className="text-xs text-[#8696a0] ml-6">{formatPhone(linkedContact.phone)}</p>
+                        {linkedContact.notes && (
+                          <p className="text-xs text-[#8696a0] ml-6 mt-1 italic">{linkedContact.notes}</p>
+                        )}
+                      </div>
+                      <Button
+                        className="w-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open("/contacts", "_blank")}
+                      >
+                        <Users className="w-4 h-4 mr-2" />
+                        Ver no Módulo de Contatos
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-xs text-[#8696a0] uppercase font-semibold">Contato</p>
+                      <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <User className="w-4 h-4 text-yellow-400" />
+                          <span className="text-xs text-yellow-300">Contato não vinculado ao módulo</span>
+                        </div>
+                      </div>
+                      <Button
+                        className="w-full bg-green-500/20 text-green-400 hover:bg-green-500/30 border border-green-500/30"
+                        variant="outline"
+                        onClick={() => {
+                          setSaveContactName(getDisplayName(selectedConversation));
+                          setSaveContactPhone(selectedConversation.phone || "");
+                          setSaveContactNotes("");
+                          setShowSaveContactDialog(true);
+                        }}
+                      >
+                        <UserPlus className="w-4 h-4 mr-2" />
+                        Salvar como Contato
+                      </Button>
+                      <Button
+                        className="w-full bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 border border-blue-500/30"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => window.open("/contacts", "_blank")}
+                      >
+                        <Users className="w-4 h-4 mr-2" />
+                        Ver Módulo de Contatos
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
             </ScrollArea>
@@ -1229,14 +1276,23 @@ export default function EvolutionInbox() {
                   className="bg-[#2a3942] border-[#3a4a52] text-[#e9edef] placeholder:text-[#8696a0] text-sm resize-none h-16"
                 />
               </div>
-              <div className="flex items-center gap-2 p-2 bg-[#1a2730] rounded-lg">
-                <Info className="w-4 h-4 text-blue-400 flex-shrink-0" />
-                <p className="text-xs text-[#8696a0]">
-                  O contato será salvo no{" "}
-                  <a href="/contacts" target="_blank" className="text-blue-400 hover:underline">Módulo de Contatos</a>
-                  {" "}e poderá receber campanhas e templates.
-                </p>
-              </div>
+              {linkedContact ? (
+                <div className="flex items-center gap-2 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+                  <UserCheck className="w-4 h-4 text-green-400 flex-shrink-0" />
+                  <p className="text-xs text-green-300">
+                    Contato já vinculado: <strong>{linkedContact.name}</strong> ({formatPhone(linkedContact.phone)}). Salvar atualizará os dados existentes.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-2 bg-[#1a2730] rounded-lg">
+                  <Info className="w-4 h-4 text-blue-400 flex-shrink-0" />
+                  <p className="text-xs text-[#8696a0]">
+                    O contato será salvo no{" "}
+                    <a href="/contacts" target="_blank" className="text-blue-400 hover:underline">Módulo de Contatos</a>
+                    {" "}e vinculado a esta conversa. Se o número já existir, os dados serão mesclados automaticamente.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-2">
               <Button variant="ghost" onClick={() => setShowSaveContactDialog(false)} className="text-[#aebac1]">
@@ -1254,7 +1310,9 @@ export default function EvolutionInbox() {
                 className="bg-green-500 hover:bg-green-600 text-white"
                 disabled={!saveContactName.trim() || !saveContactPhone.trim() || saveContactMutation.isPending}
                 onClick={() => {
+                  if (!selectedConversation) return;
                   saveContactMutation.mutate({
+                    conversationId: selectedConversation.id,
                     name: saveContactName.trim(),
                     phone: saveContactPhone.trim(),
                     notes: saveContactNotes.trim() || undefined,

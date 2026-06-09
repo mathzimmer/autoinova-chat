@@ -1563,6 +1563,13 @@ export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConv
     if (data.contactName === undefined || data.contactName === null) {
       delete updateData.contactName;
     }
+    // Auto-link contact if not already linked
+    if (!existing.contactId && data.phone) {
+      const linkedContactId = await autoLinkOrCreateContact(data.phone, data.contactName || existing.contactName || undefined);
+      if (linkedContactId) {
+        (updateData as any).contactId = linkedContactId;
+      }
+    }
     await db.update(evolutionConversations)
       .set(updateData)
       .where(eq(evolutionConversations.id, existing.id));
@@ -1573,8 +1580,53 @@ export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConv
   if (!insertData.contactName) {
     insertData.contactName = data.phone || data.remoteJid;
   }
+  // Auto-link or create contact for new conversations
+  if (data.phone) {
+    const linkedContactId = await autoLinkOrCreateContact(data.phone, insertData.contactName || undefined);
+    if (linkedContactId) {
+      (insertData as any).contactId = linkedContactId;
+    }
+  }
   const result = await db.insert(evolutionConversations).values(insertData);
   return result[0].insertId as number;
+}
+
+/**
+ * Auto-link or create a contact based on phone number.
+ * - If a contact with this phone exists, return its ID (merge)
+ * - If not, create a new contact with source 'whatsapp' and return its ID
+ */
+export async function autoLinkOrCreateContact(phone: string, name?: string): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  // Clean phone: remove @lid, @s.whatsapp.net, etc.
+  const cleanPhone = phone.replace(/@.*$/, "");
+  // Skip if phone looks like an internal @lid ID (not a real phone number)
+  if (cleanPhone.length > 15 || !/^\d+$/.test(cleanPhone)) return null;
+  try {
+    // Check if contact already exists with this phone
+    const existing = await db.select().from(contacts)
+      .where(eq(contacts.phone, cleanPhone))
+      .limit(1);
+    if (existing.length > 0) {
+      // Update name if we have a better one
+      if (name && name !== cleanPhone && (!existing[0].name || existing[0].name === cleanPhone)) {
+        await db.update(contacts).set({ name }).where(eq(contacts.id, existing[0].id));
+      }
+      return existing[0].id;
+    }
+    // Create new contact
+    const result = await db.insert(contacts).values({
+      name: name || cleanPhone,
+      phone: cleanPhone,
+      source: "whatsapp",
+      isActive: true,
+    });
+    return result[0].insertId as number;
+  } catch (e) {
+    console.error("[AutoLinkContact] Error:", e);
+    return null;
+  }
 }
 
 export async function updateEvolutionConversation(id: number, data: Partial<InsertEvolutionConversation>) {

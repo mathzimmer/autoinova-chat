@@ -232,6 +232,13 @@
       "when": 1780328668244,
       "tag": "0032_dark_living_tribunal",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "5",
+      "when": 1780965713366,
+      "tag": "0033_lovely_roulette",
+      "breakpoints": true
     }
   ]
 }

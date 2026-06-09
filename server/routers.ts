@@ -4261,6 +4261,57 @@ const evolutionRouter = router({
       }
       return { ok: true };
     }),
+
+  // Link a contact to a conversation
+  linkContact: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      contactId: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      await updateEvolutionConversation(input.conversationId, { contactId: input.contactId } as any);
+      return { success: true };
+    }),
+
+  // Get linked contact for a conversation
+  getLinkedContact: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const conv = await getEvolutionConversationById(input.conversationId);
+      if (!conv || !conv.contactId) return null;
+      const db = await (await import("./db")).getDb();
+      if (!db) return null;
+      const { contacts } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select().from(contacts).where(eq(contacts.id, conv.contactId)).limit(1);
+      return rows[0] || null;
+    }),
+
+  // Save contact from inbox (creates or merges) and links to conversation
+  saveAndLinkContact: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      name: z.string().min(1),
+      phone: z.string().min(8),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { autoLinkOrCreateContact } = await import("./db");
+      const contactId = await autoLinkOrCreateContact(input.phone, input.name);
+      if (!contactId) throw new Error("Failed to create/link contact");
+      // Update contact notes if provided
+      if (input.notes) {
+        const db = await (await import("./db")).getDb();
+        if (db) {
+          const { contacts } = await import("../drizzle/schema");
+          const { eq } = await import("drizzle-orm");
+          await db.update(contacts).set({ notes: input.notes }).where(eq(contacts.id, contactId));
+        }
+      }
+      // Link to conversation
+      await updateEvolutionConversation(input.conversationId, { contactId } as any);
+      return { contactId, success: true };
+    }),
 });
 
 export const appRouter = router({

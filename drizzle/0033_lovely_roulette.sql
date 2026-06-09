@@ -1,0 +1,1 @@
+ALTER TABLE `evolutionConversations` ADD `contactId` int;

@@ -737,6 +737,7 @@ export const evolutionConversations = mysqlTable("evolutionConversations", {
   unreadCount: int("unreadCount").default(0).notNull(),
   status: mysqlEnum("status", ["open", "pending", "resolved", "closed"]).default("open").notNull(),
   // CRM fields
+  contactId: int("contactId"),  // FK -> contacts (vinculação automática)
   leadStatus: varchar("leadStatus", { length: 50 }),
   vehicleInterest: varchar("vehicleInterest", { length: 255 }),
   notes: text("notes"),

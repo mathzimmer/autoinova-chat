@@ -1375,3 +1375,13 @@
 ## Feature - Lista de Contatos Melhorada
 - [x] Aumentar limite da lista de contatos para 1000
 - [x] Adicionar filtro de contatos que já participaram de campanhas
+
+## Feature - Vinculação Automática Conversas ↔ Contatos (Estilo Chatwoot)
+- [x] Adicionar campo contactId na tabela evolutionConversations
+- [x] Auto-criar contato ao receber nova conversa (webhook)
+- [x] Mesclar contato se número já existir no módulo de contatos
+- [x] Exibir contato vinculado no painel de informações do inbox
+- [x] Ao salvar contato manualmente, vincular à conversa e atualizar módulo
+- [x] Fundo claro nas conversas (área de mensagens)
+- [x] Badge @lid na lista de conversas
+- [x] Mostrar nome/número do contato vinculado no header do chat
