@@ -541,7 +541,7 @@ export default function EvolutionInbox() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-screen overflow-hidden bg-[#111b21] text-[#e9edef] relative">
+      <div className="flex h-full overflow-hidden bg-[#111b21] text-[#e9edef] relative">
 
         {/* ── Left Panel: Instances + Conversations ── */}
         <div className={cn(
@@ -723,7 +723,7 @@ export default function EvolutionInbox() {
         </div>
 
         {/* ── Main Chat Area ── */}
-        <div className="flex-1 flex flex-col min-w-0 bg-[#e5ddd5]" style={{
+        <div className="flex-1 flex flex-col min-w-0 min-h-0 bg-[#e5ddd5]" style={{
           backgroundImage: "url('data:image/svg+xml,%3Csvg width=\"200\" height=\"200\" xmlns=\"http://www.w3.org/2000/svg\"%3E%3Cdefs%3E%3Cpattern id=\"p\" width=\"40\" height=\"40\" patternUnits=\"userSpaceOnUse\"%3E%3Cpath d=\"M0 20h40M20 0v40\" stroke=\"rgba(0,0,0,0.03)\" fill=\"none\"/%3E%3C/pattern%3E%3C/defs%3E%3Crect width=\"200\" height=\"200\" fill=\"url(%23p)\"/%3E%3C/svg%3E')"
         }}>
           {selectedConversation ? (
@@ -834,7 +834,7 @@ export default function EvolutionInbox() {
               </div>
 
               {/* Messages area */}
-              <ScrollArea className="flex-1 px-4 py-4">
+              <ScrollArea className="flex-1 min-h-0 px-4 py-4">
                 <div className="space-y-1 max-w-3xl mx-auto">
                   {groupedMessages.map(group => (
                     <div key={group.date}>
@@ -988,7 +988,7 @@ export default function EvolutionInbox() {
 
         {/* ── Contact Info Panel ── */}
         {showContactInfo && selectedConversation && (
-          <div className="w-72 flex-shrink-0 bg-[#111b21] border-l border-[#2a3942] flex flex-col">
+          <div className="w-72 flex-shrink-0 bg-[#111b21] border-l border-[#2a3942] flex flex-col min-h-0">
             <div className="flex items-center justify-between px-4 py-3 bg-[#202c33]">
               <span className="font-semibold text-sm">Informações</span>
               <Button variant="ghost" size="icon" className="w-7 h-7 text-[#aebac1]"
@@ -996,7 +996,7 @@ export default function EvolutionInbox() {
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            <ScrollArea className="flex-1 p-4">
+            <ScrollArea className="flex-1 min-h-0 p-4">
               <div className="flex flex-col items-center mb-6">
                 <Avatar
                   name={getDisplayName(selectedConversation)}
