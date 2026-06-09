@@ -3826,15 +3826,9 @@ const evolutionRouter = router({
       conversationId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      // Resolve real phone number: if remoteJid is @lid, use the phone field from the conversation
-      let sendTo = input.remoteJid;
-      if (input.remoteJid.endsWith("@lid") && input.conversationId) {
-        const conv = await getEvolutionConversationById(input.conversationId);
-        if (conv?.phone) {
-          sendTo = `${conv.phone}@s.whatsapp.net`;
-          console.log(`[Evolution] Resolved @lid ${input.remoteJid} -> ${sendTo}`);
-        }
-      }
+      // For @lid JIDs, send as-is — Baileys routes them internally via linked-device table
+      // Do NOT try to convert @lid to @s.whatsapp.net as the phone stored is the internal ID, not a real number
+      const sendTo = input.remoteJid;
       const result = await evolutionSendText(input.instanceName, sendTo, input.text);
       const inst = await getEvolutionInstanceByName(input.instanceName);
       if (inst && input.conversationId) {
