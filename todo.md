@@ -1385,3 +1385,7 @@
 - [x] Fundo claro nas conversas (área de mensagens)
 - [x] Badge @lid na lista de conversas
 - [x] Mostrar nome/número do contato vinculado no header do chat
+
+- [x] Natural @lid handling: remove blocking UI, keep subtle badge only
+- [x] Auto-update @lid conversations when new message arrives with real number (webhook self-healing)
+- [x] Graceful error handling on send failure for @lid conversations (toast instead of hard error)

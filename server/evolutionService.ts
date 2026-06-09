@@ -185,7 +185,7 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
 
   if (event === "messages.upsert") {
     const msg = data as {
-      key: { remoteJid: string; fromMe: boolean; id: string; participant?: string };
+      key: { remoteJid: string; fromMe: boolean; id: string; participant?: string; remoteJidAlt?: string };
       message: Record<string, unknown>;
       messageType: string;
       messageTimestamp: number;
@@ -195,6 +195,7 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       // Evolution API v2 may include these
       participant?: string;
       phoneNumber?: string;
+      remoteJidAlt?: string;
     };
 
     const remoteJid = msg.key?.remoteJid || "";
@@ -257,20 +258,29 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       resolvedJid = remoteJid;
     } else if (remoteJid.endsWith("@lid")) {
       // Linked-device mode: @lid JID — try to find real number from other fields
+      // Priority: remoteJidAlt > key.remoteJidAlt > participant > phoneNumber > fallback
+      const remoteJidAlt = msg.remoteJidAlt || msg.key?.remoteJidAlt || "";
       const participant = msg.key?.participant || msg.participant || "";
       const phoneNumberField = msg.phoneNumber || "";
 
-      if (participant && (participant.endsWith("@s.whatsapp.net") || participant.endsWith("@c.us"))) {
+      if (remoteJidAlt && (remoteJidAlt.endsWith("@s.whatsapp.net") || remoteJidAlt.endsWith("@c.us"))) {
+        // Best case: Evolution provides the real JID as remoteJidAlt
+        phone = remoteJidAlt.replace("@s.whatsapp.net", "").replace("@c.us", "");
+        resolvedJid = remoteJidAlt;
+        console.log(`[Evolution] Resolved @lid via remoteJidAlt: ${remoteJid} -> ${resolvedJid}`);
+      } else if (participant && (participant.endsWith("@s.whatsapp.net") || participant.endsWith("@c.us"))) {
         phone = participant.replace("@s.whatsapp.net", "").replace("@c.us", "");
         resolvedJid = participant;
+        console.log(`[Evolution] Resolved @lid via participant: ${remoteJid} -> ${resolvedJid}`);
       } else if (phoneNumberField) {
         phone = phoneNumberField.replace(/\D/g, "");
         resolvedJid = `${phone}@s.whatsapp.net`;
+        console.log(`[Evolution] Resolved @lid via phoneNumber: ${remoteJid} -> ${resolvedJid}`);
       } else {
-        // Last resort: use numeric part of @lid as phone (may not be real number)
-        // but store the @lid as remoteJid so we can still track the conversation
+        // Last resort: keep @lid as-is for sending (Baileys may route internally)
+        // Store the numeric part as phone for display purposes only
         phone = remoteJid.replace("@lid", "");
-        resolvedJid = remoteJid; // keep @lid — will need manual resolution
+        resolvedJid = remoteJid; // keep @lid — Baileys should route it
         console.warn(`[Evolution] @lid JID without real phone: ${remoteJid}, pushName: ${pushName}`);
       }
     } else {

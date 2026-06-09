@@ -255,7 +255,13 @@ export default function EvolutionInbox() {
       messagesQuery.refetch();
       conversationsQuery.refetch();
     },
-    onError: (e) => toast.error("Erro ao enviar: " + e.message),
+    onError: (e) => {
+      if (e.message.includes("Aguardando")) {
+        toast.info(e.message);
+      } else {
+        toast.error("Erro ao enviar: " + e.message);
+      }
+    },
   });
 
   const uploadSendMutation = trpc.evolution.uploadAndSendMedia.useMutation({
@@ -361,13 +367,7 @@ export default function EvolutionInbox() {
     if (selectedConversation && selectedConversation.unreadCount > 0) {
       markAsReadMutation.mutate({ conversationId: selectedConversation.id });
     }
-    // Auto-resolve @lid when opening a conversation (non-blocking, background)
-    if (selectedConversation?.remoteJid?.endsWith("@lid") && selectedConversation.instanceName) {
-      resolvePhoneMutation.mutate({
-        conversationId: selectedConversation.id,
-        instanceName: selectedConversation.instanceName,
-      });
-    }
+    // @lid conversations will self-heal when the contact sends a new message (WPP_LID_MODE=false)
   }, [selectedConversation?.id]);
 
   // Set contact name input when conversation changes
@@ -737,8 +737,6 @@ export default function EvolutionInbox() {
                       <Phone className="w-3 h-3 text-[#8696a0]" />
                       {linkedContact ? (
                         <span className="text-[#8696a0]">{formatPhone(linkedContact.phone)}</span>
-                      ) : isLidConversation ? (
-                        <span className="text-yellow-400 font-medium">⚠️ Número não resolvido (ID interno)</span>
                       ) : (
                         <span className="text-[#8696a0]">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</span>
                       )}
@@ -821,44 +819,7 @@ export default function EvolutionInbox() {
               {/* Message input */}
               <div className="px-4 py-3 bg-[#202c33] border-t border-[#2a3942]">
 
-                {/* @lid warning banner */}
-                {isLidConversation && (
-                  <div className="mb-3 p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
-                    <div className="flex items-start gap-2 mb-2">
-                      <span className="text-yellow-400 text-sm">⚠️</span>
-                      <div className="flex-1">
-                        <p className="text-yellow-300 text-xs font-semibold">Número real não identificado</p>
-                        <p className="text-yellow-200/70 text-xs mt-0.5">
-                          Esta conversa usa um ID interno da Evolution (<code className="bg-yellow-500/20 px-1 rounded text-yellow-300">{selectedConversation?.remoteJid}</code>).
-                          Para enviar mensagens, informe o número real do WhatsApp do cliente.
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Input
-                        value={lidPhoneInput}
-                        onChange={e => setLidPhoneInput(e.target.value.replace(/\D/g, ""))}
-                        placeholder="Número WhatsApp (ex: 5551999999999)"
-                        className="flex-1 h-8 text-xs bg-[#2a3942] border-yellow-500/30 text-[#e9edef] placeholder:text-[#8696a0]"
-                      />
-                      <Button
-                        size="sm"
-                        className="h-8 bg-yellow-500 hover:bg-yellow-600 text-black text-xs px-3"
-                        disabled={lidPhoneInput.length < 10 || updateConvMutation.isPending}
-                        onClick={() => {
-                          if (!selectedConversation || lidPhoneInput.length < 10) return;
-                          updateConvMutation.mutate({
-                            id: selectedConversation.id,
-                            phone: lidPhoneInput,
-                          });
-                          setLidPhoneInput("");
-                        }}
-                      >
-                        {updateConvMutation.isPending ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Salvar número"}
-                      </Button>
-                    </div>
-                  </div>
-                )}
+                {/* Subtle @lid info - non-blocking */}
 
                 {/* Emoji picker */}
                 {showEmojiPicker && (
@@ -920,7 +881,7 @@ export default function EvolutionInbox() {
                   {/* Text input */}
                   <Textarea
                     ref={textareaRef}
-                    placeholder={isLidConversation ? "⚠️ Número @lid — a mensagem será enviada via ID interno" : "Digite uma mensagem..."}
+                    placeholder="Digite uma mensagem..."
                     value={messageText}
                     onChange={e => setMessageText(e.target.value)}
                     onKeyDown={handleKeyDown}
@@ -1002,11 +963,7 @@ export default function EvolutionInbox() {
                   {getDisplayName(selectedConversation)}
                 </p>
                 <p className="text-xs mt-1">
-                  {isLidConversation ? (
-                    <span className="text-yellow-400">⚠️ Número não resolvido</span>
-                  ) : (
-                    <span className="text-[#8696a0]">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</span>
-                  )}
+                  <span className="text-[#8696a0]">{formatPhone(selectedConversation.phone, selectedConversation.remoteJid)}</span>
                 </p>
                 {statusBadge(selectedConversation.status)}
               </div>
@@ -1055,26 +1012,7 @@ export default function EvolutionInbox() {
                         </span>
                       </p>
                       {selectedConversation.remoteJid?.endsWith("@lid") && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-yellow-400/80">⚠️ ID interno (@lid) — número real não resolvido</p>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full h-7 text-xs bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 border-yellow-500/30"
-                            disabled={resolvePhoneMutation.isPending}
-                            onClick={() => resolvePhoneMutation.mutate({
-                              conversationId: selectedConversation.id,
-                              instanceName: selectedConversation.instanceName,
-                            })}
-                          >
-                            {resolvePhoneMutation.isPending ? (
-                              <RefreshCw className="w-3 h-3 mr-1 animate-spin" />
-                            ) : (
-                              <Phone className="w-3 h-3 mr-1" />
-                            )}
-                            Buscar número real
-                          </Button>
-                        </div>
+                        <p className="text-[10px] text-[#8696a0]/60 mt-1">Número será atualizado automaticamente</p>
                       )}
                     </div>
                   )}

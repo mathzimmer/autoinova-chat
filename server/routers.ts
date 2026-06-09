@@ -3,6 +3,7 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { TRPCError } from "@trpc/server";
 import {
   listConversations, getConversationById, createConversation, updateConversation, getConversationByPhone, getConversationByPlatformUserId,
   listMessages, createMessage, markMessagesAsRead,
@@ -3829,7 +3830,20 @@ const evolutionRouter = router({
       // For @lid JIDs, send as-is — Baileys routes them internally via linked-device table
       // Do NOT try to convert @lid to @s.whatsapp.net as the phone stored is the internal ID, not a real number
       const sendTo = input.remoteJid;
-      const result = await evolutionSendText(input.instanceName, sendTo, input.text);
+      let result: unknown;
+      try {
+        result = await evolutionSendText(input.instanceName, sendTo, input.text);
+      } catch (err: any) {
+        // If sending to @lid fails, return a graceful error instead of crashing
+        if (sendTo.endsWith("@lid")) {
+          console.warn(`[Evolution] Send to @lid failed (expected): ${err.message}`);
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Aguardando atualiza\u00e7\u00e3o do n\u00famero real. Quando o contato enviar uma nova mensagem, o n\u00famero ser\u00e1 atualizado automaticamente.",
+          });
+        }
+        throw err;
+      }
       const inst = await getEvolutionInstanceByName(input.instanceName);
       if (inst && input.conversationId) {
         await createEvolutionMessage({

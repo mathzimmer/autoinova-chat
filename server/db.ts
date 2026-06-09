@@ -1556,7 +1556,33 @@ export async function getEvolutionConversationByJid(instanceId: number, remoteJi
 export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConversation, "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const existing = await getEvolutionConversationByJid(data.instanceId, data.remoteJid);
+
+  // First, try to find by exact remoteJid
+  let existing = await getEvolutionConversationByJid(data.instanceId, data.remoteJid);
+
+  // ── Self-healing: if incoming JID is a real number (@s.whatsapp.net) and no exact match,
+  // check if there's an existing @lid conversation for the same instance with a matching phone.
+  // This handles the case where WPP_LID_MODE=false is now set and new messages arrive with real numbers.
+  if (!existing && data.remoteJid.endsWith("@s.whatsapp.net") && data.phone) {
+    const cleanPhone = data.phone.replace(/@.*$/, "");
+    // Look for any @lid conversation in the same instance with the same phone
+    const lidRows = await db.select().from(evolutionConversations)
+      .where(and(
+        eq(evolutionConversations.instanceId, data.instanceId),
+        eq(evolutionConversations.phone, cleanPhone),
+        like(evolutionConversations.remoteJid, "%@lid"),
+      ))
+      .limit(1);
+    if (lidRows.length > 0) {
+      existing = lidRows[0];
+      console.log(`[Evolution] Self-healing: updating @lid conversation ${existing.remoteJid} -> ${data.remoteJid} (phone: ${cleanPhone})`);
+      // Update the remoteJid to the real one
+      await db.update(evolutionConversations)
+        .set({ remoteJid: data.remoteJid })
+        .where(eq(evolutionConversations.id, existing.id));
+    }
+  }
+
   if (existing) {
     // Don't overwrite existing contactName with undefined/null — preserve the name already saved
     const updateData = { ...data, updatedAt: new Date() };
@@ -1575,6 +1601,33 @@ export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConv
       .where(eq(evolutionConversations.id, existing.id));
     return existing.id;
   }
+
+  // ── Also check: if incoming JID is @lid but we already have a real JID conversation
+  // for the same phone, merge into the existing real conversation instead of creating a new one
+  if (!existing && data.remoteJid.endsWith("@lid") && data.phone) {
+    const cleanPhone = data.phone.replace(/@.*$/, "");
+    if (cleanPhone.length <= 15 && /^\d+$/.test(cleanPhone)) {
+      const realRows = await db.select().from(evolutionConversations)
+        .where(and(
+          eq(evolutionConversations.instanceId, data.instanceId),
+          eq(evolutionConversations.phone, cleanPhone),
+        ))
+        .limit(1);
+      if (realRows.length > 0) {
+        existing = realRows[0];
+        console.log(`[Evolution] Merge: @lid message merged into existing conversation ${existing.remoteJid} (phone: ${cleanPhone})`);
+        const updateData = { ...data, remoteJid: existing.remoteJid, updatedAt: new Date() };
+        if (data.contactName === undefined || data.contactName === null) {
+          delete (updateData as any).contactName;
+        }
+        await db.update(evolutionConversations)
+          .set(updateData)
+          .where(eq(evolutionConversations.id, existing.id));
+        return existing.id;
+      }
+    }
+  }
+
   // For new conversations, set contactName to phone if not provided
   const insertData = { ...data };
   if (!insertData.contactName) {
