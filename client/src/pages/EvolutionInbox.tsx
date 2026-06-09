@@ -250,18 +250,15 @@ export default function EvolutionInbox() {
   const messages = (messagesQuery.data || []) as Message[];
 
   const sendMutation = trpc.evolution.sendMessage.useMutation({
-    onSuccess: () => {
+    onSuccess: (data) => {
       setMessageText("");
       messagesQuery.refetch();
       conversationsQuery.refetch();
-    },
-    onError: (e) => {
-      if (e.message.includes("Aguardando")) {
-        toast.info(e.message);
-      } else {
-        toast.error("Erro ao enviar: " + e.message);
+      if ((data as any)?.pendingDelivery) {
+        toast.info("Mensagem salva. Será entregue quando o número real for identificado.", { duration: 4000 });
       }
     },
+    onError: (e) => toast.error("Erro ao enviar: " + e.message),
   });
 
   const uploadSendMutation = trpc.evolution.uploadAndSendMedia.useMutation({

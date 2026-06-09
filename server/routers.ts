@@ -3831,18 +3831,17 @@ const evolutionRouter = router({
       // Do NOT try to convert @lid to @s.whatsapp.net as the phone stored is the internal ID, not a real number
       const sendTo = input.remoteJid;
       let result: unknown;
+      let sendFailed = false;
       try {
         result = await evolutionSendText(input.instanceName, sendTo, input.text);
       } catch (err: any) {
-        // If sending to @lid fails, return a graceful error instead of crashing
+        // If sending to @lid fails, don't crash — save message locally as pending
         if (sendTo.endsWith("@lid")) {
-          console.warn(`[Evolution] Send to @lid failed (expected): ${err.message}`);
-          throw new TRPCError({
-            code: "BAD_REQUEST",
-            message: "Aguardando atualiza\u00e7\u00e3o do n\u00famero real. Quando o contato enviar uma nova mensagem, o n\u00famero ser\u00e1 atualizado automaticamente.",
-          });
+          console.warn(`[Evolution] Send to @lid failed (non-blocking): ${err.message}`);
+          sendFailed = true;
+        } else {
+          throw err;
         }
-        throw err;
       }
       const inst = await getEvolutionInstanceByName(input.instanceName);
       if (inst && input.conversationId) {
@@ -3851,21 +3850,26 @@ const evolutionRouter = router({
           instanceName: input.instanceName,
           conversationId: input.conversationId,
           remoteJid: sendTo,
-          messageId: (result as any)?.key?.id as string || undefined,
+          messageId: sendFailed ? `local_${Date.now()}` : ((result as any)?.key?.id as string || undefined),
           content: input.text,
           messageType: "text",
           direction: "outbound",
           senderName: ctx.user?.name || "Vendedor",
-          status: "sent",
+          status: sendFailed ? "failed" : "sent",
           timestamp: Date.now(),
-          rawPayload: result as Record<string, unknown>,
+          rawPayload: sendFailed ? undefined : (result as Record<string, unknown>),
         });
         await updateEvolutionConversation(input.conversationId, {
           lastMessageAt: Date.now(),
           lastMessagePreview: input.text.slice(0, 100),
         });
       }
-      return { success: true, result };
+      return {
+        success: !sendFailed,
+        result,
+        pendingDelivery: sendFailed,
+        message: sendFailed ? "Mensagem salva. Ser\u00e1 entregue quando o n\u00famero real for identificado." : undefined,
+      };
     }),
 
   // Send media (image/video/document/audio) from URL
