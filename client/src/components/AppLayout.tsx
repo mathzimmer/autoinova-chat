@@ -39,6 +39,7 @@ const navItems: NavItem[] = [
   { icon: UserCheck, label: "Vendedores", path: "/sellers", allowedCargos: ["admin", "gerente"] },
   { icon: Cpu, label: "Agentes IA", path: "/agents", allowedCargos: ["admin"] },
   { icon: Brain, label: "Auditoria IA", path: "/ai-audit", allowedCargos: ["admin"] },
+  { icon: Inbox, label: "Inbox Vendedores", path: "/evolution-inbox", allowedCargos: ["admin", "gerente", "vendedor"] },
   { icon: Key, label: "API Keys", path: "/vendor-keys", allowedCargos: ["admin"] },
   { icon: Settings, label: "Configurações", path: "/settings", allowedCargos: ["admin"] },
 ];
