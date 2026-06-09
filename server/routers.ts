@@ -4299,6 +4299,32 @@ const evolutionRouter = router({
       return rows[0] || null;
     }),
 
+  // Fetch media URL on demand (for messages that were saved without mediaUrl)
+  getMediaUrl: protectedProcedure
+    .input(z.object({
+      instanceName: z.string(),
+      messageId: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      const { evolutionGetMediaBase64 } = await import("./evolutionService");
+      const { storagePut } = await import("./storage");
+      const mediaData = await evolutionGetMediaBase64(input.instanceName, input.messageId);
+      if (!mediaData) return { url: null };
+      if (mediaData.startsWith("http")) return { url: mediaData };
+      if (mediaData.startsWith("data:")) {
+        const mimeMatch = mediaData.match(/^data:([^;]+);base64,(.+)$/);
+        if (mimeMatch) {
+          const mime = mimeMatch[1];
+          const buffer = Buffer.from(mimeMatch[2], "base64");
+          const ext = mime.split("/")[1] || "bin";
+          const key = `evolution-media/${input.instanceName}/${Date.now()}-${input.messageId.slice(-8)}.${ext}`;
+          const { url } = await storagePut(key, buffer, mime);
+          return { url };
+        }
+      }
+      return { url: null };
+    }),
+
   // Save contact from inbox (creates or merges) and links to conversation
   saveAndLinkContact: protectedProcedure
     .input(z.object({
@@ -4320,8 +4346,8 @@ const evolutionRouter = router({
           await db.update(contacts).set({ notes: input.notes }).where(eq(contacts.id, contactId));
         }
       }
-      // Link to conversation
-      await updateEvolutionConversation(input.conversationId, { contactId } as any);
+      // Link to conversation AND update contactName so it shows in the list
+      await updateEvolutionConversation(input.conversationId, { contactId, contactName: input.name } as any);
       return { contactId, success: true };
     }),
 });

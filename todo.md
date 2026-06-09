@@ -1389,3 +1389,6 @@
 - [x] Natural @lid handling: remove blocking UI, keep subtle badge only
 - [x] Auto-update @lid conversations when new message arrives with real number (webhook self-healing)
 - [x] Graceful error handling on send failure for @lid conversations (toast instead of hard error)
+- [x] Fix: Enquadramento do chat - header cortado no topo e espaço sobrando embaixo
+- [x] Fix: Nome do contato deve aparecer na lista de conversas após salvar contato
+- [x] Feature: Renderizar todos tipos de mídia no chat (imagens, áudio, stickers, GIFs, vídeos, documentos) em vez de apenas texto [Imagem]

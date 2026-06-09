@@ -63,6 +63,7 @@ type Message = {
   timestamp: number;
   status: "sent" | "delivered" | "read" | "failed";
   mediaUrl?: string | null;
+  messageId?: string | null;
   rawPayload?: Record<string, unknown> | null;
 };
 
@@ -89,59 +90,103 @@ function MessageStatusIcon({ status, direction }: { status: Message["status"]; d
   return <Clock className="w-3.5 h-3.5 text-gray-400" />;
 }
 
-function MessageBubble({ msg, formatTime }: { msg: Message; formatTime: (ts: number) => string }) {
+function MessageBubble({ msg, formatTime, instanceName }: { msg: Message; formatTime: (ts: number) => string; instanceName?: string }) {
   const isOut = msg.direction === "outbound";
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const [loadingMedia, setLoadingMedia] = useState(false);
+  const getMediaMutation = trpc.evolution.getMediaUrl.useMutation();
+
+  const effectiveMediaUrl = msg.mediaUrl || loadedUrl;
+  const isMediaType = ["image", "video", "audio", "document", "sticker"].includes(msg.messageType);
+
+  // Auto-load media if message is media type but has no URL
+  useEffect(() => {
+    if (isMediaType && !msg.mediaUrl && !loadedUrl && !loadingMedia && instanceName && msg.messageId) {
+      setLoadingMedia(true);
+      getMediaMutation.mutateAsync({
+        instanceName,
+        messageId: msg.messageId,
+      }).then(res => {
+        if (res?.url) setLoadedUrl(res.url);
+      }).catch(() => {}).finally(() => setLoadingMedia(false));
+    }
+  }, []);
 
   const renderContent = () => {
-    if (msg.messageType === "image" && msg.mediaUrl) {
-      return (
-        <div>
-          <img
-            src={msg.mediaUrl}
-            className="max-w-[240px] rounded-lg mb-1 cursor-pointer"
-            alt="imagem"
-            onClick={() => window.open(msg.mediaUrl!, "_blank")}
-          />
-          {msg.content && msg.content !== "[Imagem]" && (
-            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-          )}
-        </div>
-      );
+    // Image
+    if (msg.messageType === "image") {
+      if (effectiveMediaUrl) {
+        return (
+          <div>
+            <img
+              src={effectiveMediaUrl}
+              className="max-w-[240px] rounded-lg mb-1 cursor-pointer"
+              alt="imagem"
+              onClick={() => window.open(effectiveMediaUrl!, "_blank")}
+            />
+            {msg.content && !["[Imagem]", ""].includes(msg.content) && (
+              <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+            )}
+          </div>
+        );
+      }
+      if (loadingMedia) return <div className="flex items-center gap-2 text-xs text-gray-500"><Camera className="w-4 h-4 animate-pulse" /> Carregando imagem...</div>;
+      return <p className="text-sm text-gray-500 italic flex items-center gap-1"><Camera className="w-4 h-4" /> {msg.content || "Imagem"}</p>;
     }
-    if (msg.messageType === "video" && msg.mediaUrl) {
-      return (
-        <div>
-          <video src={msg.mediaUrl} controls className="max-w-[240px] rounded-lg mb-1" />
-          {msg.content && msg.content !== "[Vídeo]" && (
-            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-          )}
-        </div>
-      );
+    // Video
+    if (msg.messageType === "video") {
+      if (effectiveMediaUrl) {
+        return (
+          <div>
+            <video src={effectiveMediaUrl} controls className="max-w-[240px] rounded-lg mb-1" />
+            {msg.content && !["[V\u00eddeo]", ""].includes(msg.content) && (
+              <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+            )}
+          </div>
+        );
+      }
+      if (loadingMedia) return <div className="flex items-center gap-2 text-xs text-gray-500"><Video className="w-4 h-4 animate-pulse" /> Carregando v\u00eddeo...</div>;
+      return <p className="text-sm text-gray-500 italic flex items-center gap-1"><Video className="w-4 h-4" /> {msg.content || "V\u00eddeo"}</p>;
     }
-    if (msg.messageType === "audio" && msg.mediaUrl) {
-      return (
-        <div className="flex items-center gap-2 min-w-[180px]">
-          <Volume2 className="w-4 h-4 flex-shrink-0" />
-          <audio src={msg.mediaUrl} controls className="h-8 flex-1" />
-        </div>
-      );
+    // Audio
+    if (msg.messageType === "audio") {
+      if (effectiveMediaUrl) {
+        return (
+          <div className="flex items-center gap-2 min-w-[180px]">
+            <Volume2 className="w-4 h-4 flex-shrink-0" />
+            <audio src={effectiveMediaUrl} controls className="h-8 flex-1" />
+          </div>
+        );
+      }
+      if (loadingMedia) return <div className="flex items-center gap-2 text-xs text-gray-500"><Mic className="w-4 h-4 animate-pulse" /> Carregando \u00e1udio...</div>;
+      return <p className="text-sm text-gray-500 italic flex items-center gap-1"><Mic className="w-4 h-4" /> \u00c1udio</p>;
     }
-    if (msg.messageType === "document" && msg.mediaUrl) {
-      return (
-        <a href={msg.mediaUrl} target="_blank" rel="noopener noreferrer"
-          className="flex items-center gap-2 hover:underline">
-          <FileText className="w-4 h-4 flex-shrink-0" />
-          <span className="text-sm truncate max-w-[200px]">{msg.content || "Documento"}</span>
-          <Download className="w-3 h-3 flex-shrink-0" />
-        </a>
-      );
+    // Document
+    if (msg.messageType === "document") {
+      if (effectiveMediaUrl) {
+        return (
+          <a href={effectiveMediaUrl} target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-2 hover:underline">
+            <FileText className="w-4 h-4 flex-shrink-0" />
+            <span className="text-sm truncate max-w-[200px]">{msg.content || "Documento"}</span>
+            <Download className="w-3 h-3 flex-shrink-0" />
+          </a>
+        );
+      }
+      if (loadingMedia) return <div className="flex items-center gap-2 text-xs text-gray-500"><FileText className="w-4 h-4 animate-pulse" /> Carregando...</div>;
+      return <p className="text-sm text-gray-500 italic flex items-center gap-1"><FileText className="w-4 h-4" /> {msg.content || "Documento"}</p>;
     }
-    if (msg.messageType === "sticker" && msg.mediaUrl) {
-      return <img src={msg.mediaUrl} className="w-24 h-24 object-contain" alt="sticker" />;
+    // Sticker
+    if (msg.messageType === "sticker") {
+      if (effectiveMediaUrl) return <img src={effectiveMediaUrl} className="w-24 h-24 object-contain" alt="sticker" />;
+      if (loadingMedia) return <div className="w-24 h-24 bg-gray-100 rounded animate-pulse" />;
+      return <p className="text-sm text-gray-500 italic">Sticker</p>;
     }
+    // Reaction
     if (msg.messageType === "reaction") {
       return <span className="text-2xl">{msg.content}</span>;
     }
+    // Text
     return <p className="text-sm whitespace-pre-wrap break-words">{msg.content || ""}</p>;
   };
 
@@ -344,6 +389,8 @@ export default function EvolutionInbox() {
   const saveContactMutation = trpc.evolution.saveAndLinkContact.useMutation({
     onSuccess: (data) => {
       toast.success(`Contato "${saveContactName}" salvo e vinculado!`);
+      // Update local state immediately so name shows in list
+      setSelectedConversation(prev => prev ? { ...prev, contactName: saveContactName } : prev);
       setShowSaveContactDialog(false);
       setSaveContactName("");
       setSaveContactPhone("");
@@ -494,7 +541,7 @@ export default function EvolutionInbox() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden bg-[#111b21] text-[#e9edef] relative">
+      <div className="flex h-screen overflow-hidden bg-[#111b21] text-[#e9edef] relative">
 
         {/* ── Left Panel: Instances + Conversations ── */}
         <div className={cn(
@@ -799,7 +846,7 @@ export default function EvolutionInbox() {
                       </div>
                       <div className="space-y-1">
                         {group.messages.map(msg => (
-                          <MessageBubble key={msg.id} msg={msg} formatTime={formatTime} />
+                          <MessageBubble key={msg.id} msg={msg} formatTime={formatTime} instanceName={selectedConversation?.instanceName} />
                         ))}
                       </div>
                     </div>

@@ -172,6 +172,28 @@ export async function evolutionFetchAllContacts(instanceName: string) {
   }
 }
 
+// ─── Media Download ──────────────────────────────────────────────────────────
+
+/**
+ * Fetch media from Evolution API using getBase64FromMediaMessage endpoint.
+ * Returns a data URL (base64) that can be used directly in img/audio/video tags.
+ */
+export async function evolutionGetMediaBase64(instanceName: string, messageId: string, convertToMp4 = false) {
+  try {
+    const result = await evolutionRequest(`/chat/getBase64FromMediaMessage/${instanceName}`, "POST", {
+      message: { key: { id: messageId } },
+      convertToMp4,
+    });
+    // Returns { base64: "data:mime;base64,..." } or { mediaUrl: "..." }
+    if (result?.base64) return result.base64 as string;
+    if (result?.mediaUrl) return result.mediaUrl as string;
+    return null;
+  } catch (err) {
+    console.warn(`[Evolution] getBase64FromMediaMessage failed for ${messageId}:`, err);
+    return null;
+  }
+}
+
 // ─── Webhook Payload Parser ───────────────────────────────────────────────────
 
 export interface EvolutionWebhookPayload {
@@ -204,12 +226,14 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
     const timestamp = (msg.messageTimestamp || Date.now() / 1000) * 1000;
     const pushName = msg.pushName || msg.notifyName || "";
 
-    // Extract text content
+    // Extract text content and media URL
     let content = "";
     let messageType: "text" | "audio" | "image" | "document" | "video" | "sticker" | "reaction" | "system" = "text";
     let mediaUrl = "";
 
     const msgData = msg.message || {};
+    // Evolution API may include mediaUrl or base64 at the top level of the data payload
+    const topLevelMediaUrl = (data as any).mediaUrl || (data as any).media_url || "";
 
     if (msgData.conversation) {
       content = msgData.conversation as string;
@@ -217,24 +241,40 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       content = ((msgData.extendedTextMessage as Record<string, unknown>).text) as string;
     } else if (msgData.imageMessage) {
       messageType = "image";
-      content = ((msgData.imageMessage as Record<string, unknown>).caption as string) || "[Imagem]";
+      const imgMsg = msgData.imageMessage as Record<string, unknown>;
+      content = (imgMsg.caption as string) || "";
+      mediaUrl = (imgMsg.url as string) || (imgMsg.directPath as string) || topLevelMediaUrl || "";
     } else if (msgData.videoMessage) {
       messageType = "video";
-      content = ((msgData.videoMessage as Record<string, unknown>).caption as string) || "[Vídeo]";
+      const vidMsg = msgData.videoMessage as Record<string, unknown>;
+      content = (vidMsg.caption as string) || "";
+      mediaUrl = (vidMsg.url as string) || (vidMsg.directPath as string) || topLevelMediaUrl || "";
     } else if (msgData.audioMessage || msgData.pttMessage) {
       messageType = "audio";
-      content = "[Áudio]";
+      const audioMsg = (msgData.audioMessage || msgData.pttMessage) as Record<string, unknown>;
+      content = "";
+      mediaUrl = (audioMsg.url as string) || (audioMsg.directPath as string) || topLevelMediaUrl || "";
     } else if (msgData.documentMessage) {
       messageType = "document";
-      content = ((msgData.documentMessage as Record<string, unknown>).fileName as string) || "[Documento]";
+      const docMsg = msgData.documentMessage as Record<string, unknown>;
+      content = (docMsg.fileName as string) || "Documento";
+      mediaUrl = (docMsg.url as string) || (docMsg.directPath as string) || topLevelMediaUrl || "";
     } else if (msgData.stickerMessage) {
       messageType = "sticker";
-      content = "[Sticker]";
+      const stickerMsg = msgData.stickerMessage as Record<string, unknown>;
+      content = "";
+      mediaUrl = (stickerMsg.url as string) || (stickerMsg.directPath as string) || topLevelMediaUrl || "";
     } else if (msgData.reactionMessage) {
       messageType = "reaction";
-      content = ((msgData.reactionMessage as Record<string, unknown>).text as string) || "[Reação]";
+      content = ((msgData.reactionMessage as Record<string, unknown>).text as string) || "";
     } else {
-      content = "[Mensagem]";
+      content = "";
+    }
+
+    // If no mediaUrl found yet but we have a messageId, we can fetch it later via getBase64FromMediaMessage
+    // For now, log when media is detected but URL is missing
+    if (messageType !== "text" && messageType !== "reaction" && !mediaUrl) {
+      console.log(`[Evolution] Media message (${messageType}) without URL - messageId: ${messageId}, instance: ${instance}`);
     }
 
     // Skip group messages
@@ -397,12 +437,41 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
         ? parsed.senderName
         : undefined,
       lastMessageAt: parsed.timestamp,
-      lastMessagePreview: parsed.content.substring(0, 500),
+      lastMessagePreview: (parsed.content || (parsed.messageType === "image" ? "📷 Imagem" : parsed.messageType === "audio" ? "🎤 \u00c1udio" : parsed.messageType === "video" ? "🎬 V\u00eddeo" : parsed.messageType === "document" ? "📄 Documento" : parsed.messageType === "sticker" ? "🫨 Sticker" : "")).substring(0, 500),
       unreadCount: parsed.direction === "inbound" ? 1 : 0,
     });
 
     // Resolve conversationId (upsert returns id number)
     const conversationId = typeof conversation === "number" ? conversation : (conversation as any).id;
+
+    // ── Resolve media URL: if media message has no URL, fetch via getBase64 and upload to S3 ──
+    let finalMediaUrl = parsed.mediaUrl || "";
+    if (parsed.messageType !== "text" && parsed.messageType !== "reaction" && !finalMediaUrl && parsed.messageId) {
+      try {
+        const mediaData = await evolutionGetMediaBase64(instanceName, parsed.messageId);
+        if (mediaData) {
+          if (mediaData.startsWith("data:") || mediaData.startsWith("http")) {
+            // If it's a data URL (base64), upload to S3
+            if (mediaData.startsWith("data:")) {
+              const { storagePut } = await import("./storage");
+              const mimeMatch = mediaData.match(/^data:([^;]+);base64,(.+)$/);
+              if (mimeMatch) {
+                const mime = mimeMatch[1];
+                const buffer = Buffer.from(mimeMatch[2], "base64");
+                const ext = mime.split("/")[1]?.replace("webm", "webm").replace("ogg", "ogg") || "bin";
+                const key = `evolution-media/${instanceName}/${Date.now()}-${parsed.messageId.slice(-8)}.${ext}`;
+                const { url } = await storagePut(key, buffer, mime);
+                finalMediaUrl = url;
+              }
+            } else {
+              finalMediaUrl = mediaData;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn(`[Evolution] Failed to fetch/upload media for ${parsed.messageId}:`, err);
+      }
+    }
 
     // Save message
     const savedMsg = await createEvolutionMessage({
@@ -411,12 +480,12 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       conversationId,
       remoteJid: jidForConversation,
       messageId: parsed.messageId,
-      content: parsed.content,
+      content: parsed.content || (parsed.messageType === "image" ? "" : parsed.messageType === "audio" ? "" : parsed.messageType === "video" ? "" : parsed.messageType === "sticker" ? "" : ""),
       messageType: parsed.messageType,
       direction: parsed.direction,
       senderName: parsed.senderName || (parsed.fromMe ? "Vendedor" : parsed.phone),
       timestamp: parsed.timestamp,
-      mediaUrl: parsed.mediaUrl || undefined,
+      mediaUrl: finalMediaUrl || undefined,
       status: "delivered",
     });
 
