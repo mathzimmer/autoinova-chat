@@ -492,15 +492,17 @@ export default function EvolutionInbox() {
 
   return (
     <TooltipProvider>
-      <div className="flex h-[calc(100vh-4rem)] overflow-hidden bg-[#111b21] text-[#e9edef]">
+      <div className="flex h-[calc(100vh-4rem)] overflow-hidden bg-[#111b21] text-[#e9edef] relative">
 
         {/* ── Left Panel: Instances + Conversations ── */}
         <div className={cn(
-          "flex flex-col border-r border-[#2a3942] bg-[#111b21] transition-all duration-200",
-          showSidebar ? "w-[360px] min-w-[360px]" : "w-0 overflow-hidden"
+          "flex flex-col border-r border-[#2a3942] bg-[#111b21] transition-all duration-200 z-20",
+          showSidebar
+            ? "absolute inset-0 md:relative md:w-[340px] md:min-w-[340px]"
+            : "w-0 overflow-hidden absolute md:relative"
         )}>
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-[#202c33]">
+          <div className="flex items-center justify-between px-3 py-2.5 bg-[#202c33]">
             <div className="flex items-center gap-2">
               <MessageSquare className="w-5 h-5 text-green-400" />
               <span className="font-semibold text-sm">Inbox Vendedores</span>
@@ -508,10 +510,10 @@ export default function EvolutionInbox() {
                 <Badge className="bg-green-500 text-white text-xs px-1.5 py-0">{totalUnread}</Badge>
               )}
             </div>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-0.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="w-8 h-8 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
+                  <Button variant="ghost" size="icon" className="w-7 h-7 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
                     onClick={() => setShowNewConvDialog(true)}>
                     <Plus className="w-4 h-4" />
                   </Button>
@@ -520,7 +522,16 @@ export default function EvolutionInbox() {
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="w-8 h-8 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
+                  <Button variant="ghost" size="icon" className="w-7 h-7 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
+                    onClick={() => window.location.href = "/evolution-instances"}>
+                    <Smartphone className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Gerenciar Instâncias / Conectar Números</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="w-7 h-7 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
                     disabled={isSyncingContacts || !selectedInstanceName}
                     onClick={() => {
                       if (!selectedInstanceName) { toast.info("Selecione uma instância primeiro"); return; }
@@ -530,11 +541,11 @@ export default function EvolutionInbox() {
                     <Users className={cn("w-4 h-4", isSyncingContacts && "animate-spin")} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Sincronizar contatos (resolver números @lid)</TooltipContent>
+                <TooltipContent>Sincronizar contatos</TooltipContent>
               </Tooltip>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="w-8 h-8 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
+                  <Button variant="ghost" size="icon" className="w-7 h-7 text-[#aebac1] hover:text-white hover:bg-[#2a3942]"
                     onClick={() => { instancesQuery.refetch(); conversationsQuery.refetch(); }}>
                     <RefreshCw className="w-4 h-4" />
                   </Button>
@@ -545,7 +556,7 @@ export default function EvolutionInbox() {
           </div>
 
           {/* Instance selector */}
-          <div className="px-3 py-2 bg-[#202c33] border-b border-[#2a3942]">
+          <div className="px-2 py-1.5 bg-[#202c33] border-b border-[#2a3942]">
             <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
               <button
                 onClick={() => { setSelectedInstanceName(""); setSelectedConversation(null); }}
@@ -578,8 +589,8 @@ export default function EvolutionInbox() {
           </div>
 
           {/* Search + filter */}
-          <div className="px-3 py-2 bg-[#111b21] border-b border-[#2a3942]">
-            <div className="relative mb-2">
+          <div className="px-2 py-1.5 bg-[#111b21] border-b border-[#2a3942]">
+            <div className="relative mb-1.5">
               <Search className="absolute left-3 top-2.5 w-3.5 h-3.5 text-[#8696a0]" />
               <Input
                 placeholder="Pesquisar conversa..."
@@ -616,7 +627,7 @@ export default function EvolutionInbox() {
               filteredConversations.map(conv => (
                 <button
                   key={conv.id}
-                  onClick={() => { setSelectedConversation(conv); setShowSidebar(window.innerWidth > 768); }}
+                  onClick={() => { setSelectedConversation(conv); if (window.innerWidth < 768) setShowSidebar(false); }}
                   className={cn(
                     "w-full flex items-start gap-3 px-4 py-3 hover:bg-[#2a3942] border-b border-[#2a3942]/50 text-left transition-colors",
                     selectedConversation?.id === conv.id && "bg-[#2a3942]"
@@ -920,31 +931,40 @@ export default function EvolutionInbox() {
             </>
           ) : (
             /* Empty state */
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-center justify-center p-4">
               <div className="text-center max-w-sm">
-                <div className="w-20 h-20 rounded-full bg-[#202c33] flex items-center justify-center mx-auto mb-4">
-                  <MessageSquare className="w-10 h-10 text-green-400" />
+                <div className="w-16 h-16 rounded-full bg-[#202c33] flex items-center justify-center mx-auto mb-3">
+                  <MessageSquare className="w-8 h-8 text-green-400" />
                 </div>
-                <h3 className="text-xl font-semibold text-[#e9edef] mb-2">Inbox dos Vendedores</h3>
+                <h3 className="text-lg font-semibold text-[#e9edef] mb-2">Inbox dos Vendedores</h3>
                 <p className="text-[#8696a0] text-sm mb-4">
                   {instances.length === 0
-                    ? "Nenhum número conectado. Configure os números dos vendedores primeiro."
-                    : "Selecione uma conversa para começar a atender"
+                    ? "Nenhum número conectado. Conecte um número para começar."
+                    : "Selecione uma conversa para atender"
                   }
                 </p>
-                {instances.length === 0 ? (
-                  <Button className="bg-green-500 hover:bg-green-600 text-white"
-                    onClick={() => window.location.href = "/evolution-instances"}>
-                    <Smartphone className="w-4 h-4 mr-2" />
-                    Conectar Número
-                  </Button>
-                ) : (
-                  <Button className="bg-green-500 hover:bg-green-600 text-white"
-                    onClick={() => setShowNewConvDialog(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Nova Conversa
-                  </Button>
-                )}
+                <div className="flex flex-col gap-2 items-center">
+                  {instances.length === 0 ? (
+                    <Button className="bg-green-500 hover:bg-green-600 text-white"
+                      onClick={() => window.location.href = "/evolution-instances"}>
+                      <Smartphone className="w-4 h-4 mr-2" />
+                      Conectar Número
+                    </Button>
+                  ) : (
+                    <>
+                      <Button className="bg-green-500 hover:bg-green-600 text-white"
+                        onClick={() => setShowNewConvDialog(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Nova Conversa
+                      </Button>
+                      <Button variant="outline" className="border-[#2a3942] text-[#aebac1] hover:bg-[#2a3942] hover:text-white"
+                        onClick={() => window.location.href = "/evolution-instances"}>
+                        <Smartphone className="w-4 h-4 mr-2" />
+                        Gerenciar Instâncias
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
