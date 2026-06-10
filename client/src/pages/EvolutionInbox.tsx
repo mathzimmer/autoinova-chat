@@ -271,7 +271,6 @@ export default function EvolutionInbox() {
   const [filterStatus, setFilterStatus] = useState<"all" | "open" | "pending" | "resolved">("all");
   const [isUploading, setIsUploading] = useState(false);
   const [lidPhoneInput, setLidPhoneInput] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Detect if selected conversation has unresolved @lid JID
   const isLidConversation = !!(selectedConversation?.remoteJid?.endsWith("@lid"));
@@ -401,9 +400,19 @@ export default function EvolutionInbox() {
     onError: (e: { message: string }) => toast.error("Erro ao salvar contato: " + e.message),
   });
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom (scroll local na ScrollArea, não na página inteira)
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Usar setTimeout para garantir que o DOM foi atualizado
+    const timer = setTimeout(() => {
+      const scrollArea = document.querySelector('[data-messages-scroll]');
+      if (scrollArea) {
+        const viewport = scrollArea.querySelector('[style*="overflow"]');
+        if (viewport) {
+          viewport.scrollTop = viewport.scrollHeight;
+        }
+      }
+    }, 0);
+    return () => clearTimeout(timer);
   }, [messages]);
 
   // Mark as read when opening conversation
@@ -836,7 +845,7 @@ export default function EvolutionInbox() {
               </div>
 
               {/* Messages area */}
-              <ScrollArea className="flex-1 min-h-0 px-4 py-4">
+              <ScrollArea className="flex-1 min-h-0 px-4 py-4" data-messages-scroll>
                 <div className="space-y-1 max-w-3xl mx-auto">
                   {groupedMessages.map(group => (
                     <div key={group.date}>
@@ -858,7 +867,6 @@ export default function EvolutionInbox() {
                       Nenhuma mensagem ainda. Inicie a conversa!
                     </div>
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
               </ScrollArea>
 
