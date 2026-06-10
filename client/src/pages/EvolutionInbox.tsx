@@ -768,12 +768,14 @@ export default function EvolutionInbox() {
                           <p className="font-medium text-sm text-[#e9edef] truncate">
                             {linkedContact ? linkedContact.name : getDisplayName(selectedConversation)}
                           </p>
-                          <button
+                          <div
                             onClick={e => { e.stopPropagation(); setEditingContactName(true); }}
-                            className="text-[#8696a0] hover:text-white"
+                            className="text-[#8696a0] hover:text-white cursor-pointer"
+                            role="button"
+                            tabIndex={0}
                           >
                             <Edit2 className="w-3 h-3" />
-                          </button>
+                          </div>
                         </>
                       )}
                     </div>
