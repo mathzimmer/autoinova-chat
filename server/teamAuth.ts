@@ -1,7 +1,6 @@
 import { getDb } from "./db";
 import { teamMembers } from "../drizzle/schema";
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
 import crypto from "crypto";
 
 /**

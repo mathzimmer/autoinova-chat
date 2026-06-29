@@ -1,1 +1,0 @@
-ALTER TABLE `chatFlowNodes` MODIFY COLUMN `nodeType` enum('start','send_message','send_buttons','send_list','send_image','condition','ai_response','update_lead','assign_agent','delay','wait_input','end','goto_flow','assign_seller','send_vehicle_photos') NOT NULL;

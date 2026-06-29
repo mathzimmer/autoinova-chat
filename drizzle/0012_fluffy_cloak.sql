@@ -1,2 +1,0 @@
-ALTER TABLE `conversations` MODIFY COLUMN `channel` enum('whatsapp','instagram','facebook','web','webhook') NOT NULL DEFAULT 'whatsapp';--> statement-breakpoint
-ALTER TABLE `conversations` ADD `platformUserId` varchar(255);
