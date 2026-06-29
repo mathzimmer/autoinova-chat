@@ -30,7 +30,7 @@ import {
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 import { transcribeAudio } from "./_core/voiceTranscription";
-import { sendTextMessage, sendImageMessage, sendAudioMessage, sendReplyButtons, sendListMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
+import { sendTextMessage, sendImageMessage, sendAudioMessage, sendVideoMessage, sendReplyButtons, sendListMessage, isConfigured as isWhatsAppConfigured } from "./whatsapp";
 import { sendPlatformMessage, sendPlatformImage, isInstagramConfigured, isFacebookConfigured, getPlatformUserProfile } from "./instagramFacebook";
 import { storagePut } from "./storage";
 import { convertWebmToOgg, needsConversionForWhatsApp, isWebmAudio } from "./audioConverter";
@@ -319,6 +319,8 @@ async function initDebounce() {
         // Enviar resposta via plataforma correta
         try {
           let sendResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No platform configured" };
+
+          console.log(`[Debounce] Debug envio: channel="${conversation.channel}", isConfigured=${isWhatsAppConfigured()}, phone="${conversation.phone}"`);
 
           if (conversation.channel === "whatsapp" && isWhatsAppConfigured() && conversation.phone) {
             sendResult = await sendTextMessage(conversation.phone, aiResult.response);
@@ -778,7 +780,7 @@ const messageRouter = router({
   sendMedia: protectedProcedure
     .input(z.object({
       conversationId: z.number(),
-      mediaType: z.enum(["image", "audio"]),
+      mediaType: z.enum(["image", "audio", "video"]),
       base64Data: z.string(), // base64 encoded file data
       mimeType: z.string(),
       fileName: z.string().optional(),
@@ -848,6 +850,8 @@ const messageRouter = router({
       // Save message to database
       const content = input.mediaType === "image"
         ? (input.caption || "[Imagem enviada]")
+        : input.mediaType === "video"
+        ? (input.caption || "[Vídeo enviado]")
         : "[Mensagem de voz]";
 
       const message = await createMessage({
@@ -873,6 +877,14 @@ const messageRouter = router({
               console.log(`[SendMedia] WhatsApp image result:`, JSON.stringify(result));
             }).catch((err) => {
               console.error("[WhatsApp] Failed to send agent image:", err);
+            });
+
+          } else if (input.mediaType === "video") {
+            console.log(`[SendMedia] Sending video to WhatsApp: phone=${conv.phone}, URL=${mediaUrl}`);
+            sendVideoMessage(conv.phone, mediaUrl, input.caption).then((result) => {
+              console.log(`[SendMedia] WhatsApp video result:`, JSON.stringify(result));
+            }).catch((err) => {
+              console.error("[WhatsApp] Failed to send agent video:", err);
             });
 
           } else if (input.mediaType === "audio") {

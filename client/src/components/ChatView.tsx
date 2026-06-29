@@ -3,7 +3,7 @@ import { useConversationSocket } from "@/hooks/useSocket";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2, Clock, AlertTriangle, MessageSquareText, ChevronDown, GitBranch, PauseCircle, List } from "lucide-react";
+import { Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText, Play, Pause, Mic, MicOff, X, ImagePlus, Loader2, Clock, AlertTriangle, MessageSquareText, ChevronDown, GitBranch, PauseCircle, List, Video, Smile } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
@@ -34,6 +34,16 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const [imagePreviews, setImagePreviews] = useState<ImagePreviewItem[]>([]);
   const [imageCaption, setImageCaption] = useState("");
   const [sendingImageIndex, setSendingImageIndex] = useState(-1);
+
+  // Video preview state
+  const [videoPreview, setVideoPreview] = useState<{ file: File; dataUrl: string } | null>(null);
+  const [videoCaption, setVideoCaption] = useState("");
+  const [isSendingVideo, setIsSendingVideo] = useState(false);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Emoji picker state
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement>(null);
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -343,6 +353,74 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     setImagePreviews([]);
     setImageCaption("");
     inputRef.current?.focus();
+  };
+
+  // --- Video handling ---
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("video/")) { toast.error("Selecione um arquivo de vídeo."); return; }
+    if (file.size > 64 * 1024 * 1024) { toast.error("Tamanho máximo de vídeo é 64MB."); return; }
+    const url = URL.createObjectURL(file);
+    setVideoPreview({ file, dataUrl: url });
+    setVideoCaption("");
+  };
+
+  const handleSendVideo = async () => {
+    if (!videoPreview) return;
+    setIsSendingVideo(true);
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = (reader.result as string).split(",")[1];
+        await sendMediaMutation.mutateAsync({
+          conversationId,
+          mediaType: "video",
+          base64Data: base64,
+          mimeType: videoPreview.file.type,
+          fileName: videoPreview.file.name,
+          caption: videoCaption || undefined,
+        });
+        setVideoPreview(null);
+        setVideoCaption("");
+      };
+      reader.readAsDataURL(videoPreview.file);
+    } catch {
+      // handled by onError
+    } finally {
+      setIsSendingVideo(false);
+    }
+  };
+
+  // --- Emoji picker ---
+  const EMOJI_LIST = [
+    "😀","😁","😂","🤣","😃","😄","😅","😆","😉","😊","😋","😎","😍","🥰","😘",
+    "😗","😙","😚","🙂","🤗","🤩","🤔","🤨","😐","😑","😶","🙄","😏","😣","😥",
+    "😮","🤐","😯","😪","😫","😴","😌","😛","😜","😝","🤤","😒","😓","😔","😕",
+    "🙃","🤑","😲","☹️","🙁","😖","😞","😟","😤","😢","😭","😦","😧","😨","😩",
+    "🤯","😬","😰","😱","🥵","🥶","😳","🤪","😵","😡","😠","🤬","😷","🤒","🤕",
+    "🤢","🤮","🤧","😇","🥳","🥺","🤠","🤡","🤥","🤫","🤭","🧐","🤓","😈","👿",
+    "👋","🤚","🖐","✋","🖖","👌","🤌","🤏","✌️","🤞","🤟","🤘","🤙","👈","👉",
+    "👆","🖕","👇","☝️","👍","👎","✊","👊","🤛","🤜","👏","🙌","👐","🤲","🤝",
+    "🙏","❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓",
+    "💗","💖","💘","💝","💟","🔥","✨","⭐","🌟","💫","❄️","🎉","🎊","🎈","🎁",
+    "🚗","🚕","🚙","🏎","🚓","🚑","🚒","🚐","🚚","🚛","🚜","🏍","🛵","🚲","✈️",
+    "🏠","🏡","🏢","🏣","🏤","🏥","🏦","🏨","🏩","🏪","🏫","🏬","🏭","🏯","🏰",
+    "🍕","🍔","🍟","🌭","🍿","🧂","🥓","🥚","🍳","🥞","🧇","🥐","🍞","🥖","🥨",
+    "🍎","🍊","🍋","🍇","🍓","🫐","🍈","🍒","🍑","🥭","🍍","🥥","🥝","🍅","🍆",
+    "⚽","🏀","🏈","⚾","🥎","🏐","🏉","🎾","🏸","🏒","🏓","🏸","🥊","🎯","🎮",
+  ];
+
+  const insertEmoji = (emoji: string) => {
+    const input = inputRef.current;
+    if (!input) { setNewMessage(prev => prev + emoji); setShowEmojiPicker(false); return; }
+    const start = input.selectionStart ?? newMessage.length;
+    const end = input.selectionEnd ?? newMessage.length;
+    const next = newMessage.slice(0, start) + emoji + newMessage.slice(end);
+    setNewMessage(next);
+    setShowEmojiPicker(false);
+    setTimeout(() => { input.focus(); input.setSelectionRange(start + emoji.length, start + emoji.length); }, 0);
   };
 
   const handleCancelImages = () => {
@@ -668,6 +746,41 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         </div>
       )}
 
+      {/* Video Preview */}
+      {videoPreview && (
+        <div className="border-t border-border p-3 bg-secondary/30">
+          <div className="flex flex-col gap-3">
+            <div className="flex items-start gap-3">
+              <div className="relative rounded-lg overflow-hidden bg-black w-40 h-24 shrink-0">
+                <video src={videoPreview.dataUrl} className="w-full h-full object-contain" muted />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Video className="h-8 w-8 text-white opacity-70" />
+                </div>
+              </div>
+              <div className="flex-1 flex flex-col gap-2">
+                <p className="text-xs text-muted-foreground truncate">{videoPreview.file.name}</p>
+                <input
+                  type="text"
+                  value={videoCaption}
+                  onChange={e => setVideoCaption(e.target.value)}
+                  placeholder="Legenda (opcional)..."
+                  className="text-sm bg-background border border-border rounded-md px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2">
+              <Button variant="ghost" size="sm" onClick={() => setVideoPreview(null)} disabled={isSendingVideo}>
+                <X className="h-4 w-4 mr-1" /> Cancelar
+              </Button>
+              <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={handleSendVideo} disabled={isSendingVideo}>
+                {isSendingVideo ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                Enviar vídeo
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 24h Window Expired Banner */}
       {isWindowExpired && (
         <div className="border-t border-yellow-500/30 bg-yellow-500/10 px-4 py-3 shrink-0">
@@ -756,16 +869,23 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
       </Dialog>
 
       {/* Input Area */}
-      <div className="border-t border-border p-3 shrink-0">
-        {/* Hidden file input - now accepts multiple */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          className="hidden"
-          onChange={handleImageSelect}
-        />
+      <div className="border-t border-border p-3 shrink-0 relative">
+        {/* Hidden file inputs */}
+        <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
+        <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoSelect} />
+
+        {/* Emoji Picker */}
+        {showEmojiPicker && (
+          <div ref={emojiPickerRef} className="absolute bottom-16 left-3 z-50 bg-background border border-border rounded-xl shadow-lg p-3 w-72 max-h-56 overflow-y-auto">
+            <div className="flex flex-wrap gap-1">
+              {EMOJI_LIST.map((emoji, i) => (
+                <button key={i} onClick={() => insertEmoji(emoji)} className="text-lg w-8 h-8 flex items-center justify-center hover:bg-secondary rounded-md transition-colors">
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {isRecording ? (
           /* Recording UI */
@@ -797,15 +917,14 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         ) : (
           /* Normal input UI */
           <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isSending}
-              className="shrink-0 text-muted-foreground hover:text-foreground"
-              title="Enviar imagens"
-            >
+            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)} disabled={isSending} className="shrink-0 text-muted-foreground hover:text-foreground" title="Emojis">
+              <Smile className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isSending} className="shrink-0 text-muted-foreground hover:text-foreground" title="Enviar imagens">
               <ImagePlus className="h-5 w-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={() => videoInputRef.current?.click()} disabled={isSending} className="shrink-0 text-muted-foreground hover:text-foreground" title="Enviar vídeo">
+              <Video className="h-5 w-5" />
             </Button>
             <Button
               variant="ghost"
@@ -1043,6 +1162,21 @@ function MessageBubble({ message }: { message: MessageData }) {
             </div>
           )}
 
+          {/* Video message */}
+          {message.messageType === "video" && mediaUrl && (
+            <div className="mb-2">
+              <video
+                src={mediaUrl}
+                controls
+                className="rounded-lg max-w-full max-h-64 object-contain bg-black"
+                preload="metadata"
+              />
+              {message.content && message.content !== "[Vídeo enviado]" && message.content !== "[Vídeo recebido]" && (
+                <p className="text-xs mt-1 text-muted-foreground">{message.content}</p>
+              )}
+            </div>
+          )}
+
           {/* Document message */}
           {message.messageType === "document" && mediaUrl && (
             <div className="mb-2">
@@ -1060,7 +1194,8 @@ function MessageBubble({ message }: { message: MessageData }) {
 
           {/* Text content - hide generic placeholders for image/audio if we already show the media */}
           {!(message.messageType === "image" && mediaUrl && (message.content === "[Imagem enviada pelo cliente]" || message.content === "[Imagem recebida]" || message.content === "[Imagem enviada]")) &&
-           !(message.messageType === "audio" && (message.content === "[Mensagem de áudio]" || message.content === "[Áudio não pôde ser transcrito]" || message.content === "[Mensagem de voz]")) && (
+           !(message.messageType === "audio" && (message.content === "[Mensagem de áudio]" || message.content === "[Áudio não pôde ser transcrito]" || message.content === "[Mensagem de voz]")) &&
+           !(message.messageType === "video" && mediaUrl && (message.content === "[Vídeo enviado]" || message.content === "[Vídeo recebido]")) && (
             <p className="whitespace-pre-wrap">
               {message.messageType === "audio" && transcribedText
                 ? "" // Already shown in transcription section above

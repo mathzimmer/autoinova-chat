@@ -1,102 +1,71 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uses the Biz-provided storage proxy (Authorization: Bearer <token>)
+/**
+ * Storage — MinIO (S3-compatible)
+ * Env vars:
+ *   MINIO_ENDPOINT   ex: http://172.17.0.1:9001
+ *   MINIO_ACCESS_KEY autoinova
+ *   MINIO_SECRET_KEY AutoInova2024!
+ *   MINIO_BUCKET     media
+ *   S3_BUCKET_URL    https://media.autoinovacrm.com.br/media  (public base URL)
+ */
 
-import { ENV } from './_core/env';
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-type StorageConfig = { baseUrl: string; apiKey: string };
+function getConfig() {
+  const endpoint  = process.env.MINIO_ENDPOINT  || "";
+  const accessKey = process.env.MINIO_ACCESS_KEY || "";
+  const secretKey = process.env.MINIO_SECRET_KEY || "";
+  const bucket    = process.env.MINIO_BUCKET     || "media";
+  const publicUrl = (process.env.S3_BUCKET_URL   || "").replace(/\/$/, "");
+  return { endpoint, accessKey, secretKey, bucket, publicUrl };
+}
 
-function getStorageConfig(): StorageConfig {
-  const baseUrl = ENV.forgeApiUrl;
-  const apiKey = ENV.forgeApiKey;
-
-  if (!baseUrl || !apiKey) {
-    throw new Error(
-      "Storage proxy credentials missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
+function getClient() {
+  const { endpoint, accessKey, secretKey } = getConfig();
+  if (!endpoint || !accessKey || !secretKey) {
+    throw new Error("MinIO não configurado: defina MINIO_ENDPOINT, MINIO_ACCESS_KEY e MINIO_SECRET_KEY no .env");
   }
-
-  return { baseUrl: baseUrl.replace(/\/+$/, ""), apiKey };
-}
-
-function buildUploadUrl(baseUrl: string, relKey: string): URL {
-  const url = new URL("v1/storage/upload", ensureTrailingSlash(baseUrl));
-  url.searchParams.set("path", normalizeKey(relKey));
-  return url;
-}
-
-async function buildDownloadUrl(
-  baseUrl: string,
-  relKey: string,
-  apiKey: string
-): Promise<string> {
-  const downloadApiUrl = new URL(
-    "v1/storage/downloadUrl",
-    ensureTrailingSlash(baseUrl)
-  );
-  downloadApiUrl.searchParams.set("path", normalizeKey(relKey));
-  const response = await fetch(downloadApiUrl, {
-    method: "GET",
-    headers: buildAuthHeaders(apiKey),
+  return new S3Client({
+    endpoint,
+    region: "us-east-1",          // MinIO ignora o valor mas exige o campo
+    credentials: { accessKeyId: accessKey, secretAccessKey: secretKey },
+    forcePathStyle: true,          // obrigatório para MinIO
   });
-  return (await response.json()).url;
 }
 
-function ensureTrailingSlash(value: string): string {
-  return value.endsWith("/") ? value : `${value}/`;
-}
-
-function normalizeKey(relKey: string): string {
-  return relKey.replace(/^\/+/, "");
-}
-
-function toFormData(
-  data: Buffer | Uint8Array | string,
-  contentType: string,
-  fileName: string
-): FormData {
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
-  const form = new FormData();
-  form.append("file", blob, fileName || "file");
-  return form;
-}
-
-function buildAuthHeaders(apiKey: string): HeadersInit {
-  return { Authorization: `Bearer ${apiKey}` };
-}
-
+/**
+ * Faz upload de um arquivo e retorna a URL pública permanente.
+ * @param relKey  caminho dentro do bucket, ex: "whatsapp/abc123.jpg"
+ * @param data    Buffer ou string com o conteúdo
+ * @param contentType  MIME type, ex: "image/jpeg"
+ */
 export async function storagePut(
   relKey: string,
   data: Buffer | Uint8Array | string,
   contentType = "application/octet-stream"
 ): Promise<{ key: string; url: string }> {
-  const { baseUrl, apiKey } = getStorageConfig();
-  const key = normalizeKey(relKey);
-  const uploadUrl = buildUploadUrl(baseUrl, key);
-  const formData = toFormData(data, contentType, key.split("/").pop() ?? key);
-  const response = await fetch(uploadUrl, {
-    method: "POST",
-    headers: buildAuthHeaders(apiKey),
-    body: formData,
-  });
+  const { bucket, publicUrl } = getConfig();
+  const key = relKey.replace(/^\/+/, "");
 
-  if (!response.ok) {
-    const message = await response.text().catch(() => response.statusText);
-    throw new Error(
-      `Storage upload failed (${response.status} ${response.statusText}): ${message}`
-    );
-  }
-  const url = (await response.json()).url;
+  const body = typeof data === "string" ? Buffer.from(data) : data;
+
+  const client = getClient();
+  await client.send(new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    Body: body as Buffer,
+    ContentType: contentType,
+  }));
+
+  const url = publicUrl ? `${publicUrl}/${key}` : key;
   return { key, url };
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string; }> {
-  const { baseUrl, apiKey } = getStorageConfig();
-  const key = normalizeKey(relKey);
-  return {
-    key,
-    url: await buildDownloadUrl(baseUrl, key, apiKey),
-  };
+/**
+ * Retorna a URL pública de um arquivo já armazenado.
+ */
+export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+  const { publicUrl } = getConfig();
+  const key = relKey.replace(/^\/+/, "");
+  const url = publicUrl ? `${publicUrl}/${key}` : key;
+  return { key, url };
 }

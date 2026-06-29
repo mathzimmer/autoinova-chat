@@ -779,11 +779,40 @@ async function sendSellerNotification(
   }
 }
 
+/**
+ * Send a video message to a WhatsApp number
+ */
+async function sendVideoMessage(to: string, videoUrl: string, caption?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const { accessToken, phoneNumberId } = getConfig();
+  if (!accessToken || !phoneNumberId) return { success: false, error: "WhatsApp API not configured" };
+  try {
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      {
+        messaging_product: "whatsapp",
+        recipient_type: "individual",
+        to,
+        type: "video",
+        video: { link: videoUrl, ...(caption && { caption }) },
+      },
+      { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
+    );
+    const messageId = response.data?.messages?.[0]?.id;
+    console.log(`[WhatsApp] Video sent to ${to}, ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WhatsApp] Failed to send video to ${to}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
 export {
   isConfigured,
   sendTextMessage,
   sendImageMessage,
   sendAudioMessage,
+  sendVideoMessage,
   sendDocumentMessage,
   sendReplyButtons,
   sendListMessage,
