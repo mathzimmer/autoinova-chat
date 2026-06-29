@@ -1,5 +1,6 @@
 import { eq, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import {
   InsertUser, users,
   conversations, InsertConversation, Conversation,
@@ -39,7 +40,8 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      const client = postgres(process.env.DATABASE_URL, { max: 10 });
+      _db = drizzle(client);
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
       _db = null;
@@ -71,7 +73,7 @@ export async function upsertUser(user: InsertUser): Promise<void> {
     else if (user.openId === ENV.ownerOpenId) { values.role = 'admin'; updateSet.role = 'admin'; }
     if (!values.lastSignedIn) values.lastSignedIn = new Date();
     if (Object.keys(updateSet).length === 0) updateSet.lastSignedIn = new Date();
-    await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
+    await db.insert(users).values(values).onConflictDoUpdate({ target: users.openId, set: updateSet });
   } catch (error) { console.error("[Database] Failed to upsert user:", error); throw error; }
 }
 
@@ -141,8 +143,8 @@ export async function getConversationByPlatformUserId(platformUserId: string, ch
 export async function createConversation(data: InsertConversation) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(conversations).values(data);
-  const id = result[0].insertId;
+  const result = await db.insert(conversations).values(data).returning({ id: conversations.id });
+  const id = result[0].id;
   return getConversationById(id);
 }
 
@@ -170,8 +172,8 @@ export async function listMessages(conversationId: number, limit = 500) {
 export async function createMessage(data: InsertMessage) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(messages).values(data);
-  const id = result[0].insertId;
+  const result = await db.insert(messages).values(data).returning({ id: messages.id });
+  const id = result[0].id;
   const msg = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
   // Update conversation's last message
   await db.update(conversations).set({
@@ -314,8 +316,8 @@ export async function upsertLead(data: InsertLead) {
   if (data.funnelStatus) {
     (data as any).temperature = calculateTemperature(data.funnelStatus);
   }
-  const result = await db.insert(leads).values(data);
-  return { ...data, id: result[0].insertId };
+  const result = await db.insert(leads).values(data).returning({ id: leads.id });
+  return { ...data, id: result[0].id };
 }
 
 // ─── Update Lead Funnel Status ───────────────────────────────
@@ -352,8 +354,8 @@ export async function upsertLeadSummary(data: { leadId: number; conversationId: 
     await db.update(leadSummaries).set({ summary: data.summary, messageCount: data.messageCount }).where(eq(leadSummaries.id, existing[0].id));
     return { ...existing[0], ...data };
   }
-  const result = await db.insert(leadSummaries).values(data);
-  return { ...data, id: result[0].insertId };
+  const result = await db.insert(leadSummaries).values(data).returning({ id: leadSummaries.id });
+  return { ...data, id: result[0].id };
 }
 
 export async function getFullLeadSummaryText(conversationId: number): Promise<string> {
@@ -482,8 +484,8 @@ export async function listVehicles() {
 export async function createVehicle(data: typeof vehicles.$inferInsert) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(vehicles).values(data);
-  return result[0].insertId;
+  const result = await db.insert(vehicles).values(data).returning({ id: vehicles.id });
+  return result[0].id;
 }
 
 // ─── Dashboard Stats ───────────────────────────────────────────
@@ -664,8 +666,8 @@ export async function getChatFlowById(id: number) {
 export async function createChatFlow(data: InsertChatFlow) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(chatFlows).values(data);
-  return result[0].insertId;
+  const result = await db.insert(chatFlows).values(data).returning({ id: chatFlows.id });
+  return result[0].id;
 }
 
 export async function updateChatFlow(id: number, data: Partial<InsertChatFlow>) {
@@ -709,8 +711,8 @@ export async function getChatFlowNodeById(id: number) {
 export async function createChatFlowNode(data: InsertChatFlowNode) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(chatFlowNodes).values(data);
-  return result[0].insertId;
+  const result = await db.insert(chatFlowNodes).values(data).returning({ id: chatFlowNodes.id });
+  return result[0].id;
 }
 
 export async function updateChatFlowNode(id: number, data: Partial<InsertChatFlowNode>) {
@@ -744,8 +746,8 @@ export async function bulkUpsertNodes(flowId: number, nodes: Array<InsertChatFlo
       }).where(eq(chatFlowNodes.id, node.id));
       ids.push(node.id);
     } else {
-      const result = await db.insert(chatFlowNodes).values({ ...node, flowId });
-      ids.push(result[0].insertId);
+      const result = await db.insert(chatFlowNodes).values({ ...node, flowId }).returning({ id: chatFlowNodes.id });
+      ids.push(result[0].id);
     }
   }
   return ids;
@@ -761,8 +763,8 @@ export async function listChatFlowEdges(flowId: number) {
 export async function createChatFlowEdge(data: InsertChatFlowEdge) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(chatFlowEdges).values(data);
-  return result[0].insertId;
+  const result = await db.insert(chatFlowEdges).values(data).returning({ id: chatFlowEdges.id });
+  return result[0].id;
 }
 
 export async function deleteChatFlowEdge(id: number) {
@@ -797,8 +799,8 @@ export async function getActiveFlowSession(conversationId: number) {
 export async function createFlowSession(data: InsertChatFlowSession) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(chatFlowSessions).values(data);
-  return result[0].insertId;
+  const result = await db.insert(chatFlowSessions).values(data).returning({ id: chatFlowSessions.id });
+  return result[0].id;
 }
 
 export async function updateFlowSession(id: number, data: Partial<InsertChatFlowSession>) {
@@ -836,7 +838,7 @@ export async function pauseAllActiveSessionsByFlow(flowId: number) {
       eq(chatFlowSessions.flowId, flowId),
       eq(chatFlowSessions.status, "active")
     ));
-  return result[0].affectedRows || 0;
+  return 0;
 }
 
 // ─── AI Agents CRUD ──────────────────────────────────────────
@@ -857,8 +859,8 @@ export async function getAiAgentById(id: number) {
 export async function createAiAgent(data: InsertAiAgent) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(aiAgents).values(data);
-  return { id: result[0].insertId };
+  const result = await db.insert(aiAgents).values(data).returning({ id: aiAgents.id });
+  return { id: result[0].id };
 }
 
 export async function updateAiAgent(id: number, data: Partial<InsertAiAgent>) {
@@ -938,8 +940,8 @@ export async function getSellerById(id: number) {
 export async function createSeller(data: Omit<InsertSeller, "id" | "createdAt" | "updatedAt">): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(sellers).values(data as any);
-  return (result as any)[0].insertId;
+  const result = await db.insert(sellers).values(data as any).returning({ id: sellers.id });
+  return result[0].id;
 }
 
 export async function updateSeller(id: number, data: Partial<InsertSeller>): Promise<void> {
@@ -1007,8 +1009,8 @@ export async function getNextSellerInQueue(storeLocation: string) {
 export async function createSellerAssignment(data: Omit<InsertSellerAssignment, "id" | "assignedAt">): Promise<number> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(sellerAssignments).values(data as any);
-  return (result as any)[0].insertId;
+  const result = await db.insert(sellerAssignments).values(data as any).returning({ id: sellerAssignments.id });
+  return result[0].id;
 }
 
 export async function listSellerAssignments(storeLocation?: string, sellerId?: number) {
@@ -1066,8 +1068,8 @@ export async function getVehicleById(vehicleId: number) {
 export async function createRescueAttempt(data: Omit<InsertRescueAttempt, "id" | "createdAt">) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(rescueAttempts).values(data as any);
-  return result[0].insertId;
+  const result = await db.insert(rescueAttempts).values(data as any).returning({ id: rescueAttempts.id });
+  return result[0].id;
 }
 
 export async function getRescueAttemptsByConversation(conversationId: number) {
@@ -1221,8 +1223,8 @@ export async function getContactByPhone(phone: string) {
 export async function createContact(data: Omit<InsertContact, "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(contacts).values(data);
-  const id = Number(result[0].insertId);
+  const result = await db.insert(contacts).values(data).returning({ id: contacts.id });
+  const id = result[0].id;
   return getContactById(id);
 }
 
@@ -1303,8 +1305,8 @@ export async function getAllContactTags() {
 export async function createTemplateSend(data: Omit<InsertTemplateSend, "id" | "sentAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(templateSends).values(data);
-  return Number(result[0].insertId);
+  const result = await db.insert(templateSends).values(data).returning({ id: templateSends.id });
+  return result[0].id;
 }
 
 export async function listTemplateSends(opts?: { contactId?: number; templateName?: string; limit?: number; offset?: number }) {
@@ -1330,8 +1332,8 @@ export async function updateTemplateSendStatus(id: number, status: string, error
 export async function createCampaign(data: Omit<InsertCampaign, "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(campaigns).values(data);
-  const id = (result as any)[0]?.insertId;
+  const result = await db.insert(campaigns).values(data).returning({ id: campaigns.id });
+  const id = result[0].id;
   return getCampaignById(id);
 }
 
@@ -1379,8 +1381,8 @@ export async function deleteCampaign(id: number) {
 export async function createCampaignDispatch(data: Omit<InsertCampaignDispatch, "id" | "createdAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(campaignDispatches).values(data);
-  return (result as any)[0]?.insertId;
+  const result = await db.insert(campaignDispatches).values(data).returning({ id: campaignDispatches.id });
+  return result[0].id;
 }
 
 export async function createCampaignDispatchesBatch(dispatches: Omit<InsertCampaignDispatch, "id" | "createdAt">[]) {
@@ -1503,8 +1505,8 @@ export async function getEvolutionInstanceByName(instanceName: string) {
 export async function createEvolutionInstance(data: Omit<InsertEvolutionInstance, "id" | "createdAt" | "updatedAt">) {
   const db = await getDb();
   if (!db) throw new Error("DB not available");
-  const result = await db.insert(evolutionInstances).values(data);
-  return result[0].insertId as number;
+  const result = await db.insert(evolutionInstances).values(data).returning({ id: evolutionInstances.id });
+  return result[0].id;
 }
 
 export async function updateEvolutionInstance(id: number, data: Partial<InsertEvolutionInstance>) {
@@ -1640,8 +1642,8 @@ export async function upsertEvolutionConversation(data: Omit<InsertEvolutionConv
       (insertData as any).contactId = linkedContactId;
     }
   }
-  const result = await db.insert(evolutionConversations).values(insertData);
-  return result[0].insertId as number;
+  const result = await db.insert(evolutionConversations).values(insertData).returning({ id: evolutionConversations.id });
+  return result[0].id;
 }
 
 /**
@@ -1674,8 +1676,8 @@ export async function autoLinkOrCreateContact(phone: string, name?: string): Pro
       phone: cleanPhone,
       source: "whatsapp",
       isActive: true,
-    });
-    return result[0].insertId as number;
+    }).returning({ id: contacts.id });
+    return result[0].id;
   } catch (e) {
     console.error("[AutoLinkContact] Error:", e);
     return null;
@@ -1709,6 +1711,6 @@ export async function createEvolutionMessage(data: Omit<InsertEvolutionMessage, 
       .limit(1);
     if (existing.length > 0) return existing[0].id;
   }
-  const result = await db.insert(evolutionMessages).values(data);
-  return result[0].insertId as number;
+  const result = await db.insert(evolutionMessages).values(data).returning({ id: evolutionMessages.id });
+  return result[0].id;
 }
