@@ -21,7 +21,7 @@ RUN corepack enable && corepack prepare pnpm@10.4.1 --activate
 
 COPY package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
-RUN pnpm install --frozen-lockfile --prod
+RUN pnpm install --frozen-lockfile
 
 COPY --from=builder /app/dist ./dist
 
