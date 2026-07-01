@@ -237,7 +237,7 @@ export default function ContactsPage() {
   const contacts = contactsQuery.data?.contacts || [];
   const total = contactsQuery.data?.total || 0;
   const tags = tagsQuery.data || [];
-  const templates = (templatesQuery.data as any)?.data || [];
+  const templates = (templatesQuery.data as any) || [];
   const approvedTemplates = templates.filter((t: any) => t.status === "APPROVED");
 
   // Helpers
