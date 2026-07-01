@@ -523,7 +523,7 @@ function WhatsAppConnectCard() {
   useEffect(() => {
     if (window.FB) { setSdkReady(true); return; }
     window.fbAsyncInit = function () {
-      window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: true, version: "v19.0" });
+      window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: true, version: "v25.0" });
       setSdkReady(true);
     };
     if (!document.getElementById("fb-sdk")) {
@@ -538,7 +538,7 @@ function WhatsAppConnectCard() {
   // Listen for session info from Meta popup
   useEffect(() => {
     const handler = (event: MessageEvent) => {
-      if (event.origin !== "https://www.facebook.com") return;
+      if (!event.origin.endsWith("facebook.com")) return;
       try {
         const data = JSON.parse(event.data);
         if (data.type === "WA_EMBEDDED_SIGNUP") {
