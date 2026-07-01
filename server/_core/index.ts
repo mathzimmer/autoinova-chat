@@ -688,6 +688,151 @@ async function startServer() {
     }
   });
 
+  // ─── Legal pages (required for Meta Tech Provider) ──────────────────────────
+
+  const LEGAL_HTML_HEADER = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+    *{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f5;color:#222;line-height:1.7}
+    .wrap{max-width:800px;margin:0 auto;padding:40px 24px}header{background:#075e54;color:#fff;padding:24px;border-radius:12px;margin-bottom:32px}
+    header h1{font-size:1.5rem;margin-bottom:4px}header p{font-size:.85rem;opacity:.8}
+    h2{font-size:1.1rem;color:#075e54;margin:28px 0 10px;border-bottom:2px solid #e0e0e0;padding-bottom:6px}
+    p,li{font-size:.95rem;color:#444;margin-bottom:8px}ul{padding-left:20px;margin-bottom:12px}
+    .badge{display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:.8rem;padding:4px 10px;border-radius:20px;margin-bottom:16px}
+    footer{margin-top:48px;font-size:.8rem;color:#999;text-align:center;border-top:1px solid #ddd;padding-top:16px}
+    a{color:#075e54}
+  </style></head><body><div class="wrap">`;
+
+  const LEGAL_HTML_FOOTER = `<footer>AutoInova CRM &mdash; autoinovacrm.com.br</footer></div></body></html>`;
+
+  // Privacy Policy
+  app.get("/privacy", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`${LEGAL_HTML_HEADER}
+      <header><h1>Política de Privacidade</h1><p>AutoInova CRM &mdash; Plataforma de Gestão de Leads</p></header>
+      <span class="badge">Última atualização: ${new Date().toLocaleDateString("pt-BR",{year:"numeric",month:"long",day:"numeric"})}</span>
+      <h2>1. Quem Somos</h2>
+      <p>A <strong>AutoInova CRM</strong> é uma plataforma de gestão de relacionamento com clientes (CRM) voltada para concessionárias e revendedoras de veículos, acessível em <a href="https://autoinovacrm.com.br">autoinovacrm.com.br</a>.</p>
+      <h2>2. Dados que Coletamos</h2>
+      <ul>
+        <li><strong>Dados de contato:</strong> nome, telefone, e-mail fornecidos por leads via WhatsApp, Instagram ou Facebook.</li>
+        <li><strong>Mensagens:</strong> conteúdo de conversas trocadas por meio das plataformas integradas.</li>
+        <li><strong>Dados de uso:</strong> informações de acesso à plataforma (IP, navegador, horários).</li>
+        <li><strong>Dados de anúncios:</strong> informações de leads gerados por campanhas no Facebook/Instagram Ads.</li>
+      </ul>
+      <h2>3. Como Usamos os Dados</h2>
+      <ul>
+        <li>Gerenciar o relacionamento entre empresas parceiras e seus clientes/leads.</li>
+        <li>Automatizar respostas e follow-ups via inteligência artificial.</li>
+        <li>Gerar relatórios de desempenho de atendimento.</li>
+        <li>Cumprir obrigações legais e regulatórias.</li>
+      </ul>
+      <h2>4. Compartilhamento</h2>
+      <p>Não vendemos dados pessoais. Compartilhamos dados apenas com:</p>
+      <ul>
+        <li><strong>Meta Platforms (Facebook/WhatsApp):</strong> para envio e recebimento de mensagens.</li>
+        <li><strong>Provedores de IA</strong> (ex: OpenAI) para processamento de linguagem natural &mdash; conforme suas políticas de privacidade.</li>
+        <li><strong>Parceiros de infraestrutura</strong> (servidores em nuvem) para hospedagem segura dos dados.</li>
+      </ul>
+      <h2>5. Retenção dos Dados</h2>
+      <p>Os dados são mantidos enquanto a conta da empresa parceira estiver ativa. Após o encerramento, os dados são removidos em até 90 dias, salvo obrigação legal.</p>
+      <h2>6. Direitos dos Titulares (LGPD)</h2>
+      <p>Nos termos da Lei Geral de Proteção de Dados (Lei nº 13.709/2018), você pode:</p>
+      <ul>
+        <li>Solicitar acesso, correção ou exclusão dos seus dados.</li>
+        <li>Revogar o consentimento a qualquer momento.</li>
+        <li>Solicitar a portabilidade dos dados.</li>
+      </ul>
+      <p>Entre em contato: <a href="mailto:privacidade@autoinovacrm.com.br">privacidade@autoinovacrm.com.br</a></p>
+      <h2>7. Segurança</h2>
+      <p>Utilizamos criptografia TLS em todas as comunicações, autenticação segura e servidores com acesso restrito para proteger seus dados.</p>
+      <h2>8. Cookies</h2>
+      <p>Utilizamos cookies de sessão estritamente necessários para autenticação. Não utilizamos cookies de rastreamento de terceiros.</p>
+      <h2>9. Alterações</h2>
+      <p>Podemos atualizar esta política periodicamente. Usuários serão notificados por e-mail em caso de alterações relevantes.</p>
+      <h2>10. Contato</h2>
+      <p>Dúvidas ou solicitações: <a href="mailto:privacidade@autoinovacrm.com.br">privacidade@autoinovacrm.com.br</a></p>
+    ${LEGAL_HTML_FOOTER}`);
+  });
+
+  // Terms of Service
+  app.get("/terms", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`${LEGAL_HTML_HEADER}
+      <header><h1>Termos de Serviço</h1><p>AutoInova CRM &mdash; Plataforma de Gestão de Leads</p></header>
+      <span class="badge">Última atualização: ${new Date().toLocaleDateString("pt-BR",{year:"numeric",month:"long",day:"numeric"})}</span>
+      <h2>1. Aceitação</h2>
+      <p>Ao utilizar a plataforma AutoInova CRM, você concorda com estes Termos de Serviço e com nossa <a href="/privacy">Política de Privacidade</a>.</p>
+      <h2>2. Descrição do Serviço</h2>
+      <p>AutoInova CRM é uma plataforma SaaS (Software as a Service) que permite gerenciar leads, automatizar atendimentos via WhatsApp/Instagram/Facebook e acompanhar o desempenho de campanhas de marketing digital.</p>
+      <h2>3. Elegibilidade</h2>
+      <p>O serviço é destinado a empresas (pessoas jurídicas) ou profissionais autônomos que atuam no segmento automotivo ou de vendas. O uso por menores de 18 anos não é permitido.</p>
+      <h2>4. Responsabilidades do Usuário</h2>
+      <ul>
+        <li>Manter as credenciais de acesso seguras e confidenciais.</li>
+        <li>Utilizar a plataforma em conformidade com as políticas da Meta (WhatsApp/Facebook/Instagram).</li>
+        <li>Não enviar mensagens de spam, conteúdo ilegal ou enganoso.</li>
+        <li>Obter consentimento adequado dos leads antes de iniciar comunicações.</li>
+        <li>Cumprir a LGPD e demais legislações aplicáveis.</li>
+      </ul>
+      <h2>5. Integração com Meta Platforms</h2>
+      <p>O uso das APIs do WhatsApp Business, Instagram e Facebook está sujeito às políticas da Meta Platforms, Inc. O usuário é responsável por manter suas integrações ativas e em conformidade.</p>
+      <h2>6. Limitação de Responsabilidade</h2>
+      <p>A AutoInova CRM não se responsabiliza por: interrupções nas APIs de terceiros (Meta, OpenAI), perda de dados por falha do usuário ou uso indevido da plataforma, ou resultados de vendas.</p>
+      <h2>7. Propriedade Intelectual</h2>
+      <p>Todo o código, design e conteúdo da plataforma pertencem à AutoInova CRM. É proibida a reprodução ou distribuição sem autorização.</p>
+      <h2>8. Rescisão</h2>
+      <p>Podemos suspender contas que violem estes termos, sem aviso prévio em casos graves. O usuário pode cancelar sua conta a qualquer momento.</p>
+      <h2>9. Lei Aplicável</h2>
+      <p>Estes termos são regidos pelas leis brasileiras. Foro: comarca de São Paulo/SP.</p>
+      <h2>10. Contato</h2>
+      <p><a href="mailto:suporte@autoinovacrm.com.br">suporte@autoinovacrm.com.br</a></p>
+    ${LEGAL_HTML_FOOTER}`);
+  });
+
+  // Data Deletion — page + Facebook callback
+  app.get("/data-deletion", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(`${LEGAL_HTML_HEADER}
+      <header><h1>Exclusão de Dados</h1><p>AutoInova CRM &mdash; Como remover seus dados</p></header>
+      <h2>Como solicitar a exclusão dos seus dados</h2>
+      <p>Se você usou o login com Facebook/Instagram para acessar algum serviço integrado à AutoInova CRM e deseja que seus dados sejam removidos, siga os passos abaixo:</p>
+      <ul>
+        <li>Envie um e-mail para <a href="mailto:privacidade@autoinovacrm.com.br">privacidade@autoinovacrm.com.br</a> com o assunto <strong>"Exclusão de Dados"</strong>.</li>
+        <li>Informe seu nome completo e o e-mail ou telefone associado à conta.</li>
+        <li>Você receberá uma confirmação em até <strong>5 dias úteis</strong>.</li>
+        <li>Seus dados serão excluídos definitivamente em até <strong>30 dias</strong> após a confirmação.</li>
+      </ul>
+      <h2>Exclusão via Facebook</h2>
+      <p>Você também pode remover o acesso do app diretamente nas configurações do Facebook:</p>
+      <ul>
+        <li>Acesse <a href="https://www.facebook.com/settings?tab=applications" target="_blank">Configurações &gt; Apps e Sites</a> no Facebook.</li>
+        <li>Localize <strong>AutoInova CRM</strong> e clique em <strong>Remover</strong>.</li>
+        <li>Na seção "Removidos", clique no app e selecione "Solicitar exclusão de dados".</li>
+      </ul>
+      <h2>Dados que serão excluídos</h2>
+      <ul>
+        <li>Informações de perfil (nome, e-mail, foto)</li>
+        <li>Histórico de conversas associado à sua conta</li>
+        <li>Dados de campanhas e leads vinculados ao seu perfil</li>
+      </ul>
+      <p>Para dúvidas: <a href="mailto:privacidade@autoinovacrm.com.br">privacidade@autoinovacrm.com.br</a></p>
+    ${LEGAL_HTML_FOOTER}`);
+  });
+
+  // Facebook Data Deletion Callback (POST — chamado pelo Facebook quando usuário solicita exclusão)
+  app.post("/data-deletion", (req, res) => {
+    try {
+      // Facebook envia signed_request; respondemos com confirmation
+      const confirmationCode = `autoinova_del_${Date.now()}`;
+      console.log("[DataDeletion] Solicitação de exclusão recebida:", req.body?.signed_request ? "com signed_request" : "sem signed_request");
+      res.json({
+        url: "https://autoinovacrm.com.br/data-deletion",
+        confirmation_code: confirmationCode,
+      });
+    } catch {
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
