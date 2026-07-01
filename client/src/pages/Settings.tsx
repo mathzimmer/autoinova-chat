@@ -565,13 +565,14 @@ function WhatsAppConnectCard() {
   }, []);
 
   const launchSignup = () => {
-    if (!sdkReady || !window.FB) {
+    if (!window.FB) {
       toast.error("Facebook SDK ainda carregando, aguarde...");
       return;
     }
     setLoading(true);
     setResult(null);
 
+    // FB.login must be called synchronously in a user click handler
     window.FB.login(
       async (response: any) => {
         if (response?.authResponse?.code) {
@@ -673,7 +674,7 @@ function WhatsAppConnectCard() {
             </p>
             <Button
               onClick={launchSignup}
-              disabled={loading || !sdkReady}
+              disabled={loading}
               className="bg-[#25D366] hover:bg-[#25D366]/90 text-white gap-2"
             >
               {loading ? (
