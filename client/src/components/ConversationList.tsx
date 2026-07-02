@@ -16,12 +16,29 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [agentFilter, setAgentFilter] = useState<"all" | "mine" | "unassigned" | "ai">("all");
+  const [labelFilter, setLabelFilter] = useState<number | null>(null);
   const { data: conversations, refetch } = trpc.conversation.list.useQuery(
     { status: statusFilter, search: search || undefined },
     { refetchInterval: 10000 }
   );
   const { data: teamMembers } = trpc.team.list.useQuery();
   const { data: teamMe } = trpc.teamAuth.me.useQuery();
+  const { data: allLabels } = trpc.label.list.useQuery();
+  const { data: labelAssignments } = trpc.label.assignments.useQuery(undefined, { refetchInterval: 30000 });
+
+  // conversationId -> labels
+  const convLabelMap = useMemo(() => {
+    const map = new Map<number, { id: number; name: string; color: string }[]>();
+    if (!labelAssignments || !allLabels) return map;
+    const labelById = new Map(allLabels.map((l: any) => [l.id, l]));
+    for (const a of labelAssignments as any[]) {
+      const label = labelById.get(a.labelId);
+      if (!label) continue;
+      if (!map.has(a.conversationId)) map.set(a.conversationId, []);
+      map.get(a.conversationId)!.push(label);
+    }
+    return map;
+  }, [labelAssignments, allLabels]);
   const { socket, connected } = useInboxSocket();
 
   const isTeamMember = teamMe?.isTeamMember ?? false;
@@ -67,8 +84,13 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
       }
     }
 
+    // Filtro por etiqueta
+    if (labelFilter !== null) {
+      filtered = filtered.filter((c) => (convLabelMap.get(c.id) || []).some((l) => l.id === labelFilter));
+    }
+
     return filtered;
-  }, [conversations, agentFilter, isRestrictedRole, myTeamMemberId]);
+  }, [conversations, agentFilter, isRestrictedRole, myTeamMemberId, labelFilter, convLabelMap]);
 
   // Get agent name by ID
   const getAgentName = (agentId: number | null) => {
@@ -156,6 +178,23 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
             </button>
           ))}
         </div>
+        {/* Label Filter Chips */}
+        {(allLabels || []).length > 0 && (
+          <div className="flex px-3 pb-1.5 gap-1 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+            {(allLabels || []).map((l: any) => (
+              <button
+                key={l.id}
+                onClick={() => setLabelFilter(v => v === l.id ? null : l.id)}
+                className="h-5 px-2 text-[10px] rounded-full font-medium transition-all whitespace-nowrap shrink-0"
+                style={labelFilter === l.id
+                  ? { backgroundColor: l.color, color: "#fff" }
+                  : { backgroundColor: l.color + "22", color: l.color, border: `1px solid ${l.color}55` }}
+              >
+                {l.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Conversation List - scrollable area takes remaining space */}
@@ -248,11 +287,23 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
                         )}
                       </div>
 
-                      {/* Row 3: Agent (only if assigned) */}
-                      {agentName && (
-                        <div className="flex items-center gap-1 mt-0.5">
-                          <UserCheck className="h-3 w-3 text-blue-400 shrink-0" />
-                          <span className="text-[10px] text-blue-400 font-medium truncate">{agentName}</span>
+                      {/* Row 3: Agent + Labels */}
+                      {(agentName || (convLabelMap.get(conv.id) || []).length > 0) && (
+                        <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
+                          {agentName && (
+                            <>
+                              <UserCheck className="h-3 w-3 text-blue-400 shrink-0" />
+                              <span className="text-[10px] text-blue-400 font-medium truncate shrink-0 max-w-24">{agentName}</span>
+                            </>
+                          )}
+                          {(convLabelMap.get(conv.id) || []).slice(0, 2).map((l) => (
+                            <span key={l.id} className="text-[9px] px-1.5 rounded-full font-medium shrink-0" style={{ backgroundColor: l.color + "22", color: l.color, border: `1px solid ${l.color}55` }}>
+                              {l.name}
+                            </span>
+                          ))}
+                          {(convLabelMap.get(conv.id) || []).length > 2 && (
+                            <span className="text-[9px] text-muted-foreground shrink-0">+{(convLabelMap.get(conv.id) || []).length - 2}</span>
+                          )}
                         </div>
                       )}
                     </div>

@@ -492,6 +492,9 @@ export default function Settings() {
 
         {/* WhatsApp Embedded Signup */}
         <WhatsAppConnectCard />
+
+        {/* Meta Conversions API - tracking avançado */}
+        <MetaCapiCard />
       </div>
     </div>
   );
@@ -713,6 +716,139 @@ function WhatsAppConnectCard() {
               Conectar outro número
             </Button>
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Meta Conversions API (tracking avançado de anúncios) ────────────────────
+
+function MetaCapiCard() {
+  const utils = trpc.useUtils();
+  const { data: config, isLoading } = trpc.capi.getConfig.useQuery();
+  const { data: events } = trpc.capi.listEvents.useQuery({ limit: 20 });
+  const [enabled, setEnabled] = useState(false);
+  const [datasetId, setDatasetId] = useState("");
+  const [accessToken, setAccessToken] = useState("");
+  const [testEventCode, setTestEventCode] = useState("");
+
+  useEffect(() => {
+    if (config) {
+      setEnabled(config.enabled);
+      setDatasetId(config.datasetId || "");
+      setTestEventCode(config.testEventCode || "");
+    }
+  }, [config]);
+
+  const saveMutation = trpc.capi.saveConfig.useMutation({
+    onSuccess: () => {
+      toast.success("Configuração CAPI salva");
+      setAccessToken("");
+      utils.capi.getConfig.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const testMutation = trpc.capi.sendTest.useMutation({
+    onSuccess: (res) => {
+      if (res.success) toast.success("Evento de teste enviado! Verifique no Events Manager da Meta.");
+      else toast.error("Falha no teste: " + (res.error || "erro desconhecido"));
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const eventLabels: Record<string, string> = {
+    Lead: "Lead (interesse definido)",
+    SubmitApplication: "Lead qualificado",
+    InitiateCheckout: "Negociação",
+    Purchase: "Venda fechada",
+  };
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-blue-500" />
+              Tracking Avançado — Meta Conversions API
+              {config?.enabled && <Badge variant="outline" className="border-green-500/30 text-green-500 text-[10px]">Ativo</Badge>}
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Envia a evolução do funil de volta para a Meta: quando um lead se qualifica ou fecha negócio, o anúncio que o trouxe recebe o evento (com valor da venda). Os anúncios passam a otimizar para <b>clientes que compram</b>, não para cliques.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
+        ) : (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Dataset ID (Pixel ID)</label>
+                <Input value={datasetId} onChange={e => setDatasetId(e.target.value)} placeholder="Ex: 1234567890123456" className="text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">
+                  Access Token {config?.hasToken && <span className="text-green-500">(configurado — deixe vazio para manter)</span>}
+                </label>
+                <Input type="password" value={accessToken} onChange={e => setAccessToken(e.target.value)} placeholder={config?.hasToken ? "••••••••" : "Token do Events Manager"} className="text-sm" />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">Test Event Code (opcional, para validar)</label>
+                <Input value={testEventCode} onChange={e => setTestEventCode(e.target.value)} placeholder="Ex: TEST12345" className="text-sm" />
+              </div>
+              <div className="flex items-end gap-2">
+                <Button
+                  size="sm"
+                  variant={enabled ? "default" : "outline"}
+                  onClick={() => setEnabled(v => !v)}
+                  className="text-xs"
+                >
+                  {enabled ? <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> : null}
+                  {enabled ? "Envio ativado" : "Envio desativado"}
+                </Button>
+              </div>
+            </div>
+
+            <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+              <p className="font-medium text-blue-500">Mapeamento funil → evento Meta:</p>
+              <p>Interesse definido → <b>Lead</b> · Pagamento/dados → <b>SubmitApplication</b> (qualificado) · Encaminhado/negociando → <b>InitiateCheckout</b> · Fechado → <b>Purchase</b> com o valor do veículo em BRL.</p>
+              <p>Leads de anúncio CTWA são identificados pelo <code>ctwa_clid</code> (sem PII). Leads do site usam telefone/e-mail com hash SHA-256. Leads sem consentimento LGPD nunca são enviados.</p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button size="sm" onClick={() => saveMutation.mutate({ enabled, datasetId, accessToken: accessToken || undefined, testEventCode: testEventCode || undefined })} disabled={saveMutation.isPending || !datasetId}>
+                {saveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                Salvar
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => testMutation.mutate()} disabled={testMutation.isPending}>
+                {testMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : null}
+                Enviar evento de teste
+              </Button>
+            </div>
+
+            {(events || []).length > 0 && (
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-2">Últimos eventos enviados</p>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {(events || []).map((ev: any) => (
+                    <div key={ev.id} className="flex items-center gap-2 text-xs bg-secondary/40 rounded-md px-2.5 py-1.5">
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${ev.status === "sent" ? "bg-green-500" : ev.status === "failed" ? "bg-red-500" : "bg-yellow-500"}`} />
+                      <span className="font-medium">{eventLabels[ev.eventName] || ev.eventName}</span>
+                      <span className="text-muted-foreground">lead #{ev.leadId}</span>
+                      {ev.value && <span className="text-green-500 font-medium">R$ {Number(ev.value).toLocaleString("pt-BR")}</span>}
+                      <span className="text-muted-foreground ml-auto shrink-0">{new Date(ev.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                      {ev.error && <span className="text-red-400 truncate max-w-40" title={ev.error}>{ev.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

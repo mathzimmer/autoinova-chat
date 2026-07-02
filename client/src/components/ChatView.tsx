@@ -7,10 +7,13 @@ import {
   Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText,
   Play, Pause, Mic, X, ImagePlus, Loader2, Clock, AlertTriangle,
   MessageSquareText, GitBranch, PauseCircle, List, Video, Smile,
-  CornerUpLeft, Share2,
+  CornerUpLeft, Share2, Tag, AlarmClock, CalendarClock, StickyNote,
+  Plus, Trash2, Zap,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -92,6 +95,22 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const [reactionPickerMsgId, setReactionPickerMsgId] = useState<number | null>(null);
   const [replyToMessage, setReplyToMessage] = useState<MessageData | null>(null);
 
+  // Notas internas / respostas rápidas / etiquetas / lembretes / agendamento
+  const { user } = useAuth();
+  const [noteMode, setNoteMode] = useState(false);
+  const [qrSelectedIndex, setQrSelectedIndex] = useState(0);
+  const [showQrManageDialog, setShowQrManageDialog] = useState(false);
+  const [qrForm, setQrForm] = useState({ shortcut: "", title: "", content: "" });
+  const [labelPopoverOpen, setLabelPopoverOpen] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [reminderPopoverOpen, setReminderPopoverOpen] = useState(false);
+  const [reminderNote, setReminderNote] = useState("");
+  const [reminderCustom, setReminderCustom] = useState("");
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState("");
+
+  const utils = trpc.useUtils();
+
   const { data: conversation } = trpc.conversation.getById.useQuery(
     { id: conversationId },
     { refetchInterval: 15000 }
@@ -170,6 +189,99 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     onError: (err) => toast.error("Erro ao enviar mídia: " + err.message),
   });
   const markAsReadMutation = trpc.conversation.markAsRead.useMutation();
+
+  // ── Respostas rápidas ──
+  const { data: quickReplies } = trpc.quickReply.list.useQuery();
+  const trackQrUsage = trpc.quickReply.trackUsage.useMutation();
+  const createQrMutation = trpc.quickReply.create.useMutation({
+    onSuccess: () => {
+      toast.success("Resposta rápida criada");
+      setQrForm({ shortcut: "", title: "", content: "" });
+      setShowQrManageDialog(false);
+      utils.quickReply.list.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const deleteQrMutation = trpc.quickReply.delete.useMutation({
+    onSuccess: () => utils.quickReply.list.invalidate(),
+  });
+
+  const qrFilter = newMessage.startsWith("/") ? newMessage.slice(1).toLowerCase() : null;
+  const filteredQuickReplies = useMemo(() => {
+    if (qrFilter === null || !quickReplies) return [];
+    return quickReplies.filter((qr: any) =>
+      qr.shortcut.includes(qrFilter) || qr.title.toLowerCase().includes(qrFilter)
+    ).slice(0, 6);
+  }, [qrFilter, quickReplies]);
+
+  const applyVariables = useCallback((content: string) => content
+    .replace(/\{\{nome\}\}/gi, (conversation?.contactName || "").split(" ")[0] || "")
+    .replace(/\{\{telefone\}\}/gi, conversation?.phone || "")
+    .replace(/\{\{atendente\}\}/gi, user?.name || ""),
+  [conversation, user]);
+
+  const selectQuickReply = useCallback((qr: any) => {
+    setNewMessage(applyVariables(qr.content));
+    trackQrUsage.mutate({ id: qr.id });
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }, [applyVariables, trackQrUsage]);
+
+  // ── Etiquetas ──
+  const { data: allLabels } = trpc.label.list.useQuery();
+  const { data: convLabels } = trpc.label.byConversation.useQuery({ conversationId });
+  const setLabelsMutation = trpc.label.setForConversation.useMutation({
+    onSuccess: () => {
+      utils.label.byConversation.invalidate({ conversationId });
+      utils.label.assignments.invalidate();
+    },
+  });
+  const createLabelMutation = trpc.label.create.useMutation({
+    onSuccess: () => { setNewLabelName(""); utils.label.list.invalidate(); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const toggleLabel = (labelId: number) => {
+    const current = (convLabels || []).map((l: any) => l.id);
+    const next = current.includes(labelId) ? current.filter((id: number) => id !== labelId) : [...current, labelId];
+    setLabelsMutation.mutate({ conversationId, labelIds: next });
+  };
+
+  // ── Lembretes ──
+  const { data: myReminders } = trpc.reminder.listMine.useQuery({ conversationId });
+  const createReminderMutation = trpc.reminder.create.useMutation({
+    onSuccess: () => {
+      toast.success("Lembrete criado");
+      setReminderNote(""); setReminderCustom(""); setReminderPopoverOpen(false);
+      utils.reminder.listMine.invalidate();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const dismissReminderMutation = trpc.reminder.dismiss.useMutation({
+    onSuccess: () => utils.reminder.listMine.invalidate(),
+  });
+
+  const createReminder = (remindAt: number) => {
+    createReminderMutation.mutate({ conversationId, remindAt, note: reminderNote || undefined });
+  };
+  const tomorrowAt9 = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0);
+    return d.getTime();
+  };
+
+  // ── Mensagens agendadas ──
+  const { data: pendingScheduled } = trpc.scheduledMessage.listByConversation.useQuery({ conversationId });
+  const createScheduledMutation = trpc.scheduledMessage.create.useMutation({
+    onSuccess: () => {
+      toast.success("Mensagem agendada");
+      setNewMessage(""); setScheduleAt(""); setShowScheduleDialog(false);
+      utils.scheduledMessage.listByConversation.invalidate({ conversationId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const cancelScheduledMutation = trpc.scheduledMessage.cancel.useMutation({
+    onSuccess: () => utils.scheduledMessage.listByConversation.invalidate({ conversationId }),
+  });
 
   const { socket } = useConversationSocket(conversationId);
 
@@ -273,6 +385,11 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const handleSend = () => {
     if (!newMessage.trim()) return;
     let content = newMessage.trim();
+    if (noteMode) {
+      sendMutation.mutate({ conversationId, content, senderType: "internal" });
+      setNoteMode(false);
+      return;
+    }
     if (replyToMessage) {
       const senderLabel = replyToMessage.senderType === "customer"
         ? "Cliente"
@@ -287,9 +404,23 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Navegação no dropdown de respostas rápidas
+    if (filteredQuickReplies.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setQrSelectedIndex(i => Math.min(i + 1, filteredQuickReplies.length - 1)); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setQrSelectedIndex(i => Math.max(i - 1, 0)); return; }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        selectQuickReply(filteredQuickReplies[qrSelectedIndex] || filteredQuickReplies[0]);
+        return;
+      }
+      if (e.key === "Escape") { setNewMessage(""); return; }
+    }
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
     if (e.key === "Escape" && replyToMessage) setReplyToMessage(null);
+    if (e.key === "Escape" && noteMode) setNoteMode(false);
   };
+
+  useEffect(() => { setQrSelectedIndex(0); }, [qrFilter]);
 
   const handleReact = useCallback((messageId: number, emoji: string) => {
     setLocalReactions(prev => {
@@ -532,8 +663,105 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 <User className="h-3 w-3" /> Atendente
               </span>
             )}
+            {(convLabels || []).slice(0, 3).map((l: any) => (
+              <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium text-white/90" style={{ backgroundColor: l.color + "55", border: `1px solid ${l.color}` }}>
+                {l.name}
+              </span>
+            ))}
+            {(convLabels || []).length > 3 && (
+              <span className="text-[10px] text-white/50">+{(convLabels || []).length - 3}</span>
+            )}
           </div>
         </div>
+
+        {/* ── Etiquetas ── */}
+        <Popover open={labelPopoverOpen} onOpenChange={setLabelPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#8696a0] hover:text-white hover:bg-[#2a3942]" title="Etiquetas">
+              <Tag className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-64 p-2 bg-[#233138] border-[#2a3942]">
+            <p className="text-xs font-semibold text-[#8696a0] px-1 pb-2">Etiquetas da conversa</p>
+            <div className="max-h-48 overflow-y-auto space-y-0.5">
+              {(allLabels || []).map((l: any) => {
+                const active = (convLabels || []).some((cl: any) => cl.id === l.id);
+                return (
+                  <button
+                    key={l.id}
+                    onClick={() => toggleLabel(l.id)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${active ? "bg-[#2a3942] text-white" : "text-[#e9edef] hover:bg-[#2a3942]/60"}`}
+                  >
+                    <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                    <span className="flex-1 truncate">{l.name}</span>
+                    {active && <X className="h-3 w-3 text-[#8696a0]" />}
+                  </button>
+                );
+              })}
+              {(allLabels || []).length === 0 && (
+                <p className="text-xs text-[#8696a0] px-2 py-2">Nenhuma etiqueta criada ainda.</p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-[#2a3942]">
+              <Input
+                value={newLabelName}
+                onChange={e => setNewLabelName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && newLabelName.trim()) {
+                    const palette = ["#00a884", "#53bdeb", "#e9a944", "#eb6262", "#a55eea", "#f27ca4"];
+                    createLabelMutation.mutate({ name: newLabelName.trim(), color: palette[(allLabels || []).length % palette.length] });
+                  }
+                }}
+                placeholder="Nova etiqueta + Enter"
+                className="h-7 text-xs bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#8696a0]"
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* ── Lembretes ── */}
+        <Popover open={reminderPopoverOpen} onOpenChange={setReminderPopoverOpen}>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="icon" className={`h-8 w-8 hover:bg-[#2a3942] ${(myReminders || []).length > 0 ? "text-amber-400 hover:text-amber-300" : "text-[#8696a0] hover:text-white"}`} title="Lembrar-me desta conversa">
+              <AlarmClock className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-3 bg-[#233138] border-[#2a3942]">
+            <p className="text-xs font-semibold text-[#8696a0] pb-2">Lembrar-me desta conversa</p>
+            {(myReminders || []).map((r: any) => (
+              <div key={r.id} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-1.5 mb-2">
+                <AlarmClock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-amber-300">{format(new Date(Number(r.remindAt)), "dd/MM 'às' HH:mm", { locale: ptBR })}</p>
+                  {r.note && <p className="text-[11px] text-[#8696a0] truncate">{r.note}</p>}
+                </div>
+                <button onClick={() => dismissReminderMutation.mutate({ id: r.id })} className="text-[#8696a0] hover:text-red-400">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+            <Input
+              value={reminderNote}
+              onChange={e => setReminderNote(e.target.value)}
+              placeholder="Nota (opcional)"
+              className="h-8 text-xs bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#8696a0] mb-2"
+            />
+            <div className="grid grid-cols-3 gap-1.5 mb-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]" onClick={() => createReminder(Date.now() + 60 * 60 * 1000)}>1 hora</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]" onClick={() => createReminder(Date.now() + 3 * 60 * 60 * 1000)}>3 horas</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]" onClick={() => createReminder(tomorrowAt9())}>Amanhã 9h</Button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="datetime-local"
+                value={reminderCustom}
+                onChange={e => setReminderCustom(e.target.value)}
+                className="h-7 text-xs bg-[#2a3942] border-0 text-[#e9edef] flex-1"
+              />
+              <Button size="sm" className="h-7 text-xs bg-[#00a884] hover:bg-[#00a884]/90 text-white" disabled={!reminderCustom} onClick={() => createReminder(new Date(reminderCustom).getTime())}>OK</Button>
+            </div>
+          </PopoverContent>
+        </Popover>
         {activeFlowSession && (
           <div className="flex items-center gap-1.5 ml-auto">
             <div className="flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/25 text-violet-400 px-2.5 py-1 rounded-full">
@@ -765,6 +993,96 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         </DialogContent>
       </Dialog>
 
+      {/* ── Mensagens agendadas pendentes ── */}
+      {(pendingScheduled || []).length > 0 && (
+        <div className="border-t border-[#2a3942] bg-[#182229] px-3 py-1.5 space-y-1">
+          {(pendingScheduled || []).map((sm: any) => (
+            <div key={sm.id} className="flex items-center gap-2">
+              <CalendarClock className="h-3.5 w-3.5 text-[#53bdeb] shrink-0" />
+              <span className="text-xs text-[#53bdeb] shrink-0">
+                {format(new Date(Number(sm.scheduledAt)), "dd/MM HH:mm", { locale: ptBR })}
+              </span>
+              <span className="text-xs text-[#8696a0] truncate flex-1">{sm.content}</span>
+              <button onClick={() => cancelScheduledMutation.mutate({ id: sm.id })} className="text-[#8696a0] hover:text-red-400 shrink-0" title="Cancelar envio">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Agendar mensagem Dialog ── */}
+      <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Agendar mensagem</DialogTitle>
+            <DialogDescription>A mensagem será enviada automaticamente no horário escolhido. Se a janela de 24h expirar antes, você será notificado.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="bg-secondary/50 rounded-lg p-3">
+              <p className="text-xs text-muted-foreground mb-1">Mensagem:</p>
+              <p className="text-sm whitespace-pre-wrap">{newMessage}</p>
+            </div>
+            <div>
+              <label className="text-sm font-medium mb-1.5 block">Enviar em</label>
+              <Input type="datetime-local" value={scheduleAt} onChange={e => setScheduleAt(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>Cancelar</Button>
+            <Button
+              disabled={!scheduleAt || !newMessage.trim() || createScheduledMutation.isPending}
+              onClick={() => createScheduledMutation.mutate({ conversationId, content: newMessage.trim(), scheduledAt: new Date(scheduleAt).getTime() })}
+            >
+              {createScheduledMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <CalendarClock className="h-4 w-4 mr-1" />}
+              Agendar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Gerenciar respostas rápidas Dialog ── */}
+      <Dialog open={showQrManageDialog} onOpenChange={setShowQrManageDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Respostas rápidas</DialogTitle>
+            <DialogDescription>Digite <b>/</b> no campo de mensagem para usar. Variáveis: {"{{nome}}"}, {"{{telefone}}"}, {"{{atendente}}"}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1 max-h-[50vh] overflow-y-auto">
+            {(quickReplies || []).map((qr: any) => (
+              <div key={qr.id} className="flex items-start gap-2 bg-secondary/50 rounded-lg p-2.5">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">/{qr.shortcut} <span className="text-muted-foreground font-normal">— {qr.title}</span></p>
+                  <p className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{qr.content}</p>
+                </div>
+                <button onClick={() => deleteQrMutation.mutate({ id: qr.id })} className="text-muted-foreground hover:text-red-500 shrink-0 mt-0.5">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="space-y-2 border-t pt-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Input placeholder="atalho (ex: endereco)" value={qrForm.shortcut} onChange={e => setQrForm(f => ({ ...f, shortcut: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "") }))} />
+              <Input placeholder="Título" value={qrForm.title} onChange={e => setQrForm(f => ({ ...f, title: e.target.value }))} />
+            </div>
+            <textarea
+              placeholder="Conteúdo da mensagem... Ex: Olá {{nome}}! Nossa loja fica na..."
+              value={qrForm.content}
+              onChange={e => setQrForm(f => ({ ...f, content: e.target.value }))}
+              className="w-full text-sm rounded-md border bg-transparent px-3 py-2 min-h-20 outline-none focus:ring-1 focus:ring-ring"
+            />
+            <Button
+              className="w-full"
+              disabled={!qrForm.shortcut || !qrForm.title || !qrForm.content || createQrMutation.isPending}
+              onClick={() => createQrMutation.mutate(qrForm)}
+            >
+              <Plus className="h-4 w-4 mr-1" /> Criar resposta rápida
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Reply preview ── */}
       {replyToMessage && (
         <div className="flex items-center gap-2 bg-[#202c33] px-3 pt-2 pb-1 border-t border-[#2a3942]">
@@ -786,10 +1104,48 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
       )}
 
       {/* ── Input area ── */}
-      <div className="bg-[#202c33] px-3 py-2 shrink-0">
+      <div className={`px-3 py-2 shrink-0 relative transition-colors ${noteMode ? "bg-[#3a3116]" : "bg-[#202c33]"}`}>
         {/* Hidden file inputs */}
         <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
         <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoSelect} />
+
+        {/* Quick replies dropdown ("/") */}
+        {filteredQuickReplies.length > 0 && (
+          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl overflow-hidden">
+            {filteredQuickReplies.map((qr: any, i: number) => (
+              <button
+                key={qr.id}
+                onClick={() => selectQuickReply(qr)}
+                onMouseEnter={() => setQrSelectedIndex(i)}
+                className={`w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors ${i === qrSelectedIndex ? "bg-[#2a3942]" : ""}`}
+              >
+                <Zap className="h-3.5 w-3.5 text-[#00a884] shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-sm text-[#e9edef]"><span className="text-[#00a884] font-medium">/{qr.shortcut}</span> — {qr.title}</p>
+                  <p className="text-xs text-[#8696a0] truncate">{applyVariables(qr.content)}</p>
+                </div>
+              </button>
+            ))}
+            <button onClick={() => setShowQrManageDialog(true)} className="w-full flex items-center gap-2 px-3 py-1.5 border-t border-[#2a3942] text-xs text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]/50">
+              <Plus className="h-3 w-3" /> Gerenciar respostas rápidas
+            </button>
+          </div>
+        )}
+        {qrFilter !== null && filteredQuickReplies.length === 0 && (quickReplies || []).length === 0 && (
+          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl">
+            <button onClick={() => setShowQrManageDialog(true)} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-[#8696a0] hover:text-[#e9edef]">
+              <Plus className="h-4 w-4 text-[#00a884]" /> Nenhuma resposta rápida ainda — criar a primeira
+            </button>
+          </div>
+        )}
+
+        {/* Note mode banner */}
+        {noteMode && (
+          <div className="flex items-center gap-2 pb-1.5">
+            <StickyNote className="h-3.5 w-3.5 text-amber-400" />
+            <span className="text-xs text-amber-300 font-medium">Nota interna — visível apenas para a equipe, não será enviada ao cliente</span>
+          </div>
+        )}
 
         {/* Emoji picker (input) */}
         {showEmojiPicker && (
@@ -834,22 +1190,42 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             <Button variant="ghost" size="icon" onClick={startRecording} disabled={isSending} className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]" title="Gravar áudio">
               <Mic className="h-5 w-5" />
             </Button>
+            <Button
+              variant="ghost" size="icon"
+              onClick={() => setNoteMode(v => !v)}
+              disabled={isSending}
+              className={`shrink-0 hover:bg-[#2a3942] ${noteMode ? "text-amber-400 bg-amber-500/15" : "text-[#8696a0] hover:text-[#e9edef]"}`}
+              title="Nota interna (só a equipe vê)"
+            >
+              <StickyNote className="h-5 w-5" />
+            </Button>
             <Input
               ref={inputRef}
               value={newMessage}
               onChange={e => setNewMessage(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Digite uma mensagem"
-              className="flex-1 bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#8696a0] rounded-lg focus-visible:ring-0 focus-visible:ring-offset-0"
+              placeholder={noteMode ? "Escreva uma nota interna..." : "Digite uma mensagem ou / para respostas rápidas"}
+              className={`flex-1 border-0 text-[#e9edef] placeholder:text-[#8696a0] rounded-lg focus-visible:ring-0 focus-visible:ring-offset-0 ${noteMode ? "bg-[#4a3f1d]" : "bg-[#2a3942]"}`}
               disabled={isSending}
             />
+            {!noteMode && (
+              <Button
+                variant="ghost" size="icon"
+                onClick={() => { if (newMessage.trim()) setShowScheduleDialog(true); else toast.info("Escreva a mensagem primeiro, depois clique para agendar."); }}
+                disabled={isSending}
+                className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]"
+                title="Agendar envio"
+              >
+                <CalendarClock className="h-5 w-5" />
+              </Button>
+            )}
             <Button
               onClick={handleSend}
               disabled={!newMessage.trim() || isSending}
               size="icon"
-              className="shrink-0 bg-[#00a884] hover:bg-[#00a884]/90 rounded-full text-white disabled:bg-[#2a3942] disabled:text-[#8696a0]"
+              className={`shrink-0 rounded-full text-white disabled:bg-[#2a3942] disabled:text-[#8696a0] ${noteMode ? "bg-amber-500 hover:bg-amber-500/90" : "bg-[#00a884] hover:bg-[#00a884]/90"}`}
             >
-              {sendMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              {sendMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : noteMode ? <StickyNote className="h-4 w-4" /> : <Send className="h-4 w-4" />}
             </Button>
           </div>
         )}
@@ -888,6 +1264,22 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
   const interactiveData = meta?.interactiveData as Record<string, any> | undefined;
   const effectiveButtons = interactiveButtons.length > 0 ? interactiveButtons : (interactiveData?.buttons || []);
   const effectiveSections = interactiveSections.length > 0 ? interactiveSections : (interactiveData?.sections || []);
+
+  // Internal note — visível só para a equipe
+  if (message.senderType === "internal") {
+    return (
+      <div className="flex justify-center my-2 py-1">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 max-w-[75%] shadow-sm">
+          <div className="flex items-center gap-1.5 mb-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>
+            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wide">Nota interna · {message.senderName || "Equipe"}</span>
+          </div>
+          <p className="text-sm text-amber-100/90 whitespace-pre-wrap break-words">{message.content}</p>
+          <p className="text-[10px] text-amber-400/50 text-right mt-0.5">{format(new Date(message.createdAt), "HH:mm")}</p>
+        </div>
+      </div>
+    );
+  }
 
   // System message
   if (isSystem || message.messageType === "system") {

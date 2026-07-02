@@ -11,8 +11,8 @@ import {
 export const userRoleEnum               = pgEnum("user_role",                ["user", "admin"]);
 export const conversationChannelEnum    = pgEnum("conversation_channel",     ["whatsapp", "instagram", "facebook", "web", "webhook"]);
 export const conversationStatusEnum     = pgEnum("conversation_status",      ["open", "pending", "resolved", "closed"]);
-export const messageSenderTypeEnum      = pgEnum("message_sender_type",      ["customer", "bot", "agent"]);
-export const messageTypeEnum            = pgEnum("message_type",             ["text", "audio", "image", "document", "system"]);
+export const messageSenderTypeEnum      = pgEnum("message_sender_type",      ["customer", "bot", "agent", "internal"]);
+export const messageTypeEnum            = pgEnum("message_type",             ["text", "audio", "image", "document", "system", "video"]);
 export const messageStatusEnum          = pgEnum("message_status",           ["sent", "delivered", "read", "failed"]);
 export const leadStatusEnum             = pgEnum("lead_status",              ["new", "qualifying", "qualified", "contacted", "converted", "lost"]);
 export const funnelStatusEnum           = pgEnum("funnel_status",            ["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "encaminhado_vendedor", "negociando", "fechado", "perdido"]);
@@ -41,6 +41,9 @@ export const wnConvStatusEnum           = pgEnum("wn_conv_status",           ["o
 export const wnMsgTypeEnum              = pgEnum("wn_msg_type",              ["text", "audio", "image", "document", "video", "sticker", "reaction", "system"]);
 export const wnDirectionEnum            = pgEnum("wn_direction",             ["inbound", "outbound"]);
 export const wnMsgStatusEnum            = pgEnum("wn_msg_status",            ["sent", "delivered", "read", "failed"]);
+export const reminderStatusEnum         = pgEnum("reminder_status",          ["pending", "fired", "dismissed"]);
+export const scheduledMsgStatusEnum     = pgEnum("scheduled_msg_status",     ["pending", "sent", "failed", "cancelled"]);
+export const capiEventStatusEnum        = pgEnum("capi_event_status",        ["sent", "failed", "skipped"]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TABELAS
@@ -842,3 +845,110 @@ export const whatsappNumberMessages = pgTable("whatsappNumberMessages", {
 
 export type WhatsappNumberMessage = typeof whatsappNumberMessages.$inferSelect;
 export type InsertWhatsappNumberMessage = typeof whatsappNumberMessages.$inferInsert;
+
+/**
+ * Quick Replies — respostas prontas acionadas via "/" no composer do inbox.
+ * Suporta variáveis: {{nome}}, {{telefone}}, {{atendente}}.
+ */
+export const quickReplies = pgTable("quickReplies", {
+  id:        serial("id").primaryKey(),
+  shortcut:  varchar("shortcut", { length: 50 }).notNull().unique(), // ex: "endereco"
+  title:     varchar("title", { length: 100 }).notNull(),
+  content:   text("content").notNull(),
+  category:  varchar("category", { length: 50 }),
+  createdBy: integer("createdBy"),
+  usageCount: integer("usageCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type QuickReply = typeof quickReplies.$inferSelect;
+export type InsertQuickReply = typeof quickReplies.$inferInsert;
+
+/**
+ * Labels — etiquetas coloridas aplicáveis a conversas.
+ */
+export const labels = pgTable("labels", {
+  id:        serial("id").primaryKey(),
+  name:      varchar("name", { length: 50 }).notNull().unique(),
+  color:     varchar("color", { length: 7 }).notNull().default("#00a884"), // hex
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Label = typeof labels.$inferSelect;
+export type InsertLabel = typeof labels.$inferInsert;
+
+/**
+ * Conversation Labels — junção conversa <-> etiqueta.
+ */
+export const conversationLabels = pgTable("conversationLabels", {
+  id:             serial("id").primaryKey(),
+  conversationId: integer("conversationId").notNull(),
+  labelId:        integer("labelId").notNull(),
+  createdAt:      timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ConversationLabel = typeof conversationLabels.$inferSelect;
+export type InsertConversationLabel = typeof conversationLabels.$inferInsert;
+
+/**
+ * Conversation Reminders — lembretes/snooze por conversa e atendente.
+ */
+export const conversationReminders = pgTable("conversationReminders", {
+  id:             serial("id").primaryKey(),
+  conversationId: integer("conversationId").notNull(),
+  teamMemberId:   integer("teamMemberId").notNull(),
+  note:           varchar("note", { length: 255 }),
+  remindAt:       bigint("remindAt", { mode: "number" }).notNull(), // epoch ms
+  status:         reminderStatusEnum("reminderStatus").default("pending").notNull(),
+  firedAt:        timestamp("firedAt"),
+  createdAt:      timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ConversationReminder = typeof conversationReminders.$inferSelect;
+export type InsertConversationReminder = typeof conversationReminders.$inferInsert;
+
+/**
+ * Scheduled Messages — mensagens individuais agendadas.
+ * Se a janela de 24h expirar antes do disparo, usa fallbackTemplateName (se houver)
+ * ou marca como failed e notifica o criador.
+ */
+export const scheduledMessages = pgTable("scheduledMessages", {
+  id:                   serial("id").primaryKey(),
+  conversationId:       integer("conversationId").notNull(),
+  content:              text("content").notNull(),
+  scheduledAt:          bigint("scheduledAt", { mode: "number" }).notNull(), // epoch ms
+  status:               scheduledMsgStatusEnum("scheduledMsgStatus").default("pending").notNull(),
+  fallbackTemplateName: varchar("fallbackTemplateName", { length: 255 }),
+  error:                text("error"),
+  createdBy:            integer("createdBy"),
+  createdByName:        varchar("createdByName", { length: 255 }),
+  sentAt:               timestamp("sentAt"),
+  createdAt:            timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ScheduledMessage = typeof scheduledMessages.$inferSelect;
+export type InsertScheduledMessage = typeof scheduledMessages.$inferInsert;
+
+/**
+ * CAPI Events — log de eventos enviados à Meta Conversions API.
+ * Dedupe: um evento por (leadId, eventName).
+ */
+export const capiEvents = pgTable("capiEvents", {
+  id:             serial("id").primaryKey(),
+  leadId:         integer("leadId").notNull(),
+  conversationId: integer("conversationId"),
+  eventName:      varchar("eventName", { length: 100 }).notNull(),
+  funnelStatus:   varchar("funnelStatus", { length: 50 }),
+  actionSource:   varchar("actionSource", { length: 50 }),        // business_messaging | website
+  value:          numeric("value", { precision: 12, scale: 2 }),
+  currency:       varchar("currency", { length: 3 }),
+  status:         capiEventStatusEnum("capiEventStatus").default("sent").notNull(),
+  error:          text("error"),
+  fbtraceId:      varchar("fbtraceId", { length: 255 }),
+  payload:        jsonb("payload"),
+  createdAt:      timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type CapiEvent = typeof capiEvents.$inferSelect;
+export type InsertCapiEvent = typeof capiEvents.$inferInsert;

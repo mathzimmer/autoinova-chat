@@ -696,9 +696,22 @@ const messageRouter = router({
     .input(z.object({
       conversationId: z.number(),
       content: z.string().min(1),
-      senderType: z.enum(["agent", "bot"]).default("agent"),
+      senderType: z.enum(["agent", "bot", "internal"]).default("agent"),
     }))
     .mutation(async ({ input, ctx }) => {
+      // Nota interna: visível só para o time, NUNCA vai para o cliente
+      if (input.senderType === "internal") {
+        const note = await createMessage({
+          conversationId: input.conversationId,
+          content: input.content,
+          senderType: "internal",
+          senderName: ctx.user.name || "Atendente",
+          messageType: "text",
+        });
+        emitNewMessage(input.conversationId, note);
+        return note;
+      }
+
       // When agent sends a message, automatically pause AI
       if (input.senderType === "agent") {
         await updateConversation(input.conversationId, {
@@ -4364,6 +4377,307 @@ const evolutionRouter = router({
     }),
 });
 
+// ─── Quick Replies Router (respostas prontas via "/") ────────────────────────
+
+const quickReplyRouter = router({
+  list: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const { quickReplies } = await import("../drizzle/schema");
+    const { desc } = await import("drizzle-orm");
+    return db.select().from(quickReplies).orderBy(desc(quickReplies.usageCount));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      shortcut: z.string().min(1).max(50).regex(/^[a-z0-9_-]+$/, "Use apenas letras minúsculas, números, hífen"),
+      title: z.string().min(1).max(100),
+      content: z.string().min(1),
+      category: z.string().max(50).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { quickReplies } = await import("../drizzle/schema");
+      const result = await db.insert(quickReplies).values({ ...input, createdBy: ctx.user.id }).returning();
+      return result[0];
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      shortcut: z.string().min(1).max(50).optional(),
+      title: z.string().min(1).max(100).optional(),
+      content: z.string().min(1).optional(),
+      category: z.string().max(50).nullable().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { quickReplies } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const { id, ...data } = input;
+      await db.update(quickReplies).set({ ...data, updatedAt: new Date() }).where(eq(quickReplies.id, id));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { quickReplies } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(quickReplies).where(eq(quickReplies.id, input.id));
+      return { success: true };
+    }),
+
+  /** Incrementa contador de uso (para ordenar por mais usadas) */
+  trackUsage: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return { success: false };
+      const { quickReplies } = await import("../drizzle/schema");
+      const { eq, sql: sqlOp } = await import("drizzle-orm");
+      await db.update(quickReplies).set({ usageCount: sqlOp`${quickReplies.usageCount} + 1` }).where(eq(quickReplies.id, input.id));
+      return { success: true };
+    }),
+});
+
+// ─── Labels Router (etiquetas de conversa) ────────────────────────────────────
+
+const labelRouter = router({
+  list: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const { labels } = await import("../drizzle/schema");
+    return db.select().from(labels).orderBy(labels.name);
+  }),
+
+  /** Todas as atribuições conversa<->etiqueta (client monta o mapa) */
+  assignments: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const { conversationLabels } = await import("../drizzle/schema");
+    return db.select().from(conversationLabels);
+  }),
+
+  byConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { conversationLabels, labels } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      return db.select({ id: labels.id, name: labels.name, color: labels.color })
+        .from(conversationLabels)
+        .innerJoin(labels, eq(conversationLabels.labelId, labels.id))
+        .where(eq(conversationLabels.conversationId, input.conversationId));
+    }),
+
+  create: protectedProcedure
+    .input(z.object({ name: z.string().min(1).max(50), color: z.string().regex(/^#[0-9a-fA-F]{6}$/) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { labels } = await import("../drizzle/schema");
+      const result = await db.insert(labels).values(input).returning();
+      return result[0];
+    }),
+
+  update: protectedProcedure
+    .input(z.object({ id: z.number(), name: z.string().min(1).max(50).optional(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { labels } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const { id, ...data } = input;
+      await db.update(labels).set(data).where(eq(labels.id, id));
+      return { success: true };
+    }),
+
+  delete: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { labels, conversationLabels } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(conversationLabels).where(eq(conversationLabels.labelId, input.id));
+      await db.delete(labels).where(eq(labels.id, input.id));
+      return { success: true };
+    }),
+
+  /** Define o conjunto completo de etiquetas de uma conversa */
+  setForConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number(), labelIds: z.array(z.number()) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { conversationLabels } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(conversationLabels).where(eq(conversationLabels.conversationId, input.conversationId));
+      if (input.labelIds.length > 0) {
+        await db.insert(conversationLabels).values(
+          input.labelIds.map(labelId => ({ conversationId: input.conversationId, labelId }))
+        );
+      }
+      emitConversationUpdate(input.conversationId, { labelIds: input.labelIds });
+      return { success: true };
+    }),
+});
+
+// ─── Reminders Router (lembretes por conversa) ────────────────────────────────
+
+const reminderRouter = router({
+  create: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      remindAt: z.number(), // epoch ms
+      note: z.string().max(255).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.remindAt <= Date.now()) throw new Error("O lembrete precisa ser no futuro");
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { conversationReminders } = await import("../drizzle/schema");
+      const result = await db.insert(conversationReminders).values({
+        conversationId: input.conversationId,
+        teamMemberId: ctx.user.id,
+        remindAt: input.remindAt,
+        note: input.note || null,
+      }).returning();
+      return result[0];
+    }),
+
+  /** Lembretes pendentes do usuário logado (opcionalmente de uma conversa) */
+  listMine: protectedProcedure
+    .input(z.object({ conversationId: z.number().optional() }).optional())
+    .query(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { conversationReminders } = await import("../drizzle/schema");
+      const { eq, and: andOp } = await import("drizzle-orm");
+      const conditions = [
+        eq(conversationReminders.teamMemberId, ctx.user.id),
+        eq(conversationReminders.status, "pending"),
+      ];
+      if (input?.conversationId) conditions.push(eq(conversationReminders.conversationId, input.conversationId));
+      return db.select().from(conversationReminders).where(andOp(...conditions)).orderBy(conversationReminders.remindAt);
+    }),
+
+  dismiss: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { conversationReminders } = await import("../drizzle/schema");
+      const { eq, and: andOp } = await import("drizzle-orm");
+      await db.update(conversationReminders)
+        .set({ status: "dismissed" })
+        .where(andOp(eq(conversationReminders.id, input.id), eq(conversationReminders.teamMemberId, ctx.user.id)));
+      return { success: true };
+    }),
+});
+
+// ─── Scheduled Messages Router (mensagens agendadas) ──────────────────────────
+
+const scheduledMessageRouter = router({
+  create: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      content: z.string().min(1),
+      scheduledAt: z.number(), // epoch ms
+      fallbackTemplateName: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (input.scheduledAt <= Date.now()) throw new Error("O horário precisa ser no futuro");
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { scheduledMessages } = await import("../drizzle/schema");
+      const result = await db.insert(scheduledMessages).values({
+        conversationId: input.conversationId,
+        content: input.content,
+        scheduledAt: input.scheduledAt,
+        fallbackTemplateName: input.fallbackTemplateName || null,
+        createdBy: ctx.user.id,
+        createdByName: ctx.user.name || "Atendente",
+      }).returning();
+      return result[0];
+    }),
+
+  listByConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { scheduledMessages } = await import("../drizzle/schema");
+      const { eq, and: andOp } = await import("drizzle-orm");
+      return db.select().from(scheduledMessages)
+        .where(andOp(eq(scheduledMessages.conversationId, input.conversationId), eq(scheduledMessages.status, "pending")))
+        .orderBy(scheduledMessages.scheduledAt);
+    }),
+
+  cancel: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { scheduledMessages } = await import("../drizzle/schema");
+      const { eq, and: andOp } = await import("drizzle-orm");
+      await db.update(scheduledMessages)
+        .set({ status: "cancelled" })
+        .where(andOp(eq(scheduledMessages.id, input.id), eq(scheduledMessages.status, "pending")));
+      return { success: true };
+    }),
+});
+
+// ─── Meta CAPI Router (tracking avançado de anúncios) ─────────────────────────
+
+const capiRouter = router({
+  getConfig: adminProcedure.query(async () => {
+    const { getCapiConfig } = await import("./metaConversions");
+    const config = await getCapiConfig();
+    return {
+      enabled: config.enabled,
+      datasetId: config.datasetId,
+      hasToken: !!(await getSetting("capi_access_token")),
+      testEventCode: config.testEventCode,
+    };
+  }),
+
+  saveConfig: adminProcedure
+    .input(z.object({
+      enabled: z.boolean(),
+      datasetId: z.string().max(255),
+      accessToken: z.string().max(1000).optional(), // vazio = mantém o atual
+      testEventCode: z.string().max(100).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("capi_enabled", input.enabled ? "true" : "false", ctx.user.id);
+      await upsertSetting("capi_dataset_id", input.datasetId.trim(), ctx.user.id);
+      if (input.accessToken && input.accessToken.trim()) {
+        await upsertSetting("capi_access_token", input.accessToken.trim(), ctx.user.id);
+      }
+      await upsertSetting("capi_test_event_code", (input.testEventCode || "").trim(), ctx.user.id);
+      return { success: true };
+    }),
+
+  sendTest: adminProcedure.mutation(async () => {
+    const { sendTestEvent } = await import("./metaConversions");
+    return sendTestEvent();
+  }),
+
+  listEvents: protectedProcedure
+    .input(z.object({ limit: z.number().max(200).default(50) }).optional())
+    .query(async ({ input }) => {
+      const { listCapiEvents } = await import("./metaConversions");
+      return listCapiEvents(input?.limit ?? 50);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -4397,6 +4711,11 @@ export const appRouter = router({
   rescue: rescueRouter,
   contact: contactsRouter,
   evolution: evolutionRouter,
+  quickReply: quickReplyRouter,
+  label: labelRouter,
+  reminder: reminderRouter,
+  scheduledMessage: scheduledMessageRouter,
+  capi: capiRouter,
 });
 
 export type AppRouter = typeof appRouter;

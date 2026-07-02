@@ -16,6 +16,7 @@ import { startCampaignScheduler, handleCampaignDeliveryStatus, handleCampaignRes
 import { handleEvolutionWebhook } from "../evolutionService";
 import { handleWNWebhook } from "../whatsappMultiNumber";
 import { startRescueJob } from "../rescueJob";
+import { startScheduler } from "../scheduler";
 import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
 import { emitNewMessage, emitConversationUpdate } from "../socket";
@@ -85,6 +86,9 @@ async function startServer() {
 
   // Monitoramento periódico de tokens (a cada 30 min)
   startTokenMonitor();
+
+  // Lembretes de conversa + mensagens agendadas (a cada 30s)
+  startScheduler();
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
@@ -225,6 +229,24 @@ async function startServer() {
           mediaUrl,
           externalId: whatsappMessageId,
         });
+
+        // CTWA: captura atribuição de anúncio Click-to-WhatsApp (usada pelo Meta CAPI)
+        if (msg.referral?.ctwa_clid && result.conversationId) {
+          try {
+            const { upsertLead } = await import("../db");
+            await upsertLead({
+              conversationId: result.conversationId,
+              phone,
+              ctwaId: msg.referral.ctwa_clid,
+              utmSource: "meta_ctwa",
+              utmCampaign: msg.referral.headline || msg.referral.source_id || undefined,
+              landingPage: msg.referral.source_url || undefined,
+            } as any);
+            console.log(`[Webhook] CTWA capturado: ctwa_clid=${msg.referral.ctwa_clid} (conversa ${result.conversationId})`);
+          } catch (err) {
+            console.error("[Webhook] Erro ao salvar atribuição CTWA:", err);
+          }
+        }
 
         // Update lastCustomerMessageAt for 24h window tracking
         if (result.conversationId) {
@@ -685,6 +707,38 @@ async function startServer() {
     } catch (error) {
       console.error("[Webhook Generic] Error:", error);
       res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ─── WhatsApp Embedded Signup — token exchange ───────────────────────────────
+  app.post("/api/whatsapp/exchange-token", async (req, res) => {
+    const { code } = req.body;
+    if (!code) return res.status(400).json({ error: "Missing code" });
+    const appId = process.env.META_APP_ID;
+    const appSecret = process.env.META_APP_SECRET;
+    if (!appId || !appSecret) return res.status(500).json({ error: "META_APP_ID / META_APP_SECRET não configurados" });
+    try {
+      const r = await fetch("https://graph.facebook.com/v19.0/oauth/access_token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          client_id: appId,
+          client_secret: appSecret,
+          grant_type: "authorization_code",
+          redirect_uri: "https://autoinovacrm.com.br/",
+          code,
+        }),
+      });
+      const data = await r.json() as any;
+      if (data.access_token) {
+        console.log("[EmbeddedSignup] Token trocado com sucesso");
+        return res.json({ success: true, token: data.access_token });
+      }
+      console.error("[EmbeddedSignup] Erro na troca:", data);
+      return res.status(400).json({ error: data.error?.message || "Falha na troca de token" });
+    } catch (err) {
+      console.error("[EmbeddedSignup] Exception:", err);
+      return res.status(500).json({ error: "Erro interno" });
     }
   });
 

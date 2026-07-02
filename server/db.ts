@@ -310,6 +310,17 @@ export async function upsertLead(data: InsertLead) {
       updateData.temperature = calculateTemperature(updateData.funnelStatus);
     }
     await db.update(leads).set(updateData).where(eq(leads.id, existing.id));
+    // Meta CAPI: reporta progresso do funil/status (fire-and-forget)
+    const funnelChanged = typeof updateData.funnelStatus === "string" && updateData.funnelStatus !== existing.funnelStatus;
+    const statusChanged = typeof updateData.status === "string" && updateData.status !== existing.status;
+    if (funnelChanged || statusChanged) {
+      import("./metaConversions").then(({ trackLeadProgress }) =>
+        trackLeadProgress(existing.id, {
+          funnelStatus: funnelChanged ? (updateData.funnelStatus as string) : null,
+          leadStatus: statusChanged ? (updateData.status as string) : null,
+        })
+      ).catch(err => console.error("[CAPI] hook upsertLead:", err));
+    }
     return { ...existing, ...updateData };
   }
   // Auto-calculate temperature for new leads
@@ -317,6 +328,13 @@ export async function upsertLead(data: InsertLead) {
     (data as any).temperature = calculateTemperature(data.funnelStatus);
   }
   const result = await db.insert(leads).values(data).returning({ id: leads.id });
+  // Meta CAPI: lead novo já criado em etapa avançada do funil
+  if (data.funnelStatus || data.status) {
+    const newId = result[0].id;
+    import("./metaConversions").then(({ trackLeadProgress }) =>
+      trackLeadProgress(newId, { funnelStatus: data.funnelStatus ?? null, leadStatus: data.status ?? null })
+    ).catch(err => console.error("[CAPI] hook upsertLead(insert):", err));
+  }
   return { ...data, id: result[0].id };
 }
 
@@ -328,6 +346,12 @@ export async function updateLeadFunnelStatus(conversationId: number, funnelStatu
   if (!lead) return null;
   const temperature = calculateTemperature(funnelStatus);
   await db.update(leads).set({ funnelStatus: funnelStatus as any, temperature: temperature as any }).where(eq(leads.id, lead.id));
+  // Meta CAPI: reporta progresso do funil (fire-and-forget)
+  if (funnelStatus !== lead.funnelStatus) {
+    import("./metaConversions").then(({ trackLeadProgress }) =>
+      trackLeadProgress(lead.id, { funnelStatus })
+    ).catch(err => console.error("[CAPI] hook updateLeadFunnelStatus:", err));
+  }
   return { ...lead, funnelStatus, temperature };
 }
 
