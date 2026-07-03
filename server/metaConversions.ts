@@ -23,7 +23,7 @@
  * Config (tabela settings, editável na UI):
  *   capi_enabled, capi_dataset_id, capi_access_token, capi_test_event_code
  */
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 import { eq, and, desc } from "drizzle-orm";
 import { capiEvents, leads, vehicles, type Lead } from "../drizzle/schema";
 import { getDb, getSetting } from "./db";
@@ -68,6 +68,8 @@ export type CapiConfig = {
   datasetId: string | null;
   accessToken: string | null;
   testEventCode: string | null;
+  /** "settings" = token colado na UI; "env" = fallback do token WhatsApp do .env */
+  tokenSource: "settings" | "env";
 };
 
 export async function getCapiConfig(): Promise<CapiConfig> {
@@ -77,12 +79,30 @@ export async function getCapiConfig(): Promise<CapiConfig> {
     getSetting("capi_access_token"),
     getSetting("capi_test_event_code"),
   ]);
+  const settingsToken = (accessToken || "").replace(/\s/g, ""); // remove espaços/quebras de linha do paste
+  const envToken = process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN || null;
   return {
     enabled: enabled === "true",
-    datasetId: datasetId || null,
-    accessToken: accessToken || process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN || null,
+    datasetId: (datasetId || "").trim() || null,
+    accessToken: settingsToken || envToken,
     testEventCode: testEventCode || null,
+    tokenSource: settingsToken ? "settings" : "env",
   };
+}
+
+/**
+ * Parâmetros de autenticação para a Graph API.
+ * Apps com "Require App Secret" (comum em Tech Providers verificados) exigem
+ * appsecret_proof = HMAC-SHA256(token, app_secret). Só podemos calcular o proof
+ * quando o token pertence ao nosso app (token do .env + META_APP_SECRET).
+ */
+function buildAuthParams(config: CapiConfig): Record<string, string> {
+  const params: Record<string, string> = { access_token: config.accessToken! };
+  const appSecret = process.env.META_APP_SECRET;
+  if (config.tokenSource === "env" && appSecret) {
+    params.appsecret_proof = createHmac("sha256", appSecret).update(config.accessToken!).digest("hex");
+  }
+  return params;
 }
 
 function isCapiConfigured(config: CapiConfig): boolean {
@@ -92,6 +112,16 @@ function isCapiConfigured(config: CapiConfig): boolean {
 // ─── Payload builder ─────────────────────────────────────────────────────────
 
 function buildUserData(lead: Lead): { userData: Record<string, unknown>; actionSource: string } | null {
+  // Lead Ads (Instant Forms): Meta Lead ID é o matching mais forte para
+  // a otimização Conversion Leads — action_source "system_generated"
+  if (lead.metaLeadId) {
+    const userData: Record<string, unknown> = { lead_id: Number(lead.metaLeadId) };
+    // Enriquecer com PII hasheada melhora o match rate
+    if (lead.phone) userData.ph = [sha256(normalizePhoneForHash(lead.phone))];
+    if (lead.email) userData.em = [sha256(lead.email)];
+    return { userData, actionSource: "system_generated" };
+  }
+
   // CTWA: identificação direta pelo click id do anúncio (mais forte, sem PII)
   if (lead.ctwaId) {
     const userData: Record<string, unknown> = { ctwa_clid: lead.ctwaId };
@@ -219,11 +249,12 @@ export async function sendCapiEvent(
   const body: Record<string, unknown> = {
     data: [event],
     partner_agent: "autoinova_crm",
+    ...buildAuthParams(config),
   };
   if (config.testEventCode) body.test_event_code = config.testEventCode;
 
   try {
-    const res = await fetch(`${GRAPH_BASE}/${config.datasetId}/events?access_token=${encodeURIComponent(config.accessToken!)}`, {
+    const res = await fetch(`${GRAPH_BASE}/${config.datasetId}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -309,10 +340,11 @@ export async function sendTestEvent(): Promise<{ success: boolean; error?: strin
       custom_data: { lead_event_source: "AutoInova CRM", event_source: "crm", test: true },
     }],
     partner_agent: "autoinova_crm",
+    ...buildAuthParams(config),
   };
   if (config.testEventCode) body.test_event_code = config.testEventCode;
   try {
-    const res = await fetch(`${GRAPH_BASE}/${config.datasetId}/events?access_token=${encodeURIComponent(config.accessToken)}`, {
+    const res = await fetch(`${GRAPH_BASE}/${config.datasetId}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

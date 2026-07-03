@@ -148,6 +148,9 @@ export const leads = pgTable("leads", {
   // ── Atribuição de anúncios (Meta CAPI + Google Ads) ───────────────────────
   // CTWAid: ID gerado quando o lead veio de um anúncio Click-to-WhatsApp
   ctwaId:          varchar("ctwaId", { length: 255 }),
+  // Meta Lead ID (15-17 dígitos): lead veio de Lead Ads / Instant Forms (leadgen)
+  // Obrigatório para a otimização "Conversion Leads" via CAPI
+  metaLeadId:      varchar("metaLeadId", { length: 32 }),
   // BSUID: novo identificador estável do Meta (substitui telefone no futuro)
   bsuid:           varchar("bsuid", { length: 255 }),
   // Google Ads click identifiers

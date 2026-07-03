@@ -455,6 +455,23 @@ async function startServer() {
 
           console.log(`[MetaAds Lead] ✅ Conversa criada: id=${result.conversationId}, phone=${phone}`);
 
+          // Salva o Meta Lead ID no lead — necessário para Conversion Leads (CAPI CRM)
+          if (result.conversationId) {
+            try {
+              const { upsertLead } = await import("../db");
+              await upsertLead({
+                conversationId: result.conversationId,
+                phone,
+                metaLeadId: String(leadgenId),
+                utmSource: "meta_lead_ads",
+                vehicleInterest: carInterest || undefined,
+              } as any);
+              console.log(`[MetaAds Lead] metaLeadId=${leadgenId} salvo no lead (conversa ${result.conversationId})`);
+            } catch (err) {
+              console.error("[MetaAds Lead] Erro ao salvar metaLeadId:", err);
+            }
+          }
+
           if (result.aiResponse && isWhatsAppConfigured()) {
             await sendTextMessage(phone, result.aiResponse);
             console.log(`[MetaAds Lead] IA respondeu para ${phone}`);
