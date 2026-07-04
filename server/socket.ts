@@ -4,10 +4,31 @@ import { Server as SocketIOServer } from "socket.io";
 let io: SocketIOServer | null = null;
 
 export function initSocketIO(httpServer: HttpServer) {
+  // CORS restrito: apenas o domínio do CRM (+ localhost em dev)
+  const allowedOrigins = [
+    process.env.PUBLIC_APP_URL || "https://autoinovacrm.com.br",
+    ...(process.env.NODE_ENV !== "production" ? ["http://localhost:3000", "http://localhost:5173"] : []),
+  ];
+
   io = new SocketIOServer(httpServer, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
+    cors: { origin: allowedOrigins, methods: ["GET", "POST"], credentials: true },
     path: "/api/socket.io",
     transports: ["websocket", "polling"],
+  });
+
+  // Autenticação no handshake: valida o cookie de sessão (mesmo mecanismo do tRPC).
+  // Sem isso, qualquer navegador poderia entrar nas salas e ler mensagens de clientes.
+  io.use(async (socket, next) => {
+    try {
+      const { sdk } = await import("./_core/sdk");
+      const fakeReq = { headers: { cookie: socket.handshake.headers.cookie || "" } } as any;
+      const user = await sdk.authenticateRequest(fakeReq);
+      if (!user) return next(new Error("unauthorized"));
+      (socket.data as any).userId = user.id;
+      next();
+    } catch {
+      next(new Error("unauthorized"));
+    }
   });
 
   io.on("connection", (socket) => {

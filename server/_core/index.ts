@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import { createHmac, timingSafeEqual } from "crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
@@ -68,9 +69,41 @@ function normalizePhone(phone: string | undefined): string {
 async function startServer() {
   const app = express();
   const server = createServer(app);
-  // Configure body parser with larger size limit for file uploads
-  app.use(express.json({ limit: "50mb" }));
+  // Configure body parser with larger size limit for file uploads.
+  // verify: guarda o corpo bruto para validar a assinatura HMAC dos webhooks da Meta.
+  app.use(express.json({
+    limit: "50mb",
+    verify: (req, _res, buf) => { (req as any).rawBody = buf; },
+  }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // ─── Verificação de assinatura dos webhooks Meta (X-Hub-Signature-256) ──────
+  // A Meta assina todo webhook com HMAC-SHA256 do corpo usando o App Secret.
+  // Sem essa checagem, qualquer pessoa que descubra a URL pode injetar
+  // mensagens/leads falsos e acionar a IA.
+  function verifyMetaSignature(req: express.Request): boolean {
+    const secret = process.env.META_APP_SECRET;
+    if (!secret) {
+      console.warn("[Webhook Security] META_APP_SECRET não configurado — assinatura NÃO verificada");
+      return true; // não bloqueia se não há secret para comparar
+    }
+    const signature = req.headers["x-hub-signature-256"] as string | undefined;
+    const rawBody = (req as any).rawBody as Buffer | undefined;
+    if (!signature || !rawBody) return false;
+    const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
+    try {
+      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
+
+  function requireMetaSignature(req: express.Request, res: express.Response): boolean {
+    if (verifyMetaSignature(req)) return true;
+    console.warn(`[Webhook Security] Assinatura inválida rejeitada: ${req.path} (ip: ${req.ip})`);
+    res.sendStatus(401);
+    return false;
+  }
 
   // Initialize Socket.IO for real-time communication
   initSocketIO(server);
@@ -102,6 +135,7 @@ async function startServer() {
 
   // Webhook endpoint for WhatsApp Cloud API (outside tRPC for compatibility)
   app.post("/api/webhook/whatsapp", async (req, res) => {
+    if (!requireMetaSignature(req, res)) return;
     try {
       const body = req.body;
       // Handle WhatsApp Cloud API verification
@@ -403,6 +437,7 @@ async function startServer() {
 
   // ─── Webhook Meta Ads Lead Forms (POST — receber leads) ─────────────────────
   app.post("/api/webhook/meta-ads", async (req, res) => {
+    if (!requireMetaSignature(req, res)) return;
     // CRÍTICO: responder 200 imediatamente — Meta cancela se demorar > 5s
     res.sendStatus(200);
 
@@ -503,6 +538,7 @@ async function startServer() {
 
   // ─── Instagram & Facebook Messenger Webhook (POST — receber mensagens) ──────
   app.post("/api/webhook/instagram", async (req, res) => {
+    if (!requireMetaSignature(req, res)) return;
     // Responder 200 imediatamente — Meta cancela se demorar > 5s
     res.sendStatus(200);
 
@@ -700,6 +736,28 @@ async function startServer() {
 
   // Generic webhook endpoint (compatible with Chatwoot/n8n)
   app.post("/api/webhook/generic", async (req, res) => {
+    // Segurança: exige API key ativa (tabela vendorApiKeys) no header X-Api-Key
+    try {
+      const apiKey = (req.headers["x-api-key"] as string || "").trim();
+      if (!apiKey) return res.status(401).json({ error: "Missing X-Api-Key header" });
+      const { getDb } = await import("../db");
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "Database unavailable" });
+      const { vendorApiKeys } = await import("../../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const keyRow = await db.select().from(vendorApiKeys)
+        .where(and(eq(vendorApiKeys.apiKey, apiKey), eq(vendorApiKeys.active, true)))
+        .limit(1);
+      if (keyRow.length === 0) {
+        console.warn(`[Webhook Generic] API key inválida rejeitada (ip: ${req.ip})`);
+        return res.status(401).json({ error: "Invalid API key" });
+      }
+      try { await db.update(vendorApiKeys).set({ lastUsedAt: new Date() }).where(eq(vendorApiKeys.id, keyRow[0].id)); } catch {}
+    } catch (err) {
+      console.error("[Webhook Generic] Erro na validação de API key:", err);
+      return res.status(500).json({ error: "Auth check failed" });
+    }
+
     try {
       const body = req.body;
       const phone = body.phone || body.sender?.phone_number || "";
@@ -729,6 +787,17 @@ async function startServer() {
 
   // ─── WhatsApp Embedded Signup — token exchange ───────────────────────────────
   app.post("/api/whatsapp/exchange-token", async (req, res) => {
+    // Segurança: só admin autenticado pode trocar codes (usa o App Secret do sistema)
+    try {
+      const { sdk } = await import("./sdk");
+      const user = await sdk.authenticateRequest(req);
+      if (!user || user.role !== "admin") {
+        return res.status(403).json({ error: "Apenas administradores" });
+      }
+    } catch {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+
     const { code } = req.body;
     if (!code) return res.status(400).json({ error: "Missing code" });
     const appId = process.env.META_APP_ID;

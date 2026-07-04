@@ -243,12 +243,22 @@ function getDisplayName(conv: { contactName?: string | null; phone?: string | nu
   return formatPhone(conv.phone, conv.remoteJid);
 }
 
-export default function EvolutionInbox() {
+export default function EvolutionInbox({ embeddedInstance }: { embeddedInstance?: string } = {}) {
   const [location] = useLocation();
   const searchParams = new URLSearchParams(location.split("?")[1] || "");
   const instanceParam = searchParams.get("instance") || "";
+  const isEmbedded = embeddedInstance !== undefined;
 
-  const [selectedInstanceName, setSelectedInstanceName] = useState(instanceParam);
+  const [selectedInstanceName, setSelectedInstanceName] = useState(embeddedInstance || instanceParam);
+
+  // Modo embutido (Inbox unificado): a instância vem de fora
+  useEffect(() => {
+    if (isEmbedded && embeddedInstance !== selectedInstanceName) {
+      setSelectedInstanceName(embeddedInstance || "");
+      setSelectedConversation(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embeddedInstance]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [messageText, setMessageText] = useState("");
   const [search, setSearch] = useState("");
@@ -613,7 +623,8 @@ export default function EvolutionInbox() {
             </div>
           </div>
 
-          {/* Instance selector */}
+          {/* Instance selector (oculto no modo embutido — o Inbox unificado controla) */}
+          {!isEmbedded && (
           <div className="px-2 py-1.5 bg-[#202c33] border-b border-[#2a3942]">
             <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-hide">
               <button
@@ -645,6 +656,7 @@ export default function EvolutionInbox() {
               ))}
             </div>
           </div>
+          )}
 
           {/* Search + filter */}
           <div className="px-2 py-1.5 bg-[#111b21] border-b border-[#2a3942]">
