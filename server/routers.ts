@@ -692,6 +692,88 @@ const messageRouter = router({
       return listMessages(input.conversationId, input.limit);
     }),
 
+  /** Envia fotos de um veículo do estoque (URLs do JSON sincronizado) */
+  sendVehiclePhotos: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      vehicleId: z.number(),
+      imageUrls: z.array(z.string().url()).min(1).max(10),
+      caption: z.string().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const conv = await getConversationById(input.conversationId);
+      if (!conv?.phone) throw new Error("Conversa sem telefone");
+
+      // Atendente assume a conversa ao enviar fotos
+      await updateConversation(input.conversationId, { aiActive: false, assignedTo: ctx.user.id });
+
+      let sent = 0;
+      const errors: string[] = [];
+      for (let i = 0; i < input.imageUrls.length; i++) {
+        const url = input.imageUrls[i];
+        const caption = i === 0 ? (input.caption || "") : "";
+        const result = await sendImageMessage(conv.phone, url, caption);
+        if (result.success) {
+          const msg = await createMessage({
+            conversationId: input.conversationId,
+            content: caption || "[Foto do veículo]",
+            senderType: "agent",
+            senderName: ctx.user.name || "Atendente",
+            messageType: "image",
+            metadata: { mediaUrl: url, caption, vehicleId: input.vehicleId },
+            externalId: result.messageId,
+          });
+          emitNewMessage(input.conversationId, msg);
+          sent++;
+        } else {
+          errors.push(result.error || "erro");
+        }
+        // Delay entre fotos para manter a ordem no WhatsApp
+        if (i < input.imageUrls.length - 1) await new Promise(r => setTimeout(r, 900));
+      }
+      if (sent === 0) throw new Error("Nenhuma foto enviada: " + (errors[0] || "erro desconhecido"));
+      return { sent, failed: errors.length };
+    }),
+
+  /** IA sugere a próxima resposta do atendente com base no histórico */
+  suggestReply: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      historyCount: z.number().min(2).max(50).default(10),
+    }))
+    .mutation(async ({ input }) => {
+      const msgs = await listMessages(input.conversationId, input.historyCount);
+      if (!msgs || msgs.length === 0) throw new Error("Sem histórico nesta conversa");
+
+      const lead = await getLeadByConversationId(input.conversationId);
+      const ordered = [...msgs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const transcript = ordered
+        .filter(m => m.senderType !== "internal")
+        .map(m => {
+          const role = m.senderType === "customer" ? "Cliente" : m.senderType === "bot" ? "IA" : "Atendente";
+          return `${role}: ${m.content}`;
+        }).join("\n");
+
+      const leadContext = lead
+        ? `\nContexto do lead: interesse em ${lead.vehicleInterest || "não definido"}; etapa do funil: ${lead.funnelStatus}; pagamento: ${lead.paymentMethod || "não informado"}; troca: ${lead.hasTrade ? lead.tradeVehicle || "sim" : "não"}.`
+        : "";
+
+      const { invokeLLM } = await import("./_core/llm");
+      const resp = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: `Você é um vendedor experiente de uma concessionária de veículos (Auto Inova). Com base no histórico da conversa, sugira a PRÓXIMA mensagem que o atendente deve enviar ao cliente. Regras: responda APENAS com o texto da mensagem sugerida (sem aspas, sem explicações, sem markdown); tom cordial e direto, português do Brasil; objetivo: avançar a venda (qualificar, agendar test-drive, fechar); no máximo 3 frases.${leadContext}`,
+          },
+          { role: "user", content: `Histórico (últimas ${ordered.length} mensagens):\n\n${transcript}\n\nSugira a próxima resposta do atendente:` },
+        ],
+      });
+      const raw = resp.choices?.[0]?.message?.content;
+      const suggestion = (typeof raw === "string" ? raw : "").trim();
+      if (!suggestion) throw new Error("A IA não retornou sugestão");
+      return { suggestion };
+    }),
+
   send: protectedProcedure
     .input(z.object({
       conversationId: z.number(),
@@ -2936,12 +3018,77 @@ const flowRouter = router({
       return { success: paused };
     }),
 
-  // Verificar se há sessão de fluxo ativa para uma conversa
+  // Verificar se há sessão de fluxo ativa para uma conversa (com nome do fluxo)
   getActiveSession: protectedProcedure
     .input(z.object({ conversationId: z.number() }))
     .query(async ({ input }) => {
       const session = await getActiveFlowSession(input.conversationId);
-      return session || null;
+      if (!session) return null;
+      const flow = await getChatFlowById(session.flowId);
+      return { ...session, flowName: flow?.name || `Fluxo #${session.flowId}` };
+    }),
+
+  // Iniciar um fluxo salvo manualmente para uma conversa
+  startForConversation: protectedProcedure
+    .input(z.object({ conversationId: z.number(), flowId: z.number() }))
+    .mutation(async ({ input }) => {
+      const conv = await getConversationById(input.conversationId);
+      if (!conv) throw new Error("Conversa não encontrada");
+      if (!conv.phone) throw new Error("Conversa sem telefone");
+
+      const { startFlowManually } = await import("./flowEngine");
+      const flowResult = await startFlowManually({
+        conversationId: input.conversationId,
+        flowId: input.flowId,
+        phone: conv.phone,
+        contactName: conv.contactName || undefined,
+      });
+
+      // Persiste as mensagens enviadas pelo fluxo (mesmo padrão do debounce)
+      for (const response of flowResult.responses) {
+        const botMsg = await createMessage({
+          conversationId: input.conversationId,
+          content: response,
+          senderType: "bot",
+          senderName: "Auto Inova - Matriz IA",
+          messageType: "text",
+        });
+        emitNewMessage(input.conversationId, botMsg);
+      }
+      for (const img of flowResult.imageMessages) {
+        const imgMsg = await createMessage({
+          conversationId: input.conversationId,
+          content: img.caption || "[Imagem]",
+          senderType: "bot",
+          senderName: "Auto Inova - Matriz IA",
+          messageType: "image",
+          metadata: { mediaUrl: img.imageUrl, caption: img.caption },
+        });
+        emitNewMessage(input.conversationId, imgMsg);
+      }
+      for (const im of flowResult.interactiveMessages) {
+        const interactiveMetadata: any = { interactiveType: im.type, interactiveData: im.data };
+        let content = im.data.body || "";
+        if (im.type === "buttons" && im.data.buttons) {
+          content += `\n\n[Botões: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
+          interactiveMetadata.buttons = im.data.buttons;
+        } else if (im.type === "list" && im.data.sections) {
+          content += `\n\n[Lista: ${im.data.sections.flatMap((s: any) => (s.rows || []).map((r: any) => r.title)).join(" | ")}]`;
+          interactiveMetadata.sections = im.data.sections;
+          interactiveMetadata.buttonText = im.data.buttonText;
+        }
+        const flowInteractiveMsg = await createMessage({
+          conversationId: input.conversationId,
+          content,
+          senderType: "bot",
+          senderName: "Auto Inova - Matriz IA",
+          messageType: "text",
+          metadata: interactiveMetadata,
+        });
+        emitNewMessage(input.conversationId, flowInteractiveMsg);
+      }
+
+      return { success: true, messagesSent: flowResult.responses.length + flowResult.imageMessages.length + flowResult.interactiveMessages.length };
     }),
 
   delete: adminProcedure

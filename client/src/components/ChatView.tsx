@@ -8,7 +8,7 @@ import {
   Play, Pause, Mic, X, ImagePlus, Loader2, Clock, AlertTriangle,
   MessageSquareText, GitBranch, PauseCircle, List, Video, Smile,
   CornerUpLeft, Share2, Tag, AlarmClock, CalendarClock, StickyNote,
-  Plus, Trash2, Zap,
+  Plus, Trash2, Zap, Car, Sparkles,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -108,6 +108,13 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const [reminderCustom, setReminderCustom] = useState("");
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [scheduleAt, setScheduleAt] = useState("");
+
+  // Fotos do veículo / sugestão IA
+  const [showVehiclePhotosDialog, setShowVehiclePhotosDialog] = useState(false);
+  const [photoVehicleId, setPhotoVehicleId] = useState<number | null>(null);
+  const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
+  const [suggestPopoverOpen, setSuggestPopoverOpen] = useState(false);
+  const [suggestHistoryCount, setSuggestHistoryCount] = useState(10);
 
   const utils = trpc.useUtils();
 
@@ -270,7 +277,10 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   };
 
   // ── Mensagens agendadas ──
-  const { data: pendingScheduled } = trpc.scheduledMessage.listByConversation.useQuery({ conversationId });
+  const { data: pendingScheduled } = trpc.scheduledMessage.listByConversation.useQuery(
+    { conversationId },
+    { refetchInterval: 15000 } // banner some sozinho após o envio
+  );
   const createScheduledMutation = trpc.scheduledMessage.create.useMutation({
     onSuccess: () => {
       toast.success("Mensagem agendada");
@@ -281,6 +291,55 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   });
   const cancelScheduledMutation = trpc.scheduledMessage.cancel.useMutation({
     onSuccess: () => utils.scheduledMessage.listByConversation.invalidate({ conversationId }),
+  });
+
+  // ── Fotos do veículo (estoque) ──
+  const { data: lead } = trpc.lead.getByConversation.useQuery({ conversationId });
+  const { data: stockVehicles } = trpc.vehicle.list.useQuery(undefined, { enabled: showVehiclePhotosDialog });
+  const photoVehicle = useMemo(() => {
+    if (!stockVehicles || !photoVehicleId) return null;
+    return (stockVehicles as any[]).find(v => v.id === photoVehicleId) || null;
+  }, [stockVehicles, photoVehicleId]);
+  const vehiclePhotoUrls: string[] = useMemo(() => {
+    if (!photoVehicle) return [];
+    const imgs = Array.isArray(photoVehicle.images) ? photoVehicle.images : [];
+    return (imgs as string[]).filter(u => typeof u === "string" && u.startsWith("http"));
+  }, [photoVehicle]);
+
+  // Pré-seleciona o veículo de interesse do lead ao abrir
+  useEffect(() => {
+    if (showVehiclePhotosDialog && !photoVehicleId && lead?.vehicleId) {
+      setPhotoVehicleId(lead.vehicleId);
+    }
+  }, [showVehiclePhotosDialog, lead, photoVehicleId]);
+
+  const sendVehiclePhotosMutation = trpc.message.sendVehiclePhotos.useMutation({
+    onSuccess: (res) => {
+      toast.success(`${res.sent} foto(s) enviada(s)${res.failed ? ` — ${res.failed} falharam` : ""}`);
+      setShowVehiclePhotosDialog(false);
+      setSelectedPhotos([]);
+      refetchMessages();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
+  const togglePhoto = (url: string) => {
+    setSelectedPhotos(prev => prev.includes(url) ? prev.filter(u => u !== url) : prev.length >= 10 ? prev : [...prev, url]);
+  };
+
+  // ── Sugestão de resposta por IA ──
+  useEffect(() => {
+    const saved = Number(localStorage.getItem("suggestHistoryCount"));
+    if (saved >= 2 && saved <= 50) setSuggestHistoryCount(saved);
+  }, []);
+
+  const suggestReplyMutation = trpc.message.suggestReply.useMutation({
+    onSuccess: (res) => {
+      setNewMessage(res.suggestion);
+      setSuggestPopoverOpen(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    },
+    onError: (err) => toast.error("Erro na sugestão: " + err.message),
   });
 
   const { socket } = useConversationSocket(conversationId);
@@ -764,9 +823,11 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         </Popover>
         {activeFlowSession && (
           <div className="flex items-center gap-1.5 ml-auto">
-            <div className="flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/25 text-violet-400 px-2.5 py-1 rounded-full">
-              <GitBranch className="h-3.5 w-3.5" />
-              <span className="text-[11px] font-medium">Fluxo Ativo</span>
+            <div className="flex items-center gap-1.5 bg-violet-500/15 border border-violet-500/25 text-violet-400 px-2.5 py-1 rounded-full max-w-44">
+              <GitBranch className="h-3.5 w-3.5 shrink-0" />
+              <span className="text-[11px] font-medium truncate" title={(activeFlowSession as any)?.flowName}>
+                {(activeFlowSession as any)?.flowName || "Fluxo Ativo"}
+              </span>
             </div>
             <Button
               variant="ghost" size="sm"
@@ -1041,6 +1102,74 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         </DialogContent>
       </Dialog>
 
+      {/* ── Fotos do veículo Dialog ── */}
+      <Dialog open={showVehiclePhotosDialog} onOpenChange={(open) => { setShowVehiclePhotosDialog(open); if (!open) setSelectedPhotos([]); }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Enviar fotos do veículo</DialogTitle>
+            <DialogDescription>Selecione o veículo do estoque e as fotos que deseja enviar (máx. 10).</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <Select value={photoVehicleId?.toString() || ""} onValueChange={v => { setPhotoVehicleId(Number(v)); setSelectedPhotos([]); }}>
+              <SelectTrigger><SelectValue placeholder="Selecione um veículo..." /></SelectTrigger>
+              <SelectContent className="max-h-64">
+                {((stockVehicles as any[]) || []).filter(v => v.available !== false).map(v => (
+                  <SelectItem key={v.id} value={String(v.id)}>
+                    {v.year} {v.brand} {v.model} — R$ {Number(v.price).toLocaleString("pt-BR")}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {photoVehicle && vehiclePhotoUrls.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">Este veículo não tem fotos no estoque sincronizado.</p>
+            )}
+            {vehiclePhotoUrls.length > 0 && (
+              <div className="grid grid-cols-4 gap-2 max-h-64 overflow-y-auto">
+                {vehiclePhotoUrls.map((url, i) => {
+                  const selected = selectedPhotos.includes(url);
+                  const order = selectedPhotos.indexOf(url) + 1;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => togglePhoto(url)}
+                      className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${selected ? "border-[#00a884] ring-1 ring-[#00a884]" : "border-transparent opacity-80 hover:opacity-100"}`}
+                    >
+                      <img src={url} alt={`Foto ${i + 1}`} className="w-full h-full object-cover" loading="lazy" />
+                      {selected && (
+                        <span className="absolute top-1 right-1 h-5 w-5 rounded-full bg-[#00a884] text-white text-[10px] font-bold flex items-center justify-center">{order}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            {selectedPhotos.length > 0 && photoVehicle && (
+              <p className="text-xs text-muted-foreground">
+                1ª foto vai com a legenda: <b>{photoVehicle.title || `${photoVehicle.brand} ${photoVehicle.model}`} {photoVehicle.year} — R$ {Number(photoVehicle.price).toLocaleString("pt-BR")}</b>
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowVehiclePhotosDialog(false)}>Cancelar</Button>
+            <Button
+              disabled={selectedPhotos.length === 0 || sendVehiclePhotosMutation.isPending}
+              onClick={() => {
+                if (!photoVehicle) return;
+                sendVehiclePhotosMutation.mutate({
+                  conversationId,
+                  vehicleId: photoVehicle.id,
+                  imageUrls: selectedPhotos,
+                  caption: `${photoVehicle.title || `${photoVehicle.brand} ${photoVehicle.model}`} ${photoVehicle.year} — R$ ${Number(photoVehicle.price).toLocaleString("pt-BR")}`,
+                });
+              }}
+            >
+              {sendVehiclePhotosMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+              Enviar {selectedPhotos.length > 0 ? `${selectedPhotos.length} foto(s)` : ""}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* ── Gerenciar respostas rápidas Dialog ── */}
       <Dialog open={showQrManageDialog} onOpenChange={setShowQrManageDialog}>
         <DialogContent className="sm:max-w-md">
@@ -1190,6 +1319,56 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             <Button variant="ghost" size="icon" onClick={startRecording} disabled={isSending} className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]" title="Gravar áudio">
               <Mic className="h-5 w-5" />
             </Button>
+            <Button
+              variant="ghost" size="icon"
+              onClick={() => { setShowVehiclePhotosDialog(true); }}
+              disabled={isSending}
+              className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]"
+              title="Enviar fotos de um veículo do estoque"
+            >
+              <Car className="h-5 w-5" />
+            </Button>
+            <Popover open={suggestPopoverOpen} onOpenChange={setSuggestPopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="ghost" size="icon"
+                  disabled={isSending}
+                  className="shrink-0 text-[#8696a0] hover:text-[#00a884] hover:bg-[#2a3942]"
+                  title="IA: sugerir resposta"
+                >
+                  {suggestReplyMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-[#00a884]" /> : <Sparkles className="h-5 w-5" />}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-3 bg-[#233138] border-[#2a3942]">
+                <p className="text-xs font-semibold text-[#8696a0] pb-2">Sugestão de resposta (IA)</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs text-[#8696a0] flex-1">Histórico:</span>
+                  <Select
+                    value={String(suggestHistoryCount)}
+                    onValueChange={v => { setSuggestHistoryCount(Number(v)); localStorage.setItem("suggestHistoryCount", v); }}
+                  >
+                    <SelectTrigger className="h-7 w-32 text-xs bg-[#2a3942] border-0 text-[#e9edef]"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="5">5 mensagens</SelectItem>
+                      <SelectItem value="10">10 mensagens</SelectItem>
+                      <SelectItem value="20">20 mensagens</SelectItem>
+                      <SelectItem value="30">30 mensagens</SelectItem>
+                      <SelectItem value="50">50 mensagens</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full h-8 text-xs bg-[#00a884] hover:bg-[#00a884]/90 text-white"
+                  disabled={suggestReplyMutation.isPending}
+                  onClick={() => suggestReplyMutation.mutate({ conversationId, historyCount: suggestHistoryCount })}
+                >
+                  {suggestReplyMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
+                  Gerar sugestão
+                </Button>
+                <p className="text-[10px] text-[#8696a0] mt-2">A sugestão entra no campo de mensagem — revise antes de enviar.</p>
+              </PopoverContent>
+            </Popover>
             <Button
               variant="ghost" size="icon"
               onClick={() => setNoteMode(v => !v)}

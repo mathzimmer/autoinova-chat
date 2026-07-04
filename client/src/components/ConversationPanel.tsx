@@ -8,8 +8,27 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2, Copy } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2, Copy, GitBranch, PlayCircle, PauseCircle, Megaphone, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+
+const FUNNEL_STAGES: { value: string; label: string }[] = [
+  { value: "novo", label: "Novo" },
+  { value: "interesse_definido", label: "Interesse definido" },
+  { value: "pagamento_definido", label: "Pagamento definido" },
+  { value: "dados_pessoais", label: "Dados pessoais" },
+  { value: "dados_troca", label: "Dados da troca" },
+  { value: "encaminhado_vendedor", label: "Com vendedor" },
+  { value: "negociando", label: "Negociando" },
+  { value: "fechado", label: "Fechado ✅" },
+  { value: "perdido", label: "Perdido" },
+];
+
+const TEMP_BADGE: Record<string, { label: string; cls: string }> = {
+  frio: { label: "🧊 Frio", cls: "border-sky-500/40 text-sky-400" },
+  morno: { label: "🌤 Morno", cls: "border-yellow-500/40 text-yellow-400" },
+  quente: { label: "🔥 Quente", cls: "border-orange-500/40 text-orange-400" },
+  muito_quente: { label: "🔥🔥 Muito quente", cls: "border-red-500/40 text-red-400" },
+};
 
 type Props = {
   conversationId: number;
@@ -32,6 +51,42 @@ export default function ConversationPanel({ conversationId }: Props) {
 
   // Find the linked vehicle
   const linkedVehicle = lead?.vehicleId && vehicles ? vehicles.find((v: any) => v.id === lead.vehicleId) : null;
+
+  // ── Fluxo por conversa ──
+  const { data: savedFlows } = trpc.flow.list.useQuery();
+  const { data: activeFlowSession, refetch: refetchFlowSession } = trpc.flow.getActiveSession.useQuery(
+    { conversationId },
+    { refetchInterval: 10000 }
+  );
+  const [flowToStart, setFlowToStart] = useState<number | null>(null);
+  const startFlowMutation = trpc.flow.startForConversation.useMutation({
+    onSuccess: (res) => {
+      toast.success(`Fluxo iniciado (${res.messagesSent} mensagem(ns) enviada(s))`);
+      refetchFlowSession();
+      utils.message.list.invalidate({ conversationId });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const pauseFlowMutation = trpc.flow.pauseSession.useMutation({
+    onSuccess: () => { toast.success("Fluxo pausado"); refetchFlowSession(); },
+  });
+
+  // ── Funil (dispara CAPI no servidor) ──
+  const updateFunnel = trpc.lead.update.useMutation({
+    onSuccess: () => { refetchLead(); toast.success("Etapa do funil atualizada"); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  // Origem do lead (atribuição)
+  const leadOrigin = (() => {
+    if (!lead) return null;
+    const l = lead as any;
+    if (l.ctwaId) return { label: "Anúncio WhatsApp (CTWA)", detail: l.utmCampaign || null, cls: "border-green-500/40 text-green-400" };
+    if (l.metaLeadId) return { label: "Lead Ads (formulário)", detail: l.utmCampaign || null, cls: "border-blue-500/40 text-blue-400" };
+    if (l.gclid || l.gbraid || l.wbraid) return { label: "Google Ads", detail: l.utmCampaign || null, cls: "border-amber-500/40 text-amber-400" };
+    if (l.utmSource) return { label: `Origem: ${l.utmSource}`, detail: l.utmCampaign || null, cls: "border-violet-500/40 text-violet-400" };
+    return { label: "Orgânico / direto", detail: null, cls: "border-border text-muted-foreground" };
+  })();
 
   // Contact editing state
   const [editingContact, setEditingContact] = useState(false);
@@ -228,48 +283,143 @@ ${(lead as any).notes || "N/A"}
         <p className="text-xs text-muted-foreground">Gerenciar atendimento</p>
       </div>
 
-      {/* AI Control */}
-      <div className="p-4 border-b border-border shrink-0">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Controle da IA</h4>
-        <div className="space-y-2">
-          {conversation.aiActive ? (
-            <Button
-              onClick={() => toggleAI.mutate({ id: conversationId, aiActive: false })}
-              variant="outline"
-              className="w-full justify-start gap-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-              disabled={toggleAI.isPending}
+      {/* ── ATENDIMENTO (IA + estado + atendente unificados) ── */}
+      <div className="p-4 border-b border-border shrink-0 space-y-3">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Atendimento</h4>
+        {conversation.aiActive ? (
+          <Button
+            onClick={() => toggleAI.mutate({ id: conversationId, aiActive: false })}
+            variant="outline"
+            className="w-full justify-start gap-2 h-8 text-sm border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+            disabled={toggleAI.isPending}
+          >
+            <UserCheck className="h-4 w-4" />
+            Assumir Conversa
+          </Button>
+        ) : (
+          <Button
+            onClick={() => toggleAI.mutate({ id: conversationId, aiActive: true })}
+            variant="outline"
+            className="w-full justify-start gap-2 h-8 text-sm border-primary/30 text-primary hover:bg-primary/10"
+            disabled={toggleAI.isPending}
+          >
+            <Bot className="h-4 w-4" />
+            Reativar IA
+          </Button>
+        )}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Estado</label>
+            <Select value={conversation.status} onValueChange={(val) => updateStatus.mutate({ id: conversationId, status: val as any })}>
+              <SelectTrigger className="h-8 text-sm bg-input border-border"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Aberta</SelectItem>
+                <SelectItem value="pending">Pendente</SelectItem>
+                <SelectItem value="resolved">Resolvida</SelectItem>
+                <SelectItem value="closed">Fechada</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Atendente</label>
+            <Select
+              value={conversation.assignedTo?.toString() || "none"}
+              onValueChange={(val) => assignAgent.mutate({ id: conversationId, agentId: val === "none" ? null : Number(val) })}
             >
-              <UserCheck className="h-4 w-4" />
-              Assumir Conversa
-            </Button>
-          ) : (
-            <Button
-              onClick={() => toggleAI.mutate({ id: conversationId, aiActive: true })}
-              variant="outline"
-              className="w-full justify-start gap-2 border-primary/30 text-primary hover:bg-primary/10"
-              disabled={toggleAI.isPending}
-            >
-              <Bot className="h-4 w-4" />
-              Reativar IA
-            </Button>
-          )}
+              <SelectTrigger className="h-8 text-sm bg-input border-border"><SelectValue placeholder="Ninguém" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Ninguém</SelectItem>
+                {(teamMembers || []).map((m: any) => (
+                  <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 
-      {/* Conversation Status */}
+      {/* ── FUNIL DE VENDA (dispara eventos Meta CAPI) ── */}
       <div className="p-4 border-b border-border shrink-0">
-        <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 block">Estado da Conversa</label>
-        <Select value={conversation.status} onValueChange={(val) => updateStatus.mutate({ id: conversationId, status: val as any })}>
-          <SelectTrigger className="h-8 text-sm bg-input border-border">
-            <SelectValue />
-          </SelectTrigger>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Funil de Venda</h4>
+          {lead?.temperature && TEMP_BADGE[lead.temperature] && (
+            <Badge variant="outline" className={`text-[10px] ${TEMP_BADGE[lead.temperature].cls}`}>
+              {TEMP_BADGE[lead.temperature].label}
+            </Badge>
+          )}
+        </div>
+        <Select
+          value={lead?.funnelStatus || "novo"}
+          onValueChange={(val) => updateFunnel.mutate({ conversationId, funnelStatus: val as any })}
+          disabled={updateFunnel.isPending}
+        >
+          <SelectTrigger className="h-8 text-sm bg-input border-border"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="open">Aberta</SelectItem>
-            <SelectItem value="pending">Pendente</SelectItem>
-            <SelectItem value="resolved">Resolvida</SelectItem>
-            <SelectItem value="closed">Fechada</SelectItem>
+            {FUNNEL_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
+        {/* Barra de progresso do funil */}
+        <div className="flex gap-0.5 mt-2">
+          {FUNNEL_STAGES.slice(0, 8).map((s, i) => {
+            const currentIdx = FUNNEL_STAGES.findIndex(f => f.value === (lead?.funnelStatus || "novo"));
+            const isLost = lead?.funnelStatus === "perdido";
+            return (
+              <div
+                key={s.value}
+                title={s.label}
+                className={`h-1.5 flex-1 rounded-full ${isLost ? "bg-red-500/30" : i <= currentIdx ? "bg-primary" : "bg-secondary"}`}
+              />
+            );
+          })}
+        </div>
+        {leadOrigin && (
+          <div className="flex items-center gap-1.5 mt-2.5">
+            <Megaphone className="h-3 w-3 text-muted-foreground shrink-0" />
+            <Badge variant="outline" className={`text-[10px] ${leadOrigin.cls}`}>{leadOrigin.label}</Badge>
+            {leadOrigin.detail && <span className="text-[10px] text-muted-foreground truncate" title={leadOrigin.detail}>{leadOrigin.detail}</span>}
+          </div>
+        )}
+      </div>
+
+      {/* ── FLUXO AUTOMATIZADO ── */}
+      <div className="p-4 border-b border-border shrink-0">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Fluxo Automatizado</h4>
+        {activeFlowSession ? (
+          <div className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/25 rounded-md px-2.5 py-2">
+            <GitBranch className="h-4 w-4 text-violet-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-violet-300 font-medium truncate">{(activeFlowSession as any).flowName}</p>
+              <p className="text-[10px] text-violet-400/70">Ativo — rodando nesta conversa</p>
+            </div>
+            <Button
+              variant="ghost" size="sm"
+              className="h-7 px-2 text-xs text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 shrink-0"
+              onClick={() => pauseFlowMutation.mutate({ conversationId })}
+              disabled={pauseFlowMutation.isPending}
+            >
+              <PauseCircle className="h-3.5 w-3.5 mr-1" /> Pausar
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <Select value={flowToStart?.toString() || ""} onValueChange={v => setFlowToStart(Number(v))}>
+              <SelectTrigger className="h-8 text-sm bg-input border-border flex-1"><SelectValue placeholder="Escolher fluxo salvo..." /></SelectTrigger>
+              <SelectContent>
+                {((savedFlows as any[]) || []).map(f => (
+                  <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              size="sm"
+              className="h-8 shrink-0"
+              disabled={!flowToStart || startFlowMutation.isPending}
+              onClick={() => flowToStart && startFlowMutation.mutate({ conversationId, flowId: flowToStart })}
+            >
+              {startFlowMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><PlayCircle className="h-3.5 w-3.5 mr-1" /> Iniciar</>}
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Contact Info - Editable */}

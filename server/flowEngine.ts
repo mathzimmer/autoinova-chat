@@ -1399,3 +1399,37 @@ export async function cancelFlowSession(conversationId: number): Promise<void> {
     await updateFlowSession(session.id, { status: "cancelled" });
   }
 }
+
+/**
+ * Inicia um fluxo manualmente para uma conversa (disparado pelo atendente no painel).
+ * Cancela qualquer sessão ativa anterior e executa a partir do nó inicial.
+ */
+export async function startFlowManually(params: {
+  conversationId: number;
+  flowId: number;
+  phone: string;
+  contactName?: string;
+}): Promise<FlowResult> {
+  // Cancela sessão anterior (só pode haver 1 fluxo ativo por conversa)
+  await cancelFlowSession(params.conversationId);
+
+  const nodes = await listChatFlowNodes(params.flowId);
+  const startNode = nodes.find(n => n.nodeType === "start");
+  if (!startNode) throw new Error("Este fluxo não tem nó inicial (start)");
+
+  await createFlowSession({
+    conversationId: params.conversationId,
+    flowId: params.flowId,
+    currentNodeId: startNode.id,
+    status: "active",
+    context: { manualStart: true },
+  });
+
+  // processFlowMessage encontra a sessão ativa no nó start e executa a partir dele
+  return processFlowMessage({
+    conversationId: params.conversationId,
+    phone: params.phone,
+    customerMessage: "",
+    contactName: params.contactName,
+  });
+}

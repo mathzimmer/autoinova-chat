@@ -15,9 +15,11 @@ async function fireDueReminders(): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const now = Date.now();
-  const due = await db.select().from(conversationReminders)
+  // Claim atômico — evita notificação duplicada com ticks concorrentes
+  const due = await db.update(conversationReminders)
+    .set({ status: "fired", firedAt: new Date() })
     .where(and(eq(conversationReminders.status, "pending"), lte(conversationReminders.remindAt, now)))
-    .limit(50);
+    .returning();
 
   for (const reminder of due) {
     try {
@@ -30,9 +32,6 @@ async function fireDueReminders(): Promise<void> {
         message: reminder.note || "Você pediu para ser lembrado desta conversa.",
         conversationId: reminder.conversationId,
       });
-      await db.update(conversationReminders)
-        .set({ status: "fired", firedAt: new Date() })
-        .where(eq(conversationReminders.id, reminder.id));
       console.log(`[Scheduler] Lembrete #${reminder.id} disparado (conversa ${reminder.conversationId})`);
     } catch (err) {
       console.error(`[Scheduler] Erro ao disparar lembrete #${reminder.id}:`, err);
@@ -52,9 +51,12 @@ async function sendDueScheduledMessages(): Promise<void> {
   const db = await getDb();
   if (!db) return;
   const now = Date.now();
-  const due = await db.select().from(scheduledMessages)
+  // CLAIM ATÔMICO: marca como "sent" antes de enviar (where status=pending).
+  // Se outro tick concorrente tentar, o returning vem vazio — evita envio duplicado.
+  const due = await db.update(scheduledMessages)
+    .set({ status: "sent", sentAt: new Date() })
     .where(and(eq(scheduledMessages.status, "pending"), lte(scheduledMessages.scheduledAt, now)))
-    .limit(20);
+    .returning();
 
   for (const sm of due) {
     try {
@@ -150,9 +152,17 @@ export function startScheduler(): void {
   console.log("[Scheduler] Worker iniciado (lembretes + mensagens agendadas, a cada 30s)");
 }
 
+let tickRunning = false;
+
 async function tick(): Promise<void> {
-  await fireDueReminders();
-  await sendDueScheduledMessages();
+  if (tickRunning) return; // evita ticks sobrepostos (causa de envio duplicado)
+  tickRunning = true;
+  try {
+    await fireDueReminders();
+    await sendDueScheduledMessages();
+  } finally {
+    tickRunning = false;
+  }
 }
 
 export function stopScheduler(): void {
