@@ -674,6 +674,8 @@ const conversationRouter = router({
       contactName: z.string().optional(),
       contactEmail: z.string().optional(),
       contactNotes: z.string().optional(),
+      // Corrigir telefone manualmente (ex.: contato @lid sem número real)
+      phone: z.string().min(10).max(20).regex(/^\d+$/, "Apenas dígitos, com DDI (ex: 5551999998888)").optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -687,6 +689,156 @@ const conversationRouter = router({
     .mutation(async ({ input }) => {
       await markMessagesAsRead(input.id);
       return { success: true };
+    }),
+
+  /**
+   * Transfere o atendimento da matriz (API oficial) para a instância de um vendedor:
+   * 1. Envia a primeira mensagem ao cliente PELA INSTÂNCIA do vendedor
+   * 2. Registra nota interna na conversa oficial informando a transferência
+   * 3. Finaliza a conversa oficial (status resolved)
+   * O lead/funil continua o mesmo — o histórico fica preservado nos dois lados.
+   */
+  transferToInstance: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      instanceName: z.string().min(1),
+      message: z.string().min(1).max(4000),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const conv = await getConversationById(input.conversationId);
+      if (!conv) throw new Error("Conversa não encontrada");
+      if (conv.channel === "evolution") throw new Error("Esta conversa já está numa instância de vendedor");
+      if (!conv.phone) throw new Error("Conversa sem telefone");
+
+      // 1. Envia pela instância do vendedor
+      const { evolutionSendText } = await import("./evolutionService");
+      const result = await evolutionSendText(input.instanceName, conv.phone, input.message);
+      const evoMsgId = (result as any)?.key?.id;
+
+      // 2. Espelha no inbox unificado (cria a conversa da instância já com o histórico iniciado)
+      const { mirrorEvolutionMessage } = await import("./db");
+      const mirrored = await mirrorEvolutionMessage({
+        instanceName: input.instanceName,
+        phone: conv.phone,
+        remoteJid: `${conv.phone}@s.whatsapp.net`,
+        contactName: conv.contactName || undefined,
+        content: input.message,
+        messageType: "text",
+        direction: "outbound",
+        senderName: ctx.user.name || "Vendedor",
+        externalId: evoMsgId ? `evo_${evoMsgId}` : undefined,
+        timestamp: Date.now(),
+      });
+      if (mirrored) emitNewMessage(mirrored.conversationId, mirrored.message);
+
+      // 3. Nota interna + finaliza a conversa oficial
+      const note = await createMessage({
+        conversationId: input.conversationId,
+        content: `📤 Atendimento transferido para a instância "${input.instanceName}" por ${ctx.user.name || "atendente"}. O vendedor continua a conversa pelo número da instância.`,
+        senderType: "internal",
+        senderName: ctx.user.name || "Sistema",
+        messageType: "text",
+      });
+      emitNewMessage(input.conversationId, note);
+      await updateConversation(input.conversationId, { status: "resolved", aiActive: false });
+      emitConversationUpdate(input.conversationId, { status: "resolved" });
+
+      return { success: true, sellerConversationId: mirrored?.conversationId ?? null };
+    }),
+
+  /** Inicia uma nova conversa (matriz ou instância Evolution) com contato novo ou existente */
+  startNew: protectedProcedure
+    .input(z.object({
+      name: z.string().max(255).optional(),
+      phone: z.string().min(10).max(20),
+      instance: z.string().default("matriz"), // "matriz" ou nome da instância Evolution
+      firstMessage: z.string().max(4000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { normalizePhone: normPhone } = await import("./phoneNormalize");
+      const phone = normPhone(input.phone.replace(/\D/g, ""));
+      if (!phone || phone.length < 10) throw new Error("Telefone inválido — use DDI+DDD+número");
+
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { conversations: convTable } = await import("../drizzle/schema");
+      const { eq, and: andOp, ne: neOp } = await import("drizzle-orm");
+
+      const isMatriz = input.instance === "matriz";
+
+      // Localiza conversa existente na fonte escolhida
+      let conv = (await db.select().from(convTable).where(
+        isMatriz
+          ? andOp(eq(convTable.phone, phone), neOp(convTable.channel, "evolution" as any))
+          : andOp(eq(convTable.phone, phone), eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
+      ).limit(1))[0];
+
+      if (!conv) {
+        const inserted = await db.insert(convTable).values({
+          phone,
+          contactName: input.name || null,
+          channel: isMatriz ? "whatsapp" : ("evolution" as any),
+          instanceName: isMatriz ? null : input.instance,
+          status: "open",
+          aiActive: false, // conversa iniciada pelo atendente: sem IA
+          assignedTo: ctx.user.id,
+          lastMessageAt: Date.now(),
+          lastMessagePreview: input.firstMessage?.substring(0, 500) || null,
+        }).returning();
+        conv = inserted[0];
+      }
+
+      // Cadastra o contato na agenda se não existir
+      try {
+        const existingContact = await getContactByPhone(phone);
+        if (!existingContact) {
+          await createContact({
+            name: input.name || "Cliente",
+            phone,
+            conversationId: conv.id,
+            source: "manual",
+            isActive: true,
+          });
+        }
+      } catch { /* não-crítico */ }
+
+      // Envia a primeira mensagem, se houver
+      let sendError: string | null = null;
+      let windowExpired = false;
+      if (input.firstMessage?.trim()) {
+        try {
+          if (isMatriz) {
+            if (isWhatsAppConfigured()) {
+              const r = await sendTextMessage(phone, input.firstMessage.trim());
+              if (!r.success) {
+                sendError = r.error || "Falha no envio";
+                windowExpired = !!(r.error && (r.error.includes("131047") || r.error.includes("Re-engagement")));
+              } else {
+                const msg = await createMessage({
+                  conversationId: conv.id, content: input.firstMessage.trim(),
+                  senderType: "agent", senderName: ctx.user.name || "Atendente",
+                  messageType: "text", externalId: r.messageId,
+                });
+                emitNewMessage(conv.id, msg);
+              }
+            } else sendError = "WhatsApp oficial não configurado";
+          } else {
+            const { evolutionSendText } = await import("./evolutionService");
+            const r = await evolutionSendText(input.instance, phone, input.firstMessage.trim());
+            const msg = await createMessage({
+              conversationId: conv.id, content: input.firstMessage.trim(),
+              senderType: "agent", senderName: ctx.user.name || "Atendente",
+              messageType: "text", externalId: (r as any)?.key?.id ? `evo_${(r as any).key.id}` : undefined,
+            });
+            emitNewMessage(conv.id, msg);
+          }
+        } catch (err) {
+          sendError = err instanceof Error ? err.message : "Falha no envio";
+        }
+      }
+
+      emitConversationUpdate(conv.id, {});
+      return { conversationId: conv.id, sendError, windowExpired };
     }),
 });
 
@@ -860,6 +1012,16 @@ const messageRouter = router({
               } catch { /* fallback abaixo */ }
             }
             if (!toJid) toJid = conv.phone;
+            // @lid sem número real: se o telefone da conversa foi corrigido
+            // (manualmente ou via senderPn), prefere o número — a Evolution
+            // valida e envia por ele
+            if (toJid.endsWith("@lid")) {
+              const digits = (conv.phone || "").replace(/\D/g, "");
+              const lidDigits = toJid.replace("@lid", "");
+              if (digits && digits !== lidDigits && digits.length >= 10 && digits.length <= 13) {
+                toJid = digits;
+              }
+            }
             try {
               const evoResult = await evolutionSendText((conv as any).instanceName, toJid, input.content);
               const evoMsgId = (evoResult as any)?.key?.id;
@@ -1674,6 +1836,32 @@ const webhookRouter = router({
 });
 
 const settingsRouter = router({
+  /** Nomes customizados das etapas do funil (ex.: renomear "Dados pessoais" → "Documentação") */
+  getFunnelLabels: protectedProcedure.query(async () => {
+    const raw = await getSetting("funnel_stage_labels");
+    try { return raw ? (JSON.parse(raw) as Record<string, string>) : {}; } catch { return {}; }
+  }),
+
+  saveFunnelLabels: adminProcedure
+    .input(z.record(z.string(), z.string().max(40)))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("funnel_stage_labels", JSON.stringify(input), ctx.user.id);
+      return { success: true };
+    }),
+
+  /** Permissões de menu por cargo (admin sempre vê tudo) */
+  getNavPermissions: protectedProcedure.query(async () => {
+    const raw = await getSetting("nav_permissions");
+    try { return raw ? (JSON.parse(raw) as Record<string, string[]>) : null; } catch { return null; }
+  }),
+
+  saveNavPermissions: adminProcedure
+    .input(z.record(z.string(), z.array(z.string())))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("nav_permissions", JSON.stringify(input), ctx.user.id);
+      return { success: true };
+    }),
+
   /** Config de atendimento: CSAT + carência de reabertura */
   getAttendanceConfig: adminProcedure.query(async () => {
     const [csatEnabled, graceMinutes, csatWindow] = await Promise.all([
@@ -3646,6 +3834,15 @@ const sellerRouter = router({
 // ── Contacts Router ─────────────────────────────────────────────────────────
 
 const contactsRouter = router({
+  /** Busca leve para o picker de nova conversa (qualquer atendente) */
+  search: protectedProcedure
+    .input(z.object({ q: z.string().min(1).max(100) }))
+    .query(async ({ input }) => {
+      const result = await listContacts({ search: input.q, limit: 10 });
+      const rows = Array.isArray(result) ? result : (result as any).contacts || [];
+      return (rows as any[]).map(c => ({ id: c.id, name: c.name, phone: c.phone }));
+    }),
+
   list: adminProcedure
     .input(z.object({
       search: z.string().optional(),

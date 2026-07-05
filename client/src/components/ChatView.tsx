@@ -65,7 +65,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const [newMessage, setNewMessage] = useState("");
   const [typingUser, setTypingUser] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Image preview
@@ -482,6 +482,11 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   };
 
   useEffect(() => { setQrSelectedIndex(0); }, [qrFilter]);
+
+  // Reseta a altura do textarea quando o campo esvazia (após enviar)
+  useEffect(() => {
+    if (!newMessage && inputRef.current) inputRef.current.style.height = "auto";
+  }, [newMessage]);
 
   const handleReact = useCallback((messageId: number, emoji: string) => {
     setLocalReactions(prev => {
@@ -1278,22 +1283,6 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
           </div>
         )}
 
-        {/* Emoji picker (input) */}
-        {showEmojiPicker && (
-          <div
-            ref={emojiPickerRef}
-            className="absolute bottom-16 left-3 z-50 bg-[#ffffff] border border-[#e9edef] rounded-xl shadow-2xl p-3 w-72 max-h-56 overflow-y-auto"
-          >
-            <div className="flex flex-wrap gap-1">
-              {EMOJI_LIST.map((emoji, i) => (
-                <button key={i} onClick={() => insertEmoji(emoji)} className="text-lg w-8 h-8 flex items-center justify-center hover:bg-[#e9edef] rounded-md transition-colors">
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
         {isRecording ? (
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={cancelRecording} className="shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/10">
@@ -1308,10 +1297,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             </Button>
           </div>
         ) : (
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]">
-              <Smile className="h-5 w-5" />
-            </Button>
+          <div className="flex items-end gap-2">
             <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Enviar imagens">
               <ImagePlus className="h-5 w-5" />
             </Button>
@@ -1380,14 +1366,22 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             >
               <StickyNote className="h-5 w-5" />
             </Button>
-            <Input
+            <textarea
               ref={inputRef}
               value={newMessage}
-              onChange={e => setNewMessage(e.target.value)}
+              onChange={e => {
+                setNewMessage(e.target.value);
+                // Auto-grow: cresce com o conteúdo até ~7 linhas
+                const el = e.target as HTMLTextAreaElement;
+                el.style.height = "auto";
+                el.style.height = Math.min(el.scrollHeight, 160) + "px";
+              }}
               onKeyDown={handleKeyDown}
+              rows={1}
               placeholder={noteMode ? "Escreva uma nota interna..." : "Digite uma mensagem ou / para respostas rápidas"}
-              className={`flex-1 border-0 text-[#111b21] placeholder:text-[#54656f] rounded-lg focus-visible:ring-0 focus-visible:ring-offset-0 ${noteMode ? "bg-[#fde68a]" : "bg-[#e9edef]"}`}
+              className={`flex-1 border-0 text-sm text-[#111b21] placeholder:text-[#54656f] rounded-lg px-3 py-2.5 outline-none resize-none leading-5 max-h-40 overflow-y-auto ${noteMode ? "bg-[#fde68a]" : "bg-[#e9edef]"}`}
               disabled={isSending}
+              style={{ scrollbarWidth: "thin" }}
             />
             {!noteMode && (
               <Button
@@ -1532,20 +1526,12 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
           </div>
         )}
 
-        {/* Hover action buttons */}
+        {/* Hover action: responder */}
         <div
           className={`absolute top-1/2 -translate-y-1/2 z-10 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ${
-            isCustomer ? "-right-16" : "-left-16"
+            isCustomer ? "-right-9" : "-left-9"
           }`}
         >
-          <button
-            data-reaction-btn
-            onClick={onToggleReactionPicker}
-            className="h-7 w-7 rounded-full bg-[#ffffff] border border-[#e9edef] flex items-center justify-center text-sm hover:bg-[#e9edef] transition-colors shadow-md"
-            title="Reagir"
-          >
-            😊
-          </button>
           <button
             onClick={onReply}
             className="h-7 w-7 rounded-full bg-[#ffffff] border border-[#e9edef] flex items-center justify-center hover:bg-[#e9edef] transition-colors shadow-md"
@@ -1553,33 +1539,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
           >
             <CornerUpLeft className="h-3.5 w-3.5 text-[#54656f]" />
           </button>
-          <button
-            onClick={onForward}
-            className="h-7 w-7 rounded-full bg-[#ffffff] border border-[#e9edef] flex items-center justify-center hover:bg-[#e9edef] transition-colors shadow-md"
-            title="Encaminhar / Copiar"
-          >
-            <Share2 className="h-3.5 w-3.5 text-[#54656f]" />
-          </button>
         </div>
-
-        {/* Reaction quick picker */}
-        {showReactionPicker && (
-          <div
-            data-reaction-picker
-            className={`absolute z-20 bottom-full mb-1 ${isCustomer ? "left-0" : "right-0"} bg-[#ffffff] border border-[#e9edef] rounded-full px-2 py-1.5 flex items-center gap-1 shadow-xl`}
-          >
-            {QUICK_REACTIONS.map(emoji => (
-              <button
-                key={emoji}
-                onClick={() => onReact(emoji)}
-                className="text-xl hover:scale-125 transition-transform"
-                title={emoji}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-        )}
 
         {/* Bubble */}
         <div className={`${bubbleClass} ${radiusClass} px-3 py-2 shadow-sm min-w-[80px]`}>

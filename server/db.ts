@@ -132,6 +132,8 @@ export async function mirrorEvolutionMessage(params: {
   phone: string;
   /** JID exato para responder (pode ser @lid ou @s.whatsapp.net) — essencial para o envio */
   remoteJid: string;
+  /** JID alternativo (ex.: o @lid original quando remoteJid foi resolvido para o número real) */
+  altJid?: string;
   contactName?: string;
   content: string;
   messageType: string; // text|image|audio|video|document|sticker
@@ -166,19 +168,26 @@ export async function mirrorEvolutionMessage(params: {
     }
   } catch { /* fallback opcional */ }
 
-  // Localiza a conversa: primeiro pelo remoteJid salvo no metadata, depois pelo phone
+  // Localiza a conversa: pelo remoteJid salvo no metadata (atual OU alternativo,
+  // ex.: @lid antigo agora resolvido para número real), depois pelo phone
   let conv = (await db.select().from(conversations)
     .where(and(
       eq(conversations.channel, "evolution" as any),
       eq(conversations.instanceName, params.instanceName),
-      sql`metadata->>'evolutionRemoteJid' = ${params.remoteJid}`,
+      params.altJid
+        ? sql`(metadata->>'evolutionRemoteJid' = ${params.remoteJid} OR metadata->>'evolutionRemoteJid' = ${params.altJid})`
+        : sql`metadata->>'evolutionRemoteJid' = ${params.remoteJid}`,
     )).limit(1))[0];
   if (!conv) {
+    // Também procura pelo phone atual OU pelos dígitos do LID (conversa antiga)
+    const lidDigits = params.altJid?.endsWith("@lid") ? params.altJid.replace("@lid", "") : null;
     conv = (await db.select().from(conversations)
       .where(and(
-        eq(conversations.phone, bestPhone),
         eq(conversations.channel, "evolution" as any),
         eq(conversations.instanceName, params.instanceName),
+        lidDigits
+          ? or(eq(conversations.phone, bestPhone), eq(conversations.phone, lidDigits))!
+          : eq(conversations.phone, bestPhone),
       )).limit(1))[0];
   }
 
@@ -204,10 +213,13 @@ export async function mirrorEvolutionMessage(params: {
     // Atualiza nome se conseguimos um melhor (antes só tinha o número/LID)
     const nameIsPlaceholder = !conv.contactName || conv.contactName === conv.phone;
     const existingMeta = (conv.metadata as Record<string, unknown>) || {};
+    // Telefone real resolvido (remoteJid não é mais @lid) substitui o LID antigo
+    const phoneUpgrade = !params.remoteJid.endsWith("@lid") && bestPhone && conv.phone !== bestPhone;
     await db.update(conversations).set({
       lastMessageAt: params.timestamp,
       lastMessagePreview: preview,
       metadata: { ...existingMeta, evolutionRemoteJid: params.remoteJid },
+      ...(phoneUpgrade ? { phone: bestPhone } : {}),
       ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
       ...(isInbound ? {
         unreadCount: (conv.unreadCount || 0) + 1,

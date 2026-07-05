@@ -298,10 +298,13 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       resolvedJid = remoteJid;
     } else if (remoteJid.endsWith("@lid")) {
       // Linked-device mode: @lid JID — try to find real number from other fields
-      // Priority: remoteJidAlt > key.remoteJidAlt > participant > phoneNumber > fallback
+      // Priority: remoteJidAlt > senderPn (Baileys/Evolution novos) > participant > phoneNumber > fallback
       const remoteJidAlt = msg.remoteJidAlt || msg.key?.remoteJidAlt || "";
       const participant = msg.key?.participant || msg.participant || "";
-      const phoneNumberField = msg.phoneNumber || "";
+      // Baileys 6.7.19+/Evolution v2.2+: senderPn/participantPn trazem o número REAL do contato @lid
+      const senderPn = (msg.key as any)?.senderPn || (msg as any).senderPn
+        || (msg.key as any)?.participantPn || (msg as any).participantPn || "";
+      const phoneNumberField = msg.phoneNumber || senderPn || "";
 
       if (remoteJidAlt && (remoteJidAlt.endsWith("@s.whatsapp.net") || remoteJidAlt.endsWith("@c.us"))) {
         // Best case: Evolution provides the real JID as remoteJidAlt
@@ -387,6 +390,32 @@ interface HandleEvolutionWebhookParams {
   io?: SocketIOServer;
 }
 
+// ── Foto de perfil do contato (inbox unificado) ──────────────────────────────
+// Busca a foto via Evolution e salva na conversa espelhada. Rate-limit de 6h
+// por conversa para não martelar a API a cada mensagem.
+const profilePicLastAttempt = new Map<number, number>();
+
+async function fetchProfilePicIfMissing(instanceName: string, conversationId: number, phoneOrJid: string): Promise<void> {
+  const last = profilePicLastAttempt.get(conversationId) || 0;
+  if (Date.now() - last < 6 * 60 * 60 * 1000) return;
+  profilePicLastAttempt.set(conversationId, Date.now());
+
+  const { getConversationById, updateConversation } = await import("./db");
+  const conv = await getConversationById(conversationId);
+  if (!conv || conv.contactPhoto) return;
+
+  try {
+    const result = await evolutionGetProfilePic(instanceName, phoneOrJid);
+    const url = (result as any)?.profilePictureUrl || (result as any)?.picture || "";
+    if (url && typeof url === "string" && url.startsWith("http")) {
+      await updateConversation(conversationId, { contactPhoto: url });
+      const { emitConversationUpdate } = await import("./socket");
+      emitConversationUpdate(conversationId, { contactPhoto: url });
+      console.log(`[Evolution] Foto de perfil salva (conversa ${conversationId})`);
+    }
+  } catch { /* contato pode ter foto privada — ok */ }
+}
+
 export async function handleEvolutionWebhook({ event, instanceName, data, io }: HandleEvolutionWebhookParams) {
   const parsed = parseWebhookMessage({ event, instance: instanceName, data });
   if (!parsed) return;
@@ -444,8 +473,18 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
     // Resolve conversationId (upsert returns id number)
     const conversationId = typeof conversation === "number" ? conversation : (conversation as any).id;
 
-    // ── Resolve media URL: if media message has no URL, fetch via getBase64 and upload to S3 ──
+    // ── Resolve media URL ──
+    // IMPORTANTE: a URL que a Evolution manda (mmg.whatsapp.net/*.enc) é CRIPTOGRAFADA
+    // e não renderiza no navegador. Sempre que a URL não for utilizável, baixa via
+    // getBase64 e sobe para o S3.
     let finalMediaUrl = parsed.mediaUrl || "";
+    const urlNotUsable = !finalMediaUrl
+      || finalMediaUrl.includes(".enc")
+      || finalMediaUrl.includes("mmg.whatsapp.net")
+      || !finalMediaUrl.startsWith("http");
+    if (parsed.messageType !== "text" && parsed.messageType !== "reaction" && urlNotUsable && parsed.messageId) {
+      finalMediaUrl = ""; // força o fetch abaixo
+    }
     if (parsed.messageType !== "text" && parsed.messageType !== "reaction" && !finalMediaUrl && parsed.messageId) {
       try {
         const mediaData = await evolutionGetMediaBase64(instanceName, parsed.messageId);
@@ -499,6 +538,7 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           instanceName,
           phone: parsed.phone,
           remoteJid: jidForConversation,
+          altJid: parsed.remoteJid !== jidForConversation ? parsed.remoteJid : undefined,
           contactName: (parsed.senderName && parsed.senderName !== parsed.phone && !parsed.fromMe) ? parsed.senderName : undefined,
           content: parsed.content,
           messageType: parsed.messageType,
@@ -512,6 +552,9 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           const { emitNewMessage, emitConversationUpdate } = await import("./socket");
           emitNewMessage(mirrored.conversationId, mirrored.message);
           emitConversationUpdate(mirrored.conversationId, {});
+          // Foto de perfil do contato (best-effort, em background)
+          fetchProfilePicIfMissing(instanceName, mirrored.conversationId, parsed.phone)
+            .catch(err => console.warn("[Evolution] profile pic:", err));
         }
       } catch (err) {
         console.error("[Evolution] Erro ao espelhar no inbox unificado:", err);

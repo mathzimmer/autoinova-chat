@@ -3,9 +3,13 @@ import { useInboxSocket } from "@/hooks/useSocket";
 import { useEffect, useState, useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Search, Bot, User, MessageSquare, Circle, UserCheck, Users, Inbox } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Search, Bot, User, MessageSquare, Circle, UserCheck, Users, Inbox, Plus, Loader2, Send } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { toast } from "sonner";
 
 type Props = {
   selectedId: number | null;
@@ -29,6 +33,33 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
 
   // Reseta a paginação ao trocar de fonte/filtro
   useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search]);
+
+  // ── Nova conversa ──
+  const [showNewDialog, setShowNewDialog] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newPhone, setNewPhone] = useState("");
+  const [newFirstMsg, setNewFirstMsg] = useState("");
+  const [contactQuery, setContactQuery] = useState("");
+  const { data: contactResults } = trpc.contact.search.useQuery(
+    { q: contactQuery },
+    { enabled: showNewDialog && contactQuery.trim().length >= 2 }
+  );
+  const startNewMutation = trpc.conversation.startNew.useMutation({
+    onSuccess: (res) => {
+      if (res.sendError) {
+        toast.warning(res.windowExpired
+          ? "Conversa criada, mas a janela de 24h está fechada — use um template para iniciar."
+          : `Conversa criada, mas a mensagem falhou: ${res.sendError}`);
+      } else {
+        toast.success("Conversa iniciada!");
+      }
+      setShowNewDialog(false);
+      setNewName(""); setNewPhone(""); setNewFirstMsg(""); setContactQuery("");
+      refetch();
+      onSelect(res.conversationId);
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const { data: teamMembers } = trpc.team.list.useQuery();
   const { data: teamMe } = trpc.teamAuth.me.useQuery();
   const { data: allLabels } = trpc.label.list.useQuery();
@@ -135,11 +166,84 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
             <MessageSquare className="h-5 w-5 text-primary" />
             Conversas
           </h2>
-          <div className="flex items-center gap-1.5">
-            <Circle className={`h-2 w-2 ${connected ? "fill-green-500 text-green-500" : "fill-red-500 text-red-500"}`} />
-            <span className="text-xs text-muted-foreground">{connected ? "Online" : "Offline"}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <Circle className={`h-2 w-2 ${connected ? "fill-green-500 text-green-500" : "fill-red-500 text-red-500"}`} />
+              <span className="text-xs text-muted-foreground">{connected ? "Online" : "Offline"}</span>
+            </div>
+            <Button
+              size="icon" variant="ghost"
+              className="h-7 w-7 text-primary hover:bg-primary/10"
+              onClick={() => setShowNewDialog(true)}
+              title="Iniciar nova conversa"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
         </div>
+
+        {/* ── Dialog nova conversa ── */}
+        <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Nova conversa</DialogTitle>
+              <DialogDescription>
+                Fonte: <b>{instance === "matriz" ? "Matriz (oficial)" : instance}</b> — busque um contato ou digite os dados.
+                {instance === "matriz" && " Fora da janela de 24h, será preciso enviar um template."}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  value={contactQuery}
+                  onChange={e => setContactQuery(e.target.value)}
+                  placeholder="Buscar contato existente..."
+                  className="pl-9 h-9 text-sm"
+                />
+                {(contactResults || []).length > 0 && contactQuery.trim().length >= 2 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
+                    {(contactResults || []).map((c: any) => (
+                      <button
+                        key={c.id}
+                        onClick={() => { setNewName(c.name || ""); setNewPhone(c.phone || ""); setContactQuery(""); }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex justify-between"
+                      >
+                        <span className="truncate">{c.name}</span>
+                        <span className="text-muted-foreground text-xs shrink-0">{c.phone}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome" className="h-9 text-sm" />
+                <Input value={newPhone} onChange={e => setNewPhone(e.target.value.replace(/[^\d]/g, ""))} placeholder="5551999998888" className="h-9 text-sm" />
+              </div>
+              <Textarea
+                value={newFirstMsg}
+                onChange={e => setNewFirstMsg(e.target.value)}
+                placeholder="Primeira mensagem (opcional)..."
+                className="text-sm min-h-16"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowNewDialog(false)}>Cancelar</Button>
+              <Button
+                disabled={newPhone.replace(/\D/g, "").length < 10 || startNewMutation.isPending}
+                onClick={() => startNewMutation.mutate({
+                  name: newName.trim() || undefined,
+                  phone: newPhone,
+                  instance,
+                  firstMessage: newFirstMsg.trim() || undefined,
+                })}
+              >
+                {startNewMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                Iniciar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input

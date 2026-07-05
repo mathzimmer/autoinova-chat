@@ -88,6 +88,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   const teamMember = teamMeQuery.data?.teamMember;
   const isTeamMember = teamMeQuery.data?.isTeamMember ?? false;
+  // Permissões de menu customizadas (Configurações → Personalização)
+  const { data: navPermissions } = trpc.settings.getNavPermissions.useQuery(undefined, {
+    enabled: isTeamMember,
+    staleTime: 60000,
+  });
   const isAdmin = !isTeamMember || teamMember?.cargo === "admin";
 
   if (loading) {
@@ -119,12 +124,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   // Filter nav items based on team member cargo
+  // Permissões customizadas (Configurações → Personalização) têm prioridade;
+  // sem customização, usa os cargos padrão de cada item.
   const visibleNavItems = navItems.filter((item) => {
     // Owner (non-team member) sees everything
     if (!isTeamMember) return true;
-    // Team member: check allowed cargos
+    if (!teamMember) return false;
+    if (teamMember.cargo === "admin") return true;
+    const customPaths = navPermissions?.[teamMember.cargo];
+    if (customPaths) return customPaths.includes(item.path);
     if (!item.allowedCargos) return true;
-    return teamMember ? item.allowedCargos.includes(teamMember.cargo) : false;
+    return item.allowedCargos.includes(teamMember.cargo);
   });
 
   const displayName = isTeamMember && teamMember ? teamMember.name : (user?.name || "Usuário");

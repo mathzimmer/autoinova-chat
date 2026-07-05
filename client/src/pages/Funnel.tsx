@@ -35,6 +35,8 @@ export default function Funnel() {
   const { data: leads, isLoading } = trpc.lead.listWithDetails.useQuery(undefined, {
     refetchInterval: 30000,
   });
+  // Nomes customizados das etapas (Configurações → Personalização)
+  const { data: customLabels } = trpc.settings.getFunnelLabels.useQuery(undefined, { staleTime: 60000 });
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
 
@@ -108,7 +110,7 @@ export default function Funnel() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: col.color }} />
-                        <span className="text-sm font-semibold text-card-foreground">{col.label}</span>
+                        <span className="text-sm font-semibold text-card-foreground">{customLabels?.[col.value] || col.label}</span>
                       </div>
                       <Badge variant="secondary" className="text-[10px]">{items.length}</Badge>
                     </div>

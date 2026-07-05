@@ -498,6 +498,9 @@ export default function Settings() {
 
         {/* Atendimento: CSAT + carência */}
         <AttendanceCard />
+
+        {/* Personalização: etiquetas, funil, permissões */}
+        <PersonalizationCard />
       </div>
     </div>
   );
@@ -720,6 +723,193 @@ function WhatsAppConnectCard() {
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Personalização: etiquetas, etapas do funil, permissões ──────────────────
+
+const FUNNEL_STAGE_KEYS: { key: string; defaultLabel: string }[] = [
+  { key: "novo", defaultLabel: "Novo" },
+  { key: "interesse_definido", defaultLabel: "Interesse definido" },
+  { key: "pagamento_definido", defaultLabel: "Pagamento definido" },
+  { key: "dados_pessoais", defaultLabel: "Dados pessoais" },
+  { key: "dados_troca", defaultLabel: "Dados da troca" },
+  { key: "encaminhado_vendedor", defaultLabel: "Com vendedor" },
+  { key: "negociando", defaultLabel: "Negociando" },
+  { key: "fechado", defaultLabel: "Fechado" },
+  { key: "perdido", defaultLabel: "Perdido" },
+];
+
+const NAV_PAGES: { path: string; label: string }[] = [
+  { path: "/inbox", label: "Inbox" },
+  { path: "/funnel", label: "Funil" },
+  { path: "/leads", label: "Leads" },
+  { path: "/dashboard", label: "Dashboard" },
+  { path: "/vehicles", label: "Veículos" },
+  { path: "/contacts", label: "Contatos" },
+  { path: "/campaigns", label: "Campanhas" },
+  { path: "/rescue", label: "Resgate" },
+  { path: "/flows", label: "Fluxos" },
+  { path: "/sellers", label: "Vendedores" },
+  { path: "/team", label: "Equipe" },
+  { path: "/meta-ads", label: "Meta Ads" },
+  { path: "/evolution-instances", label: "Instâncias" },
+];
+
+const CARGOS = ["gerente", "vendedor", "suporte"]; // admin sempre vê tudo
+
+const LABEL_PALETTE = ["#00a884", "#53bdeb", "#e9a944", "#eb6262", "#a55eea", "#f27ca4", "#64748b", "#22c55e"];
+
+function PersonalizationCard() {
+  const utils = trpc.useUtils();
+
+  // ── Etiquetas ──
+  const { data: labels } = trpc.label.list.useQuery();
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState(LABEL_PALETTE[0]);
+  const createLabel = trpc.label.create.useMutation({
+    onSuccess: () => { setNewLabelName(""); utils.label.list.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteLabel = trpc.label.delete.useMutation({
+    onSuccess: () => utils.label.list.invalidate(),
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── Funil ──
+  const { data: savedFunnelLabels } = trpc.settings.getFunnelLabels.useQuery();
+  const [funnelLabels, setFunnelLabels] = useState<Record<string, string>>({});
+  useEffect(() => { if (savedFunnelLabels) setFunnelLabels(savedFunnelLabels); }, [savedFunnelLabels]);
+  const saveFunnel = trpc.settings.saveFunnelLabels.useMutation({
+    onSuccess: () => { toast.success("Nomes do funil salvos"); utils.settings.getFunnelLabels.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // ── Permissões ──
+  const { data: savedPerms } = trpc.settings.getNavPermissions.useQuery();
+  const [perms, setPerms] = useState<Record<string, string[]>>({});
+  useEffect(() => {
+    if (savedPerms) { setPerms(savedPerms); return; }
+    // Default: replica os cargos padrão atuais
+    setPerms({
+      gerente: NAV_PAGES.map(p => p.path),
+      vendedor: ["/inbox", "/funnel", "/leads"],
+      suporte: ["/inbox", "/leads"],
+    });
+  }, [savedPerms]);
+  const savePerms = trpc.settings.saveNavPermissions.useMutation({
+    onSuccess: () => { toast.success("Permissões salvas — a equipe verá o menu atualizado no próximo login/refresh"); utils.settings.getNavPermissions.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const togglePerm = (cargo: string, path: string) => {
+    setPerms(prev => {
+      const current = prev[cargo] || [];
+      return { ...prev, [cargo]: current.includes(path) ? current.filter(p => p !== path) : [...current, path] };
+    });
+  };
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader>
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+          <SettingsIcon className="h-4 w-4 text-violet-500" />
+          Personalização
+        </CardTitle>
+        <CardDescription>Etiquetas de conversa, nomes das etapas do funil e permissões de menu por cargo.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+
+        {/* ── Etiquetas ── */}
+        <div>
+          <p className="text-sm font-semibold mb-2">Etiquetas</p>
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {(labels || []).map((l: any) => (
+              <span key={l.id} className="group flex items-center gap-1 text-xs px-2 py-1 rounded-full" style={{ backgroundColor: l.color + "22", color: l.color, border: `1px solid ${l.color}55` }}>
+                {l.name}
+                <button onClick={() => deleteLabel.mutate({ id: l.id })} className="opacity-40 group-hover:opacity-100 hover:text-red-500" title="Excluir etiqueta">×</button>
+              </span>
+            ))}
+            {(labels || []).length === 0 && <span className="text-xs text-muted-foreground">Nenhuma etiqueta criada.</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <Input value={newLabelName} onChange={e => setNewLabelName(e.target.value)} placeholder="Nova etiqueta..." className="h-8 text-sm max-w-48" />
+            <div className="flex gap-1">
+              {LABEL_PALETTE.map(c => (
+                <button key={c} onClick={() => setNewLabelColor(c)} className={`h-5 w-5 rounded-full ${newLabelColor === c ? "ring-2 ring-offset-1 ring-foreground" : ""}`} style={{ backgroundColor: c }} />
+              ))}
+            </div>
+            <Button size="sm" className="h-8 text-xs" disabled={!newLabelName.trim() || createLabel.isPending}
+              onClick={() => createLabel.mutate({ name: newLabelName.trim(), color: newLabelColor })}>
+              Criar
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Etapas do funil ── */}
+        <div>
+          <p className="text-sm font-semibold mb-1">Etapas do Funil</p>
+          <p className="text-xs text-muted-foreground mb-2">Renomeie como preferir — o mapeamento interno (e os eventos para a Meta) continua o mesmo.</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {FUNNEL_STAGE_KEYS.map(s => (
+              <div key={s.key}>
+                <label className="text-[10px] text-muted-foreground uppercase block mb-0.5">{s.defaultLabel}</label>
+                <Input
+                  value={funnelLabels[s.key] ?? ""}
+                  onChange={e => setFunnelLabels(prev => ({ ...prev, [s.key]: e.target.value }))}
+                  placeholder={s.defaultLabel}
+                  className="h-8 text-sm"
+                />
+              </div>
+            ))}
+          </div>
+          <Button size="sm" className="mt-2 h-8 text-xs" disabled={saveFunnel.isPending}
+            onClick={() => {
+              const clean: Record<string, string> = {};
+              for (const [k, v] of Object.entries(funnelLabels)) if (v.trim()) clean[k] = v.trim();
+              saveFunnel.mutate(clean);
+            }}>
+            <Save className="h-3.5 w-3.5 mr-1" /> Salvar nomes
+          </Button>
+        </div>
+
+        {/* ── Permissões por cargo ── */}
+        <div>
+          <p className="text-sm font-semibold mb-1">Permissões de Menu por Cargo</p>
+          <p className="text-xs text-muted-foreground mb-2">Admin sempre vê tudo. Marque o que cada cargo pode acessar.</p>
+          <div className="overflow-x-auto">
+            <table className="text-xs w-full">
+              <thead>
+                <tr className="text-muted-foreground">
+                  <th className="text-left font-medium py-1 pr-2">Página</th>
+                  {CARGOS.map(c => <th key={c} className="font-medium px-2 capitalize">{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {NAV_PAGES.map(p => (
+                  <tr key={p.path} className="border-t border-border">
+                    <td className="py-1.5 pr-2">{p.label}</td>
+                    {CARGOS.map(c => (
+                      <td key={c} className="text-center px-2">
+                        <input
+                          type="checkbox"
+                          checked={(perms[c] || []).includes(p.path)}
+                          onChange={() => togglePerm(c, p.path)}
+                          className="accent-primary h-3.5 w-3.5 cursor-pointer"
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Button size="sm" className="mt-2 h-8 text-xs" disabled={savePerms.isPending} onClick={() => savePerms.mutate(perms)}>
+            <Save className="h-3.5 w-3.5 mr-1" /> Salvar permissões
+          </Button>
+        </div>
       </CardContent>
     </Card>
   );

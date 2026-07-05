@@ -77,6 +77,27 @@ export default function ConversationPanel({ conversationId }: Props) {
     onError: (err) => toast.error(err.message),
   });
 
+  // Nomes customizados das etapas (Configurações → Personalização)
+  const { data: customFunnelLabels } = trpc.settings.getFunnelLabels.useQuery(undefined, { staleTime: 60000 });
+  const stageLabel = (stage: { value: string; label: string }) =>
+    customFunnelLabels?.[stage.value] || stage.label;
+
+  // ── Transferência para instância do vendedor ──
+  const { data: evoInstances } = trpc.evolution.listInstances.useQuery(undefined, {
+    enabled: conversation?.channel !== "evolution",
+  });
+  const [transferInstance, setTransferInstance] = useState("");
+  const [transferMsg, setTransferMsg] = useState("");
+  const transferMutation = trpc.conversation.transferToInstance.useMutation({
+    onSuccess: () => {
+      toast.success("Transferido! A conversa oficial foi finalizada e o vendedor assumiu pela instância.");
+      utils.conversation.getById.invalidate({ id: conversationId });
+      utils.conversation.list.invalidate();
+      setTransferInstance(""); setTransferMsg("");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // Origem do lead (atribuição)
   const leadOrigin = (() => {
     if (!lead) return null;
@@ -91,6 +112,7 @@ export default function ConversationPanel({ conversationId }: Props) {
   // Contact editing state
   const [editingContact, setEditingContact] = useState(false);
   const [contactName, setContactName] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [contactNotes, setContactNotes] = useState("");
 
@@ -111,6 +133,7 @@ export default function ConversationPanel({ conversationId }: Props) {
   useEffect(() => {
     if (conversation) {
       setContactName(conversation.contactName || "");
+      setContactPhone(conversation.phone || "");
       setContactEmail((conversation as any).contactEmail || "");
       setContactNotes((conversation as any).contactNotes || "");
     }
@@ -168,11 +191,14 @@ export default function ConversationPanel({ conversationId }: Props) {
   });
 
   const handleSaveContact = () => {
+    const phoneDigits = contactPhone.replace(/\D/g, "");
     updateContact.mutate({
       id: conversationId,
       contactName: contactName.trim() || undefined,
       contactEmail: contactEmail.trim() || undefined,
       contactNotes: contactNotes.trim() || undefined,
+      // Só envia o telefone se foi alterado (corrige contatos @lid)
+      phone: phoneDigits && phoneDigits !== conversation?.phone ? phoneDigits : undefined,
     });
   };
 
@@ -198,7 +224,6 @@ export default function ConversationPanel({ conversationId }: Props) {
       paymentMethod: leadPaymentMethod.trim() || undefined,
       downPayment: leadDownPayment.trim() || undefined,
       notes: leadNotes.trim() || undefined,
-      status: leadStatus as any,
     });
   };
 
@@ -355,7 +380,7 @@ ${(lead as any).notes || "N/A"}
         >
           <SelectTrigger className="h-8 text-sm bg-input border-border"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {FUNNEL_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
+            {FUNNEL_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{stageLabel(s)}</SelectItem>)}
           </SelectContent>
         </Select>
         {/* Barra de progresso do funil */}
@@ -380,6 +405,53 @@ ${(lead as any).notes || "N/A"}
           </div>
         )}
       </div>
+
+      {/* ── TRANSFERIR PARA VENDEDOR (só conversas da matriz) ── */}
+      {conversation.channel !== "evolution" && (evoInstances || []).length > 0 && (
+        <div className="p-4 border-b border-border shrink-0">
+          <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Transferir para Vendedor</h4>
+          <Select value={transferInstance} onValueChange={(v) => {
+            setTransferInstance(v);
+            if (!transferMsg) {
+              const first = (conversation.contactName || "").split(" ")[0];
+              setTransferMsg(`Olá${first ? ` ${first}` : ""}! Aqui é da Auto Inova 😊 Vou continuar seu atendimento por este número. Pode falar comigo por aqui!`);
+            }
+          }}>
+            <SelectTrigger className="h-8 text-sm bg-input border-border">
+              <SelectValue placeholder="Escolher instância do vendedor..." />
+            </SelectTrigger>
+            <SelectContent>
+              {(evoInstances || []).map((i: any) => (
+                <SelectItem key={i.id} value={i.instanceName} disabled={i.status !== "connected"}>
+                  {i.displayName || i.instanceName} {i.status !== "connected" ? "(desconectada)" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {transferInstance && (
+            <>
+              <Textarea
+                value={transferMsg}
+                onChange={e => setTransferMsg(e.target.value)}
+                placeholder="Mensagem que o vendedor enviará ao cliente..."
+                className="text-sm bg-input border-border min-h-[70px] mt-2"
+              />
+              <Button
+                size="sm"
+                className="w-full mt-2"
+                disabled={!transferMsg.trim() || transferMutation.isPending}
+                onClick={() => transferMutation.mutate({ conversationId, instanceName: transferInstance, message: transferMsg.trim() })}
+              >
+                {transferMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <UserCheck className="h-3.5 w-3.5 mr-1" />}
+                Transferir e finalizar aqui
+              </Button>
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                O cliente recebe a mensagem pelo número do vendedor; esta conversa é finalizada com nota interna da transferência. O lead e o funil continuam os mesmos.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── FLUXO AUTOMATIZADO ── */}
       <div className="p-4 border-b border-border shrink-0">
@@ -447,6 +519,7 @@ ${(lead as any).notes || "N/A"}
         {editingContact ? (
           <div className="space-y-2.5">
             <FieldInput label="Nome" value={contactName} onChange={setContactName} placeholder="Nome do contato" />
+            <FieldInput label="Telefone (com DDI, só dígitos)" value={contactPhone} onChange={setContactPhone} placeholder="5551999998888" />
             <FieldInput label="Email" value={contactEmail} onChange={setContactEmail} placeholder="email@example.com" />
             <div>
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Observações</label>
@@ -558,22 +631,6 @@ ${(lead as any).notes || "N/A"}
                 className="text-sm bg-input border-border min-h-[60px] resize-y"
               />
             </div>
-            <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Status do Lead</label>
-              <Select value={leadStatus} onValueChange={setLeadStatus}>
-                <SelectTrigger className="h-8 text-sm bg-input border-border">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new">Novo</SelectItem>
-                  <SelectItem value="qualifying">Qualificando</SelectItem>
-                  <SelectItem value="qualified">Qualificado</SelectItem>
-                  <SelectItem value="contacted">Contatado</SelectItem>
-                  <SelectItem value="converted">Convertido</SelectItem>
-                  <SelectItem value="lost">Perdido</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         ) : lead ? (
           <div className="space-y-3">
@@ -624,18 +681,6 @@ ${(lead as any).notes || "N/A"}
                 <p className="text-xs text-card-foreground leading-relaxed whitespace-pre-wrap">{(lead as any).notes}</p>
               </div>
             )}
-            <Separator className="my-2" />
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-muted-foreground">Status do Lead</span>
-              <Badge variant={lead.status === "qualified" ? "default" : "outline"} className="text-xs capitalize">
-                {lead.status === "new" ? "Novo" :
-                 lead.status === "qualifying" ? "Qualificando" :
-                 lead.status === "qualified" ? "Qualificado" :
-                 lead.status === "contacted" ? "Contatado" :
-                 lead.status === "converted" ? "Convertido" :
-                 lead.status === "lost" ? "Perdido" : lead.status}
-              </Badge>
-            </div>
           </div>
         ) : (
           <p className="text-xs text-muted-foreground text-center py-3">Nenhum dado de lead coletado ainda. A IA coletará automaticamente durante a conversa.</p>
