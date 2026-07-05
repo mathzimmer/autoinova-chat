@@ -4882,11 +4882,17 @@ const evolutionRouter = router({
     .input(z.object({
       instanceName: z.string(),
       messageId: z.string(),
+      remoteJid: z.string().optional(),
+      fromMe: z.boolean().optional(),
     }))
     .mutation(async ({ input }) => {
       const { evolutionGetMediaBase64 } = await import("./evolutionService");
       const { storagePut } = await import("./storage");
-      const mediaData = await evolutionGetMediaBase64(input.instanceName, input.messageId);
+      const mediaData = await evolutionGetMediaBase64(input.instanceName, {
+        id: input.messageId,
+        remoteJid: input.remoteJid,
+        fromMe: input.fromMe,
+      });
       if (!mediaData) return { url: null };
       if (mediaData.startsWith("http")) return { url: mediaData };
       if (mediaData.startsWith("data:")) {

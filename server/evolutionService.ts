@@ -179,18 +179,30 @@ export async function evolutionFetchAllContacts(instanceName: string) {
  * Fetch media from Evolution API using getBase64FromMediaMessage endpoint.
  * Returns a data URL (base64) that can be used directly in img/audio/video tags.
  */
-export async function evolutionGetMediaBase64(instanceName: string, messageId: string, convertToMp4 = false) {
+export async function evolutionGetMediaBase64(
+  instanceName: string,
+  key: { id: string; remoteJid?: string; fromMe?: boolean },
+  convertToMp4 = false,
+) {
   try {
+    // Evolution v2.3.x exige a key completa (id + remoteJid + fromMe) para localizar a mensagem
     const result = await evolutionRequest(`/chat/getBase64FromMediaMessage/${instanceName}`, "POST", {
-      message: { key: { id: messageId } },
+      message: { key },
       convertToMp4,
     });
-    // Returns { base64: "data:mime;base64,..." } or { mediaUrl: "..." }
-    if (result?.base64) return result.base64 as string;
-    if (result?.mediaUrl) return result.mediaUrl as string;
-    return null;
+    // Returns { base64: "..." } (com ou sem prefixo data:) ou { mediaUrl } ou { media }
+    const raw = result?.base64 || result?.media || result?.mediaUrl || null;
+    if (!raw) {
+      console.warn(`[Evolution] getBase64 sem mídia para ${key.id}. Resposta:`, JSON.stringify(result).substring(0, 300));
+      return null;
+    }
+    if (typeof raw !== "string") return null;
+    // Normaliza: se vier base64 puro, adiciona o prefixo data: com o mimetype da resposta
+    if (raw.startsWith("data:") || raw.startsWith("http")) return raw;
+    const mime = (result?.mimetype as string) || "application/octet-stream";
+    return `data:${mime};base64,${raw}`;
   } catch (err) {
-    console.warn(`[Evolution] getBase64FromMediaMessage failed for ${messageId}:`, err);
+    console.warn(`[Evolution] getBase64FromMediaMessage failed for ${key.id}:`, err);
     return null;
   }
 }
@@ -488,7 +500,11 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
     }
     if (parsed.messageType !== "text" && parsed.messageType !== "reaction" && !finalMediaUrl && parsed.messageId) {
       try {
-        const mediaData = await evolutionGetMediaBase64(instanceName, parsed.messageId);
+        const mediaData = await evolutionGetMediaBase64(instanceName, {
+          id: parsed.messageId,
+          remoteJid: parsed.remoteJid,
+          fromMe: parsed.fromMe,
+        }, parsed.messageType === "video");
         if (mediaData) {
           if (mediaData.startsWith("data:") || mediaData.startsWith("http")) {
             // If it's a data URL (base64), upload to S3
