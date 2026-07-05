@@ -9,7 +9,7 @@ import {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export const userRoleEnum               = pgEnum("user_role",                ["user", "admin"]);
-export const conversationChannelEnum    = pgEnum("conversation_channel",     ["whatsapp", "instagram", "facebook", "web", "webhook"]);
+export const conversationChannelEnum    = pgEnum("conversation_channel",     ["whatsapp", "instagram", "facebook", "web", "webhook", "evolution"]);
 export const conversationStatusEnum     = pgEnum("conversation_status",      ["open", "pending", "resolved", "closed"]);
 export const messageSenderTypeEnum      = pgEnum("message_sender_type",      ["customer", "bot", "agent", "internal"]);
 export const messageTypeEnum            = pgEnum("message_type",             ["text", "audio", "image", "document", "system", "video"]);
@@ -76,6 +76,8 @@ export const conversations = pgTable("conversations", {
   contactName:             varchar("contactName", { length: 255 }),
   contactPhoto:            varchar("contactPhoto", { length: 512 }),
   channel:                 conversationChannelEnum("channel").default("whatsapp").notNull(),
+  // Instância Evolution de origem (null = número oficial/matriz)
+  instanceName:            varchar("instanceName", { length: 100 }),
   platformUserId:          varchar("platformUserId", { length: 255 }),  // BSUID vai aqui
   status:                  conversationStatusEnum("status").default("open").notNull(),
   aiActive:                boolean("aiActive").default(true).notNull(),
@@ -955,3 +957,19 @@ export const capiEvents = pgTable("capiEvents", {
 
 export type CapiEvent = typeof capiEvents.$inferSelect;
 export type InsertCapiEvent = typeof capiEvents.$inferInsert;
+
+/**
+ * CSAT — avaliação de atendimento pós-resolução (nota 1 a 5).
+ */
+export const csatRatings = pgTable("csatRatings", {
+  id:             serial("id").primaryKey(),
+  conversationId: integer("conversationId").notNull(),
+  teamMemberId:   integer("teamMemberId"), // atendente avaliado (assignedTo no momento da resolução)
+  rating:         integer("rating"),       // 1-5
+  status:         varchar("csatStatus", { length: 20 }).default("pending").notNull(), // pending|rated|expired
+  requestedAt:    timestamp("requestedAt").defaultNow().notNull(),
+  ratedAt:        timestamp("ratedAt"),
+});
+
+export type CsatRating = typeof csatRatings.$inferSelect;
+export type InsertCsatRating = typeof csatRatings.$inferInsert;

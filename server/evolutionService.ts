@@ -491,6 +491,32 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
 
     console.log(`[Evolution] Message saved: ${parsed.direction} | ${parsed.phone} | jid=${jidForConversation} | ${parsed.content.substring(0, 50)}`);
 
+    // ── Espelha no inbox unificado (mesma UI da matriz) ──
+    if (parsed.messageType !== "reaction") {
+      try {
+        const { mirrorEvolutionMessage } = await import("./db");
+        const mirrored = await mirrorEvolutionMessage({
+          instanceName,
+          phone: parsed.phone,
+          contactName: (parsed.senderName && parsed.senderName !== parsed.phone && !parsed.fromMe) ? parsed.senderName : undefined,
+          content: parsed.content,
+          messageType: parsed.messageType,
+          direction: parsed.direction,
+          senderName: parsed.senderName || (parsed.fromMe ? "Vendedor" : parsed.phone),
+          mediaUrl: finalMediaUrl || undefined,
+          externalId: parsed.messageId ? `evo_${parsed.messageId}` : undefined,
+          timestamp: parsed.timestamp,
+        });
+        if (mirrored) {
+          const { emitNewMessage, emitConversationUpdate } = await import("./socket");
+          emitNewMessage(mirrored.conversationId, mirrored.message);
+          emitConversationUpdate(mirrored.conversationId, {});
+        }
+      } catch (err) {
+        console.error("[Evolution] Erro ao espelhar no inbox unificado:", err);
+      }
+    }
+
     // Emit real-time event
     if (io) {
       io.emit("evolution_new_message", {

@@ -10,17 +10,25 @@ import { ptBR } from "date-fns/locale";
 type Props = {
   selectedId: number | null;
   onSelect: (id: number) => void;
+  /** "matriz" (padrão) ou nome da instância Evolution */
+  instance?: string;
 };
 
-export default function ConversationList({ selectedId, onSelect }: Props) {
+const PAGE_SIZE = 100;
+
+export default function ConversationList({ selectedId, onSelect, instance = "matriz" }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [agentFilter, setAgentFilter] = useState<"all" | "mine" | "unassigned" | "ai">("all");
   const [labelFilter, setLabelFilter] = useState<number | null>(null);
+  const [limit, setLimit] = useState(PAGE_SIZE);
   const { data: conversations, refetch } = trpc.conversation.list.useQuery(
-    { status: statusFilter, search: search || undefined },
+    { status: statusFilter, search: search || undefined, instance, limit },
     { refetchInterval: 10000 }
   );
+
+  // Reseta a paginação ao trocar de fonte/filtro
+  useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search]);
   const { data: teamMembers } = trpc.team.list.useQuery();
   const { data: teamMe } = trpc.teamAuth.me.useQuery();
   const { data: allLabels } = trpc.label.list.useQuery();
@@ -311,6 +319,15 @@ export default function ConversationList({ selectedId, onSelect }: Props) {
                 </button>
               );
             })
+          )}
+          {/* Paginação: carregar mais */}
+          {(conversations || []).length >= limit && (
+            <button
+              onClick={() => setLimit(l => l + PAGE_SIZE)}
+              className="w-full py-2 mt-1 text-xs text-primary hover:bg-accent/50 rounded-lg font-medium"
+            >
+              Carregar mais conversas
+            </button>
           )}
         </div>
       </div>

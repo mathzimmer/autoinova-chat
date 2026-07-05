@@ -293,19 +293,25 @@ export async function checkScheduledCampaigns(): Promise<void> {
   }
 }
 
+// Lock distribuído: evita disparo duplicado com múltiplos processos/containers
+async function checkScheduledCampaignsLocked(): Promise<void> {
+  const { withJobLock } = await import("./jobLock");
+  await withJobLock("campaign_scheduler", () => checkScheduledCampaigns());
+}
+
 export function startCampaignScheduler(): void {
   // Check every 5 minutes for scheduled campaigns
   if (campaignSchedulerInterval) clearInterval(campaignSchedulerInterval);
 
   campaignSchedulerInterval = setInterval(() => {
-    checkScheduledCampaigns().catch(err =>
+    checkScheduledCampaignsLocked().catch(err =>
       console.error("[Campaign] Erro no job periódico:", err)
     );
   }, 5 * 60 * 1000);
 
   // Also check on startup after 60s
   setTimeout(() => {
-    checkScheduledCampaigns().catch(err =>
+    checkScheduledCampaignsLocked().catch(err =>
       console.error("[Campaign] Erro na primeira verificação:", err)
     );
   }, 60_000);

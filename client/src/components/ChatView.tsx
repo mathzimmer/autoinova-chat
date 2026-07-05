@@ -157,6 +157,8 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
 
   const isWindowExpired = useMemo(() => {
     if (!conversation) return false;
+    // Instâncias Evolution não têm janela de 24h (API não-oficial)
+    if ((conversation as any).channel === "evolution") return false;
     if ((conversation as any).windowExpired) return true;
     const lastCustomerMsg = (conversation as any).lastCustomerMessageAt;
     if (!lastCustomerMsg) return false;
@@ -662,9 +664,9 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     <div className="flex flex-col h-full bg-background">
 
       {/* ── Header ── */}
-      <div className="h-16 border-b border-border flex items-center px-4 gap-3 shrink-0 bg-[#202c33]">
+      <div className="h-16 border-b border-border flex items-center px-4 gap-3 shrink-0 bg-[#f0f2f5]">
         {onBack && (
-          <Button variant="ghost" size="icon" onClick={onBack} className="lg:hidden h-8 w-8 text-white/70 hover:text-white">
+          <Button variant="ghost" size="icon" onClick={onBack} className="lg:hidden h-8 w-8 text-[#54656f] hover:text-[#111b21]">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         )}
@@ -681,8 +683,8 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               }}
             />
           ) : null}
-          <div className={`h-10 w-10 rounded-full bg-[#374151] flex items-center justify-center ${conversation?.contactPhoto ? "hidden" : ""}`}>
-            <span className="text-sm font-semibold text-white">
+          <div className={`h-10 w-10 rounded-full bg-[#dfe5e7] flex items-center justify-center ${conversation?.contactPhoto ? "hidden" : ""}`}>
+            <span className="text-sm font-semibold text-[#54656f]">
               {(conversation?.contactName || conversation?.phone || "?").charAt(0).toUpperCase()}
             </span>
           </div>
@@ -704,12 +706,12 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-semibold text-white truncate">
+          <h3 className="text-sm font-semibold text-[#111b21] truncate">
             {conversation?.contactName || conversation?.phone || "Carregando..."}
           </h3>
           <div className="flex items-center gap-2">
             {conversation?.phone && !conversation.phone.startsWith("instagram_") && !conversation.phone.startsWith("facebook_") && (
-              <span className="text-xs text-white/60 flex items-center gap-1">
+              <span className="text-xs text-[#54656f] flex items-center gap-1">
                 <Phone className="h-3 w-3" />{conversation.phone}
               </span>
             )}
@@ -723,12 +725,12 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               </span>
             )}
             {(convLabels || []).slice(0, 3).map((l: any) => (
-              <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium text-white/90" style={{ backgroundColor: l.color + "55", border: `1px solid ${l.color}` }}>
+              <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ backgroundColor: l.color + "22", border: `1px solid ${l.color}`, color: l.color }}>
                 {l.name}
               </span>
             ))}
             {(convLabels || []).length > 3 && (
-              <span className="text-[10px] text-white/50">+{(convLabels || []).length - 3}</span>
+              <span className="text-[10px] text-[#54656f]">+{(convLabels || []).length - 3}</span>
             )}
           </div>
         </div>
@@ -736,12 +738,12 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         {/* ── Etiquetas ── */}
         <Popover open={labelPopoverOpen} onOpenChange={setLabelPopoverOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#8696a0] hover:text-white hover:bg-[#2a3942]" title="Etiquetas">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Etiquetas">
               <Tag className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-64 p-2 bg-[#233138] border-[#2a3942]">
-            <p className="text-xs font-semibold text-[#8696a0] px-1 pb-2">Etiquetas da conversa</p>
+          <PopoverContent align="end" className="w-64 p-2 bg-[#ffffff] border-[#e9edef]">
+            <p className="text-xs font-semibold text-[#54656f] px-1 pb-2">Etiquetas da conversa</p>
             <div className="max-h-48 overflow-y-auto space-y-0.5">
               {(allLabels || []).map((l: any) => {
                 const active = (convLabels || []).some((cl: any) => cl.id === l.id);
@@ -749,19 +751,19 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                   <button
                     key={l.id}
                     onClick={() => toggleLabel(l.id)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${active ? "bg-[#2a3942] text-white" : "text-[#e9edef] hover:bg-[#2a3942]/60"}`}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${active ? "bg-[#e9edef] text-[#111b21]" : "text-[#111b21] hover:bg-[#e9edef]/60"}`}
                   >
                     <span className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
                     <span className="flex-1 truncate">{l.name}</span>
-                    {active && <X className="h-3 w-3 text-[#8696a0]" />}
+                    {active && <X className="h-3 w-3 text-[#54656f]" />}
                   </button>
                 );
               })}
               {(allLabels || []).length === 0 && (
-                <p className="text-xs text-[#8696a0] px-2 py-2">Nenhuma etiqueta criada ainda.</p>
+                <p className="text-xs text-[#54656f] px-2 py-2">Nenhuma etiqueta criada ainda.</p>
               )}
             </div>
-            <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-[#2a3942]">
+            <div className="flex items-center gap-1.5 pt-2 mt-1 border-t border-[#e9edef]">
               <Input
                 value={newLabelName}
                 onChange={e => setNewLabelName(e.target.value)}
@@ -772,7 +774,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                   }
                 }}
                 placeholder="Nova etiqueta + Enter"
-                className="h-7 text-xs bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#8696a0]"
+                className="h-7 text-xs bg-[#e9edef] border-0 text-[#111b21] placeholder:text-[#54656f]"
               />
             </div>
           </PopoverContent>
@@ -781,20 +783,20 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         {/* ── Lembretes ── */}
         <Popover open={reminderPopoverOpen} onOpenChange={setReminderPopoverOpen}>
           <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className={`h-8 w-8 hover:bg-[#2a3942] ${(myReminders || []).length > 0 ? "text-amber-400 hover:text-amber-300" : "text-[#8696a0] hover:text-white"}`} title="Lembrar-me desta conversa">
+            <Button variant="ghost" size="icon" className={`h-8 w-8 hover:bg-[#e9edef] ${(myReminders || []).length > 0 ? "text-amber-500 hover:text-amber-600" : "text-[#54656f] hover:text-[#111b21]"}`} title="Lembrar-me desta conversa">
               <AlarmClock className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-72 p-3 bg-[#233138] border-[#2a3942]">
-            <p className="text-xs font-semibold text-[#8696a0] pb-2">Lembrar-me desta conversa</p>
+          <PopoverContent align="end" className="w-72 p-3 bg-[#ffffff] border-[#e9edef]">
+            <p className="text-xs font-semibold text-[#54656f] pb-2">Lembrar-me desta conversa</p>
             {(myReminders || []).map((r: any) => (
               <div key={r.id} className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-1.5 mb-2">
-                <AlarmClock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                <AlarmClock className="h-3.5 w-3.5 text-amber-600 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-amber-300">{format(new Date(Number(r.remindAt)), "dd/MM 'às' HH:mm", { locale: ptBR })}</p>
-                  {r.note && <p className="text-[11px] text-[#8696a0] truncate">{r.note}</p>}
+                  <p className="text-xs text-amber-700">{format(new Date(Number(r.remindAt)), "dd/MM 'às' HH:mm", { locale: ptBR })}</p>
+                  {r.note && <p className="text-[11px] text-[#54656f] truncate">{r.note}</p>}
                 </div>
-                <button onClick={() => dismissReminderMutation.mutate({ id: r.id })} className="text-[#8696a0] hover:text-red-400">
+                <button onClick={() => dismissReminderMutation.mutate({ id: r.id })} className="text-[#54656f] hover:text-red-400">
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
@@ -803,19 +805,19 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               value={reminderNote}
               onChange={e => setReminderNote(e.target.value)}
               placeholder="Nota (opcional)"
-              className="h-8 text-xs bg-[#2a3942] border-0 text-[#e9edef] placeholder:text-[#8696a0] mb-2"
+              className="h-8 text-xs bg-[#e9edef] border-0 text-[#111b21] placeholder:text-[#54656f] mb-2"
             />
             <div className="grid grid-cols-3 gap-1.5 mb-2">
-              <Button size="sm" variant="outline" className="h-7 text-xs border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]" onClick={() => createReminder(Date.now() + 60 * 60 * 1000)}>1 hora</Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]" onClick={() => createReminder(Date.now() + 3 * 60 * 60 * 1000)}>3 horas</Button>
-              <Button size="sm" variant="outline" className="h-7 text-xs border-[#2a3942] bg-transparent text-[#e9edef] hover:bg-[#2a3942]" onClick={() => createReminder(tomorrowAt9())}>Amanhã 9h</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-[#e9edef] bg-transparent text-[#111b21] hover:bg-[#e9edef]" onClick={() => createReminder(Date.now() + 60 * 60 * 1000)}>1 hora</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-[#e9edef] bg-transparent text-[#111b21] hover:bg-[#e9edef]" onClick={() => createReminder(Date.now() + 3 * 60 * 60 * 1000)}>3 horas</Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-[#e9edef] bg-transparent text-[#111b21] hover:bg-[#e9edef]" onClick={() => createReminder(tomorrowAt9())}>Amanhã 9h</Button>
             </div>
             <div className="flex items-center gap-1.5">
               <Input
                 type="datetime-local"
                 value={reminderCustom}
                 onChange={e => setReminderCustom(e.target.value)}
-                className="h-7 text-xs bg-[#2a3942] border-0 text-[#e9edef] flex-1"
+                className="h-7 text-xs bg-[#e9edef] border-0 text-[#111b21] flex-1"
               />
               <Button size="sm" className="h-7 text-xs bg-[#00a884] hover:bg-[#00a884]/90 text-white" disabled={!reminderCustom} onClick={() => createReminder(new Date(reminderCustom).getTime())}>OK</Button>
             </div>
@@ -845,23 +847,23 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
       </div>
 
       {/* ── Messages area with WhatsApp background ── */}
-      <div className="relative flex-1 bg-[#0b141a]">
+      <div className="relative flex-1 bg-[#efeae2]">
         {/* Subtle texture overlay */}
         <div
           className="absolute inset-0 opacity-[0.03] pointer-events-none"
-          style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}
+          style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23000000' fill-opacity='1'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }}
         />
         <div
           ref={scrollRef}
           onScroll={handleScroll}
           className="absolute inset-0 overflow-y-auto px-4 py-3"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "#374151 transparent" }}
+          style={{ scrollbarWidth: "thin", scrollbarColor: "#dfe5e7 transparent" }}
         >
           {!msgs || msgs.length === 0 ? (
             <div className="flex items-center justify-center h-full">
-              <div className="text-center bg-[#182229] rounded-xl px-6 py-4 max-w-xs">
-                <p className="text-sm text-[#8696a0]">Nenhuma mensagem ainda</p>
-                <p className="text-xs text-[#8696a0]/60 mt-1">As mensagens aparecerão aqui</p>
+              <div className="text-center bg-[#ffffff] rounded-xl px-6 py-4 max-w-xs">
+                <p className="text-sm text-[#54656f]">Nenhuma mensagem ainda</p>
+                <p className="text-xs text-[#54656f]/60 mt-1">As mensagens aparecerão aqui</p>
               </div>
             </div>
           ) : (
@@ -890,10 +892,10 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
           )}
           {typingUser && (
             <div className="flex items-center gap-2 mt-2 pl-2">
-              <div className="bg-[#202c33] rounded-xl rounded-bl-none px-4 py-2.5 flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-[#8696a0] animate-bounce" style={{ animationDelay: "0ms" }} />
-                <span className="h-2 w-2 rounded-full bg-[#8696a0] animate-bounce" style={{ animationDelay: "150ms" }} />
-                <span className="h-2 w-2 rounded-full bg-[#8696a0] animate-bounce" style={{ animationDelay: "300ms" }} />
+              <div className="bg-[#f0f2f5] rounded-xl rounded-bl-none px-4 py-2.5 flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-[#54656f] animate-bounce" style={{ animationDelay: "0ms" }} />
+                <span className="h-2 w-2 rounded-full bg-[#54656f] animate-bounce" style={{ animationDelay: "150ms" }} />
+                <span className="h-2 w-2 rounded-full bg-[#54656f] animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
             </div>
           )}
@@ -912,7 +914,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
 
       {/* ── Image Preview ── */}
       {imagePreviews.length > 0 && (
-        <div className="border-t border-[#2a3942] p-3 bg-[#202c33]">
+        <div className="border-t border-[#e9edef] p-3 bg-[#f0f2f5]">
           <div className="flex flex-col gap-3">
             <div className="flex flex-wrap gap-2">
               {imagePreviews.map((preview, index) => (
@@ -920,7 +922,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                   <img
                     src={preview.dataUrl}
                     alt={`Preview ${index + 1}`}
-                    className={`h-16 w-16 object-cover rounded-lg border border-[#2a3942] ${sendingImageIndex === index ? "opacity-50" : ""}`}
+                    className={`h-16 w-16 object-cover rounded-lg border border-[#e9edef] ${sendingImageIndex === index ? "opacity-50" : ""}`}
                   />
                   {sendingImageIndex === index && (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -944,11 +946,11 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 value={imageCaption}
                 onChange={e => setImageCaption(e.target.value)}
                 placeholder="Legenda (opcional)..."
-                className="bg-[#2a3942] border-[#2a3942] text-[#e9edef] placeholder:text-[#8696a0] text-sm flex-1"
+                className="bg-[#e9edef] border-[#e9edef] text-[#111b21] placeholder:text-[#54656f] text-sm flex-1"
                 disabled={sendingImageIndex >= 0}
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendImages(); } }}
               />
-              <Button variant="ghost" size="icon" onClick={() => { setImagePreviews([]); setImageCaption(""); }} disabled={sendingImageIndex >= 0} className="text-[#8696a0] hover:text-red-400">
+              <Button variant="ghost" size="icon" onClick={() => { setImagePreviews([]); setImageCaption(""); }} disabled={sendingImageIndex >= 0} className="text-[#54656f] hover:text-red-400">
                 <X className="h-4 w-4" />
               </Button>
               <Button onClick={handleSendImages} disabled={sendingImageIndex >= 0} size="sm" className="bg-[#00a884] hover:bg-[#00a884]/90 text-white">
@@ -961,7 +963,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
 
       {/* ── Video Preview ── */}
       {videoPreview && (
-        <div className="border-t border-[#2a3942] p-3 bg-[#202c33]">
+        <div className="border-t border-[#e9edef] p-3 bg-[#f0f2f5]">
           <div className="flex flex-col gap-3">
             <div className="flex items-start gap-3">
               <div className="relative rounded-lg overflow-hidden bg-black w-40 h-24 shrink-0">
@@ -971,17 +973,17 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 </div>
               </div>
               <div className="flex-1 flex flex-col gap-2">
-                <p className="text-xs text-[#8696a0] truncate">{videoPreview.file.name}</p>
+                <p className="text-xs text-[#54656f] truncate">{videoPreview.file.name}</p>
                 <input
                   type="text" value={videoCaption}
                   onChange={e => setVideoCaption(e.target.value)}
                   placeholder="Legenda (opcional)..."
-                  className="text-sm bg-[#2a3942] border border-[#2a3942] text-[#e9edef] placeholder:text-[#8696a0] rounded-md px-3 py-1.5 outline-none focus:ring-1 focus:ring-[#00a884]"
+                  className="text-sm bg-[#e9edef] border border-[#e9edef] text-[#111b21] placeholder:text-[#54656f] rounded-md px-3 py-1.5 outline-none focus:ring-1 focus:ring-[#00a884]"
                 />
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setVideoPreview(null)} disabled={isSendingVideo} className="text-[#8696a0]">
+              <Button variant="ghost" size="sm" onClick={() => setVideoPreview(null)} disabled={isSendingVideo} className="text-[#54656f]">
                 <X className="h-4 w-4 mr-1" /> Cancelar
               </Button>
               <Button size="sm" className="bg-[#00a884] hover:bg-[#00a884]/90 text-white" onClick={handleSendVideo} disabled={isSendingVideo}>
@@ -1056,15 +1058,15 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
 
       {/* ── Mensagens agendadas pendentes ── */}
       {(pendingScheduled || []).length > 0 && (
-        <div className="border-t border-[#2a3942] bg-[#182229] px-3 py-1.5 space-y-1">
+        <div className="border-t border-[#e9edef] bg-[#ffffff] px-3 py-1.5 space-y-1">
           {(pendingScheduled || []).map((sm: any) => (
             <div key={sm.id} className="flex items-center gap-2">
               <CalendarClock className="h-3.5 w-3.5 text-[#53bdeb] shrink-0" />
               <span className="text-xs text-[#53bdeb] shrink-0">
                 {format(new Date(Number(sm.scheduledAt)), "dd/MM HH:mm", { locale: ptBR })}
               </span>
-              <span className="text-xs text-[#8696a0] truncate flex-1">{sm.content}</span>
-              <button onClick={() => cancelScheduledMutation.mutate({ id: sm.id })} className="text-[#8696a0] hover:text-red-400 shrink-0" title="Cancelar envio">
+              <span className="text-xs text-[#54656f] truncate flex-1">{sm.content}</span>
+              <button onClick={() => cancelScheduledMutation.mutate({ id: sm.id })} className="text-[#54656f] hover:text-red-400 shrink-0" title="Cancelar envio">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -1214,55 +1216,55 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
 
       {/* ── Reply preview ── */}
       {replyToMessage && (
-        <div className="flex items-center gap-2 bg-[#202c33] px-3 pt-2 pb-1 border-t border-[#2a3942]">
-          <div className="flex-1 border-l-4 border-[#00a884] pl-2.5 py-1 bg-[#2a3942] rounded-r min-w-0">
+        <div className="flex items-center gap-2 bg-[#f0f2f5] px-3 pt-2 pb-1 border-t border-[#e9edef]">
+          <div className="flex-1 border-l-4 border-[#00a884] pl-2.5 py-1 bg-[#e9edef] rounded-r min-w-0">
             <span className="text-xs font-semibold text-[#00a884] block">
               {replyToMessage.senderType === "customer" ? "Cliente" : replyToMessage.senderName || "Atendente"}
             </span>
-            <p className="text-xs text-[#8696a0] truncate">
+            <p className="text-xs text-[#54656f] truncate">
               {replyToMessage.messageType !== "text" && replyToMessage.messageType !== "template"
                 ? `📎 ${replyToMessage.messageType === "image" ? "Imagem" : replyToMessage.messageType === "audio" ? "Áudio" : replyToMessage.messageType === "video" ? "Vídeo" : "Arquivo"}`
                 : replyToMessage.content.slice(0, 80)
               }
             </p>
           </div>
-          <button onClick={() => setReplyToMessage(null)} className="text-[#8696a0] hover:text-[#e9edef] shrink-0">
+          <button onClick={() => setReplyToMessage(null)} className="text-[#54656f] hover:text-[#111b21] shrink-0">
             <X className="h-4 w-4" />
           </button>
         </div>
       )}
 
       {/* ── Input area ── */}
-      <div className={`px-3 py-2 shrink-0 relative transition-colors ${noteMode ? "bg-[#3a3116]" : "bg-[#202c33]"}`}>
+      <div className={`px-3 py-2 shrink-0 relative transition-colors ${noteMode ? "bg-[#fef3c7]" : "bg-[#f0f2f5]"}`}>
         {/* Hidden file inputs */}
         <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleImageSelect} />
         <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoSelect} />
 
         {/* Quick replies dropdown ("/") */}
         {filteredQuickReplies.length > 0 && (
-          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl overflow-hidden">
+          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-[#ffffff] border border-[#e9edef] rounded-xl shadow-2xl overflow-hidden">
             {filteredQuickReplies.map((qr: any, i: number) => (
               <button
                 key={qr.id}
                 onClick={() => selectQuickReply(qr)}
                 onMouseEnter={() => setQrSelectedIndex(i)}
-                className={`w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors ${i === qrSelectedIndex ? "bg-[#2a3942]" : ""}`}
+                className={`w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors ${i === qrSelectedIndex ? "bg-[#e9edef]" : ""}`}
               >
                 <Zap className="h-3.5 w-3.5 text-[#00a884] shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <p className="text-sm text-[#e9edef]"><span className="text-[#00a884] font-medium">/{qr.shortcut}</span> — {qr.title}</p>
-                  <p className="text-xs text-[#8696a0] truncate">{applyVariables(qr.content)}</p>
+                  <p className="text-sm text-[#111b21]"><span className="text-[#00a884] font-medium">/{qr.shortcut}</span> — {qr.title}</p>
+                  <p className="text-xs text-[#54656f] truncate">{applyVariables(qr.content)}</p>
                 </div>
               </button>
             ))}
-            <button onClick={() => setShowQrManageDialog(true)} className="w-full flex items-center gap-2 px-3 py-1.5 border-t border-[#2a3942] text-xs text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]/50">
+            <button onClick={() => setShowQrManageDialog(true)} className="w-full flex items-center gap-2 px-3 py-1.5 border-t border-[#e9edef] text-xs text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]/50">
               <Plus className="h-3 w-3" /> Gerenciar respostas rápidas
             </button>
           </div>
         )}
         {qrFilter !== null && filteredQuickReplies.length === 0 && (quickReplies || []).length === 0 && (
-          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl">
-            <button onClick={() => setShowQrManageDialog(true)} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-[#8696a0] hover:text-[#e9edef]">
+          <div className="absolute bottom-full left-3 right-3 mb-1 z-50 bg-[#ffffff] border border-[#e9edef] rounded-xl shadow-2xl">
+            <button onClick={() => setShowQrManageDialog(true)} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-[#54656f] hover:text-[#111b21]">
               <Plus className="h-4 w-4 text-[#00a884]" /> Nenhuma resposta rápida ainda — criar a primeira
             </button>
           </div>
@@ -1271,8 +1273,8 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         {/* Note mode banner */}
         {noteMode && (
           <div className="flex items-center gap-2 pb-1.5">
-            <StickyNote className="h-3.5 w-3.5 text-amber-400" />
-            <span className="text-xs text-amber-300 font-medium">Nota interna — visível apenas para a equipe, não será enviada ao cliente</span>
+            <StickyNote className="h-3.5 w-3.5 text-amber-600" />
+            <span className="text-xs text-amber-700 font-medium">Nota interna — visível apenas para a equipe, não será enviada ao cliente</span>
           </div>
         )}
 
@@ -1280,11 +1282,11 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
         {showEmojiPicker && (
           <div
             ref={emojiPickerRef}
-            className="absolute bottom-16 left-3 z-50 bg-[#233138] border border-[#2a3942] rounded-xl shadow-2xl p-3 w-72 max-h-56 overflow-y-auto"
+            className="absolute bottom-16 left-3 z-50 bg-[#ffffff] border border-[#e9edef] rounded-xl shadow-2xl p-3 w-72 max-h-56 overflow-y-auto"
           >
             <div className="flex flex-wrap gap-1">
               {EMOJI_LIST.map((emoji, i) => (
-                <button key={i} onClick={() => insertEmoji(emoji)} className="text-lg w-8 h-8 flex items-center justify-center hover:bg-[#2a3942] rounded-md transition-colors">
+                <button key={i} onClick={() => insertEmoji(emoji)} className="text-lg w-8 h-8 flex items-center justify-center hover:bg-[#e9edef] rounded-md transition-colors">
                   {emoji}
                 </button>
               ))}
@@ -1307,23 +1309,23 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)} disabled={isSending} className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]">
+            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]">
               <Smile className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isSending} className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]" title="Enviar imagens">
+            <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Enviar imagens">
               <ImagePlus className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => videoInputRef.current?.click()} disabled={isSending} className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]" title="Enviar vídeo">
+            <Button variant="ghost" size="icon" onClick={() => videoInputRef.current?.click()} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Enviar vídeo">
               <Video className="h-5 w-5" />
             </Button>
-            <Button variant="ghost" size="icon" onClick={startRecording} disabled={isSending} className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]" title="Gravar áudio">
+            <Button variant="ghost" size="icon" onClick={startRecording} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Gravar áudio">
               <Mic className="h-5 w-5" />
             </Button>
             <Button
               variant="ghost" size="icon"
               onClick={() => { setShowVehiclePhotosDialog(true); }}
               disabled={isSending}
-              className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]"
+              className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]"
               title="Enviar fotos de um veículo do estoque"
             >
               <Car className="h-5 w-5" />
@@ -1333,21 +1335,21 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 <Button
                   variant="ghost" size="icon"
                   disabled={isSending}
-                  className="shrink-0 text-[#8696a0] hover:text-[#00a884] hover:bg-[#2a3942]"
+                  className="shrink-0 text-[#54656f] hover:text-[#00a884] hover:bg-[#e9edef]"
                   title="IA: sugerir resposta"
                 >
                   {suggestReplyMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin text-[#00a884]" /> : <Sparkles className="h-5 w-5" />}
                 </Button>
               </PopoverTrigger>
-              <PopoverContent align="start" className="w-64 p-3 bg-[#233138] border-[#2a3942]">
-                <p className="text-xs font-semibold text-[#8696a0] pb-2">Sugestão de resposta (IA)</p>
+              <PopoverContent align="start" className="w-64 p-3 bg-[#ffffff] border-[#e9edef]">
+                <p className="text-xs font-semibold text-[#54656f] pb-2">Sugestão de resposta (IA)</p>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs text-[#8696a0] flex-1">Histórico:</span>
+                  <span className="text-xs text-[#54656f] flex-1">Histórico:</span>
                   <Select
                     value={String(suggestHistoryCount)}
                     onValueChange={v => { setSuggestHistoryCount(Number(v)); localStorage.setItem("suggestHistoryCount", v); }}
                   >
-                    <SelectTrigger className="h-7 w-32 text-xs bg-[#2a3942] border-0 text-[#e9edef]"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-7 w-32 text-xs bg-[#e9edef] border-0 text-[#111b21]"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="5">5 mensagens</SelectItem>
                       <SelectItem value="10">10 mensagens</SelectItem>
@@ -1366,14 +1368,14 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                   {suggestReplyMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Sparkles className="h-3.5 w-3.5 mr-1" />}
                   Gerar sugestão
                 </Button>
-                <p className="text-[10px] text-[#8696a0] mt-2">A sugestão entra no campo de mensagem — revise antes de enviar.</p>
+                <p className="text-[10px] text-[#54656f] mt-2">A sugestão entra no campo de mensagem — revise antes de enviar.</p>
               </PopoverContent>
             </Popover>
             <Button
               variant="ghost" size="icon"
               onClick={() => setNoteMode(v => !v)}
               disabled={isSending}
-              className={`shrink-0 hover:bg-[#2a3942] ${noteMode ? "text-amber-400 bg-amber-500/15" : "text-[#8696a0] hover:text-[#e9edef]"}`}
+              className={`shrink-0 hover:bg-[#e9edef] ${noteMode ? "text-amber-600 bg-amber-500/15" : "text-[#54656f] hover:text-[#111b21]"}`}
               title="Nota interna (só a equipe vê)"
             >
               <StickyNote className="h-5 w-5" />
@@ -1384,7 +1386,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               onChange={e => setNewMessage(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={noteMode ? "Escreva uma nota interna..." : "Digite uma mensagem ou / para respostas rápidas"}
-              className={`flex-1 border-0 text-[#e9edef] placeholder:text-[#8696a0] rounded-lg focus-visible:ring-0 focus-visible:ring-offset-0 ${noteMode ? "bg-[#4a3f1d]" : "bg-[#2a3942]"}`}
+              className={`flex-1 border-0 text-[#111b21] placeholder:text-[#54656f] rounded-lg focus-visible:ring-0 focus-visible:ring-offset-0 ${noteMode ? "bg-[#fde68a]" : "bg-[#e9edef]"}`}
               disabled={isSending}
             />
             {!noteMode && (
@@ -1392,7 +1394,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 variant="ghost" size="icon"
                 onClick={() => { if (newMessage.trim()) setShowScheduleDialog(true); else toast.info("Escreva a mensagem primeiro, depois clique para agendar."); }}
                 disabled={isSending}
-                className="shrink-0 text-[#8696a0] hover:text-[#e9edef] hover:bg-[#2a3942]"
+                className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]"
                 title="Agendar envio"
               >
                 <CalendarClock className="h-5 w-5" />
@@ -1402,7 +1404,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               onClick={handleSend}
               disabled={!newMessage.trim() || isSending}
               size="icon"
-              className={`shrink-0 rounded-full text-white disabled:bg-[#2a3942] disabled:text-[#8696a0] ${noteMode ? "bg-amber-500 hover:bg-amber-500/90" : "bg-[#00a884] hover:bg-[#00a884]/90"}`}
+              className={`shrink-0 rounded-full text-white disabled:bg-[#e9edef] disabled:text-[#54656f] ${noteMode ? "bg-amber-500 hover:bg-amber-500/90" : "bg-[#00a884] hover:bg-[#00a884]/90"}`}
             >
               {sendMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : noteMode ? <StickyNote className="h-4 w-4" /> : <Send className="h-4 w-4" />}
             </Button>
@@ -1450,11 +1452,11 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
       <div className="flex justify-center my-2 py-1">
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-4 py-2 max-w-[75%] shadow-sm">
           <div className="flex items-center gap-1.5 mb-0.5">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-400"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>
-            <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wide">Nota interna · {message.senderName || "Equipe"}</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-amber-600"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/></svg>
+            <span className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">Nota interna · {message.senderName || "Equipe"}</span>
           </div>
-          <p className="text-sm text-amber-100/90 whitespace-pre-wrap break-words">{message.content}</p>
-          <p className="text-[10px] text-amber-400/50 text-right mt-0.5">{format(new Date(message.createdAt), "HH:mm")}</p>
+          <p className="text-sm text-amber-900 whitespace-pre-wrap break-words">{message.content}</p>
+          <p className="text-[10px] text-amber-600/50 text-right mt-0.5">{format(new Date(message.createdAt), "HH:mm")}</p>
         </div>
       </div>
     );
@@ -1464,7 +1466,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
   if (isSystem || message.messageType === "system") {
     return (
       <div className="flex justify-center my-2 py-1">
-        <div className="bg-[#182229] text-[#8696a0] text-xs px-4 py-1.5 rounded-full max-w-[85%] text-center shadow-sm">
+        <div className="bg-[#ffffff] text-[#54656f] text-xs px-4 py-1.5 rounded-full max-w-[85%] text-center shadow-sm">
           {message.content}
         </div>
       </div>
@@ -1475,19 +1477,19 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
   if (isTemplate) {
     const templateName = (meta?.templateName as string) || "template";
     const templateParams = (meta?.templateParams as string[]) || [];
-    const statusColor = message.status === "read" ? "text-blue-400" : message.status === "delivered" ? "text-green-400" : message.status === "failed" ? "text-red-400" : "text-[#8696a0]";
+    const statusColor = message.status === "read" ? "text-blue-400" : message.status === "delivered" ? "text-green-400" : message.status === "failed" ? "text-red-400" : "text-[#54656f]";
     const statusLabel = message.status === "read" ? "Lida" : message.status === "delivered" ? "Entregue" : message.status === "failed" ? "Falhou" : "Enviada";
 
     return (
       <div className={`flex ${isFirstInGroup ? "mt-2" : "mt-0.5"} justify-end`}>
         <div className="max-w-[75%]">
-          <div className="bg-[#005c4b] rounded-xl rounded-tr-none px-4 py-2.5 shadow-sm">
+          <div className="bg-[#d9fdd3] rounded-xl rounded-tr-none px-4 py-2.5 shadow-sm">
             <div className="flex items-center gap-1.5 mb-1.5">
               <FileText className="h-3.5 w-3.5 text-[#00a884]" />
               <span className="text-xs font-semibold text-[#00a884]">{templateName}</span>
             </div>
             {templateParams.length > 0 && (
-              <div className="text-xs text-[#8696a0] mb-1.5 flex flex-wrap gap-1">
+              <div className="text-xs text-[#54656f] mb-1.5 flex flex-wrap gap-1">
                 {templateParams.map((p, i) => (
                   <span key={i} className="bg-[#00a884]/10 rounded px-1.5 py-0.5">{p}</span>
                 ))}
@@ -1496,7 +1498,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
             <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-white/10">
               <span className={`text-[10px] font-medium ${statusColor}`}>{statusLabel}</span>
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-[#8696a0]">{format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}</span>
+                <span className="text-[10px] text-[#54656f]">{format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}</span>
                 <DeliveryStatusIcon status={message.status} deliveryError={message.deliveryError} />
               </div>
             </div>
@@ -1508,10 +1510,10 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
 
   // Bubble colors
   const bubbleClass = isCustomer
-    ? "bg-[#202c33] text-[#e9edef]"
+    ? "bg-[#f0f2f5] text-[#111b21]"
     : isBot
-    ? "bg-[#005c4b] text-[#e9edef]"
-    : "bg-[#005c4b] text-[#e9edef]";
+    ? "bg-[#d9fdd3] text-[#111b21]"
+    : "bg-[#d9fdd3] text-[#111b21]";
 
   // Corner radius: cut the origin corner for first message in group
   const radiusClass = isCustomer
@@ -1524,7 +1526,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
         {/* Sender label for first in group */}
         {isFirstInGroup && !isCustomer && (
           <div className="flex justify-end mb-0.5 pr-1">
-            <span className="text-[10px] text-[#8696a0]">
+            <span className="text-[10px] text-[#54656f]">
               {isBot ? "IA" : message.senderName || "Atendente"}
             </span>
           </div>
@@ -1539,24 +1541,24 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
           <button
             data-reaction-btn
             onClick={onToggleReactionPicker}
-            className="h-7 w-7 rounded-full bg-[#182229] border border-[#2a3942] flex items-center justify-center text-sm hover:bg-[#2a3942] transition-colors shadow-md"
+            className="h-7 w-7 rounded-full bg-[#ffffff] border border-[#e9edef] flex items-center justify-center text-sm hover:bg-[#e9edef] transition-colors shadow-md"
             title="Reagir"
           >
             😊
           </button>
           <button
             onClick={onReply}
-            className="h-7 w-7 rounded-full bg-[#182229] border border-[#2a3942] flex items-center justify-center hover:bg-[#2a3942] transition-colors shadow-md"
+            className="h-7 w-7 rounded-full bg-[#ffffff] border border-[#e9edef] flex items-center justify-center hover:bg-[#e9edef] transition-colors shadow-md"
             title="Responder"
           >
-            <CornerUpLeft className="h-3.5 w-3.5 text-[#8696a0]" />
+            <CornerUpLeft className="h-3.5 w-3.5 text-[#54656f]" />
           </button>
           <button
             onClick={onForward}
-            className="h-7 w-7 rounded-full bg-[#182229] border border-[#2a3942] flex items-center justify-center hover:bg-[#2a3942] transition-colors shadow-md"
+            className="h-7 w-7 rounded-full bg-[#ffffff] border border-[#e9edef] flex items-center justify-center hover:bg-[#e9edef] transition-colors shadow-md"
             title="Encaminhar / Copiar"
           >
-            <Share2 className="h-3.5 w-3.5 text-[#8696a0]" />
+            <Share2 className="h-3.5 w-3.5 text-[#54656f]" />
           </button>
         </div>
 
@@ -1564,7 +1566,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
         {showReactionPicker && (
           <div
             data-reaction-picker
-            className={`absolute z-20 bottom-full mb-1 ${isCustomer ? "left-0" : "right-0"} bg-[#233138] border border-[#2a3942] rounded-full px-2 py-1.5 flex items-center gap-1 shadow-xl`}
+            className={`absolute z-20 bottom-full mb-1 ${isCustomer ? "left-0" : "right-0"} bg-[#ffffff] border border-[#e9edef] rounded-full px-2 py-1.5 flex items-center gap-1 shadow-xl`}
           >
             {QUICK_REACTIONS.map(emoji => (
               <button
@@ -1603,13 +1605,13 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
               {mediaUrl ? (
                 <AudioPlayer url={mediaUrl} />
               ) : (
-                <div className="flex items-center gap-2 text-xs text-[#8696a0]">
+                <div className="flex items-center gap-2 text-xs text-[#54656f]">
                   <Volume2 className="h-3.5 w-3.5" /><span>Mensagem de voz</span>
                 </div>
               )}
               {transcribedText && (
                 <div className="mt-2 pt-2 border-t border-white/10">
-                  <span className="text-[10px] text-[#8696a0] block mb-0.5">Transcrição:</span>
+                  <span className="text-[10px] text-[#54656f] block mb-0.5">Transcrição:</span>
                   <p className="whitespace-pre-wrap text-xs italic opacity-80">{transcribedText}</p>
                 </div>
               )}
@@ -1628,7 +1630,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
             <div className="mb-1">
               <a href={mediaUrl} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-2 p-2 rounded-lg bg-black/20 hover:bg-black/30 transition-colors">
-                <FileText className="h-5 w-5 text-[#8696a0] shrink-0" />
+                <FileText className="h-5 w-5 text-[#54656f] shrink-0" />
                 <span className="text-xs text-[#00a884] underline truncate">Abrir documento</span>
               </a>
             </div>
@@ -1666,14 +1668,14 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
               </div>
               {effectiveSections.map((section: any, si: number) => (
                 <div key={si} className="mb-2">
-                  {section.title && <div className="text-[10px] font-semibold text-[#8696a0] uppercase tracking-wider mb-1">{section.title}</div>}
+                  {section.title && <div className="text-[10px] font-semibold text-[#54656f] uppercase tracking-wider mb-1">{section.title}</div>}
                   <div className="space-y-1">
                     {(section.rows || []).map((row: any, ri: number) => (
                       <div key={ri} className="flex items-start gap-2 px-2.5 py-1.5 rounded-md bg-[#00a884]/10 border border-[#00a884]/15 text-xs">
                         <span className="h-4 w-4 rounded bg-[#00a884]/20 flex items-center justify-center text-[9px] font-bold text-[#00a884] shrink-0 mt-0.5">{ri + 1}</span>
                         <div className="min-w-0">
-                          <div className="font-medium text-[#e9edef]">{row.title}</div>
-                          {row.description && <div className="text-[#8696a0] text-[10px] mt-0.5 line-clamp-2">{row.description}</div>}
+                          <div className="font-medium text-[#111b21]">{row.title}</div>
+                          {row.description && <div className="text-[#54656f] text-[10px] mt-0.5 line-clamp-2">{row.description}</div>}
                         </div>
                       </div>
                     ))}
@@ -1686,12 +1688,12 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
           {/* Timestamp + status (inside bubble, bottom-right) */}
           <div className={`flex items-center gap-1 mt-1 ${isCustomer ? "justify-end" : "justify-end"}`}>
             {!isCustomer && !isBot && (
-              <span className="text-[10px] text-[#8696a0]/60">Atendente ·</span>
+              <span className="text-[10px] text-[#54656f]/60">Atendente ·</span>
             )}
             {isBot && (
-              <span className="text-[10px] text-[#8696a0]/60">IA ·</span>
+              <span className="text-[10px] text-[#54656f]/60">IA ·</span>
             )}
-            <span className="text-[10px] text-[#8696a0]">
+            <span className="text-[10px] text-[#54656f]">
               {format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}
             </span>
             {!isCustomer && <DeliveryStatusIcon status={message.status} deliveryError={message.deliveryError} />}
@@ -1702,7 +1704,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
         {reactions.length > 0 && (
           <div className={`flex gap-1 mt-1 flex-wrap ${isCustomer ? "justify-start" : "justify-end"}`}>
             {reactions.map((emoji, i) => (
-              <span key={i} className="bg-[#182229] border border-[#2a3942] rounded-full px-2 py-0.5 text-sm shadow-sm">
+              <span key={i} className="bg-[#ffffff] border border-[#e9edef] rounded-full px-2 py-0.5 text-sm shadow-sm">
                 {emoji}
               </span>
             ))}
@@ -1723,7 +1725,7 @@ function DeliveryStatusIcon({ status, deliveryError }: { status?: string | null;
     case "sent":
       return (
         <span className="inline-flex items-center" title="Enviada">
-          <svg width="14" height="10" viewBox="0 0 16 12" fill="none" className="text-[#8696a0]">
+          <svg width="14" height="10" viewBox="0 0 16 12" fill="none" className="text-[#54656f]">
             <path d="M1 6l4 4L14 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
         </span>
@@ -1731,7 +1733,7 @@ function DeliveryStatusIcon({ status, deliveryError }: { status?: string | null;
     case "delivered":
       return (
         <span className="inline-flex items-center" title="Entregue">
-          <svg width="18" height="10" viewBox="0 0 20 12" fill="none" className="text-[#8696a0]">
+          <svg width="18" height="10" viewBox="0 0 20 12" fill="none" className="text-[#54656f]">
             <path d="M1 6l4 4L14 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             <path d="M6 6l4 4L19 1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
           </svg>
@@ -1824,7 +1826,7 @@ function AudioPlayer({ url }: { url: string }) {
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 text-xs text-[#8696a0]">
+      <div className="flex items-center gap-2 text-xs text-[#54656f]">
         <Volume2 className="h-3.5 w-3.5" />
         <a href={url} target="_blank" rel="noopener noreferrer" className="text-[#00a884] underline">Baixar áudio</a>
       </div>
@@ -1845,14 +1847,14 @@ function AudioPlayer({ url }: { url: string }) {
           <input
             type="range" min={0} max={effectiveDuration} step={0.1} value={currentTime}
             onChange={handleSeek}
-            className="w-full h-1 rounded-full appearance-none bg-[#2a3942] cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#00a884]"
+            className="w-full h-1 rounded-full appearance-none bg-[#e9edef] cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-[#00a884]"
           />
         ) : (
-          <div className="w-full h-1 rounded-full bg-[#2a3942] relative overflow-hidden">
+          <div className="w-full h-1 rounded-full bg-[#e9edef] relative overflow-hidden">
             {isPlaying && <div className="absolute inset-0 bg-[#00a884]/40 animate-pulse" />}
           </div>
         )}
-        <div className="flex justify-between text-[9px] text-[#8696a0]">
+        <div className="flex justify-between text-[9px] text-[#54656f]">
           <span>{fmt(currentTime)}</span>
           <span>{effectiveDuration > 0 ? fmt(effectiveDuration) : (isPlaying ? "" : "Áudio")}</span>
         </div>

@@ -158,8 +158,11 @@ async function tick(): Promise<void> {
   if (tickRunning) return; // evita ticks sobrepostos (causa de envio duplicado)
   tickRunning = true;
   try {
-    await fireDueReminders();
-    await sendDueScheduledMessages();
+    const { withJobLock } = await import("./jobLock");
+    await withJobLock("scheduler_tick", async () => {
+      await fireDueReminders();
+      await sendDueScheduledMessages();
+    });
   } finally {
     tickRunning = false;
   }

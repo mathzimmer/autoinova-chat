@@ -8,8 +8,23 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
 
+const FUNNEL_LABELS: Record<string, string> = {
+  novo: "Novo", interesse_definido: "Interesse", pagamento_definido: "Pagamento",
+  dados_pessoais: "Dados", dados_troca: "Troca", encaminhado_vendedor: "C/ Vendedor",
+  negociando: "Negociando", fechado: "Fechado", perdido: "Perdido",
+};
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}min`;
+  if (seconds < 86400) return `${(seconds / 3600).toFixed(1)}h`;
+  return `${(seconds / 86400).toFixed(1)}d`;
+}
+
 export default function Dashboard() {
   const { data: stats } = trpc.dashboard.stats.useQuery(undefined, { refetchInterval: 30000 });
+  const { data: adv } = trpc.dashboard.advancedStats.useQuery(undefined, { refetchInterval: 60000 });
   const { data: conversations } = trpc.conversation.list.useQuery({ status: "open" });
   const { data: leads } = trpc.lead.list.useQuery({ status: "all" });
   const { data: tokenStatus, refetch: refetchTokens } = trpc.tokenHealth.status.useQuery(undefined, {
@@ -133,6 +148,106 @@ export default function Dashboard() {
           bgAccent="bg-blue-500/10"
         />
       </div>
+
+      {/* ── Métricas operacionais (30 dias) ── */}
+      {adv && (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <MetricCard
+              icon={<Clock className="h-5 w-5" />}
+              label="1ª Resposta (média 30d)"
+              value={formatDuration(adv.firstResponseAvgSeconds)}
+              accent="text-cyan-400"
+              bgAccent="bg-cyan-500/10"
+            />
+            <MetricCard
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              label="Tempo até Resolver (TMA)"
+              value={formatDuration(adv.tmaAvgSeconds)}
+              accent="text-teal-400"
+              bgAccent="bg-teal-500/10"
+            />
+            <MetricCard
+              icon={<Target className="h-5 w-5" />}
+              label="Vendas via Meta (30d)"
+              value={adv.capiPurchases}
+              accent="text-green-400"
+              bgAccent="bg-green-500/10"
+            />
+            <MetricCard
+              icon={<TrendingUp className="h-5 w-5" />}
+              label="Valor Vendido (CAPI)"
+              value={adv.capiTotalValue > 0 ? `R$ ${adv.capiTotalValue.toLocaleString("pt-BR")}` : "—"}
+              accent="text-emerald-400"
+              bgAccent="bg-emerald-500/10"
+            />
+            <MetricCard
+              icon={<CheckCircle2 className="h-5 w-5" />}
+              label={`CSAT médio (${adv.csatCount} avaliações)`}
+              value={adv.csatCount > 0 ? `${adv.csatAvg.toFixed(1)} ⭐` : "—"}
+              accent="text-yellow-400"
+              bgAccent="bg-yellow-500/10"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Funil 30d */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Funil (leads ativos 30d)</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-1.5">
+                  {["novo","interesse_definido","pagamento_definido","encaminhado_vendedor","negociando","fechado","perdido"].map(stage => {
+                    const item = adv.funnel.find((f: any) => f.stage === stage);
+                    const count = item?.count || 0;
+                    const max = Math.max(...adv.funnel.map((f: any) => f.count), 1);
+                    return (
+                      <div key={stage} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-24 shrink-0">{FUNNEL_LABELS[stage]}</span>
+                        <div className="flex-1 h-4 bg-secondary rounded overflow-hidden">
+                          <div
+                            className={`h-full rounded ${stage === "fechado" ? "bg-green-500" : stage === "perdido" ? "bg-red-400" : "bg-primary"}`}
+                            style={{ width: `${Math.max((count / max) * 100, count > 0 ? 4 : 0)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-semibold text-foreground w-8 text-right">{count}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Origem dos leads 30d */}
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">Origem dos leads (30d)</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {[
+                    { label: "Anúncio WhatsApp (CTWA)", value: adv.origins.ctwa, color: "bg-green-500" },
+                    { label: "Lead Ads (formulário)", value: adv.origins.leadAds, color: "bg-blue-500" },
+                    { label: "Outros pagos (Google/UTM)", value: adv.origins.outrosPagos, color: "bg-amber-500" },
+                    { label: "Orgânico / direto", value: adv.origins.organico, color: "bg-slate-400" },
+                  ].map(o => {
+                    const total = adv.origins.ctwa + adv.origins.leadAds + adv.origins.outrosPagos + adv.origins.organico || 1;
+                    return (
+                      <div key={o.label} className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground w-44 shrink-0 truncate">{o.label}</span>
+                        <div className="flex-1 h-4 bg-secondary rounded overflow-hidden">
+                          <div className={`h-full rounded ${o.color}`} style={{ width: `${(o.value / total) * 100}%` }} />
+                        </div>
+                        <span className="text-xs font-semibold text-foreground w-8 text-right">{o.value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-3">
+                  1ª resposta calculada sobre {adv.firstResponseSample} conversas · TMA sobre {adv.resolvedCount} resolvidas
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </>
+      )}
 
       {/* AI Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

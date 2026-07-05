@@ -434,10 +434,16 @@ export async function markRescueResponded(conversationId: number): Promise<void>
 
 let rescueInterval: ReturnType<typeof setInterval> | null = null;
 
+// Lock distribuído: evita execução dupla com múltiplos processos/containers
+async function runRescueJobLocked(): Promise<void> {
+  const { withJobLock } = await import("./jobLock");
+  await withJobLock("rescue_job", async () => { await runRescueJob(); });
+}
+
 export function startRescueJob(): void {
   // Run after 60s delay on startup
   setTimeout(() => {
-    runRescueJob().catch(err => console.error("[Rescue] Erro na primeira execução:", err));
+    runRescueJobLocked().catch(err => console.error("[Rescue] Erro na primeira execução:", err));
   }, 60_000);
 
   // Schedule periodic runs
@@ -449,7 +455,7 @@ export function startRescueJob(): void {
 
     rescueInterval = setInterval(
       () => {
-        runRescueJob().catch(err => console.error("[Rescue] Erro no job periódico:", err));
+        runRescueJobLocked().catch(err => console.error("[Rescue] Erro no job periódico:", err));
       },
       Math.max(intervalMs, 60_000) // Mínimo 1 minuto
     );

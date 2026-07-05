@@ -3,7 +3,6 @@ import { trpc } from "@/lib/trpc";
 import ConversationList from "@/components/ConversationList";
 import ChatView from "@/components/ChatView";
 import ConversationPanel from "@/components/ConversationPanel";
-import EvolutionInbox from "@/pages/EvolutionInbox";
 import { MessageSquare, PanelRightOpen, PanelRightClose, Building2, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearch } from "wouter";
@@ -75,18 +74,15 @@ export default function Inbox() {
         ))}
       </div>
 
-      {/* ── Conteúdo da fonte selecionada ── */}
-      {source !== "matriz" ? (
-        <div className="flex-1 min-h-0">
-          <EvolutionInbox embeddedInstance={source} />
-        </div>
-      ) : (
+      {/* ── Conteúdo da fonte selecionada (mesmo formato para matriz e Evolution) ── */}
+      {(
         <div className="flex-1 min-h-0 flex overflow-hidden">
           {/* Left: Conversation List */}
           <div className={`w-80 shrink-0 ${selectedConversationId ? "hidden lg:flex lg:flex-col" : "flex flex-col w-full lg:w-80"}`}>
             <ConversationList
               selectedId={selectedConversationId}
               onSelect={(id) => setSelectedConversationId(id)}
+              instance={source}
             />
           </div>
 

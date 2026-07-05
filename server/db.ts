@@ -1,4 +1,4 @@
-import { eq, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull } from "drizzle-orm";
+import { eq, ne, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -85,10 +85,16 @@ export async function getUserByOpenId(openId: string) {
 }
 
 // ─── Conversation Queries ──────────────────────────────────────
-export async function listConversations(filters?: { status?: string; search?: string }) {
+export async function listConversations(filters?: {
+  status?: string;
+  search?: string;
+  /** "matriz" (padrão) = canais oficiais; ou nome de instância Evolution */
+  instance?: string;
+  limit?: number;
+  offset?: number;
+}) {
   const db = await getDb();
   if (!db) return [];
-  let query = db.select().from(conversations).orderBy(desc(conversations.lastMessageAt));
   const conditions = [];
   if (filters?.status && filters.status !== "all") {
     conditions.push(eq(conversations.status, filters.status as any));
@@ -101,10 +107,100 @@ export async function listConversations(filters?: { status?: string; search?: st
       )!
     );
   }
-  if (conditions.length > 0) {
-    return db.select().from(conversations).where(and(...conditions)).orderBy(desc(conversations.lastMessageAt));
+  // Filtro de fonte: matriz (canais oficiais) vs instância Evolution específica
+  if (!filters?.instance || filters.instance === "matriz") {
+    conditions.push(ne(conversations.channel, "evolution" as any));
+  } else {
+    conditions.push(eq(conversations.channel, "evolution" as any));
+    conditions.push(eq(conversations.instanceName, filters.instance));
   }
-  return query;
+  const limit = Math.min(Math.max(filters?.limit ?? 100, 1), 300);
+  const offset = Math.max(filters?.offset ?? 0, 0);
+  return db.select().from(conversations)
+    .where(and(...conditions))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+/**
+ * Espelha uma mensagem Evolution no inbox unificado (tabelas principais).
+ * Retorna a mensagem criada (ou null se duplicada/ignorada).
+ */
+export async function mirrorEvolutionMessage(params: {
+  instanceName: string;
+  phone: string;
+  contactName?: string;
+  content: string;
+  messageType: string; // text|image|audio|video|document|sticker
+  direction: "inbound" | "outbound";
+  senderName: string;
+  mediaUrl?: string;
+  externalId?: string;
+  timestamp: number; // epoch ms
+}): Promise<{ conversationId: number; message: any } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Dedupe por externalId (webhook pode reenviar)
+  if (params.externalId) {
+    const existing = await getMessageByExternalId(params.externalId);
+    if (existing) return null;
+  }
+
+  // Localiza/cria a conversa desta instância
+  let conv = (await db.select().from(conversations)
+    .where(and(
+      eq(conversations.phone, params.phone),
+      eq(conversations.channel, "evolution" as any),
+      eq(conversations.instanceName, params.instanceName),
+    )).limit(1))[0];
+
+  const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
+  const isInbound = params.direction === "inbound";
+
+  if (!conv) {
+    const inserted = await db.insert(conversations).values({
+      phone: params.phone,
+      contactName: params.contactName || null,
+      channel: "evolution" as any,
+      instanceName: params.instanceName,
+      status: "open",
+      aiActive: false, // números de vendedores: sem IA por padrão
+      unreadCount: isInbound ? 1 : 0,
+      lastMessageAt: params.timestamp,
+      lastCustomerMessageAt: isInbound ? params.timestamp : null,
+      lastMessagePreview: preview,
+    }).returning();
+    conv = inserted[0];
+  } else {
+    await db.update(conversations).set({
+      lastMessageAt: params.timestamp,
+      lastMessagePreview: preview,
+      ...(params.contactName && !conv.contactName ? { contactName: params.contactName } : {}),
+      ...(isInbound ? {
+        unreadCount: (conv.unreadCount || 0) + 1,
+        lastCustomerMessageAt: params.timestamp,
+      } : {}),
+      updatedAt: new Date(),
+    }).where(eq(conversations.id, conv.id));
+  }
+
+  // Mapeia tipos não suportados pelo enum principal
+  const typeMap: Record<string, string> = { sticker: "image", reaction: "text" };
+  const mappedType = typeMap[params.messageType] || params.messageType;
+
+  const message = await createMessage({
+    conversationId: conv.id,
+    content: params.content || (params.messageType === "audio" ? "[Áudio]" : params.messageType === "image" ? "[Imagem]" : params.messageType === "video" ? "[Vídeo]" : params.messageType === "document" ? "[Documento]" : `[${params.messageType}]`),
+    senderType: isInbound ? "customer" : "agent",
+    senderName: params.senderName,
+    messageType: mappedType as any,
+    metadata: params.mediaUrl ? { mediaUrl: params.mediaUrl } : undefined,
+    externalId: params.externalId,
+  });
+
+  return { conversationId: conv.id, message };
 }
 
 export async function getConversationById(id: number) {

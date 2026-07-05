@@ -611,6 +611,9 @@ const conversationRouter = router({
     .input(z.object({
       status: z.string().optional(),
       search: z.string().optional(),
+      instance: z.string().optional(), // "matriz" (padrão) ou nome da instância Evolution
+      limit: z.number().min(1).max(300).optional(),
+      offset: z.number().min(0).optional(),
     }).optional())
     .query(async ({ input }) => {
       return listConversations(input);
@@ -632,6 +635,11 @@ const conversationRouter = router({
     .mutation(async ({ input }) => {
       const conv = await updateConversation(input.id, { status: input.status });
       emitConversationUpdate(input.id, conv);
+      // CSAT: pesquisa de satisfação ao resolver (fire-and-forget, se habilitada)
+      if (input.status === "resolved") {
+        import("./csat").then(({ requestCsat }) => requestCsat(input.id))
+          .catch(err => console.error("[CSAT] hook updateStatus:", err));
+      }
       return conv;
     }),
 
@@ -823,7 +831,17 @@ const messageRouter = router({
         try {
           let sendResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No platform" };
 
-          if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
+          if (conv.channel === "evolution" && (conv as any).instanceName && conv.phone) {
+            // Conversa de instância Evolution: envia pela API da instância
+            const { evolutionSendText } = await import("./evolutionService");
+            try {
+              const evoResult = await evolutionSendText((conv as any).instanceName, conv.phone, input.content);
+              const evoMsgId = (evoResult as any)?.key?.id;
+              sendResult = { success: true, messageId: evoMsgId ? `evo_${evoMsgId}` : undefined };
+            } catch (err) {
+              sendResult = { success: false, error: err instanceof Error ? err.message : "Falha no envio Evolution" };
+            }
+          } else if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
             sendResult = await sendTextMessage(conv.phone, input.content);
           } else if (conv.channel === "instagram" && isInstagramConfigured() && conv.platformUserId) {
             sendResult = await sendPlatformMessage("instagram", conv.platformUserId, input.content);
@@ -1277,6 +1295,96 @@ const dashboardRouter = router({
     ]);
     return { ...stats, ...aiStats };
   }),
+
+  /** Métricas operacionais avançadas (últimos 30 dias) */
+  advancedStats: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return null;
+    const { sql: sqlOp } = await import("drizzle-orm");
+
+    // Tempo médio até a 1ª resposta (atendente ou IA) — em segundos
+    const firstResponse = await db.execute(sqlOp`
+      SELECT COALESCE(AVG(diff), 0)::float AS avg_seconds, COUNT(*)::int AS sample
+      FROM (
+        SELECT c.id,
+          EXTRACT(EPOCH FROM (MIN(m2."createdAt") - MIN(m1."createdAt"))) AS diff
+        FROM conversations c
+        JOIN messages m1 ON m1."conversationId" = c.id AND m1."senderType" = 'customer'
+        JOIN messages m2 ON m2."conversationId" = c.id AND m2."senderType" IN ('agent','bot')
+        WHERE c."createdAt" > now() - interval '30 days'
+        GROUP BY c.id
+        HAVING MIN(m2."createdAt") > MIN(m1."createdAt")
+      ) t
+    `);
+
+    // TMA — tempo médio até resolver (conversas resolvidas/fechadas nos últimos 30d)
+    const tma = await db.execute(sqlOp`
+      SELECT COALESCE(AVG(EXTRACT(EPOCH FROM ("updatedAt" - "createdAt"))), 0)::float AS avg_seconds,
+             COUNT(*)::int AS resolved_count
+      FROM conversations
+      WHERE "status" IN ('resolved','closed')
+        AND "updatedAt" > now() - interval '30 days'
+    `);
+
+    // Funil: contagem de leads por etapa (últimos 30d por atualização)
+    const funnel = await db.execute(sqlOp`
+      SELECT "funnelStatus" AS stage, COUNT(*)::int AS count
+      FROM leads
+      WHERE "updatedAt" > now() - interval '30 days'
+      GROUP BY "funnelStatus"
+    `);
+
+    // Vendas reportadas à Meta (CAPI Purchase, 30d)
+    const capiSales = await db.execute(sqlOp`
+      SELECT COUNT(*)::int AS purchases, COALESCE(SUM(value), 0)::float AS total_value
+      FROM "capiEvents"
+      WHERE "eventName" = 'Purchase' AND "capiEventStatus" = 'sent'
+        AND "createdAt" > now() - interval '30 days'
+    `);
+
+    // Origem dos leads (30d)
+    const origins = await db.execute(sqlOp`
+      SELECT
+        COUNT(*) FILTER (WHERE "ctwaId" IS NOT NULL)::int AS ctwa,
+        COUNT(*) FILTER (WHERE "metaLeadId" IS NOT NULL)::int AS lead_ads,
+        COUNT(*) FILTER (WHERE "ctwaId" IS NULL AND "metaLeadId" IS NULL AND ("gclid" IS NOT NULL OR "utmSource" IS NOT NULL))::int AS outros_pagos,
+        COUNT(*) FILTER (WHERE "ctwaId" IS NULL AND "metaLeadId" IS NULL AND "gclid" IS NULL AND "utmSource" IS NULL)::int AS organico
+      FROM leads
+      WHERE "createdAt" > now() - interval '30 days'
+    `);
+
+    // CSAT médio (30d)
+    const csat = await db.execute(sqlOp`
+      SELECT COALESCE(AVG(rating), 0)::float AS avg_rating, COUNT(*)::int AS rated
+      FROM "csatRatings"
+      WHERE "csatStatus" = 'rated' AND "ratedAt" > now() - interval '30 days'
+    `);
+
+    const fr = (firstResponse as any)[0] || (firstResponse as any).rows?.[0] || {};
+    const tm = (tma as any)[0] || (tma as any).rows?.[0] || {};
+    const cs = (capiSales as any)[0] || (capiSales as any).rows?.[0] || {};
+    const og = (origins as any)[0] || (origins as any).rows?.[0] || {};
+    const ct = (csat as any)[0] || (csat as any).rows?.[0] || {};
+    const funnelRows = ((funnel as any).rows ?? (funnel as any)) || [];
+
+    return {
+      csatAvg: Number(ct.avg_rating) || 0,
+      csatCount: Number(ct.rated) || 0,
+      firstResponseAvgSeconds: Number(fr.avg_seconds) || 0,
+      firstResponseSample: Number(fr.sample) || 0,
+      tmaAvgSeconds: Number(tm.avg_seconds) || 0,
+      resolvedCount: Number(tm.resolved_count) || 0,
+      funnel: (funnelRows as any[]).map(r => ({ stage: r.stage, count: Number(r.count) })),
+      capiPurchases: Number(cs.purchases) || 0,
+      capiTotalValue: Number(cs.total_value) || 0,
+      origins: {
+        ctwa: Number(og.ctwa) || 0,
+        leadAds: Number(og.lead_ads) || 0,
+        outrosPagos: Number(og.outros_pagos) || 0,
+        organico: Number(og.organico) || 0,
+      },
+    };
+  }),
 });
 
 const vehicleRouter = router({
@@ -1454,17 +1562,42 @@ const webhookRouter = router({
         console.error(`[Webhook] Auto-sync contato falhou:`, err);
       }
 
-      // === REATIVAÇÃO AUTOMÁTICA ===
-      // Se a conversa estava resolved/closed e o cliente mandou nova mensagem,
-      // reabrir automaticamente com IA ativa
+      // === CSAT: resposta pode ser uma nota pendente (1-5) ===
+      let csatHandled = false;
       if (conversation.status === "resolved" || conversation.status === "closed") {
-        console.log(`[Webhook] REATIVAÇÃO: Conversa ${conversation.id} (${conversation.phone}) estava ${conversation.status}. Reabrindo com IA ativa.`);
-        conversation = await updateConversation(conversation.id, {
-          status: "open",
-          aiActive: true,
-          assignedTo: null, // Remove atribuição anterior para IA atender primeiro
-          lastMessageAt: Date.now(),
-        }) || conversation;
+        try {
+          const { captureCsatReply } = await import("./csat");
+          csatHandled = await captureCsatReply(conversation.id, messageContent);
+        } catch (err) {
+          console.error("[Webhook] CSAT capture erro:", err);
+        }
+      }
+
+      // === REATIVAÇÃO AUTOMÁTICA (com carência) ===
+      // Carência: se o cliente responde logo após o fechamento (ex.: "obrigado"),
+      // a conversa volta para o MESMO atendente, sem reiniciar IA/fluxo.
+      // Fora da carência: reabre com IA ativa (comportamento padrão).
+      if (!csatHandled && (conversation.status === "resolved" || conversation.status === "closed")) {
+        const graceMinutes = Number(await getSetting("reopen_grace_minutes")) || 30;
+        const closedAgoMs = Date.now() - new Date(conversation.updatedAt).getTime();
+        const withinGrace = closedAgoMs < graceMinutes * 60 * 1000 && !!conversation.assignedTo;
+
+        if (withinGrace) {
+          console.log(`[Webhook] CARÊNCIA: Conversa ${conversation.id} fechada há ${Math.round(closedAgoMs / 60000)}min. Devolvendo ao atendente ${conversation.assignedTo} sem IA.`);
+          conversation = await updateConversation(conversation.id, {
+            status: "open",
+            aiActive: false, // mantém com o atendente que fechou
+            lastMessageAt: Date.now(),
+          }) || conversation;
+        } else {
+          console.log(`[Webhook] REATIVAÇÃO: Conversa ${conversation.id} (${conversation.phone}) estava ${conversation.status}. Reabrindo com IA ativa.`);
+          conversation = await updateConversation(conversation.id, {
+            status: "open",
+            aiActive: true,
+            assignedTo: null, // Remove atribuição anterior para IA atender primeiro
+            lastMessageAt: Date.now(),
+          }) || conversation;
+        }
       }
 
       // Build metadata with media info
@@ -1498,7 +1631,8 @@ const webhookRouter = router({
       }
 
       // Check if AI should respond — usa debounce para agrupar mensagens rápidas
-      if (conversation.aiActive) {
+      // (nota de CSAT consumida não aciona a IA)
+      if (conversation.aiActive && !csatHandled) {
         // Prepara o conteúdo para o debounce
         let aiMessageContent = messageContent;
         if (input.messageType === "image" && storedMediaUrl) {
@@ -1514,6 +1648,33 @@ const webhookRouter = router({
 });
 
 const settingsRouter = router({
+  /** Config de atendimento: CSAT + carência de reabertura */
+  getAttendanceConfig: adminProcedure.query(async () => {
+    const [csatEnabled, graceMinutes, csatWindow] = await Promise.all([
+      getSetting("csat_enabled"),
+      getSetting("reopen_grace_minutes"),
+      getSetting("csat_window_minutes"),
+    ]);
+    return {
+      csatEnabled: csatEnabled === "true",
+      graceMinutes: Number(graceMinutes) || 30,
+      csatWindowMinutes: Number(csatWindow) || 15,
+    };
+  }),
+
+  saveAttendanceConfig: adminProcedure
+    .input(z.object({
+      csatEnabled: z.boolean(),
+      graceMinutes: z.number().min(0).max(1440),
+      csatWindowMinutes: z.number().min(1).max(120),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("csat_enabled", input.csatEnabled ? "true" : "false", ctx.user.id);
+      await upsertSetting("reopen_grace_minutes", String(input.graceMinutes), ctx.user.id);
+      await upsertSetting("csat_window_minutes", String(input.csatWindowMinutes), ctx.user.id);
+      return { success: true };
+    }),
+
   getPrompt: protectedProcedure.query(async () => {
     // Return all layers (current values from DB or defaults)
     const corePrompt = await getCorePrompt();

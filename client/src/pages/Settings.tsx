@@ -495,6 +495,9 @@ export default function Settings() {
 
         {/* Meta Conversions API - tracking avançado */}
         <MetaCapiCard />
+
+        {/* Atendimento: CSAT + carência */}
+        <AttendanceCard />
       </div>
     </div>
   );
@@ -717,6 +720,70 @@ function WhatsAppConnectCard() {
             </Button>
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Atendimento: CSAT + carência de reabertura ──────────────────────────────
+
+function AttendanceCard() {
+  const utils = trpc.useUtils();
+  const { data: config } = trpc.settings.getAttendanceConfig.useQuery();
+  const [csatEnabled, setCsatEnabled] = useState(false);
+  const [graceMinutes, setGraceMinutes] = useState(30);
+  const [csatWindowMinutes, setCsatWindowMinutes] = useState(15);
+
+  useEffect(() => {
+    if (config) {
+      setCsatEnabled(config.csatEnabled);
+      setGraceMinutes(config.graceMinutes);
+      setCsatWindowMinutes(config.csatWindowMinutes);
+    }
+  }, [config]);
+
+  const saveMutation = trpc.settings.saveAttendanceConfig.useMutation({
+    onSuccess: () => { toast.success("Configuração salva"); utils.settings.getAttendanceConfig.invalidate(); },
+    onError: (err) => toast.error(err.message),
+  });
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader>
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-teal-500" />
+          Atendimento — Avaliação e Carência
+        </CardTitle>
+        <CardDescription>
+          <b>CSAT:</b> ao resolver uma conversa, o cliente recebe "avalie de 1 a 5" — a nota aparece no Dashboard.{" "}
+          <b>Carência:</b> se o cliente responder logo após o fechamento (ex.: "obrigado"), a conversa volta ao mesmo atendente sem reiniciar a IA.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="flex items-end">
+            <Button
+              size="sm"
+              variant={csatEnabled ? "default" : "outline"}
+              onClick={() => setCsatEnabled(v => !v)}
+              className="text-xs w-full"
+            >
+              {csatEnabled ? "CSAT ativado" : "CSAT desativado"}
+            </Button>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Prazo da avaliação (min)</label>
+            <Input type="number" min={1} max={120} value={csatWindowMinutes} onChange={e => setCsatWindowMinutes(Number(e.target.value))} className="text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">Carência de reabertura (min)</label>
+            <Input type="number" min={0} max={1440} value={graceMinutes} onChange={e => setGraceMinutes(Number(e.target.value))} className="text-sm" />
+          </div>
+        </div>
+        <Button size="sm" onClick={() => saveMutation.mutate({ csatEnabled, graceMinutes, csatWindowMinutes })} disabled={saveMutation.isPending}>
+          {saveMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+          Salvar
+        </Button>
       </CardContent>
     </Card>
   );

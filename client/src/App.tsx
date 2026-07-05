@@ -9,6 +9,7 @@ import Inbox from "./pages/Inbox";
 import Dashboard from "./pages/Dashboard";
 import Vehicles from "./pages/Vehicles";
 import Leads from "./pages/Leads";
+import Funnel from "./pages/Funnel";
 import Settings from "./pages/Settings";
 import Team from "./pages/Team";
 import TeamLogin from "./pages/TeamLogin";
@@ -32,6 +33,11 @@ function Router() {
       <Route path={"/inbox"}>
         <AppLayout>
           <Inbox />
+        </AppLayout>
+      </Route>
+      <Route path={"/funnel"}>
+        <AppLayout>
+          <Funnel />
         </AppLayout>
       </Route>
       <Route path={"/dashboard"}>
