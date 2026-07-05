@@ -434,11 +434,12 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
   if (event === "messages.update") {
     const d = data as { keyId?: string; key?: { id?: string }; status?: string };
     const keyId = d?.keyId || d?.key?.id;
-    const statusMap: Record<string, "sent" | "delivered" | "read"> = {
+    const statusMap: Record<string, "sent" | "delivered" | "read" | "failed"> = {
       SERVER_ACK: "sent",
       DELIVERY_ACK: "delivered",
       READ: "read",
       PLAYED: "read",
+      ERROR: "failed", // ex.: 463 (endereçamento LID) — mostra "não entregue" no chat
     };
     const mapped = d?.status ? statusMap[d.status] : undefined;
     if (keyId && mapped) {

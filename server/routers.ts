@@ -1012,26 +1012,26 @@ const messageRouter = router({
               } catch { /* fallback abaixo */ }
             }
             if (!toJid) toJid = conv.phone;
-            // @lid sem número real: se o telefone da conversa foi corrigido
-            // (manualmente ou via senderPn), prefere o número — a Evolution
-            // valida e envia por ele
-            if (toJid.endsWith("@lid")) {
-              const digits = (conv.phone || "").replace(/\D/g, "");
-              const lidDigits = toJid.replace("@lid", "");
-              if (digits && digits !== lidDigits && digits.length >= 10 && digits.length <= 13) {
-                toJid = digits;
+            // Endereçamento LID: contatos migrados só aceitam envio pelo @lid
+            // (enviar pelo número gera erro 463 assíncrono no WhatsApp).
+            // Tenta o @lid primeiro quando conhecido; se a Evolution recusar
+            // sincronamente, cai para o JID/número tradicional.
+            const lidJid = (conv.metadata as any)?.evolutionLidJid as string | undefined;
+            const candidates = Array.from(new Set([lidJid, toJid].filter(Boolean))) as string[];
+            sendResult = { success: false, error: "Sem destino" };
+            for (const candidate of candidates) {
+              console.log(`[EvolutionSend] Tentando enviar: instancia=${(conv as any).instanceName}, toJid=${candidate}, conv=${conv.id}`);
+              try {
+                const evoResult = await evolutionSendText((conv as any).instanceName, candidate, input.content);
+                const evoMsgId = (evoResult as any)?.key?.id;
+                console.log(`[EvolutionSend] ✅ Aceito pela Evolution: msgId=${evoMsgId || "?"} (via ${candidate})`);
+                sendResult = { success: true, messageId: evoMsgId ? `evo_${evoMsgId}` : undefined };
+                break;
+              } catch (err) {
+                const errMsg = err instanceof Error ? err.message : "Falha no envio Evolution";
+                console.error(`[EvolutionSend] ❌ Recusado (${candidate}): ${errMsg}`);
+                sendResult = { success: false, error: errMsg };
               }
-            }
-            console.log(`[EvolutionSend] Tentando enviar: instancia=${(conv as any).instanceName}, toJid=${toJid}, conv=${conv.id}`);
-            try {
-              const evoResult = await evolutionSendText((conv as any).instanceName, toJid, input.content);
-              const evoMsgId = (evoResult as any)?.key?.id;
-              console.log(`[EvolutionSend] ✅ Enviado: msgId=${evoMsgId || "?"}`);
-              sendResult = { success: true, messageId: evoMsgId ? `evo_${evoMsgId}` : undefined };
-            } catch (err) {
-              const errMsg = err instanceof Error ? err.message : "Falha no envio Evolution";
-              console.error(`[EvolutionSend] ❌ Falhou: ${errMsg}`);
-              sendResult = { success: false, error: errMsg };
             }
           } else if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
             sendResult = await sendTextMessage(conv.phone, input.content);

@@ -194,13 +194,19 @@ export async function mirrorEvolutionMessage(params: {
   const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
   const isInbound = params.direction === "inbound";
 
+  // JID @lid do contato (WhatsApp está migrando para endereçamento LID;
+  // alguns contatos só aceitam envio pelo @lid — erro 463 se enviar pelo número)
+  const lidJid = params.remoteJid.endsWith("@lid")
+    ? params.remoteJid
+    : (params.altJid?.endsWith("@lid") ? params.altJid : undefined);
+
   if (!conv) {
     const inserted = await db.insert(conversations).values({
       phone: bestPhone,
       contactName: bestName || null,
       channel: "evolution" as any,
       instanceName: params.instanceName,
-      metadata: { evolutionRemoteJid: params.remoteJid },
+      metadata: { evolutionRemoteJid: params.remoteJid, ...(lidJid ? { evolutionLidJid: lidJid } : {}) },
       status: "open",
       aiActive: false, // números de vendedores: sem IA por padrão
       unreadCount: isInbound ? 1 : 0,
@@ -218,7 +224,7 @@ export async function mirrorEvolutionMessage(params: {
     await db.update(conversations).set({
       lastMessageAt: params.timestamp,
       lastMessagePreview: preview,
-      metadata: { ...existingMeta, evolutionRemoteJid: params.remoteJid },
+      metadata: { ...existingMeta, evolutionRemoteJid: params.remoteJid, ...(lidJid ? { evolutionLidJid: lidJid } : {}) },
       ...(phoneUpgrade ? { phone: bestPhone } : {}),
       ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
       ...(isInbound ? {
