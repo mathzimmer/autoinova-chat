@@ -430,6 +430,28 @@ async function fetchProfilePicIfMissing(instanceName: string, conversationId: nu
 }
 
 export async function handleEvolutionWebhook({ event, instanceName, data, io }: HandleEvolutionWebhookParams) {
+  // ── Status de entrega (✓ → ✓✓ → azul) para as mensagens do inbox unificado ──
+  if (event === "messages.update") {
+    const d = data as { keyId?: string; key?: { id?: string }; status?: string };
+    const keyId = d?.keyId || d?.key?.id;
+    const statusMap: Record<string, "sent" | "delivered" | "read"> = {
+      SERVER_ACK: "sent",
+      DELIVERY_ACK: "delivered",
+      READ: "read",
+      PLAYED: "read",
+    };
+    const mapped = d?.status ? statusMap[d.status] : undefined;
+    if (keyId && mapped) {
+      try {
+        const { updateMessageDeliveryStatus } = await import("./db");
+        await updateMessageDeliveryStatus(`evo_${keyId}`, mapped);
+      } catch (err) {
+        console.warn("[Evolution] status update falhou:", err);
+      }
+    }
+    return;
+  }
+
   const parsed = parseWebhookMessage({ event, instance: instanceName, data });
   if (!parsed) return;
 

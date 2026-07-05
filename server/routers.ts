@@ -1022,12 +1022,16 @@ const messageRouter = router({
                 toJid = digits;
               }
             }
+            console.log(`[EvolutionSend] Tentando enviar: instancia=${(conv as any).instanceName}, toJid=${toJid}, conv=${conv.id}`);
             try {
               const evoResult = await evolutionSendText((conv as any).instanceName, toJid, input.content);
               const evoMsgId = (evoResult as any)?.key?.id;
+              console.log(`[EvolutionSend] ✅ Enviado: msgId=${evoMsgId || "?"}`);
               sendResult = { success: true, messageId: evoMsgId ? `evo_${evoMsgId}` : undefined };
             } catch (err) {
-              sendResult = { success: false, error: err instanceof Error ? err.message : "Falha no envio Evolution" };
+              const errMsg = err instanceof Error ? err.message : "Falha no envio Evolution";
+              console.error(`[EvolutionSend] ❌ Falhou: ${errMsg}`);
+              sendResult = { success: false, error: errMsg };
             }
           } else if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
             sendResult = await sendTextMessage(conv.phone, input.content);
