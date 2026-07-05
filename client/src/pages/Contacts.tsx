@@ -17,6 +17,9 @@ import {
   ChevronLeft, ChevronRight, X, Download, GitMerge, AlertTriangle,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import { useLocation } from "wouter";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 // ─── Types ──────────────────────────────────────────────────────
 interface Contact {
@@ -29,6 +32,18 @@ interface Contact {
   source: string;
   conversationId?: number | null;
   leadId?: number | null;
+  kind?: string;
+  cpf?: string | null;
+  birthDate?: string | null;
+  purchasedVehicle?: string | null;
+  purchasedAt?: string | Date | null;
+  lastDealValue?: number | null;
+  lastConversation?: {
+    conversationId: number;
+    lastMessageAt: number | null;
+    preview: string | null;
+    status: string;
+  } | null;
   isActive: boolean;
   createdAt: string | Date;
 }
@@ -39,6 +54,12 @@ interface ImportRow {
   email?: string;
   tags?: string[];
   notes?: string;
+  kind?: "lead" | "cliente";
+  cpf?: string;
+  birthDate?: string;
+  address?: string;
+  city?: string;
+  purchasedVehicle?: string;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -90,6 +111,12 @@ export default function ContactsPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formTags, setFormTags] = useState("");
   const [formNotes, setFormNotes] = useState("");
+  const [formKind, setFormKind] = useState<"lead" | "cliente">("lead");
+  const [formCpf, setFormCpf] = useState("");
+  const [formPurchasedVehicle, setFormPurchasedVehicle] = useState("");
+  const [formAddress, setFormAddress] = useState("");
+  const [formCity, setFormCity] = useState("");
+  const [selectedKind, setSelectedKind] = useState<string>(""); // filtro lead/cliente
 
   // Template state
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -109,11 +136,28 @@ export default function ContactsPage() {
     setShowCampaignDialog(true);
   };
 
+  // ── Iniciar conversa direto do contato ──
+  const [, setLocation] = useLocation();
+  const startConvMutation = trpc.conversation.startNew.useMutation({
+    onSuccess: (res) => setLocation(`/inbox?conv=${res.conversationId}`),
+    onError: (err) => toast.error(err.message),
+  });
+  const handleStartConversation = (contact: Contact) => {
+    if (contact.lastConversation?.conversationId) {
+      setLocation(`/inbox?conv=${contact.lastConversation.conversationId}`);
+    } else if (contact.conversationId) {
+      setLocation(`/inbox?conv=${contact.conversationId}`);
+    } else {
+      startConvMutation.mutate({ name: contact.name, phone: contact.phone, instance: "matriz" });
+    }
+  };
+
   // Queries
   const contactsQuery = trpc.contact.list.useQuery({
     search: search || undefined,
     tag: selectedTag || undefined,
     source: selectedSource || undefined,
+    kind: selectedKind || undefined,
     limit: pageSize,
     offset: page * pageSize,
     campaignParticipant: filterByCampaign === "active" ? true : undefined,
@@ -234,7 +278,7 @@ export default function ContactsPage() {
     onError: (err) => toast.error("Erro no auto-merge: " + err.message),
   });
 
-  const contacts = contactsQuery.data?.contacts || [];
+  const contacts = ((contactsQuery.data?.contacts || []) as unknown) as Contact[];
   const total = contactsQuery.data?.total || 0;
   const tags = tagsQuery.data || [];
   const templates = (templatesQuery.data as any) || [];
@@ -243,6 +287,8 @@ export default function ContactsPage() {
   // Helpers
   const resetForm = () => {
     setFormName(""); setFormPhone(""); setFormEmail(""); setFormTags(""); setFormNotes("");
+    setFormKind("lead"); setFormCpf(""); setFormPurchasedVehicle("");
+    setFormAddress(""); setFormCity("");
   };
 
   const openEdit = (contact: Contact) => {
@@ -252,6 +298,11 @@ export default function ContactsPage() {
     setFormEmail(contact.email || "");
     setFormTags((contact.tags || []).join(", "));
     setFormNotes(contact.notes || "");
+    setFormKind(((contact as any).kind as "lead" | "cliente") || "lead");
+    setFormCpf((contact as any).cpf || "");
+    setFormPurchasedVehicle((contact as any).purchasedVehicle || "");
+    setFormAddress((contact as any).address || "");
+    setFormCity((contact as any).city || "");
     setShowEditDialog(true);
   };
 
@@ -262,6 +313,11 @@ export default function ContactsPage() {
       email: formEmail || undefined,
       tags: formTags ? formTags.split(",").map(t => t.trim()).filter(Boolean) : undefined,
       notes: formNotes || undefined,
+      kind: formKind,
+      cpf: formCpf.trim() || undefined,
+      purchasedVehicle: formPurchasedVehicle.trim() || undefined,
+      address: formAddress.trim() || undefined,
+      city: formCity.trim() || undefined,
     });
   };
 
@@ -274,6 +330,11 @@ export default function ContactsPage() {
       email: formEmail || undefined,
       tags: formTags ? formTags.split(",").map(t => t.trim()).filter(Boolean) : undefined,
       notes: formNotes || undefined,
+      kind: formKind,
+      cpf: formCpf.trim() || null,
+      purchasedVehicle: formPurchasedVehicle.trim() || null,
+      address: formAddress.trim() || null,
+      city: formCity.trim() || null,
     });
   };
 
@@ -297,13 +358,22 @@ export default function ContactsPage() {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const jsonData = XLSX.utils.sheet_to_json<any>(sheet);
 
-        const rows: ImportRow[] = jsonData.map((row: any) => ({
-          name: String(row.nome || row.name || row.Nome || row.Name || "").trim(),
-          phone: normalizePhone(String(row.telefone || row.phone || row.Telefone || row.Phone || row.celular || row.Celular || "")),
-          email: String(row.email || row.Email || row["e-mail"] || row["E-mail"] || "").trim() || undefined,
-          tags: row.tags || row.Tags ? String(row.tags || row.Tags).split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
-          notes: String(row.notas || row.notes || row.Notas || row.Notes || row.observacao || row.Observacao || "").trim() || undefined,
-        })).filter((r: ImportRow) => r.name && r.phone);
+        const rows: ImportRow[] = jsonData.map((row: any) => {
+          const kindRaw = String(row.tipo || row.Tipo || row.kind || row.Kind || "").trim().toLowerCase();
+          return {
+            name: String(row.nome || row.name || row.Nome || row.Name || "").trim(),
+            phone: normalizePhone(String(row.telefone || row.phone || row.Telefone || row.Phone || row.celular || row.Celular || "")),
+            email: String(row.email || row.Email || row["e-mail"] || row["E-mail"] || "").trim() || undefined,
+            tags: row.tags || row.Tags ? String(row.tags || row.Tags).split(",").map((t: string) => t.trim()).filter(Boolean) : undefined,
+            notes: String(row.notas || row.notes || row.Notas || row.Notes || row.observacao || row.Observacao || "").trim() || undefined,
+            kind: (kindRaw === "cliente" || kindRaw === "client" ? "cliente" : kindRaw === "lead" ? "lead" : undefined) as any,
+            cpf: String(row.cpf || row.CPF || row.Cpf || "").replace(/[^\d.\-]/g, "").trim() || undefined,
+            address: String(row.endereco || row.Endereco || row["endereço"] || row.address || "").trim() || undefined,
+            city: String(row.cidade || row.Cidade || row.city || "").trim() || undefined,
+            birthDate: String(row.nascimento || row.Nascimento || row.data_nascimento || row["data de nascimento"] || "").trim() || undefined,
+            purchasedVehicle: String(row.carro || row.Carro || row.carro_comprado || row.veiculo || row.Veiculo || row["veículo"] || "").trim() || undefined,
+          };
+        }).filter((r: ImportRow) => r.name && r.phone);
 
         setImportData(rows);
         setShowImportDialog(true);
@@ -428,6 +498,16 @@ export default function ContactsPage() {
                 className="pl-9"
               />
             </div>
+            <Select value={selectedKind || "all"} onValueChange={v => { setSelectedKind(v === "all" ? "" : v); setPage(0); }}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Tipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os tipos</SelectItem>
+                <SelectItem value="lead">🎯 Leads</SelectItem>
+                <SelectItem value="cliente">⭐ Clientes</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={selectedTag} onValueChange={v => { setSelectedTag(v === "all" ? "" : v); setPage(0); }}>
               <SelectTrigger className="w-[180px]">
                 <Tag className="h-4 w-4 mr-1" />
@@ -549,8 +629,28 @@ export default function ContactsPage() {
                       />
                     </td>
                     <td className="p-3">
-                      <div className="font-medium">{contact.name}</div>
-                      {contact.notes && (
+                      <div className="font-medium flex items-center gap-1.5">
+                        {contact.name}
+                        <Badge variant="outline" className={`text-[10px] px-1.5 ${contact.kind === "cliente" ? "border-green-500/50 text-green-600" : "border-sky-500/50 text-sky-600"}`}>
+                          {contact.kind === "cliente" ? "⭐ Cliente" : "Lead"}
+                        </Badge>
+                      </div>
+                      {contact.purchasedVehicle && (
+                        <div className="text-xs text-green-600 truncate max-w-[220px]">
+                          🚗 {contact.purchasedVehicle}
+                          {contact.lastDealValue ? ` — R$ ${Number(contact.lastDealValue).toLocaleString("pt-BR")}` : ""}
+                        </div>
+                      )}
+                      {contact.lastConversation?.lastMessageAt && (
+                        <div className="text-xs text-muted-foreground truncate max-w-[220px]">
+                          💬 {formatDistanceToNow(new Date(contact.lastConversation.lastMessageAt), { addSuffix: true, locale: ptBR })}
+                          {contact.lastConversation.preview ? ` · ${contact.lastConversation.preview.slice(0, 40)}` : ""}
+                        </div>
+                      )}
+                      {contact.cpf && (
+                        <div className="text-[10px] text-muted-foreground font-mono">CPF: {contact.cpf}</div>
+                      )}
+                      {contact.notes && !contact.lastConversation && (
                         <div className="text-xs text-muted-foreground truncate max-w-[200px]">{contact.notes}</div>
                       )}
                     </td>
@@ -614,6 +714,16 @@ export default function ContactsPage() {
                     </td>
                     <td className="p-3 text-right">
                       <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-primary"
+                          title="Iniciar conversa"
+                          onClick={() => handleStartConversation(contact)}
+                          disabled={startConvMutation.isPending}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                        </Button>
                         {templatesConfigured.data && approvedTemplates.length > 0 && (
                           <Button
                             variant="ghost"
@@ -713,6 +823,38 @@ export default function ContactsPage() {
               <Label>Email</Label>
               <Input value={formEmail} onChange={e => setFormEmail(e.target.value)} placeholder="email@exemplo.com" />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Tipo</Label>
+                <Select value={formKind} onValueChange={v => setFormKind(v as "lead" | "cliente")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lead">🎯 Lead</SelectItem>
+                    <SelectItem value="cliente">⭐ Cliente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>CPF</Label>
+                <Input value={formCpf} onChange={e => setFormCpf(e.target.value)} placeholder="000.000.000-00" />
+              </div>
+            </div>
+            {formKind === "cliente" && (
+              <div>
+                <Label>Carro comprado</Label>
+                <Input value={formPurchasedVehicle} onChange={e => setFormPurchasedVehicle(e.target.value)} placeholder="Ex: Nissan Kicks 2022" />
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <Label>Endereço</Label>
+                <Input value={formAddress} onChange={e => setFormAddress(e.target.value)} placeholder="Rua, número, bairro" />
+              </div>
+              <div>
+                <Label>Cidade</Label>
+                <Input value={formCity} onChange={e => setFormCity(e.target.value)} placeholder="Ivoti" />
+              </div>
+            </div>
             <div>
               <Label>Tags (separadas por vírgula)</Label>
               <Input value={formTags} onChange={e => setFormTags(e.target.value)} placeholder="vip, financiamento, troca" />
@@ -749,6 +891,38 @@ export default function ContactsPage() {
             <div>
               <Label>Email</Label>
               <Input value={formEmail} onChange={e => setFormEmail(e.target.value)} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Tipo</Label>
+                <Select value={formKind} onValueChange={v => setFormKind(v as "lead" | "cliente")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lead">🎯 Lead</SelectItem>
+                    <SelectItem value="cliente">⭐ Cliente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>CPF</Label>
+                <Input value={formCpf} onChange={e => setFormCpf(e.target.value)} placeholder="000.000.000-00" />
+              </div>
+            </div>
+            {formKind === "cliente" && (
+              <div>
+                <Label>Carro comprado</Label>
+                <Input value={formPurchasedVehicle} onChange={e => setFormPurchasedVehicle(e.target.value)} placeholder="Ex: Nissan Kicks 2022" />
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2">
+                <Label>Endereço</Label>
+                <Input value={formAddress} onChange={e => setFormAddress(e.target.value)} placeholder="Rua, número, bairro" />
+              </div>
+              <div>
+                <Label>Cidade</Label>
+                <Input value={formCity} onChange={e => setFormCity(e.target.value)} placeholder="Ivoti" />
+              </div>
             </div>
             <div>
               <Label>Tags (separadas por vírgula)</Label>

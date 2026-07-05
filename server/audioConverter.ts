@@ -465,35 +465,36 @@ async function convertWebmToOggFfmpeg(webmBuffer: Buffer): Promise<Buffer> {
 export async function convertWebmToOgg(webmBuffer: Buffer): Promise<Buffer> {
   console.log(`[AudioConverter] Starting conversion: webm (${webmBuffer.length} bytes) → ogg`);
 
-  // Method 1: Pure JavaScript (no external dependencies needed at deploy)
-  try {
-    const oggBuffer = await convertWebmToOggPureJS(webmBuffer);
-    
-    if (oggBuffer.length > 4 && oggBuffer[0] === 0x4F && oggBuffer[1] === 0x67 && oggBuffer[2] === 0x67 && oggBuffer[3] === 0x53) {
-      console.log(`[AudioConverter] SUCCESS (Pure JS): webm (${webmBuffer.length} bytes) → ogg (${oggBuffer.length} bytes)`);
-      return oggBuffer;
-    }
-    console.warn("[AudioConverter] Pure JS output doesn't have OGG magic bytes, trying ffmpeg...");
-  } catch (err: any) {
-    console.warn(`[AudioConverter] Pure JS conversion failed: ${err.message}, trying ffmpeg...`);
-  }
-
-  // Method 2: FFmpeg fallback
+  // Method 1: FFmpeg (preferido — reencode Opus 100% compatível com o WhatsApp;
+  // o remuxer JS gera OGG que o WhatsApp às vezes rejeita com "áudio indisponível")
   try {
     const ffmpegAvailable = await isFfmpegAvailable();
     if (ffmpegAvailable) {
       const oggBuffer = await convertWebmToOggFfmpeg(webmBuffer);
-      
+
       if (oggBuffer.length > 4 && oggBuffer[0] === 0x4F && oggBuffer[1] === 0x67 && oggBuffer[2] === 0x67 && oggBuffer[3] === 0x53) {
         console.log(`[AudioConverter] SUCCESS (FFmpeg): webm (${webmBuffer.length} bytes) → ogg (${oggBuffer.length} bytes)`);
         return oggBuffer;
       }
-      console.error("[AudioConverter] FFmpeg output doesn't have OGG magic bytes");
+      console.warn("[AudioConverter] FFmpeg output doesn't have OGG magic bytes, trying Pure JS...");
     } else {
-      console.error("[AudioConverter] FFmpeg not available");
+      console.warn("[AudioConverter] FFmpeg not available — usando remuxer JS (menos compatível)");
     }
   } catch (err: any) {
-    console.error(`[AudioConverter] FFmpeg conversion also failed: ${err.message}`);
+    console.warn(`[AudioConverter] FFmpeg conversion failed: ${err.message}, trying Pure JS...`);
+  }
+
+  // Method 2: Pure JavaScript fallback (no external dependencies)
+  try {
+    const oggBuffer = await convertWebmToOggPureJS(webmBuffer);
+
+    if (oggBuffer.length > 4 && oggBuffer[0] === 0x4F && oggBuffer[1] === 0x67 && oggBuffer[2] === 0x67 && oggBuffer[3] === 0x53) {
+      console.log(`[AudioConverter] SUCCESS (Pure JS): webm (${webmBuffer.length} bytes) → ogg (${oggBuffer.length} bytes)`);
+      return oggBuffer;
+    }
+    console.error("[AudioConverter] Pure JS output doesn't have OGG magic bytes");
+  } catch (err: any) {
+    console.error(`[AudioConverter] Pure JS conversion also failed: ${err.message}`);
   }
 
   throw new Error("Audio conversion failed: both Pure JS and FFmpeg methods failed. Audio will NOT be sent to WhatsApp.");

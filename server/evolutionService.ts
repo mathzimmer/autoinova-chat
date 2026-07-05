@@ -100,6 +100,15 @@ export async function evolutionSendText(instanceName: string, to: string, text: 
   });
 }
 
+/** Envia áudio como mensagem de VOZ (ptt) — endpoint dedicado da Evolution v2 */
+export async function evolutionSendAudio(instanceName: string, to: string, audioUrl: string) {
+  const number = to.endsWith("@lid") ? to : (to.includes("@") ? to.split("@")[0] : to);
+  return evolutionRequest(`/message/sendWhatsAppAudio/${instanceName}`, "POST", {
+    number,
+    audio: audioUrl,
+  });
+}
+
 export async function evolutionSendMedia(
   instanceName: string,
   to: string,

@@ -1283,6 +1283,22 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
           </div>
         )}
 
+        {/* Emoji picker (composer) */}
+        {showEmojiPicker && (
+          <div
+            ref={emojiPickerRef}
+            className="absolute bottom-16 left-3 z-50 bg-[#ffffff] border border-[#e9edef] rounded-xl shadow-2xl p-3 w-72 max-h-56 overflow-y-auto"
+          >
+            <div className="flex flex-wrap gap-1">
+              {EMOJI_LIST.map((emoji, i) => (
+                <button key={i} onClick={() => insertEmoji(emoji)} className="text-lg w-8 h-8 flex items-center justify-center hover:bg-[#e9edef] rounded-md transition-colors">
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {isRecording ? (
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={cancelRecording} className="shrink-0 text-red-400 hover:text-red-300 hover:bg-red-500/10">
@@ -1298,6 +1314,9 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
           </div>
         ) : (
           <div className="flex items-end gap-2">
+            <Button variant="ghost" size="icon" onClick={() => setShowEmojiPicker(v => !v)} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Emojis">
+              <Smile className="h-5 w-5" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={() => fileInputRef.current?.click()} disabled={isSending} className="shrink-0 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]" title="Enviar imagens">
               <ImagePlus className="h-5 w-5" />
             </Button>

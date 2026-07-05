@@ -471,6 +471,10 @@ export async function upsertLead(data: InsertLead) {
           leadStatus: statusChanged ? (updateData.status as string) : null,
         })
       ).catch(err => console.error("[CAPI] hook upsertLead:", err));
+      // Fechou negócio → contato vira CLIENTE com carro/valor/CPF
+      if (updateData.funnelStatus === "fechado" || updateData.status === "converted") {
+        promoteContactToCliente(existing.id).catch(() => {});
+      }
     }
     return { ...existing, ...updateData };
   }
@@ -489,6 +493,48 @@ export async function upsertLead(data: InsertLead) {
   return { ...data, id: result[0].id };
 }
 
+/**
+ * Promove o contato a CLIENTE quando o lead fecha negócio.
+ * Preenche carro comprado, valor, data e CPF (se disponível no lead).
+ */
+export async function promoteContactToCliente(leadId: number): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const leadRows = await db.select().from(leads).where(eq(leads.id, leadId)).limit(1);
+    const lead = leadRows[0];
+    if (!lead) return;
+
+    const contact = await getContactByPhone(lead.phone);
+    if (!contact) return;
+
+    let purchasedVehicle: string | null = lead.vehicleInterest || null;
+    let dealValue: number | null = null;
+    if (lead.vehicleId) {
+      const veh = (await db.select().from(vehicles).where(eq(vehicles.id, lead.vehicleId)).limit(1))[0];
+      if (veh) {
+        purchasedVehicle = veh.title || `${veh.brand} ${veh.model} ${veh.year}`;
+        dealValue = veh.price ?? null;
+      }
+    }
+
+    await db.update(contacts).set({
+      kind: "cliente",
+      purchasedVehicleId: lead.vehicleId ?? null,
+      purchasedVehicle,
+      purchasedAt: new Date(),
+      ...(dealValue != null ? { lastDealValue: dealValue } : {}),
+      ...(lead.cpf && !contact.cpf ? { cpf: lead.cpf } : {}),
+      ...(lead.birthDate && !contact.birthDate ? { birthDate: lead.birthDate } : {}),
+      leadId: lead.id,
+      updatedAt: new Date(),
+    }).where(eq(contacts.id, contact.id));
+    console.log(`[Contatos] ${contact.name} promovido a CLIENTE (${purchasedVehicle || "veículo não informado"})`);
+  } catch (err) {
+    console.error("[Contatos] promoteContactToCliente erro:", err);
+  }
+}
+
 // ─── Update Lead Funnel Status ───────────────────────────────
 export async function updateLeadFunnelStatus(conversationId: number, funnelStatus: string) {
   const db = await getDb();
@@ -502,6 +548,7 @@ export async function updateLeadFunnelStatus(conversationId: number, funnelStatu
     import("./metaConversions").then(({ trackLeadProgress }) =>
       trackLeadProgress(lead.id, { funnelStatus })
     ).catch(err => console.error("[CAPI] hook updateLeadFunnelStatus:", err));
+    if (funnelStatus === "fechado") promoteContactToCliente(lead.id).catch(() => {});
   }
   return { ...lead, funnelStatus, temperature };
 }
@@ -1336,10 +1383,13 @@ export async function getInactiveLeadsForRescue(
 
 // ─── Contacts ───────────────────────────────────────────────────────────────
 
-export async function listContacts(opts?: { search?: string; tag?: string; source?: string; limit?: number; offset?: number; campaignParticipant?: boolean }) {
+export async function listContacts(opts?: { search?: string; tag?: string; source?: string; kind?: string; limit?: number; offset?: number; campaignParticipant?: boolean }) {
   const db = await getDb();
   if (!db) return { contacts: [], total: 0 };
   const conditions: any[] = [eq(contacts.isActive, true)];
+  if (opts?.kind && (opts.kind === "lead" || opts.kind === "cliente")) {
+    conditions.push(eq(contacts.kind, opts.kind));
+  }
   if (opts?.search) {
     conditions.push(
       or(

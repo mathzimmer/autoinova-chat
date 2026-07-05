@@ -1196,18 +1196,17 @@ const messageRouter = router({
       // === ENVIO PARA INSTÂNCIA EVOLUTION ===
       const convForSend = await getConversationById(input.conversationId);
       if (convForSend?.channel === "evolution" && (convForSend as any).instanceName && convForSend.phone) {
-        const { evolutionSendMedia } = await import("./evolutionService");
-        const toJid = ((convForSend.metadata as any)?.evolutionRemoteJid as string) || convForSend.phone;
-        // Áudio: usa a versão convertida (ogg) quando houver
-        const urlForEvo = input.mediaType === "audio" ? (whatsappAudioUrl || mediaUrl) : mediaUrl;
-        evolutionSendMedia(
-          (convForSend as any).instanceName,
-          toJid,
-          urlForEvo,
-          input.mediaType,
-          input.caption,
-          input.fileName,
-        ).then((r) => {
+        const { evolutionSendMedia, evolutionSendAudio } = await import("./evolutionService");
+        const meta = (convForSend.metadata as any) || {};
+        const toJid = (meta.evolutionLidJid as string) || (meta.evolutionRemoteJid as string) || convForSend.phone;
+        const instName = (convForSend as any).instanceName as string;
+
+        const sendPromise = input.mediaType === "audio"
+          // Áudio: endpoint dedicado de VOZ (ptt) com o ogg convertido
+          ? evolutionSendAudio(instName, toJid, whatsappAudioUrl || mediaUrl)
+          : evolutionSendMedia(instName, toJid, mediaUrl, input.mediaType, input.caption, input.fileName);
+
+        sendPromise.then((r) => {
           console.log(`[SendMedia] ✅ Evolution ${input.mediaType} enviado:`, JSON.stringify(r).substring(0, 200));
         }).catch((err) => {
           console.error(`[SendMedia] ❌ Evolution ${input.mediaType} falhou:`, err);
@@ -2370,6 +2369,7 @@ const campaignRouter = router({
       bodyParams: z.array(z.string()).optional(),
       contactIds: z.array(z.number()).optional(),
       filterTags: z.array(z.string()).optional(),
+      filterKind: z.enum(["lead", "cliente"]).optional(), // público: só leads ou só clientes
       scheduleType: z.enum(["once", "recurring"]).default("once"),
       scheduledAt: z.number().optional(),
       intervalDays: z.number().min(1).max(365).optional(),
@@ -2383,6 +2383,7 @@ const campaignRouter = router({
         bodyParams: input.bodyParams || null,
         contactIds: input.contactIds || null,
         filterTags: input.filterTags || null,
+        filterKind: input.filterKind || null,
         nextRunAt,
         status: input.scheduledAt ? "scheduled" : "draft",
         totalContacts: input.contactIds?.length || 0,
@@ -3910,12 +3911,49 @@ const contactsRouter = router({
       search: z.string().optional(),
       tag: z.string().optional(),
       source: z.string().optional(),
+      kind: z.string().optional(), // lead | cliente
       limit: z.number().optional(),
       offset: z.number().optional(),
       campaignParticipant: z.boolean().optional(),
     }).optional())
     .query(async ({ input }) => {
-      return listContacts(input || {});
+      const result = await listContacts(input || {});
+      const rows = (result as any).contacts || [];
+      if (rows.length === 0) return result;
+
+      // Enriquece com a última conversa (por conversationId ou telefone)
+      try {
+        const db = await getDb();
+        if (db) {
+          const { conversations: convTable } = await import("../drizzle/schema");
+          const { inArray, ne: neOp, and: andOp } = await import("drizzle-orm");
+          const phones = Array.from(new Set(rows.map((c: any) => c.phone).filter(Boolean)));
+          const convs = phones.length > 0
+            ? await db.select({
+                id: convTable.id, phone: convTable.phone,
+                lastMessageAt: convTable.lastMessageAt,
+                lastMessagePreview: convTable.lastMessagePreview,
+                status: convTable.status,
+              }).from(convTable)
+              .where(andOp(inArray(convTable.phone, phones as string[]), neOp(convTable.channel, "evolution" as any)))
+            : [];
+          const byPhone = new Map<string, any>();
+          for (const cv of convs) {
+            const prev = byPhone.get(cv.phone);
+            if (!prev || (cv.lastMessageAt || 0) > (prev.lastMessageAt || 0)) byPhone.set(cv.phone, cv);
+          }
+          for (const c of rows) {
+            const cv = byPhone.get(c.phone);
+            c.lastConversation = cv ? {
+              conversationId: cv.id,
+              lastMessageAt: cv.lastMessageAt,
+              preview: cv.lastMessagePreview,
+              status: cv.status,
+            } : null;
+          }
+        }
+      } catch { /* enriquecimento é opcional */ }
+      return result;
     }),
 
   getById: adminProcedure
@@ -3931,6 +3969,12 @@ const contactsRouter = router({
       email: z.string().optional(),
       tags: z.array(z.string()).optional(),
       notes: z.string().optional(),
+      kind: z.enum(["lead", "cliente"]).default("lead"),
+      cpf: z.string().max(14).optional(),
+      birthDate: z.string().max(10).optional(),
+      address: z.string().max(500).optional(),
+      city: z.string().max(100).optional(),
+      purchasedVehicle: z.string().max(300).optional(),
       source: z.enum(["manual", "excel", "whatsapp", "lead"]).default("manual"),
     }))
     .mutation(async ({ input }) => {
@@ -3982,6 +4026,13 @@ const contactsRouter = router({
       email: z.string().optional(),
       tags: z.array(z.string()).optional(),
       notes: z.string().optional(),
+      kind: z.enum(["lead", "cliente"]).optional(),
+      cpf: z.string().max(14).nullable().optional(),
+      birthDate: z.string().max(10).nullable().optional(),
+      address: z.string().max(500).nullable().optional(),
+      city: z.string().max(100).nullable().optional(),
+      purchasedVehicle: z.string().max(300).nullable().optional(),
+      lastDealValue: z.number().nullable().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -4003,6 +4054,12 @@ const contactsRouter = router({
         email: z.string().optional(),
         tags: z.array(z.string()).optional(),
         notes: z.string().optional(),
+        kind: z.enum(["lead", "cliente"]).optional(),
+        cpf: z.string().max(14).optional(),
+        birthDate: z.string().max(10).optional(),
+        address: z.string().max(500).optional(),
+        city: z.string().max(100).optional(),
+        purchasedVehicle: z.string().max(300).optional(),
       })),
     }))
     .mutation(async ({ input }) => {

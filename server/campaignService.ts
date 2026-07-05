@@ -152,6 +152,11 @@ async function resolveContacts(campaign: any): Promise<Array<{ id: number; name:
   const db = await getDb();
   if (!db) return [];
 
+  // Filtro de público por tipo (lead | cliente), combinável com os demais
+  const kindCond = campaign.filterKind === "lead" || campaign.filterKind === "cliente"
+    ? [eq(contacts.kind, campaign.filterKind)]
+    : [];
+
   // If specific contact IDs are set, use those
   if (campaign.contactIds && campaign.contactIds.length > 0) {
     const rows = await db.select({
@@ -162,6 +167,7 @@ async function resolveContacts(campaign: any): Promise<Array<{ id: number; name:
       .where(and(
         inArray(contacts.id, campaign.contactIds),
         eq(contacts.isActive, true),
+        ...kindCond,
       ));
     return rows;
   }
@@ -174,7 +180,7 @@ async function resolveContacts(campaign: any): Promise<Array<{ id: number; name:
       phone: contacts.phone,
       tags: contacts.tags,
     }).from(contacts)
-      .where(eq(contacts.isActive, true));
+      .where(and(eq(contacts.isActive, true), ...kindCond));
 
     return allContacts.filter(c => {
       if (!c.tags || !Array.isArray(c.tags)) return false;
@@ -182,13 +188,13 @@ async function resolveContacts(campaign: any): Promise<Array<{ id: number; name:
     });
   }
 
-  // No filter = all active contacts
+  // No filter = all active contacts (respeitando o público, se definido)
   const rows = await db.select({
     id: contacts.id,
     name: contacts.name,
     phone: contacts.phone,
   }).from(contacts)
-    .where(eq(contacts.isActive, true));
+    .where(and(eq(contacts.isActive, true), ...kindCond));
   return rows;
 }
 

@@ -632,6 +632,17 @@ export const contacts = pgTable("contacts", {
   source:         contactSourceEnum("contactSource").default("manual").notNull(),
   conversationId: integer("conversationId"),
   leadId:         integer("leadId"),
+  // ── Classificação e dados completos ──
+  kind:           varchar("contactKind", { length: 10 }).default("lead").notNull(), // lead | cliente
+  cpf:            varchar("cpf", { length: 14 }),
+  birthDate:      varchar("birthDate", { length: 10 }),
+  address:        varchar("address", { length: 500 }),
+  city:           varchar("city", { length: 100 }),
+  // ── Última negociação (preenchido automaticamente quando o funil fecha) ──
+  purchasedVehicleId: integer("purchasedVehicleId"),
+  purchasedVehicle:   varchar("purchasedVehicle", { length: 300 }),
+  purchasedAt:        timestamp("purchasedAt"),
+  lastDealValue:      integer("lastDealValue"),
   isActive:       boolean("isActive").default(true).notNull(),
   createdBy:      integer("createdBy"),
   createdAt:      timestamp("createdAt").defaultNow().notNull(),
@@ -670,6 +681,7 @@ export const campaigns = pgTable("campaigns", {
   bodyParams:       jsonb("bodyParams").$type<string[]>(),
   contactIds:       jsonb("contactIds").$type<number[]>(),
   filterTags:       jsonb("filterTags").$type<string[]>(),
+  filterKind:       varchar("filterKind", { length: 10 }), // null=todos | lead | cliente
   scheduleType:     scheduleTypeEnum("scheduleType").default("once").notNull(),
   scheduledAt:      bigint("scheduledAt", { mode: "number" }),
   intervalDays:     integer("intervalDays"),
