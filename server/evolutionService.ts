@@ -345,6 +345,13 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       resolvedJid = remoteJid;
     }
 
+    // Campos para correção do bug de direção da Evolution 2.3.x (LID):
+    // senderPn identifica quem REALMENTE enviou, independente do fromMe
+    const senderPnRaw = (msg.key as any)?.senderPn || (msg as any).senderPn
+      || (msg.key as any)?.participantPn || (msg as any).participantPn || "";
+    const senderPnDigits = String(senderPnRaw).replace(/\D/g, "");
+    const addressingMode = ((msg.key as any)?.addressingMode as string) || "";
+
     return {
       type: "message" as const,
       instanceName: instance,
@@ -357,6 +364,9 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       content,
       messageType,
       mediaUrl,
+      pushName,
+      senderPnDigits,
+      addressingMode,
       senderName: fromMe ? "Vendedor" : (pushName || phone),
       direction: fromMe ? ("outbound" as const) : ("inbound" as const),
       rawPayload: payload,
@@ -463,7 +473,11 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       const status = parsed.state === "open" ? "connected"
         : parsed.state === "close" ? "disconnected"
         : "connecting";
-      await updateEvolutionInstance(instance.id, { status });
+      // Captura o número dono da instância (wuid) — usado para corrigir
+      // o bug de direção invertida da Evolution 2.3.x em contatos LID
+      const wuid = (data as any)?.wuid as string | undefined;
+      const ownerPhone = wuid ? wuid.split("@")[0].split(":")[0] : undefined;
+      await updateEvolutionInstance(instance.id, { status, ...(ownerPhone ? { phone: ownerPhone } : {}) });
       console.log(`[Evolution] Instance ${instanceName} status: ${status}`);
       if (io) {
         io.emit("evolution_instance_update", { instanceName, status });
@@ -488,6 +502,20 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       return;
     }
 
+    // ── Correção do bug de direção da Evolution 2.3.x (contatos LID) ──
+    // A Evolution pode marcar mensagens RECEBIDAS como fromMe=true.
+    // Regra: se fromMe=true mas o remetente real (senderPn) NÃO é o dono da
+    // instância, a mensagem é inbound.
+    const ownerDigits = (instance.phone || "").replace(/\D/g, "");
+    let direction: "inbound" | "outbound" = parsed.direction;
+    if (parsed.fromMe && parsed.senderPnDigits && ownerDigits && parsed.senderPnDigits !== ownerDigits) {
+      direction = "inbound";
+      console.warn(`[Evolution] Direção corrigida (fromMe invertido/LID): sender=${parsed.senderPnDigits}, owner=${ownerDigits}`);
+    }
+    const isInbound = direction === "inbound";
+    const effectiveSenderName = isInbound ? (parsed.pushName || parsed.phone) : "Vendedor";
+    console.log(`[Evolution] upsert dbg: jid=${parsed.remoteJid} fromMe=${parsed.fromMe} senderPn=${parsed.senderPnDigits || "-"} mode=${parsed.addressingMode || "-"} push=${parsed.pushName || "-"} dir=${direction} | ${parsed.content.substring(0, 30)}`);
+
     // Use resolvedJid for the conversation key (prefer @s.whatsapp.net over @lid)
     const jidForConversation = parsed.resolvedJid || parsed.remoteJid;
 
@@ -498,12 +526,12 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       remoteJid: jidForConversation,
       phone: parsed.phone,
       // Only update contactName if we have a real name from pushName (not just a number)
-      contactName: (parsed.senderName && parsed.senderName !== parsed.phone && !parsed.fromMe)
-        ? parsed.senderName
+      contactName: (isInbound && parsed.pushName && parsed.pushName !== parsed.phone)
+        ? parsed.pushName
         : undefined,
       lastMessageAt: parsed.timestamp,
       lastMessagePreview: (parsed.content || (parsed.messageType === "image" ? "📷 Imagem" : parsed.messageType === "audio" ? "🎤 \u00c1udio" : parsed.messageType === "video" ? "🎬 V\u00eddeo" : parsed.messageType === "document" ? "📄 Documento" : parsed.messageType === "sticker" ? "🫨 Sticker" : "")).substring(0, 500),
-      unreadCount: parsed.direction === "inbound" ? 1 : 0,
+      unreadCount: isInbound ? 1 : 0,
     });
 
     // Resolve conversationId (upsert returns id number)
@@ -561,8 +589,8 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       messageId: parsed.messageId,
       content: parsed.content || (parsed.messageType === "image" ? "" : parsed.messageType === "audio" ? "" : parsed.messageType === "video" ? "" : parsed.messageType === "sticker" ? "" : ""),
       messageType: parsed.messageType,
-      direction: parsed.direction,
-      senderName: parsed.senderName || (parsed.fromMe ? "Vendedor" : parsed.phone),
+      direction,
+      senderName: effectiveSenderName,
       timestamp: parsed.timestamp,
       mediaUrl: finalMediaUrl || undefined,
       status: "delivered",
@@ -579,11 +607,11 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           phone: parsed.phone,
           remoteJid: jidForConversation,
           altJid: parsed.remoteJid !== jidForConversation ? parsed.remoteJid : undefined,
-          contactName: (parsed.senderName && parsed.senderName !== parsed.phone && !parsed.fromMe) ? parsed.senderName : undefined,
+          contactName: (isInbound && parsed.pushName && parsed.pushName !== parsed.phone) ? parsed.pushName : undefined,
           content: parsed.content,
           messageType: parsed.messageType,
-          direction: parsed.direction,
-          senderName: parsed.senderName || (parsed.fromMe ? "Vendedor" : parsed.phone),
+          direction,
+          senderName: effectiveSenderName,
           mediaUrl: finalMediaUrl || undefined,
           externalId: parsed.messageId ? `evo_${parsed.messageId}` : undefined,
           timestamp: parsed.timestamp,
