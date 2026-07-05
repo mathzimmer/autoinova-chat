@@ -454,8 +454,21 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
     const mapped = d?.status ? statusMap[d.status] : undefined;
     if (keyId && mapped) {
       try {
-        const { updateMessageDeliveryStatus } = await import("./db");
-        await updateMessageDeliveryStatus(`evo_${keyId}`, mapped);
+        const { updateMessageDeliveryStatus, getConversationById, updateConversation } = await import("./db");
+        const updated = await updateMessageDeliveryStatus(`evo_${keyId}`, mapped);
+
+        // Captura o JID @lid do contato: na v2.3.7 ele só aparece nos eventos
+        // de status (o messages.upsert vem com o número já resolvido).
+        // Necessário para enviar a contatos que exigem endereçamento LID (erro 463).
+        const updRemoteJid = (d as any)?.remoteJid as string | undefined;
+        if (updated?.conversationId && updRemoteJid?.endsWith("@lid")) {
+          const conv = await getConversationById(updated.conversationId);
+          const meta = (conv?.metadata as Record<string, unknown>) || {};
+          if (conv && meta.evolutionLidJid !== updRemoteJid) {
+            await updateConversation(conv.id, { metadata: { ...meta, evolutionLidJid: updRemoteJid } } as any);
+            console.log(`[Evolution] LID capturado via status: ${updRemoteJid} (conversa ${conv.id})`);
+          }
+        }
       } catch (err) {
         console.warn("[Evolution] status update falhou:", err);
       }
