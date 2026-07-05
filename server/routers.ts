@@ -746,6 +746,29 @@ const conversationRouter = router({
       return { success: true, sellerConversationId: mirrored?.conversationId ?? null };
     }),
 
+  /** Verifica se já existe conversa com este número na fonte escolhida */
+  findByPhone: protectedProcedure
+    .input(z.object({ phone: z.string().min(8), instance: z.string().default("matriz") }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const { conversations: convTable } = await import("../drizzle/schema");
+      const { eq, and: andOp, ne: neOp, or: orOp } = await import("drizzle-orm");
+      const { phoneVariations } = await import("./phoneNormalize");
+      const digits = input.phone.replace(/\D/g, "");
+      const variations = Array.from(new Set([digits, ...phoneVariations(digits)]));
+      const isMatriz = input.instance === "matriz";
+      const phoneCond = orOp(...variations.map(v => eq(convTable.phone, v)))!;
+      const row = (await db.select({
+        id: convTable.id, contactName: convTable.contactName, phone: convTable.phone,
+      }).from(convTable).where(
+        isMatriz
+          ? andOp(phoneCond, neOp(convTable.channel, "evolution" as any))
+          : andOp(phoneCond, eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
+      ).limit(1))[0];
+      return row || null;
+    }),
+
   /** Inicia uma nova conversa (matriz ou instância Evolution) com contato novo ou existente */
   startNew: protectedProcedure
     .input(z.object({
@@ -3860,13 +3883,26 @@ const sellerRouter = router({
 // ── Contacts Router ─────────────────────────────────────────────────────────
 
 const contactsRouter = router({
-  /** Busca leve para o picker de nova conversa (qualquer atendente) */
+  /** Busca leve para o picker de nova conversa — nome OU número, case-insensitive */
   search: protectedProcedure
     .input(z.object({ q: z.string().min(1).max(100) }))
     .query(async ({ input }) => {
-      const result = await listContacts({ search: input.q, limit: 10 });
-      const rows = Array.isArray(result) ? result : (result as any).contacts || [];
-      return (rows as any[]).map(c => ({ id: c.id, name: c.name, phone: c.phone }));
+      const db = await getDb();
+      if (!db) return [];
+      const { contacts } = await import("../drizzle/schema");
+      const { ilike, like: likeOp, or: orOp, and: andOp, eq, desc } = await import("drizzle-orm");
+      const term = `%${input.q.trim()}%`;
+      const digits = input.q.replace(/\D/g, "");
+      const nameCond = ilike(contacts.name, term);
+      const cond = digits.length >= 3
+        ? orOp(nameCond, likeOp(contacts.phone, `%${digits}%`))!
+        : nameCond;
+      const rows = await db.select({ id: contacts.id, name: contacts.name, phone: contacts.phone })
+        .from(contacts)
+        .where(andOp(eq(contacts.isActive, true), cond))
+        .orderBy(desc(contacts.createdAt))
+        .limit(10);
+      return rows;
     }),
 
   list: adminProcedure

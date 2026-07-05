@@ -40,9 +40,24 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
   const [newPhone, setNewPhone] = useState("");
   const [newFirstMsg, setNewFirstMsg] = useState("");
   const [contactQuery, setContactQuery] = useState("");
-  const { data: contactResults } = trpc.contact.search.useQuery(
-    { q: contactQuery },
-    { enabled: showNewDialog && contactQuery.trim().length >= 2 }
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  // Debounce: busca enquanto digita, sem martelar o servidor
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(contactQuery.trim()), 300);
+    return () => clearTimeout(t);
+  }, [contactQuery]);
+
+  const { data: contactResults, isFetching: searchingContacts } = trpc.contact.search.useQuery(
+    { q: debouncedQuery },
+    { enabled: showNewDialog && debouncedQuery.length >= 2 }
+  );
+
+  // Conversa já existente com o número digitado (na fonte atual)?
+  const phoneDigits = newPhone.replace(/\D/g, "");
+  const { data: existingConv } = trpc.conversation.findByPhone.useQuery(
+    { phone: phoneDigits, instance },
+    { enabled: showNewDialog && phoneDigits.length >= 10 }
   );
   const startNewMutation = trpc.conversation.startNew.useMutation({
     onSuccess: (res) => {
@@ -201,21 +216,54 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
                   placeholder="Buscar contato existente..."
                   className="pl-9 h-9 text-sm"
                 />
-                {(contactResults || []).length > 0 && contactQuery.trim().length >= 2 && (
+                {debouncedQuery.length >= 2 && (
                   <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-popover border border-border rounded-lg shadow-lg overflow-hidden">
                     {(contactResults || []).map((c: any) => (
                       <button
                         key={c.id}
-                        onClick={() => { setNewName(c.name || ""); setNewPhone(c.phone || ""); setContactQuery(""); }}
+                        onClick={() => { setNewName(c.name || ""); setNewPhone(c.phone || ""); setContactQuery(""); setDebouncedQuery(""); }}
                         className="w-full text-left px-3 py-2 text-sm hover:bg-accent flex justify-between"
                       >
                         <span className="truncate">{c.name}</span>
                         <span className="text-muted-foreground text-xs shrink-0">{c.phone}</span>
                       </button>
                     ))}
+                    {!searchingContacts && (contactResults || []).length === 0 && (
+                      <button
+                        onClick={() => {
+                          const digits = debouncedQuery.replace(/\D/g, "");
+                          if (digits.length >= 8) setNewPhone(digits); else setNewName(debouncedQuery);
+                          setContactQuery(""); setDebouncedQuery("");
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-accent text-primary flex items-center gap-1.5"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Nenhum contato encontrado — criar "{debouncedQuery}"
+                      </button>
+                    )}
+                    {searchingContacts && (
+                      <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-1.5">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Buscando...
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
+
+              {/* Conversa já existente com este número */}
+              {existingConv && (
+                <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+                  <span className="text-xs text-amber-700 flex-1">
+                    Já existe conversa com este número{existingConv.contactName ? ` (${existingConv.contactName})` : ""} nesta fonte.
+                  </span>
+                  <Button
+                    size="sm" variant="outline" className="h-7 text-xs shrink-0"
+                    onClick={() => { setShowNewDialog(false); onSelect(existingConv.id); }}
+                  >
+                    Abrir conversa
+                  </Button>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Nome" className="h-9 text-sm" />
                 <Input value={newPhone} onChange={e => setNewPhone(e.target.value.replace(/[^\d]/g, ""))} placeholder="5551999998888" className="h-9 text-sm" />
