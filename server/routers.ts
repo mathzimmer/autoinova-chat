@@ -1166,9 +1166,31 @@ const messageRouter = router({
 
       emitNewMessage(input.conversationId, message);
 
-      // === SEND TO WHATSAPP ===
+      // === ENVIO PARA INSTÂNCIA EVOLUTION ===
+      const convForSend = await getConversationById(input.conversationId);
+      if (convForSend?.channel === "evolution" && (convForSend as any).instanceName && convForSend.phone) {
+        const { evolutionSendMedia } = await import("./evolutionService");
+        const toJid = ((convForSend.metadata as any)?.evolutionRemoteJid as string) || convForSend.phone;
+        // Áudio: usa a versão convertida (ogg) quando houver
+        const urlForEvo = input.mediaType === "audio" ? (whatsappAudioUrl || mediaUrl) : mediaUrl;
+        evolutionSendMedia(
+          (convForSend as any).instanceName,
+          toJid,
+          urlForEvo,
+          input.mediaType,
+          input.caption,
+          input.fileName,
+        ).then((r) => {
+          console.log(`[SendMedia] ✅ Evolution ${input.mediaType} enviado:`, JSON.stringify(r).substring(0, 200));
+        }).catch((err) => {
+          console.error(`[SendMedia] ❌ Evolution ${input.mediaType} falhou:`, err);
+        });
+        return message;
+      }
+
+      // === SEND TO WHATSAPP (oficial) ===
       if (isWhatsAppConfigured()) {
-        const conv = await getConversationById(input.conversationId);
+        const conv = convForSend;
         console.log(`[SendMedia] WhatsApp configured. Conv: ${conv?.id}, channel: ${conv?.channel}, phone: ${conv?.phone}`);
 
         if (conv && conv.channel === "whatsapp" && conv.phone) {

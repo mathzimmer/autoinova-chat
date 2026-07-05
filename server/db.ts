@@ -256,15 +256,21 @@ export async function getConversationById(id: number) {
 export async function getConversationByPhone(phone: string) {
   const db = await getDb();
   if (!db) return undefined;
+  // IMPORTANTE: exclui conversas de instâncias Evolution — este lookup é usado
+  // apenas pelos canais oficiais (Cloud API/IG/FB). Sem esse filtro, uma mensagem
+  // recebida no número oficial cairia na conversa Evolution do mesmo telefone.
+  const notEvolution = ne(conversations.channel, "evolution" as any);
   // Try exact match first
-  const exact = await db.select().from(conversations).where(eq(conversations.phone, phone)).limit(1);
+  const exact = await db.select().from(conversations)
+    .where(and(eq(conversations.phone, phone), notEvolution)).limit(1);
   if (exact[0]) return exact[0];
   // Try all phone variations (handles 9th digit, formatting differences)
   const { phoneVariations } = await import("./phoneNormalize");
   const variations = phoneVariations(phone);
   for (const v of variations) {
     if (v === phone) continue; // already tried
-    const row = await db.select().from(conversations).where(eq(conversations.phone, v)).limit(1);
+    const row = await db.select().from(conversations)
+      .where(and(eq(conversations.phone, v), notEvolution)).limit(1);
     if (row[0]) return row[0];
   }
   return undefined;

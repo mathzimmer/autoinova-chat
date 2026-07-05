@@ -138,7 +138,8 @@ export async function evolutionFetchContacts(instanceName: string) {
 
 export async function evolutionGetProfilePic(instanceName: string, number: string) {
   try {
-    return evolutionRequest(`/contact/getProfilePicture/${instanceName}?number=${number}`);
+    // Evolution API v2: POST /chat/fetchProfilePictureUrl/{instance} { number }
+    return await evolutionRequest(`/chat/fetchProfilePictureUrl/${instanceName}`, "POST", { number });
   } catch {
     return null;
   }
