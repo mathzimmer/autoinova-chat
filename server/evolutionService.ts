@@ -498,6 +498,7 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
         const mirrored = await mirrorEvolutionMessage({
           instanceName,
           phone: parsed.phone,
+          remoteJid: jidForConversation,
           contactName: (parsed.senderName && parsed.senderName !== parsed.phone && !parsed.fromMe) ? parsed.senderName : undefined,
           content: parsed.content,
           messageType: parsed.messageType,

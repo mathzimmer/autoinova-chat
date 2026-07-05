@@ -130,6 +130,8 @@ export async function listConversations(filters?: {
 export async function mirrorEvolutionMessage(params: {
   instanceName: string;
   phone: string;
+  /** JID exato para responder (pode ser @lid ou @s.whatsapp.net) — essencial para o envio */
+  remoteJid: string;
   contactName?: string;
   content: string;
   messageType: string; // text|image|audio|video|document|sticker
@@ -148,23 +150,48 @@ export async function mirrorEvolutionMessage(params: {
     if (existing) return null;
   }
 
-  // Localiza/cria a conversa desta instância
+  // Nome/telefone podem estar melhores na tabela Evolution (sync de contatos,
+  // pushName acumulado) — usa como fallback, especialmente em JIDs @lid
+  let bestName = params.contactName;
+  let bestPhone = params.phone;
+  try {
+    const evoConv = (await db.select().from(evolutionConversations)
+      .where(and(
+        eq(evolutionConversations.instanceName, params.instanceName),
+        eq(evolutionConversations.remoteJid, params.remoteJid),
+      )).limit(1))[0];
+    if (evoConv) {
+      if (!bestName && evoConv.contactName && evoConv.contactName !== params.phone) bestName = evoConv.contactName;
+      if (evoConv.phone && evoConv.phone !== params.phone && !params.remoteJid.endsWith("@lid")) bestPhone = evoConv.phone;
+    }
+  } catch { /* fallback opcional */ }
+
+  // Localiza a conversa: primeiro pelo remoteJid salvo no metadata, depois pelo phone
   let conv = (await db.select().from(conversations)
     .where(and(
-      eq(conversations.phone, params.phone),
       eq(conversations.channel, "evolution" as any),
       eq(conversations.instanceName, params.instanceName),
+      sql`metadata->>'evolutionRemoteJid' = ${params.remoteJid}`,
     )).limit(1))[0];
+  if (!conv) {
+    conv = (await db.select().from(conversations)
+      .where(and(
+        eq(conversations.phone, bestPhone),
+        eq(conversations.channel, "evolution" as any),
+        eq(conversations.instanceName, params.instanceName),
+      )).limit(1))[0];
+  }
 
   const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
   const isInbound = params.direction === "inbound";
 
   if (!conv) {
     const inserted = await db.insert(conversations).values({
-      phone: params.phone,
-      contactName: params.contactName || null,
+      phone: bestPhone,
+      contactName: bestName || null,
       channel: "evolution" as any,
       instanceName: params.instanceName,
+      metadata: { evolutionRemoteJid: params.remoteJid },
       status: "open",
       aiActive: false, // números de vendedores: sem IA por padrão
       unreadCount: isInbound ? 1 : 0,
@@ -174,10 +201,14 @@ export async function mirrorEvolutionMessage(params: {
     }).returning();
     conv = inserted[0];
   } else {
+    // Atualiza nome se conseguimos um melhor (antes só tinha o número/LID)
+    const nameIsPlaceholder = !conv.contactName || conv.contactName === conv.phone;
+    const existingMeta = (conv.metadata as Record<string, unknown>) || {};
     await db.update(conversations).set({
       lastMessageAt: params.timestamp,
       lastMessagePreview: preview,
-      ...(params.contactName && !conv.contactName ? { contactName: params.contactName } : {}),
+      metadata: { ...existingMeta, evolutionRemoteJid: params.remoteJid },
+      ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
       ...(isInbound ? {
         unreadCount: (conv.unreadCount || 0) + 1,
         lastCustomerMessageAt: params.timestamp,

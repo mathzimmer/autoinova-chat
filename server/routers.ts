@@ -832,10 +832,36 @@ const messageRouter = router({
           let sendResult: { success: boolean; messageId?: string; error?: string } = { success: false, error: "No platform" };
 
           if (conv.channel === "evolution" && (conv as any).instanceName && conv.phone) {
-            // Conversa de instância Evolution: envia pela API da instância
+            // Conversa de instância Evolution: envia pela API da instância.
+            // Usa o remoteJid original (essencial para contatos @lid, onde o
+            // "telefone" é um ID interno do WhatsApp e não roteia sozinho).
             const { evolutionSendText } = await import("./evolutionService");
+            let toJid = ((conv.metadata as any)?.evolutionRemoteJid as string) || "";
+            if (!toJid) {
+              // Conversa espelhada antes do fix do metadata: busca o JID na tabela Evolution
+              try {
+                const db = await getDb();
+                if (db) {
+                  const { evolutionConversations } = await import("../drizzle/schema");
+                  const { eq, and: andOp, or: orOp, like: likeOp } = await import("drizzle-orm");
+                  const evoConv = (await db.select().from(evolutionConversations)
+                    .where(andOp(
+                      eq(evolutionConversations.instanceName, (conv as any).instanceName),
+                      orOp(eq(evolutionConversations.phone, conv.phone), likeOp(evolutionConversations.remoteJid, `${conv.phone}@%`)),
+                    )).limit(1))[0];
+                  if (evoConv?.remoteJid) {
+                    toJid = evoConv.remoteJid;
+                    // Salva no metadata para os próximos envios
+                    await updateConversation(input.conversationId, {
+                      metadata: { ...((conv.metadata as any) || {}), evolutionRemoteJid: toJid },
+                    } as any);
+                  }
+                }
+              } catch { /* fallback abaixo */ }
+            }
+            if (!toJid) toJid = conv.phone;
             try {
-              const evoResult = await evolutionSendText((conv as any).instanceName, conv.phone, input.content);
+              const evoResult = await evolutionSendText((conv as any).instanceName, toJid, input.content);
               const evoMsgId = (evoResult as any)?.key?.id;
               sendResult = { success: true, messageId: evoMsgId ? `evo_${evoMsgId}` : undefined };
             } catch (err) {
