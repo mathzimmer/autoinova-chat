@@ -536,7 +536,7 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
     }
     const isInbound = direction === "inbound";
     const effectiveSenderName = isInbound ? (parsed.pushName || parsed.phone) : "Vendedor";
-    console.log(`[Evolution] upsert dbg: jid=${parsed.remoteJid} fromMe=${parsed.fromMe} senderPn=${parsed.senderPnDigits || "-"} mode=${parsed.addressingMode || "-"} push=${parsed.pushName || "-"} dir=${direction} | ${parsed.content.substring(0, 30)}`);
+    console.log(`[Evolution] upsert dbg: jid=${parsed.remoteJid} fromMe=${parsed.fromMe} senderPn=${parsed.senderPnDigits || "-"} mode=${parsed.addressingMode || "-"} push=${parsed.pushName || "-"} dir=${direction} type=${parsed.messageType} media=${(parsed.mediaUrl || "-").substring(0, 60)} msgId=${parsed.messageId || "-"} | ${parsed.content.substring(0, 30)}`);
 
     // Use resolvedJid for the conversation key (prefer @s.whatsapp.net over @lid)
     const jidForConversation = parsed.resolvedJid || parsed.remoteJid;
@@ -600,6 +600,10 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       } catch (err) {
         console.warn(`[Evolution] Failed to fetch/upload media for ${parsed.messageId}:`, err);
       }
+    }
+
+    if (parsed.messageType !== "text" && parsed.messageType !== "reaction") {
+      console.log(`[Evolution] media final: type=${parsed.messageType} url=${(finalMediaUrl || "VAZIA").substring(0, 80)}`);
     }
 
     // Save message
