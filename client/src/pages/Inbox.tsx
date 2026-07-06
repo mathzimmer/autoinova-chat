@@ -22,16 +22,20 @@ export default function Inbox() {
     refetchInterval: 30000,
   });
 
-  // Auto-select conversation from URL param ?conv=123
+  // Auto-select conversation (?conv=123) ou instância (?instance=nome) via URL
   useEffect(() => {
     const params = new URLSearchParams(searchString);
     const convId = params.get("conv");
+    const instanceParam = params.get("instance");
     if (convId) {
       const id = parseInt(convId, 10);
       if (!isNaN(id) && id > 0) {
         setSource("matriz");
         setSelectedConversationId(id);
       }
+    } else if (instanceParam) {
+      setSource(instanceParam);
+      setSelectedConversationId(null);
     }
   }, [searchString]);
 

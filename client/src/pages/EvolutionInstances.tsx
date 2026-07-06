@@ -260,7 +260,7 @@ export default function EvolutionInstances() {
                     </Button>
                   )}
                   {inst.status === "connected" && (
-                    <Link href={`/evolution-inbox?instance=${inst.instanceName}`}>
+                    <Link href={`/inbox?instance=${encodeURIComponent(inst.instanceName)}`}>
                       <Button size="sm" variant="outline" className="flex-1">
                         <MessageSquare className="w-3 h-3 mr-1" />
                         Mensagens

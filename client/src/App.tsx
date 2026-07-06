@@ -24,7 +24,20 @@ import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
 import Sellers from "./pages/Sellers";
 import EvolutionInstances from "./pages/EvolutionInstances";
-import EvolutionInbox from "./pages/EvolutionInbox";
+import { useEffect } from "react";
+import { useLocation, useSearch } from "wouter";
+
+/** Redireciona a tela antiga do inbox Evolution para o inbox unificado */
+function RedirectToInbox() {
+  const [, setLocation] = useLocation();
+  const searchString = useSearch();
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const instance = params.get("instance");
+    setLocation(instance ? `/inbox?instance=${encodeURIComponent(instance)}` : "/inbox");
+  }, [searchString, setLocation]);
+  return null;
+}
 
 function Router() {
   return (
@@ -115,10 +128,9 @@ function Router() {
           <EvolutionInstances />
         </AppLayout>
       </Route>
+      {/* Tela antiga desativada — redireciona para o inbox unificado */}
       <Route path="/evolution-inbox">
-        <AppLayout>
-          <EvolutionInbox />
-        </AppLayout>
+        <RedirectToInbox />
       </Route>
       <Route path="/team-login" component={TeamLogin} />
       <Route path={"/404"} component={NotFound} />

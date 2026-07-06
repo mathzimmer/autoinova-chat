@@ -639,12 +639,15 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           timestamp: parsed.timestamp,
         });
         if (mirrored) {
+          console.log(`[Evolution] ✅ Espelhada no inbox unificado: conv=${mirrored.conversationId} (${instanceName})`);
           const { emitNewMessage, emitConversationUpdate } = await import("./socket");
           emitNewMessage(mirrored.conversationId, mirrored.message);
           emitConversationUpdate(mirrored.conversationId, {});
           // Foto de perfil do contato (best-effort, em background)
           fetchProfilePicIfMissing(instanceName, mirrored.conversationId, parsed.phone)
             .catch(err => console.warn("[Evolution] profile pic:", err));
+        } else {
+          console.log(`[Evolution] Espelhamento pulado (duplicada?) instancia=${instanceName} msgId=${parsed.messageId}`);
         }
       } catch (err) {
         console.error("[Evolution] Erro ao espelhar no inbox unificado:", err);
