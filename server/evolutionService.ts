@@ -106,6 +106,10 @@ export async function evolutionSendAudio(instanceName: string, to: string, audio
   return evolutionRequest(`/message/sendWhatsAppAudio/${instanceName}`, "POST", {
     number,
     audio: audioUrl,
+    // encoding: a Evolution transcodifica para o ptt nativo do WhatsApp —
+    // evita o "áudio não está mais disponível" na sincronização do
+    // aparelho remetente (quirk conhecido do Baileys com áudio por URL)
+    encoding: true,
   });
 }
 

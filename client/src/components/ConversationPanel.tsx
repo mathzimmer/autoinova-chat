@@ -71,6 +71,16 @@ export default function ConversationPanel({ conversationId }: Props) {
     onSuccess: () => { toast.success("Fluxo pausado"); refetchFlowSession(); },
   });
 
+  // ── Agente de IA da conversa ──
+  const { data: agentsList } = trpc.agent.listActive.useQuery();
+  const setConvAgent = trpc.conversation.setAgent.useMutation({
+    onSuccess: () => {
+      utils.conversation.getById.invalidate({ id: conversationId });
+      toast.success("Agente da conversa atualizado");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+
   // ── Funil (dispara CAPI no servidor) ──
   const updateFunnel = trpc.lead.update.useMutation({
     onSuccess: () => { refetchLead(); toast.success("Etapa do funil atualizada"); },
@@ -331,6 +341,25 @@ ${(lead as any).notes || "N/A"}
             <Bot className="h-4 w-4" />
             Reativar IA
           </Button>
+        )}
+        {conversation.aiActive && (agentsList || []).length > 0 && (
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block flex items-center gap-1">
+              <Bot className="h-3 w-3" /> Agente de IA
+            </label>
+            <Select
+              value={(conversation as any).agentId ? String((conversation as any).agentId) : "auto"}
+              onValueChange={(v) => setConvAgent.mutate({ conversationId, agentId: v === "auto" ? null : Number(v) })}
+            >
+              <SelectTrigger className="h-8 text-sm bg-input border-border"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Automático (padrão/instância)</SelectItem>
+                {(agentsList || []).map((a: any) => (
+                  <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         )}
         <div className="grid grid-cols-2 gap-2">
           <div>

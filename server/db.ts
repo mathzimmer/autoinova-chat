@@ -1130,6 +1130,25 @@ export async function getAiAgentForChannel(channel: string): Promise<typeof aiAg
   return null;
 }
 
+export async function getAiAgentForInstance(instanceName: string): Promise<typeof aiAgents.$inferSelect | null> {
+  const agentIdStr = await getSetting(`instance_${instanceName}_agent_id`);
+  if (!agentIdStr) return null;
+  const agentId = parseInt(agentIdStr, 10);
+  if (isNaN(agentId)) return null;
+  const agent = await getAiAgentById(agentId);
+  return agent && agent.active ? agent : null;
+}
+
+/** Agente marcado como padrão da loja (setting default_agent_id) */
+export async function getDefaultAiAgent(): Promise<typeof aiAgents.$inferSelect | null> {
+  const agentIdStr = await getSetting("default_agent_id");
+  if (!agentIdStr) return null;
+  const agentId = parseInt(agentIdStr, 10);
+  if (isNaN(agentId)) return null;
+  const agent = await getAiAgentById(agentId);
+  return agent && agent.active ? agent : null;
+}
+
 export async function getAiAgentForFlow(flowId: number): Promise<typeof aiAgents.$inferSelect | null> {
   const db = await getDb();
   if (!db) return null;

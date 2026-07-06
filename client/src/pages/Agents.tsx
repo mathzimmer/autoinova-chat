@@ -68,6 +68,27 @@ export default function Agents() {
   const agentsQuery = trpc.agent.list.useQuery();
   const toolsQuery = trpc.agent.availableTools.useQuery();
   const channelAgentsQuery = trpc.agent.getChannelAgents.useQuery();
+  const defaultAgentQuery = trpc.agent.getDefaultAgent.useQuery();
+  const instanceAgentsQuery = trpc.agent.getInstanceAgents.useQuery();
+  const instancesQuery = trpc.evolution.listInstances.useQuery();
+
+  const seedMutation = trpc.agent.seedTemplates.useMutation({
+    onSuccess: (res) => {
+      if (res.count > 0) toast.success(`Agentes criados: ${res.created.join(", ")}`);
+      else toast.info("Os agentes-template já existem.");
+      agentsQuery.refetch();
+      defaultAgentQuery.refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
+  const setDefaultMutation = trpc.agent.setDefaultAgent.useMutation({
+    onSuccess: () => { toast.success("Agente padrão definido"); defaultAgentQuery.refetch(); },
+    onError: (err) => toast.error(err.message),
+  });
+  const setInstanceMutation = trpc.agent.setInstanceAgent.useMutation({
+    onSuccess: () => { toast.success("Agente da instância atualizado"); instanceAgentsQuery.refetch(); },
+    onError: (err) => toast.error(err.message),
+  });
 
   const createMutation = trpc.agent.create.useMutation({
     onSuccess: () => {
@@ -194,11 +215,78 @@ export default function Agents() {
             Crie e gerencie agentes com prompts, tools e modelos específicos para cada situação.
           </p>
         </div>
-        <Button onClick={openCreate} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Novo Agente
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} className="gap-2">
+            <Zap className="h-4 w-4" />
+            Criar agentes prontos
+          </Button>
+          <Button onClick={openCreate} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Novo Agente
+          </Button>
+        </div>
       </div>
+
+      {/* Como funciona — hierarquia */}
+      <Card className="mb-6 bg-primary/5 border-primary/20">
+        <CardContent className="pt-4 pb-3 text-sm text-muted-foreground">
+          <p className="font-medium text-foreground mb-1">Como a IA escolhe o agente (do mais específico ao geral):</p>
+          <p>1. Agente <b>fixado na conversa</b> (você escolhe no painel do chat) → 2. Agente do <b>fluxo</b> ativo → 3. Agente da <b>instância</b> → 4. Agente do <b>canal</b> → 5. Agente <b>padrão da loja</b>.</p>
+          <p className="mt-1">Clique em <b>"Criar agentes prontos"</b> para gerar Recepção (herda sua IA atual), Financeiro e Pós-venda.</p>
+        </CardContent>
+      </Card>
+
+      {/* Agente padrão da loja */}
+      <Card className="mb-6">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Agente Padrão da Loja</CardTitle>
+          <CardDescription>Responde quando nenhum agente mais específico se aplica.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Select
+            value={defaultAgentQuery.data ? String(defaultAgentQuery.data) : "none"}
+            onValueChange={(v) => setDefaultMutation.mutate({ agentId: v === "none" ? null : parseInt(v, 10) })}
+          >
+            <SelectTrigger className="max-w-sm"><SelectValue placeholder="Selecione o agente padrão" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhum (usa prompts globais atuais)</SelectItem>
+              {activeAgents.map(a => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
+
+      {/* Agente por instância WhatsApp */}
+      {(instancesQuery.data || []).length > 0 && (
+        <Card className="mb-6">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Agente por Número (Instância)</CardTitle>
+            <CardDescription>Cada número WhatsApp pode ter seu próprio agente — ex.: um número só de pós-venda.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {(instancesQuery.data || []).map((inst: any) => (
+                <div key={inst.id} className="space-y-2">
+                  <Label className="text-sm font-medium flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4 text-emerald-500" />
+                    {inst.displayName || inst.instanceName}
+                  </Label>
+                  <Select
+                    value={instanceAgentsQuery.data?.[inst.instanceName] ? String(instanceAgentsQuery.data[inst.instanceName]) : "none"}
+                    onValueChange={(v) => setInstanceMutation.mutate({ instanceName: inst.instanceName, agentId: v === "none" ? null : parseInt(v, 10) })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Usa o agente padrão" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Usa o agente padrão</SelectItem>
+                      {activeAgents.map(a => <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Channel Agent Assignment */}
       <Card className="mb-6">

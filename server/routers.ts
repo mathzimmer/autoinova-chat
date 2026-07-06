@@ -285,17 +285,33 @@ async function initDebounce() {
         console.error(`[Debounce] Erro ao carregar prompt do fluxo:`, flowPromptErr);
       }
 
-      // If no flow agent, try channel agent
+      // Hierarquia de seleção de agente (do mais específico ao geral).
+      // Prioridade 0 (máxima): agente FIXADO manualmente na conversa.
+      if (!flowAiOptions?.agentId && !flowAiOptions?.flowPrompt && (conversation as any).agentId) {
+        flowAiOptions = { ...flowAiOptions, agentId: (conversation as any).agentId };
+        console.log(`[Debounce] Conversa ${conversationId}: usando agente FIXADO na conversa (ID: ${(conversation as any).agentId})`);
+      }
+
+      // Se nada ainda: instância Evolution → canal → agente padrão da loja
       if (!flowAiOptions?.agentId && !flowAiOptions?.flowPrompt) {
         try {
-          const { getAiAgentForChannel } = await import("./db");
-          const channelAgent = await getAiAgentForChannel(conversation.channel || "whatsapp");
-          if (channelAgent) {
-            flowAiOptions = { ...flowAiOptions, agentId: channelAgent.id };
-            console.log(`[Debounce] Conversa ${conversationId}: usando agente de canal "${channelAgent.name}" (ID: ${channelAgent.id}) para ${conversation.channel}`);
+          const { getAiAgentForInstance, getAiAgentForChannel, getDefaultAiAgent } = await import("./db");
+          let picked = null;
+          if ((conversation as any).instanceName) {
+            picked = await getAiAgentForInstance((conversation as any).instanceName);
+            if (picked) console.log(`[Debounce] Conversa ${conversationId}: agente da instância "${(conversation as any).instanceName}" → "${picked.name}"`);
           }
-        } catch (channelAgentErr) {
-          console.error(`[Debounce] Erro ao carregar agente de canal:`, channelAgentErr);
+          if (!picked) {
+            picked = await getAiAgentForChannel(conversation.channel || "whatsapp");
+            if (picked) console.log(`[Debounce] Conversa ${conversationId}: agente de canal "${picked.name}"`);
+          }
+          if (!picked) {
+            picked = await getDefaultAiAgent();
+            if (picked) console.log(`[Debounce] Conversa ${conversationId}: agente PADRÃO da loja "${picked.name}"`);
+          }
+          if (picked) flowAiOptions = { ...flowAiOptions, agentId: picked.id };
+        } catch (agentErr) {
+          console.error(`[Debounce] Erro ao carregar agente:`, agentErr);
         }
       }
 
@@ -767,6 +783,15 @@ const conversationRouter = router({
           : andOp(phoneCond, eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
       ).limit(1))[0];
       return row || null;
+    }),
+
+  /** Fixa (ou solta) o agente de IA de uma conversa */
+  setAgent: protectedProcedure
+    .input(z.object({ conversationId: z.number(), agentId: z.number().nullable() }))
+    .mutation(async ({ input }) => {
+      const conv = await updateConversation(input.conversationId, { agentId: input.agentId } as any);
+      emitConversationUpdate(input.conversationId, { agentId: input.agentId });
+      return conv;
     }),
 
   /** Inicia uma nova conversa (matriz ou instância Evolution) com contato novo ou existente */
@@ -3734,6 +3759,116 @@ const agentRouter = router({
       await upsertSetting(key, input.agentId ? String(input.agentId) : "");
       return { success: true };
     }),
+
+  /** Agente padrão da loja (usado quando nada mais específico se aplica) */
+  getDefaultAgent: protectedProcedure.query(async () => {
+    const id = await getSetting("default_agent_id");
+    return id ? parseInt(id, 10) : null;
+  }),
+
+  setDefaultAgent: adminProcedure
+    .input(z.object({ agentId: z.number().nullable() }))
+    .mutation(async ({ input }) => {
+      await upsertSetting("default_agent_id", input.agentId ? String(input.agentId) : "");
+      return { success: true };
+    }),
+
+  /** Atribuições de agente por instância Evolution */
+  getInstanceAgents: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return {};
+    const { evolutionInstances } = await import("../drizzle/schema");
+    const instances = await db.select().from(evolutionInstances);
+    const map: Record<string, number | null> = {};
+    for (const inst of instances) {
+      const id = await getSetting(`instance_${inst.instanceName}_agent_id`);
+      map[inst.instanceName] = id ? parseInt(id, 10) : null;
+    }
+    return map;
+  }),
+
+  setInstanceAgent: adminProcedure
+    .input(z.object({ instanceName: z.string(), agentId: z.number().nullable() }))
+    .mutation(async ({ input }) => {
+      await upsertSetting(`instance_${input.instanceName}_agent_id`, input.agentId ? String(input.agentId) : "");
+      return { success: true };
+    }),
+
+  /**
+   * Semeia os agentes-template de uma concessionária.
+   * O agente "Recepção" herda os prompts globais atuais (nada se perde).
+   */
+  seedTemplates: adminProcedure.mutation(async ({ ctx }) => {
+    const existing = await listAiAgents();
+    const existingNames = new Set(existing.map(a => a.name.toLowerCase()));
+    const { getCorePrompt, getCommercialPrompt, getPersonalityPrompt } = await import("./ai");
+
+    const created: string[] = [];
+    const allStockTools = ["buscar_veiculos", "buscar_veiculo_por_id", "apresentar_veiculo", "resumo_estoque", "atualizar_lead", "enviar_botoes", "enviar_lista"];
+
+    // 1. Recepção/Vendas — herda a configuração atual da IA (vira o padrão)
+    if (!existingNames.has("recepção") && !existingNames.has("recepcao")) {
+      const personality = await getPersonalityPrompt();
+      const rec = await createAiAgent({
+        name: "Recepção",
+        description: "Atendimento inicial e vendas — herda a configuração atual da sua IA. Apresenta veículos, qualifica o lead.",
+        systemPrompt: personality,
+        includeCoreLayers: true, // usa as camadas núcleo + comercial atuais
+        model: "gpt-4o-mini",
+        temperature: "0.7",
+        maxTokens: 1024,
+        enabledTools: allStockTools,
+        active: true,
+        createdBy: ctx.user.id,
+      });
+      await upsertSetting("default_agent_id", String(rec.id));
+      created.push("Recepção (definido como padrão)");
+    }
+
+    // 2. Financeiro
+    if (!existingNames.has("financeiro")) {
+      await createAiAgent({
+        name: "Financeiro",
+        description: "Foco em financiamento, entrada e simulação. Não fica empurrando veículo.",
+        systemPrompt: `Você é o especialista financeiro da Auto Inova. Seu foco é ajudar o cliente com financiamento, valor de entrada, parcelas e simulações.
+Seja objetivo e transmita confiança. Pergunte o valor de entrada disponível e a renda quando fizer sentido, mas sem ser invasivo.
+Explique as formas de pagamento (à vista, financiado, com troca). Registre os dados com atualizar_lead.
+NÃO apresente veículos novos aqui — o cliente já escolheu; seu papel é viabilizar o negócio. Se ele quiser ver outro carro, sugira falar com a Recepção.
+Tom: profissional, tranquilizador, direto. Sem markdown, máximo 3 parágrafos curtos.`,
+        includeCoreLayers: true,
+        model: "gpt-4o-mini",
+        temperature: "0.5",
+        maxTokens: 1024,
+        enabledTools: ["atualizar_lead", "enviar_botoes"],
+        active: true,
+        createdBy: ctx.user.id,
+      });
+      created.push("Financeiro");
+    }
+
+    // 3. Pós-venda
+    if (!existingNames.has("pós-venda") && !existingNames.has("pos-venda")) {
+      await createAiAgent({
+        name: "Pós-venda",
+        description: "Para quem já comprou. Relacionamento, revisão, recompra e indicação — sem pressão de venda.",
+        systemPrompt: `Você é o pós-venda da Auto Inova. O cliente JÁ COMPROU um veículo com a gente. Seu papel é relacionamento, não venda.
+Trate com carinho e gratidão. Ajude com dúvidas sobre o veículo, revisões, documentação e garantia.
+Se perceber interesse em trocar ou indicar alguém, colete a informação com atualizar_lead e passe para a Recepção com naturalidade.
+NUNCA pressione para comprar. O objetivo é fidelizar e gerar indicação.
+Tom: caloroso, atencioso, próximo. Sem markdown, máximo 3 parágrafos curtos.`,
+        includeCoreLayers: true,
+        model: "gpt-4o-mini",
+        temperature: "0.7",
+        maxTokens: 1024,
+        enabledTools: ["atualizar_lead", "enviar_botoes"],
+        active: true,
+        createdBy: ctx.user.id,
+      });
+      created.push("Pós-venda");
+    }
+
+    return { created, count: created.length };
+  }),
 });
 
 // ─── Seller Router ──────────────────────────────────────────

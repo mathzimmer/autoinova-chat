@@ -78,6 +78,8 @@ export const conversations = pgTable("conversations", {
   channel:                 conversationChannelEnum("channel").default("whatsapp").notNull(),
   // Instância Evolution de origem (null = número oficial/matriz)
   instanceName:            varchar("instanceName", { length: 100 }),
+  // Agente de IA fixado nesta conversa (null = usa a hierarquia padrão)
+  agentId:                 integer("agentId"),
   platformUserId:          varchar("platformUserId", { length: 255 }),  // BSUID vai aqui
   status:                  conversationStatusEnum("status").default("open").notNull(),
   aiActive:                boolean("aiActive").default(true).notNull(),
