@@ -4993,11 +4993,13 @@ const evolutionRouter = router({
       if (!mediaData) return { url: null };
       if (mediaData.startsWith("http")) return { url: mediaData };
       if (mediaData.startsWith("data:")) {
-        const mimeMatch = mediaData.match(/^data:([^;]+);base64,(.+)$/);
-        if (mimeMatch) {
-          const mime = mimeMatch[1];
-          const buffer = Buffer.from(mimeMatch[2], "base64");
-          const ext = mime.split("/")[1] || "bin";
+        // Parsing robusto (mimetype pode vir como "audio/ogg; codecs=opus")
+        const commaIdx = mediaData.indexOf(",");
+        if (commaIdx > 5) {
+          const header = mediaData.slice(5, commaIdx);
+          const mime = (header.split(";")[0] || "application/octet-stream").trim();
+          const buffer = Buffer.from(mediaData.slice(commaIdx + 1), "base64");
+          const ext = mime.split("/")[1]?.trim() || "bin";
           const key = `evolution-media/${input.instanceName}/${Date.now()}-${input.messageId.slice(-8)}.${ext}`;
           const { url } = await storagePut(key, buffer, mime);
           return { url };

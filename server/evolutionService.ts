@@ -583,11 +583,14 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
             // If it's a data URL (base64), upload to S3
             if (mediaData.startsWith("data:")) {
               const { storagePut } = await import("./storage");
-              const mimeMatch = mediaData.match(/^data:([^;]+);base64,(.+)$/);
-              if (mimeMatch) {
-                const mime = mimeMatch[1];
-                const buffer = Buffer.from(mimeMatch[2], "base64");
-                const ext = mime.split("/")[1]?.replace("webm", "webm").replace("ogg", "ogg") || "bin";
+              // Parsing robusto: mimetype de áudio vem como "audio/ogg; codecs=opus"
+              // e quebrava a regex simples — split na primeira vírgula é infalível
+              const commaIdx = mediaData.indexOf(",");
+              if (commaIdx > 5) {
+                const header = mediaData.slice(5, commaIdx); // após "data:"
+                const mime = (header.split(";")[0] || "application/octet-stream").trim();
+                const buffer = Buffer.from(mediaData.slice(commaIdx + 1), "base64");
+                const ext = mime.split("/")[1]?.trim() || "bin";
                 const key = `evolution-media/${instanceName}/${Date.now()}-${parsed.messageId.slice(-8)}.${ext}`;
                 const { url } = await storagePut(key, buffer, mime);
                 finalMediaUrl = url;
