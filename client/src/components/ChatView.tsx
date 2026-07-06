@@ -620,11 +620,18 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
       mediaRecorder.onstop = () => {
         stream.getTracks().forEach(t => t.stop());
         const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        console.log(`[Audio] Gravação finalizada: ${audioBlob.size} bytes em ${audioChunksRef.current.length} chunks`);
         if (audioBlob.size > MAX_FILE_SIZE) { toast.error("O tamanho máximo é 16MB."); return; }
-        if (audioBlob.size < 1000) return;
+        if (audioBlob.size < 1000) {
+          toast.error("O microfone não capturou áudio (gravação vazia). Verifique nas Configurações do macOS > Privacidade > Microfone se o navegador tem acesso, e o dispositivo de entrada correto.");
+          return;
+        }
         const reader = new FileReader();
+        reader.onerror = () => toast.error("Falha ao processar o áudio gravado.");
         reader.onload = () => {
           const base64 = (reader.result as string).split(",")[1];
+          console.log(`[Audio] Enviando ${Math.round(base64.length / 1024)}KB para o servidor...`);
+          toast.info("Enviando áudio...");
           sendMediaMutation.mutate({
             conversationId, mediaType: "audio", base64Data: base64,
             mimeType: "audio/webm", fileName: "voice-message.webm",
