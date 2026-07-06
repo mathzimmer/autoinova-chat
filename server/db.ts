@@ -40,12 +40,10 @@ let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      // Pool limitado: o pooler do Supabase em session mode aceita só 15 clientes.
-      // max 6 + idle_timeout libera conexões ociosas e deixa folga para
-      // drizzle-kit push, transações do jobLock e picos de webhook.
+      // Postgres local na VPS (sem o limite de 15 do pooler Supabase)
       const client = postgres(process.env.DATABASE_URL, {
-        max: 6,
-        idle_timeout: 20,      // fecha conexões ociosas após 20s
+        max: 20,
+        idle_timeout: 30,      // fecha conexões ociosas
         max_lifetime: 60 * 30, // recicla conexões a cada 30min
         connect_timeout: 10,
       });
