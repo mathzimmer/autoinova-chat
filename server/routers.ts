@@ -628,6 +628,7 @@ const conversationRouter = router({
       status: z.string().optional(),
       search: z.string().optional(),
       instance: z.string().optional(), // "matriz" (padrão) ou nome da instância Evolution
+      archived: z.boolean().optional(),
       limit: z.number().min(1).max(300).optional(),
       offset: z.number().min(0).optional(),
     }).optional())
@@ -794,6 +795,35 @@ const conversationRouter = router({
       return conv;
     }),
 
+  /** Arquiva/desarquiva uma ou várias conversas */
+  setArchived: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1), archived: z.boolean() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { conversations: convTable } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      await db.update(convTable).set({ archived: input.archived, updatedAt: new Date() }).where(inArray(convTable.id, input.ids));
+      input.ids.forEach(id => emitConversationUpdate(id, { archived: input.archived }));
+      return { success: true, count: input.ids.length };
+    }),
+
+  /** Exclui permanentemente uma ou várias conversas (mensagens, labels, lembretes, agendadas) */
+  bulkDelete: protectedProcedure
+    .input(z.object({ ids: z.array(z.number()).min(1) }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { conversations: convTable, messages: msgTable, conversationLabels: clTable, conversationReminders: crTable, scheduledMessages: smTable } = await import("../drizzle/schema");
+      const { inArray } = await import("drizzle-orm");
+      await db.delete(msgTable).where(inArray(msgTable.conversationId, input.ids));
+      await db.delete(clTable).where(inArray(clTable.conversationId, input.ids));
+      await db.delete(crTable).where(inArray(crTable.conversationId, input.ids));
+      await db.delete(smTable).where(inArray(smTable.conversationId, input.ids));
+      await db.delete(convTable).where(inArray(convTable.id, input.ids));
+      return { success: true, count: input.ids.length };
+    }),
+
   /** Inicia uma nova conversa (matriz ou instância Evolution) com contato novo ou existente */
   startNew: protectedProcedure
     .input(z.object({
@@ -836,7 +866,7 @@ const conversationRouter = router({
         conv = inserted[0];
       }
 
-      // Cadastra o contato na agenda se não existir
+      // Cadastra o contato na agenda se não existir (com a instância que criou)
       try {
         const existingContact = await getContactByPhone(phone);
         if (!existingContact) {
@@ -845,8 +875,9 @@ const conversationRouter = router({
             phone,
             conversationId: conv.id,
             source: "manual",
+            createdByInstance: isMatriz ? null : input.instance,
             isActive: true,
-          });
+          } as any);
         }
       } catch { /* não-crítico */ }
 
@@ -4046,7 +4077,8 @@ const contactsRouter = router({
       search: z.string().optional(),
       tag: z.string().optional(),
       source: z.string().optional(),
-      kind: z.string().optional(), // lead | cliente
+      kind: z.string().optional(), // lead | cliente | custom
+      createdByInstance: z.string().optional(), // "matriz" ou nome da instância
       limit: z.number().optional(),
       offset: z.number().optional(),
       campaignParticipant: z.boolean().optional(),
@@ -4104,7 +4136,8 @@ const contactsRouter = router({
       email: z.string().optional(),
       tags: z.array(z.string()).optional(),
       notes: z.string().optional(),
-      kind: z.enum(["lead", "cliente"]).default("lead"),
+      kind: z.string().max(40).default("lead"),
+      createdByInstance: z.string().max(100).nullable().optional(),
       cpf: z.string().max(14).optional(),
       birthDate: z.string().max(10).optional(),
       address: z.string().max(500).optional(),
@@ -4161,7 +4194,7 @@ const contactsRouter = router({
       email: z.string().optional(),
       tags: z.array(z.string()).optional(),
       notes: z.string().optional(),
-      kind: z.enum(["lead", "cliente"]).optional(),
+      kind: z.string().max(40).optional(),
       cpf: z.string().max(14).nullable().optional(),
       birthDate: z.string().max(10).nullable().optional(),
       address: z.string().max(500).nullable().optional(),
@@ -4205,6 +4238,38 @@ const contactsRouter = router({
   tags: adminProcedure.query(async () => {
     return getAllContactTags();
   }),
+
+  /** Tipos de contato customizados (além de lead/cliente) */
+  kinds: protectedProcedure.query(async () => {
+    const raw = await getSetting("contact_custom_kinds");
+    let custom: string[] = [];
+    try { custom = raw ? JSON.parse(raw) : []; } catch { custom = []; }
+    return { builtin: ["lead", "cliente"], custom };
+  }),
+
+  addKind: adminProcedure
+    .input(z.object({ name: z.string().min(1).max(40) }))
+    .mutation(async ({ input }) => {
+      const raw = await getSetting("contact_custom_kinds");
+      let custom: string[] = [];
+      try { custom = raw ? JSON.parse(raw) : []; } catch { custom = []; }
+      const clean = input.name.trim().toLowerCase();
+      if (["lead", "cliente"].includes(clean)) throw new Error("Esse tipo já existe");
+      if (!custom.includes(clean)) custom.push(clean);
+      await upsertSetting("contact_custom_kinds", JSON.stringify(custom));
+      return { custom };
+    }),
+
+  removeKind: adminProcedure
+    .input(z.object({ name: z.string() }))
+    .mutation(async ({ input }) => {
+      const raw = await getSetting("contact_custom_kinds");
+      let custom: string[] = [];
+      try { custom = raw ? JSON.parse(raw) : []; } catch { custom = []; }
+      custom = custom.filter(k => k !== input.name.toLowerCase());
+      await upsertSetting("contact_custom_kinds", JSON.stringify(custom));
+      return { custom };
+    }),
 
   // Send template to a single contact
   sendTemplate: adminProcedure

@@ -96,12 +96,15 @@ export async function listConversations(filters?: {
   search?: string;
   /** "matriz" (padrão) = canais oficiais; ou nome de instância Evolution */
   instance?: string;
+  archived?: boolean;
   limit?: number;
   offset?: number;
 }) {
   const db = await getDb();
   if (!db) return [];
   const conditions = [];
+  // Por padrão esconde arquivadas; archived:true mostra só as arquivadas
+  conditions.push(eq(conversations.archived, filters?.archived === true));
   if (filters?.status && filters.status !== "all") {
     conditions.push(eq(conversations.status, filters.status as any));
   }
@@ -254,6 +257,28 @@ export async function mirrorEvolutionMessage(params: {
     metadata: params.mediaUrl ? { mediaUrl: params.mediaUrl } : undefined,
     externalId: params.externalId,
   });
+
+  // Sincroniza a agenda de contatos: cria (marcando a instância) ou atualiza o
+  // nome quando o cliente responde (contatos iniciados por nós nascem sem nome).
+  try {
+    const realName = (isInbound && bestName && bestName !== bestPhone) ? bestName : null;
+    const existing = await getContactByPhone(bestPhone);
+    if (!existing) {
+      await createContact({
+        name: realName || bestPhone,
+        phone: bestPhone,
+        conversationId: conv.id,
+        source: "whatsapp",
+        createdByInstance: params.instanceName,
+        isActive: true,
+      } as any);
+    } else if (realName && (!existing.name || existing.name === existing.phone || existing.name === "Cliente")) {
+      // Cliente respondeu com pushName melhor → atualiza a agenda
+      await updateContact(existing.id, { name: realName });
+    }
+  } catch (err) {
+    console.error("[Evolution] sync contato falhou:", err);
+  }
 
   return { conversationId: conv.id, message };
 }
@@ -1408,12 +1433,19 @@ export async function getInactiveLeadsForRescue(
 
 // ─── Contacts ───────────────────────────────────────────────────────────────
 
-export async function listContacts(opts?: { search?: string; tag?: string; source?: string; kind?: string; limit?: number; offset?: number; campaignParticipant?: boolean }) {
+export async function listContacts(opts?: { search?: string; tag?: string; source?: string; kind?: string; createdByInstance?: string; limit?: number; offset?: number; campaignParticipant?: boolean }) {
   const db = await getDb();
   if (!db) return { contacts: [], total: 0 };
   const conditions: any[] = [eq(contacts.isActive, true)];
-  if (opts?.kind && (opts.kind === "lead" || opts.kind === "cliente")) {
+  if (opts?.kind) {
     conditions.push(eq(contacts.kind, opts.kind));
+  }
+  if (opts?.createdByInstance) {
+    if (opts.createdByInstance === "matriz") {
+      conditions.push(sql`${contacts.createdByInstance} IS NULL`);
+    } else {
+      conditions.push(eq(contacts.createdByInstance, opts.createdByInstance));
+    }
   }
   if (opts?.search) {
     conditions.push(

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Bot, User, MessageSquare, Circle, UserCheck, Users, Inbox, Plus, Loader2, Send } from "lucide-react";
+import { Search, Bot, User, MessageSquare, Circle, UserCheck, Users, Inbox, Plus, Loader2, Send, CheckSquare, Archive, Trash2, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -26,13 +26,33 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
   const [agentFilter, setAgentFilter] = useState<"all" | "mine" | "unassigned" | "ai">("all");
   const [labelFilter, setLabelFilter] = useState<number | null>(null);
   const [limit, setLimit] = useState(PAGE_SIZE);
+  const [showArchived, setShowArchived] = useState(false);
   const { data: conversations, refetch } = trpc.conversation.list.useQuery(
-    { status: statusFilter, search: search || undefined, instance, limit },
+    { status: statusFilter, search: search || undefined, instance, limit, archived: showArchived },
     { refetchInterval: 10000 }
   );
 
   // Reseta a paginação ao trocar de fonte/filtro
-  useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search]);
+  useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search, showArchived]);
+
+  // ── Seleção múltipla ──
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const utils = trpc.useUtils();
+  const clearSelection = () => { setSelectedIds(new Set()); setSelectionMode(false); };
+  const toggleSelect = (id: number) => setSelectedIds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const archiveMutation = trpc.conversation.setArchived.useMutation({
+    onSuccess: (r) => { toast.success(`${r.count} conversa(s) ${showArchived ? "desarquivada(s)" : "arquivada(s)"}`); clearSelection(); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
+  const deleteMutation = trpc.conversation.bulkDelete.useMutation({
+    onSuccess: (r) => { toast.success(`${r.count} conversa(s) excluída(s)`); clearSelection(); refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
 
   // ── Nova conversa ──
   const [showNewDialog, setShowNewDialog] = useState(false);
@@ -188,6 +208,22 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
             </div>
             <Button
               size="icon" variant="ghost"
+              className={`h-7 w-7 ${selectionMode ? "text-primary bg-primary/10" : "text-muted-foreground"} hover:bg-accent`}
+              onClick={() => { setSelectionMode(v => !v); setSelectedIds(new Set()); }}
+              title="Selecionar várias"
+            >
+              <CheckSquare className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon" variant="ghost"
+              className={`h-7 w-7 ${showArchived ? "text-amber-500 bg-amber-500/10" : "text-muted-foreground"} hover:bg-accent`}
+              onClick={() => setShowArchived(v => !v)}
+              title={showArchived ? "Ver ativas" : "Ver arquivadas"}
+            >
+              <Archive className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon" variant="ghost"
               className="h-7 w-7 text-primary hover:bg-primary/10"
               onClick={() => setShowNewDialog(true)}
               title="Iniciar nova conversa"
@@ -196,6 +232,25 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
             </Button>
           </div>
         </div>
+
+        {/* ── Barra de ações em massa ── */}
+        {selectionMode && (
+          <div className="flex items-center gap-2 mb-2 p-2 rounded-lg bg-accent/50 border border-border">
+            <span className="text-xs font-medium text-foreground flex-1">{selectedIds.size} selecionada(s)</span>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" disabled={selectedIds.size === 0 || archiveMutation.isPending}
+              onClick={() => archiveMutation.mutate({ ids: Array.from(selectedIds), archived: !showArchived })}>
+              <Archive className="h-3.5 w-3.5 mr-1" />{showArchived ? "Desarquivar" : "Arquivar"}
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-destructive hover:text-destructive" disabled={selectedIds.size === 0 || deleteMutation.isPending}
+              onClick={() => { if (confirm(`Excluir ${selectedIds.size} conversa(s) permanentemente? Isso apaga as mensagens.`)) deleteMutation.mutate({ ids: Array.from(selectedIds) }); }}>
+              <Trash2 className="h-3.5 w-3.5 mr-1" />Excluir
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={clearSelection}>Cancelar</Button>
+          </div>
+        )}
+        {showArchived && !selectionMode && (
+          <div className="mb-2 text-xs text-amber-600 flex items-center gap-1"><Archive className="h-3 w-3" /> Vendo conversas arquivadas</div>
+        )}
 
         {/* ── Dialog nova conversa ── */}
         <Dialog open={showNewDialog} onOpenChange={setShowNewDialog}>
@@ -372,17 +427,25 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
           ) : (
             filteredConversations.map((conv) => {
               const agentName = getAgentName(conv.assignedTo);
+              const isChecked = selectedIds.has(conv.id);
               return (
                 <button
                   key={conv.id}
-                  onClick={() => onSelect(conv.id)}
+                  onClick={() => selectionMode ? toggleSelect(conv.id) : onSelect(conv.id)}
                   className={`w-full text-left px-3 py-2.5 rounded-lg mb-0.5 transition-all h-auto ${
-                    selectedId === conv.id
+                    selectionMode && isChecked
+                      ? "bg-primary/10 border border-primary/40"
+                      : selectedId === conv.id
                       ? "bg-accent border border-primary/30"
                       : "hover:bg-accent/50 border border-transparent"
                   }`}
                 >
                   <div className="flex items-center gap-3">
+                    {selectionMode && (
+                      <div className={`h-4 w-4 rounded border shrink-0 flex items-center justify-center ${isChecked ? "bg-primary border-primary" : "border-muted-foreground/40"}`}>
+                        {isChecked && <Check className="h-3 w-3 text-primary-foreground" />}
+                      </div>
+                    )}
                     {/* Avatar - fixed size with platform icon */}
                     <div className="relative shrink-0">
                       {conv.contactPhoto ? (

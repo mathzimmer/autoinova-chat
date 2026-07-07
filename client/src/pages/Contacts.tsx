@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -111,12 +111,20 @@ export default function ContactsPage() {
   const [formEmail, setFormEmail] = useState("");
   const [formTags, setFormTags] = useState("");
   const [formNotes, setFormNotes] = useState("");
-  const [formKind, setFormKind] = useState<"lead" | "cliente">("lead");
+  const [formKind, setFormKind] = useState<string>("lead");
   const [formCpf, setFormCpf] = useState("");
+  const [formBirthDate, setFormBirthDate] = useState("");
+  const kindsQuery = trpc.contact.kinds.useQuery();
+  const allKinds = [...(kindsQuery.data?.builtin || ["lead", "cliente"]), ...(kindsQuery.data?.custom || [])];
+  const addKindMutation = trpc.contact.addKind.useMutation({
+    onSuccess: () => { toast.success("Tipo criado"); kindsQuery.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   const [formPurchasedVehicle, setFormPurchasedVehicle] = useState("");
   const [formAddress, setFormAddress] = useState("");
   const [formCity, setFormCity] = useState("");
-  const [selectedKind, setSelectedKind] = useState<string>(""); // filtro lead/cliente
+  const [selectedKind, setSelectedKind] = useState<string>(""); // filtro por tipo
+  const [selectedInstance, setSelectedInstance] = useState<string>(""); // filtro por origem/instância
 
   // Template state
   const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -138,17 +146,40 @@ export default function ContactsPage() {
 
   // ── Iniciar conversa direto do contato ──
   const [, setLocation] = useLocation();
+  const { data: instancesForStart } = trpc.evolution.listInstances.useQuery();
+  const [startContact, setStartContact] = useState<Contact | null>(null); // abre o dialog de instância
+  const [checkingConv, setCheckingConv] = useState(false);
+
   const startConvMutation = trpc.conversation.startNew.useMutation({
-    onSuccess: (res) => setLocation(`/inbox?conv=${res.conversationId}`),
+    onSuccess: (res) => { setStartContact(null); setLocation(`/inbox?conv=${res.conversationId}`); },
     onError: (err) => toast.error(err.message),
   });
+  const findByPhoneUtil = trpc.useUtils().conversation.findByPhone;
+
   const handleStartConversation = (contact: Contact) => {
-    if (contact.lastConversation?.conversationId) {
-      setLocation(`/inbox?conv=${contact.lastConversation.conversationId}`);
-    } else if (contact.conversationId) {
-      setLocation(`/inbox?conv=${contact.conversationId}`);
+    // Só matriz/oficial + instâncias conectadas viram opção
+    const connected = (instancesForStart || []).filter((i: any) => i.status === "connected");
+    if (connected.length === 0) {
+      // Sem instâncias: vai direto pela matriz
+      startFor(contact, "matriz");
     } else {
-      startConvMutation.mutate({ name: contact.name, phone: contact.phone, instance: "matriz" });
+      setStartContact(contact); // abre o seletor de instância
+    }
+  };
+
+  const startFor = async (contact: Contact, instance: string) => {
+    setCheckingConv(true);
+    try {
+      // Se já existe conversa nessa fonte, abre ela
+      const existing = await findByPhoneUtil.fetch({ phone: contact.phone.replace(/\D/g, ""), instance });
+      if (existing?.id) {
+        setStartContact(null);
+        setLocation(`/inbox?conv=${existing.id}`);
+        return;
+      }
+      startConvMutation.mutate({ name: contact.name, phone: contact.phone, instance });
+    } finally {
+      setCheckingConv(false);
     }
   };
 
@@ -158,6 +189,7 @@ export default function ContactsPage() {
     tag: selectedTag || undefined,
     source: selectedSource || undefined,
     kind: selectedKind || undefined,
+    createdByInstance: selectedInstance || undefined,
     limit: pageSize,
     offset: page * pageSize,
     campaignParticipant: filterByCampaign === "active" ? true : undefined,
@@ -287,7 +319,7 @@ export default function ContactsPage() {
   // Helpers
   const resetForm = () => {
     setFormName(""); setFormPhone(""); setFormEmail(""); setFormTags(""); setFormNotes("");
-    setFormKind("lead"); setFormCpf(""); setFormPurchasedVehicle("");
+    setFormKind("lead"); setFormCpf(""); setFormBirthDate(""); setFormPurchasedVehicle("");
     setFormAddress(""); setFormCity("");
   };
 
@@ -300,6 +332,7 @@ export default function ContactsPage() {
     setFormNotes(contact.notes || "");
     setFormKind(((contact as any).kind as "lead" | "cliente") || "lead");
     setFormCpf((contact as any).cpf || "");
+    setFormBirthDate((contact as any).birthDate || "");
     setFormPurchasedVehicle((contact as any).purchasedVehicle || "");
     setFormAddress((contact as any).address || "");
     setFormCity((contact as any).city || "");
@@ -315,6 +348,7 @@ export default function ContactsPage() {
       notes: formNotes || undefined,
       kind: formKind,
       cpf: formCpf.trim() || undefined,
+      birthDate: formBirthDate.trim() || undefined,
       purchasedVehicle: formPurchasedVehicle.trim() || undefined,
       address: formAddress.trim() || undefined,
       city: formCity.trim() || undefined,
@@ -332,6 +366,7 @@ export default function ContactsPage() {
       notes: formNotes || undefined,
       kind: formKind,
       cpf: formCpf.trim() || null,
+      birthDate: formBirthDate.trim() || null,
       purchasedVehicle: formPurchasedVehicle.trim() || null,
       address: formAddress.trim() || null,
       city: formCity.trim() || null,
@@ -504,10 +539,27 @@ export default function ContactsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os tipos</SelectItem>
-                <SelectItem value="lead">🎯 Leads</SelectItem>
-                <SelectItem value="cliente">⭐ Clientes</SelectItem>
+                {allKinds.map(k => (
+                  <SelectItem key={k} value={k}>
+                    {k === "lead" ? "🎯 Leads" : k === "cliente" ? "⭐ Clientes" : `🏷 ${k.charAt(0).toUpperCase() + k.slice(1)}`}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {(instancesForStart || []).length > 0 && (
+              <Select value={selectedInstance || "all"} onValueChange={v => { setSelectedInstance(v === "all" ? "" : v); setPage(0); }}>
+                <SelectTrigger className="w-[170px]">
+                  <SelectValue placeholder="Origem (número)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as origens</SelectItem>
+                  <SelectItem value="matriz">Matriz (oficial)</SelectItem>
+                  {(instancesForStart || []).map((i: any) => (
+                    <SelectItem key={i.id} value={i.instanceName}>{i.displayName || i.instanceName}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             <Select value={selectedTag} onValueChange={v => { setSelectedTag(v === "all" ? "" : v); setPage(0); }}>
               <SelectTrigger className="w-[180px]">
                 <Tag className="h-4 w-4 mr-1" />
@@ -804,6 +856,35 @@ export default function ContactsPage() {
         </CardContent>
       </Card>
 
+      {/* Iniciar conversa — escolher instância */}
+      <Dialog open={!!startContact} onOpenChange={(o) => { if (!o) setStartContact(null); }}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Iniciar conversa com {startContact?.name}</DialogTitle>
+            <DialogDescription>Por qual número você quer falar? Se já houver conversa, ela abre direto.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <Button
+              variant="outline" className="w-full justify-start"
+              disabled={checkingConv || startConvMutation.isPending}
+              onClick={() => startContact && startFor(startContact, "matriz")}
+            >
+              <MessageSquare className="h-4 w-4 mr-2 text-blue-500" /> Matriz (WhatsApp oficial)
+            </Button>
+            {(instancesForStart || []).filter((i: any) => i.status === "connected").map((inst: any) => (
+              <Button
+                key={inst.id}
+                variant="outline" className="w-full justify-start"
+                disabled={checkingConv || startConvMutation.isPending}
+                onClick={() => startContact && startFor(startContact, inst.instanceName)}
+              >
+                <MessageSquare className="h-4 w-4 mr-2 text-emerald-500" /> {inst.displayName || inst.instanceName}
+              </Button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Dialog */}
       <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
         <DialogContent>
@@ -823,20 +904,35 @@ export default function ContactsPage() {
               <Label>Email</Label>
               <Input value={formEmail} onChange={e => setFormEmail(e.target.value)} placeholder="email@exemplo.com" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label>Tipo</Label>
-                <Select value={formKind} onValueChange={v => setFormKind(v as "lead" | "cliente")}>
+                <Select value={formKind} onValueChange={v => {
+                  if (v === "__new") {
+                    const name = prompt("Nome do novo tipo de contato (ex: parceiro, oficina):");
+                    if (name?.trim()) addKindMutation.mutate({ name: name.trim() });
+                    return;
+                  }
+                  setFormKind(v);
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="lead">🎯 Lead</SelectItem>
-                    <SelectItem value="cliente">⭐ Cliente</SelectItem>
+                    {allKinds.map(k => (
+                      <SelectItem key={k} value={k}>
+                        {k === "lead" ? "🎯 Lead" : k === "cliente" ? "⭐ Cliente" : `🏷 ${k.charAt(0).toUpperCase() + k.slice(1)}`}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__new">➕ Criar novo tipo...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label>CPF</Label>
                 <Input value={formCpf} onChange={e => setFormCpf(e.target.value)} placeholder="000.000.000-00" />
+              </div>
+              <div>
+                <Label>Nascimento</Label>
+                <Input type="date" value={formBirthDate} onChange={e => setFormBirthDate(e.target.value)} />
               </div>
             </div>
             {formKind === "cliente" && (
@@ -892,20 +988,35 @@ export default function ContactsPage() {
               <Label>Email</Label>
               <Input value={formEmail} onChange={e => setFormEmail(e.target.value)} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div>
                 <Label>Tipo</Label>
-                <Select value={formKind} onValueChange={v => setFormKind(v as "lead" | "cliente")}>
+                <Select value={formKind} onValueChange={v => {
+                  if (v === "__new") {
+                    const name = prompt("Nome do novo tipo de contato (ex: parceiro, oficina):");
+                    if (name?.trim()) addKindMutation.mutate({ name: name.trim() });
+                    return;
+                  }
+                  setFormKind(v);
+                }}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="lead">🎯 Lead</SelectItem>
-                    <SelectItem value="cliente">⭐ Cliente</SelectItem>
+                    {allKinds.map(k => (
+                      <SelectItem key={k} value={k}>
+                        {k === "lead" ? "🎯 Lead" : k === "cliente" ? "⭐ Cliente" : `🏷 ${k.charAt(0).toUpperCase() + k.slice(1)}`}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="__new">➕ Criar novo tipo...</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div>
                 <Label>CPF</Label>
                 <Input value={formCpf} onChange={e => setFormCpf(e.target.value)} placeholder="000.000.000-00" />
+              </div>
+              <div>
+                <Label>Nascimento</Label>
+                <Input type="date" value={formBirthDate} onChange={e => setFormBirthDate(e.target.value)} />
               </div>
             </div>
             {formKind === "cliente" && (

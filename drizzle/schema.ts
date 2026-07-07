@@ -80,6 +80,8 @@ export const conversations = pgTable("conversations", {
   instanceName:            varchar("instanceName", { length: 100 }),
   // Agente de IA fixado nesta conversa (null = usa a hierarquia padrão)
   agentId:                 integer("agentId"),
+  // Arquivamento (sai da caixa principal sem apagar)
+  archived:                boolean("archived").default(false).notNull(),
   platformUserId:          varchar("platformUserId", { length: 255 }),  // BSUID vai aqui
   status:                  conversationStatusEnum("status").default("open").notNull(),
   aiActive:                boolean("aiActive").default(true).notNull(),
@@ -635,7 +637,9 @@ export const contacts = pgTable("contacts", {
   conversationId: integer("conversationId"),
   leadId:         integer("leadId"),
   // ── Classificação e dados completos ──
-  kind:           varchar("contactKind", { length: 10 }).default("lead").notNull(), // lead | cliente
+  kind:           varchar("contactKind", { length: 40 }).default("lead").notNull(), // lead | cliente | tipos customizados
+  // Instância Evolution que originou/criou o contato (null = matriz/oficial)
+  createdByInstance: varchar("createdByInstance", { length: 100 }),
   cpf:            varchar("cpf", { length: 14 }),
   birthDate:      varchar("birthDate", { length: 10 }),
   address:        varchar("address", { length: 500 }),
