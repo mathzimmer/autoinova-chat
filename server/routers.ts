@@ -4239,6 +4239,39 @@ const contactsRouter = router({
     return getAllContactTags();
   }),
 
+  /**
+   * Backfill: preenche a origem (instância) de contatos antigos que foram
+   * salvos antes do campo existir, cruzando telefone → conversa Evolution.
+   */
+  backfillInstances: adminProcedure.mutation(async () => {
+    const db = await getDb();
+    if (!db) throw new Error("Database not available");
+    const { contacts: contactsTable, conversations: convTable } = await import("../drizzle/schema");
+    const { eq, and, isNull, sql: sqlOp } = await import("drizzle-orm");
+
+    // Contatos sem origem definida
+    const orphans = await db.select().from(contactsTable).where(isNull(contactsTable.createdByInstance));
+    let matched = 0;
+
+    for (const c of orphans) {
+      // Procura conversa Evolution com esse telefone (variações de 9º dígito)
+      const { phoneVariations } = await import("./phoneNormalize");
+      const variations = Array.from(new Set([c.phone, ...phoneVariations(c.phone)]));
+      const evoConv = (await db.select({ instanceName: convTable.instanceName }).from(convTable)
+        .where(and(
+          eq(convTable.channel, "evolution" as any),
+          sqlOp`${convTable.phone} = ANY(${variations})`,
+        )).limit(1))[0];
+
+      if (evoConv?.instanceName) {
+        await db.update(contactsTable).set({ createdByInstance: evoConv.instanceName }).where(eq(contactsTable.id, c.id));
+        matched++;
+      }
+      // Contatos que só têm conversa na matriz ficam NULL de propósito (origem = matriz)
+    }
+    return { total: orphans.length, matched, matriz: orphans.length - matched };
+  }),
+
   /** Tipos de contato customizados (além de lead/cliente) */
   kinds: protectedProcedure.query(async () => {
     const raw = await getSetting("contact_custom_kinds");

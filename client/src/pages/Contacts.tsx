@@ -120,6 +120,10 @@ export default function ContactsPage() {
     onSuccess: () => { toast.success("Tipo criado"); kindsQuery.refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const backfillMutation = trpc.contact.backfillInstances.useMutation({
+    onSuccess: (r) => { toast.success(`${r.matched} contatos vinculados a uma instância, ${r.matriz} são da matriz.`); },
+    onError: (e) => toast.error(e.message),
+  });
   const [formPurchasedVehicle, setFormPurchasedVehicle] = useState("");
   const [formAddress, setFormAddress] = useState("");
   const [formCity, setFormCity] = useState("");
@@ -494,6 +498,16 @@ export default function ContactsPage() {
             <Users className="h-4 w-4 mr-1" />
             {syncMutation.isPending ? "Sincronizando..." : "Sincronizar Conversas"}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => backfillMutation.mutate()}
+            disabled={backfillMutation.isPending}
+            title="Preenche a origem (instância) dos contatos antigos"
+          >
+            <Filter className="h-4 w-4 mr-1" />
+            {backfillMutation.isPending ? "Vinculando..." : "Vincular origens"}
+          </Button>
           <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
             <Upload className="h-4 w-4 mr-1" /> Importar Excel
           </Button>
@@ -681,10 +695,13 @@ export default function ContactsPage() {
                       />
                     </td>
                     <td className="p-3">
-                      <div className="font-medium flex items-center gap-1.5">
+                      <div className="font-medium flex items-center gap-1.5 flex-wrap">
                         {contact.name}
-                        <Badge variant="outline" className={`text-[10px] px-1.5 ${contact.kind === "cliente" ? "border-green-500/50 text-green-600" : "border-sky-500/50 text-sky-600"}`}>
-                          {contact.kind === "cliente" ? "⭐ Cliente" : "Lead"}
+                        <Badge variant="outline" className={`text-[10px] px-1.5 ${contact.kind === "cliente" ? "border-green-500/50 text-green-600" : contact.kind === "lead" ? "border-sky-500/50 text-sky-600" : "border-violet-500/50 text-violet-600"}`}>
+                          {contact.kind === "cliente" ? "⭐ Cliente" : contact.kind === "lead" ? "Lead" : `🏷 ${contact.kind}`}
+                        </Badge>
+                        <Badge variant="outline" className="text-[10px] px-1.5 border-muted-foreground/30 text-muted-foreground">
+                          📱 {(contact as any).createdByInstance || "Matriz"}
                         </Badge>
                       </div>
                       {contact.purchasedVehicle && (
