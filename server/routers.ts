@@ -4247,7 +4247,8 @@ const contactsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Database not available");
     const { contacts: contactsTable, conversations: convTable } = await import("../drizzle/schema");
-    const { eq, and, isNull, sql: sqlOp } = await import("drizzle-orm");
+    const { eq, and, isNull, inArray } = await import("drizzle-orm");
+    const { phoneVariations } = await import("./phoneNormalize");
 
     // Contatos sem origem definida
     const orphans = await db.select().from(contactsTable).where(isNull(contactsTable.createdByInstance));
@@ -4255,12 +4256,11 @@ const contactsRouter = router({
 
     for (const c of orphans) {
       // Procura conversa Evolution com esse telefone (variações de 9º dígito)
-      const { phoneVariations } = await import("./phoneNormalize");
       const variations = Array.from(new Set([c.phone, ...phoneVariations(c.phone)]));
       const evoConv = (await db.select({ instanceName: convTable.instanceName }).from(convTable)
         .where(and(
           eq(convTable.channel, "evolution" as any),
-          sqlOp`${convTable.phone} = ANY(${variations})`,
+          inArray(convTable.phone, variations),
         )).limit(1))[0];
 
       if (evoConv?.instanceName) {
