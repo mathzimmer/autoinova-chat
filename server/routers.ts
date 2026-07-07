@@ -1333,6 +1333,73 @@ const leadRouter = router({
       return listLeads(input);
     }),
 
+  /** IA analisa UMA conversa: temperatura, objeções, crédito, próxima ação */
+  analyze: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { analyzeConversation } = await import("./conversationIntelligence");
+      const result = await analyzeConversation(input.conversationId);
+      if (!result) throw new Error("Sem mensagens suficientes para analisar");
+      return result;
+    }),
+
+  /** IA analisa em lote as conversas de uma fonte/período (painel do gestor) */
+  analyzeBulk: protectedProcedure
+    .input(z.object({
+      source: z.string().optional(), // "matriz" ou nome da instância
+      sinceDays: z.number().min(1).max(90).default(7),
+      limit: z.number().min(1).max(80).default(40),
+    }))
+    .mutation(async ({ input }) => {
+      const { analyzeBulk } = await import("./conversationIntelligence");
+      return analyzeBulk(input);
+    }),
+
+  /** Painel de inteligência: leads com insight, ranqueados por score */
+  intelligence: protectedProcedure
+    .input(z.object({
+      source: z.string().optional(),
+      sinceDays: z.number().min(1).max(90).default(7),
+    }).optional())
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { conversationInsights, conversations: convTable } = await import("../drizzle/schema");
+      const { eq, and: andOp, ne: neOp, gte: gteOp, desc: descOp } = await import("drizzle-orm");
+      const sinceDays = input?.sinceDays ?? 7;
+      const since = Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+
+      const conds = [gteOp(convTable.lastMessageAt, since), eq(convTable.archived, false)];
+      const src = input?.source;
+      if (!src || src === "matriz") conds.push(neOp(convTable.channel, "evolution" as any));
+      else if (src !== "todas") { conds.push(eq(convTable.channel, "evolution" as any)); conds.push(eq(convTable.instanceName, src)); }
+
+      const rows = await db.select({
+        conversationId: convTable.id,
+        contactName: convTable.contactName,
+        phone: convTable.phone,
+        instanceName: convTable.instanceName,
+        channel: convTable.channel,
+        lastMessageAt: convTable.lastMessageAt,
+        assignedTo: convTable.assignedTo,
+        temperature: conversationInsights.temperature,
+        score: conversationInsights.score,
+        summary: conversationInsights.summary,
+        buyingSignals: conversationInsights.buyingSignals,
+        objections: conversationInsights.objections,
+        creditStatus: conversationInsights.creditStatus,
+        nextAction: conversationInsights.nextAction,
+        vehicleInterest: conversationInsights.vehicleInterest,
+        analyzedAt: conversationInsights.analyzedAt,
+        messageCount: conversationInsights.messageCount,
+      }).from(convTable)
+        .innerJoin(conversationInsights, eq(conversationInsights.conversationId, convTable.id))
+        .where(andOp(...conds))
+        .orderBy(descOp(conversationInsights.score))
+        .limit(200);
+      return rows;
+    }),
+
   /** List leads with conversation data, vehicle, agent, and latest summary preview */
   listWithDetails: protectedProcedure
     .input(z.object({ status: z.string().optional() }).optional())

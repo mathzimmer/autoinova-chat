@@ -15,6 +15,7 @@ import {
   UserCheck, ExternalLink, Copy, MessageSquare, Pencil, ChevronDown,
   ChevronUp, MapPin, Calendar, ClipboardList, Search, X, Sparkles,
   Thermometer, LifeBuoy, ShieldAlert, Store, Clock, Filter,
+  Brain, Loader2, TrendingUp, AlertCircle, CheckCircle2, ArrowRight,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ const TEMP_OPTIONS = Object.entries(TEMP_CONFIG).map(([value, cfg]) => ({ value,
 
 // ─── Main Component ───────────────────────────────────────────────
 export default function Leads() {
+  const [view, setView] = useState<"leads" | "intel">("leads");
   const [statusFilter, setStatusFilter] = useState("all");
   const [funnelFilter, setFunnelFilter] = useState("all");
   const [tempFilter, setTempFilter] = useState("all");
@@ -370,8 +372,25 @@ export default function Leads() {
 
   const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all";
 
+  if (view === "intel") {
+    return (
+      <div className="p-4 md:p-6 max-w-7xl mx-auto overflow-y-auto h-full pb-16">
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={() => setView("leads")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">Leads</button>
+          <button className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground">🧠 Inteligência</button>
+        </div>
+        <IntelligencePanel />
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto overflow-y-auto h-full pb-16">
+      {/* Alterna Leads / Inteligência */}
+      <div className="flex items-center gap-2">
+        <button className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground">Leads</button>
+        <button onClick={() => setView("intel")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">🧠 Inteligência</button>
+      </div>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -1067,6 +1086,154 @@ export default function Leads() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Painel de Inteligência Comercial ────────────────────────────────────────
+
+const TEMP_STYLE: Record<string, { label: string; bar: string; badge: string }> = {
+  muito_quente: { label: "🔥🔥 Muito quente", bar: "bg-red-500", badge: "bg-red-500/15 text-red-600 border-red-500/30" },
+  quente:       { label: "🔥 Quente",         bar: "bg-orange-500", badge: "bg-orange-500/15 text-orange-600 border-orange-500/30" },
+  morno:        { label: "🌤 Morno",          bar: "bg-yellow-500", badge: "bg-yellow-500/15 text-yellow-700 border-yellow-500/30" },
+  frio:         { label: "🧊 Frio",           bar: "bg-sky-500", badge: "bg-sky-500/15 text-sky-600 border-sky-500/30" },
+};
+
+function IntelligencePanel() {
+  const [, setLocation] = useLocation();
+  const [source, setSource] = useState("matriz");
+  const [sinceDays, setSinceDays] = useState(7);
+  const utils = trpc.useUtils();
+
+  const { data: instances } = trpc.evolution.listInstances.useQuery();
+  const { data: rows, isLoading } = trpc.lead.intelligence.useQuery(
+    { source, sinceDays },
+    { refetchInterval: 20000 }
+  );
+  const analyzeBulk = trpc.lead.analyzeBulk.useMutation({
+    onSuccess: (r) => { toast.success(`${r.analyzed} conversa(s) analisada(s)`); utils.lead.intelligence.invalidate(); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const list = (rows as any[]) || [];
+  const hot = list.filter(l => l.temperature === "quente" || l.temperature === "muito_quente").length;
+  const avgScore = list.length ? Math.round(list.reduce((s, l) => s + (l.score || 0), 0) / list.length) : 0;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+            <Brain className="h-6 w-6 text-violet-500" /> Inteligência Comercial
+          </h1>
+          <p className="text-sm text-muted-foreground mt-0.5">A IA lê as conversas (incluindo áudios) e classifica a temperatura de cada lead.</p>
+        </div>
+        <div className="flex items-end gap-2">
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase block mb-1">Origem</label>
+            <Select value={source} onValueChange={setSource}>
+              <SelectTrigger className="h-9 w-44"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="matriz">Matriz (oficial)</SelectItem>
+                {(instances || []).map((i: any) => <SelectItem key={i.id} value={i.instanceName}>{i.displayName || i.instanceName}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <label className="text-[10px] text-muted-foreground uppercase block mb-1">Período</label>
+            <Select value={String(sinceDays)} onValueChange={v => setSinceDays(Number(v))}>
+              <SelectTrigger className="h-9 w-32"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Hoje</SelectItem>
+                <SelectItem value="7">7 dias</SelectItem>
+                <SelectItem value="15">15 dias</SelectItem>
+                <SelectItem value="30">30 dias</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => analyzeBulk.mutate({ source, sinceDays })} disabled={analyzeBulk.isPending} className="h-9 gap-1.5">
+            {analyzeBulk.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+            Analisar {source === "matriz" ? "Matriz" : "instância"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Resumo */}
+      <div className="grid grid-cols-3 gap-3">
+        <Card><CardContent className="pt-4 pb-3 text-center"><div className="text-2xl font-bold">{list.length}</div><div className="text-xs text-muted-foreground">Leads analisados</div></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-3 text-center"><div className="text-2xl font-bold text-orange-500">{hot}</div><div className="text-xs text-muted-foreground">Quentes / Muito quentes</div></CardContent></Card>
+        <Card><CardContent className="pt-4 pb-3 text-center"><div className="text-2xl font-bold text-violet-500">{avgScore}</div><div className="text-xs text-muted-foreground">Score médio</div></CardContent></Card>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-10 text-muted-foreground text-sm">Carregando...</div>
+      ) : list.length === 0 ? (
+        <Card><CardContent className="py-10 text-center text-sm text-muted-foreground">
+          Nenhuma conversa analisada nesta origem/período.<br />
+          Clique em <b>"Analisar"</b> acima para a IA processar as conversas recentes.
+        </CardContent></Card>
+      ) : (
+        <div className="space-y-2.5">
+          {list.map((l) => {
+            const t = TEMP_STYLE[l.temperature] || TEMP_STYLE.frio;
+            return (
+              <Card key={l.conversationId} className="overflow-hidden">
+                <CardContent className="p-3">
+                  <div className="flex items-start gap-3">
+                    {/* Score ring */}
+                    <div className="shrink-0 flex flex-col items-center">
+                      <div className={`h-12 w-12 rounded-full flex items-center justify-center text-white font-bold text-sm ${t.bar}`}>
+                        {l.score}
+                      </div>
+                      <span className="text-[9px] text-muted-foreground mt-0.5">score</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-foreground">{l.contactName || l.phone}</span>
+                        <Badge variant="outline" className={`text-[10px] ${t.badge}`}>{t.label}</Badge>
+                        {l.vehicleInterest && l.vehicleInterest !== "não definido" && (
+                          <span className="text-xs text-muted-foreground flex items-center gap-1"><Car className="h-3 w-3" />{l.vehicleInterest}</span>
+                        )}
+                        <span className="text-[10px] text-muted-foreground ml-auto">📱 {l.instanceName || "Matriz"}</span>
+                      </div>
+                      {l.summary && <p className="text-sm text-muted-foreground mt-1">{l.summary}</p>}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-1 mt-2 text-xs">
+                        {(l.buyingSignals || []).length > 0 && (
+                          <div className="flex items-start gap-1.5 text-green-600">
+                            <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <span><b>Sinais:</b> {(l.buyingSignals || []).join("; ")}</span>
+                          </div>
+                        )}
+                        {(l.objections || []).length > 0 && (
+                          <div className="flex items-start gap-1.5 text-red-500">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <span><b>Objeções:</b> {(l.objections || []).join("; ")}</span>
+                          </div>
+                        )}
+                        {l.creditStatus && l.creditStatus !== "não mencionado" && (
+                          <div className="flex items-start gap-1.5 text-blue-600">
+                            <CreditCard className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <span><b>Crédito:</b> {l.creditStatus}</span>
+                          </div>
+                        )}
+                        {l.nextAction && (
+                          <div className="flex items-start gap-1.5 text-violet-600">
+                            <ArrowRight className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            <span><b>Próxima ação:</b> {l.nextAction}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <Button size="sm" variant="ghost" className="h-7 px-2 text-xs shrink-0" onClick={() => setLocation(`/inbox?conv=${l.conversationId}`)}>
+                      <MessageSquare className="h-3.5 w-3.5 mr-1" /> Abrir
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

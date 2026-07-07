@@ -991,3 +991,26 @@ export const csatRatings = pgTable("csatRatings", {
 
 export type CsatRating = typeof csatRatings.$inferSelect;
 export type InsertCsatRating = typeof csatRatings.$inferInsert;
+
+/**
+ * Conversation Insights — análise de IA da conversa (inteligência comercial).
+ * Um registro por conversa (upsert), atualizado quando o gestor pede análise.
+ */
+export const conversationInsights = pgTable("conversationInsights", {
+  id:              serial("id").primaryKey(),
+  conversationId:  integer("conversationId").notNull().unique(),
+  temperature:     varchar("temperature", { length: 15 }).notNull(), // frio|morno|quente|muito_quente
+  score:           integer("score").default(0).notNull(),            // 0-100 probabilidade de fechar
+  summary:         text("summary"),                                   // resumo do estágio da conversa
+  buyingSignals:   jsonb("buyingSignals").$type<string[]>(),          // sinais de compra detectados
+  objections:      jsonb("objections").$type<string[]>(),             // objeções/travas
+  creditStatus:    varchar("creditStatus", { length: 200 }),          // situação de crédito/pagamento
+  nextAction:      text("nextAction"),                                // próxima ação sugerida ao vendedor
+  vehicleInterest: varchar("vehicleInterest", { length: 300 }),
+  messageCount:    integer("messageCount").default(0).notNull(),      // nº de mensagens no momento da análise
+  analyzedAt:      timestamp("analyzedAt").defaultNow().notNull(),
+  createdAt:       timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ConversationInsight = typeof conversationInsights.$inferSelect;
+export type InsertConversationInsight = typeof conversationInsights.$inferInsert;

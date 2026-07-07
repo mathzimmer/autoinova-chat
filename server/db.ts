@@ -145,6 +145,7 @@ export async function mirrorEvolutionMessage(params: {
   altJid?: string;
   contactName?: string;
   content: string;
+  transcript?: string; // transcrição do áudio, se houver
   messageType: string; // text|image|audio|video|document|sticker
   direction: "inbound" | "outbound";
   senderName: string;
@@ -254,7 +255,9 @@ export async function mirrorEvolutionMessage(params: {
     senderType: isInbound ? "customer" : "agent",
     senderName: params.senderName,
     messageType: mappedType as any,
-    metadata: params.mediaUrl ? { mediaUrl: params.mediaUrl } : undefined,
+    metadata: (params.mediaUrl || params.transcript)
+      ? { ...(params.mediaUrl ? { mediaUrl: params.mediaUrl } : {}), ...(params.transcript ? { transcribedText: params.transcript } : {}) }
+      : undefined,
     externalId: params.externalId,
   });
 

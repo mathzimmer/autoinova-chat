@@ -81,6 +81,12 @@ export default function ConversationPanel({ conversationId }: Props) {
     onError: (err) => toast.error(err.message),
   });
 
+  // ── Análise de IA (temperatura da conversa) ──
+  const analyzeMutation = trpc.lead.analyze.useMutation({
+    onSuccess: (r) => { toast.success(`Análise: ${r.temperature} (score ${r.score})`); refetchLead(); },
+    onError: (e) => toast.error(e.message),
+  });
+
   // ── Funil (dispara CAPI no servidor) ──
   const updateFunnel = trpc.lead.update.useMutation({
     onSuccess: () => { refetchLead(); toast.success("Etapa do funil atualizada"); },
@@ -412,6 +418,15 @@ ${(lead as any).notes || "N/A"}
             {FUNNEL_STAGES.map(s => <SelectItem key={s.value} value={s.value}>{stageLabel(s)}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Button
+          size="sm" variant="outline"
+          className="w-full mt-2 h-8 text-xs border-violet-500/30 text-violet-600 hover:bg-violet-500/10"
+          onClick={() => analyzeMutation.mutate({ conversationId })}
+          disabled={analyzeMutation.isPending}
+        >
+          {analyzeMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <Bot className="h-3.5 w-3.5 mr-1" />}
+          Analisar temperatura com IA
+        </Button>
         {/* Barra de progresso do funil */}
         <div className="flex gap-0.5 mt-2">
           {FUNNEL_STAGES.slice(0, 8).map((s, i) => {

@@ -613,6 +613,21 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       console.log(`[Evolution] media final: type=${parsed.messageType} url=${(finalMediaUrl || "VAZIA").substring(0, 80)}`);
     }
 
+    // Transcreve áudios recebidos (para a IA e a inteligência de conversa "lerem" o áudio)
+    let audioTranscript = "";
+    if (parsed.messageType === "audio" && finalMediaUrl && isInbound) {
+      try {
+        const { transcribeAudio } = await import("./_core/voiceTranscription");
+        const t = await transcribeAudio({ audioUrl: finalMediaUrl, language: "pt", prompt: "Conversa de venda de veículos" });
+        if ("text" in t && t.text) {
+          audioTranscript = t.text;
+          console.log(`[Evolution] Áudio transcrito: "${audioTranscript.substring(0, 60)}"`);
+        }
+      } catch (err) {
+        console.warn("[Evolution] Falha ao transcrever áudio:", err);
+      }
+    }
+
     // Save message
     const savedMsg = await createEvolutionMessage({
       instanceId: instance.id,
@@ -641,7 +656,9 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           remoteJid: jidForConversation,
           altJid: parsed.remoteJid !== jidForConversation ? parsed.remoteJid : undefined,
           contactName: (isInbound && parsed.pushName && parsed.pushName !== parsed.phone) ? parsed.pushName : undefined,
-          content: parsed.content,
+          // Áudio transcrito entra como conteúdo pesquisável/legível pela IA
+          content: audioTranscript || parsed.content,
+          transcript: audioTranscript || undefined,
           messageType: parsed.messageType,
           direction,
           senderName: effectiveSenderName,
