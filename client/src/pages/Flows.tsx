@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import {
   Plus, GitBranch, Play, Pause, Trash2, Copy, Edit3, ArrowRight,
   MessageSquare, List, MousePointerClick, Megaphone, RotateCcw, Tag, Wrench,
-  MoreVertical, LifeBuoy
+  MoreVertical, LifeBuoy, Zap
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -66,6 +66,10 @@ export default function Flows() {
       toast.success("Fluxo excluído!");
     },
   });
+  const seedMasterMutation = trpc.flow.seedMasterFlow.useMutation({
+    onSuccess: (r) => { toast.success(r.message); flowsQuery.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   const duplicateMutation = trpc.flow.duplicate.useMutation({
     onSuccess: () => {
       utils.flow.list.invalidate();
@@ -101,6 +105,14 @@ export default function Flows() {
             Programe fluxos de atendimento com botões, listas e decisões automáticas
           </p>
         </div>
+        <div className="flex gap-2">
+        <Button variant="outline" onClick={() => {
+          const num = prompt("Número do WhatsApp de PÓS-VENDA (com DDI, ex: 5551999998888). Deixe vazio se não quiser encaminhar pós-venda:");
+          seedMasterMutation.mutate({ postSaleNumber: num?.replace(/\D/g, "") || undefined });
+        }} disabled={seedMasterMutation.isPending}>
+          <Zap className="h-4 w-4 mr-2" />
+          {seedMasterMutation.isPending ? "Criando..." : "Gerar Fluxo-Mestre"}
+        </Button>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button>
@@ -168,6 +180,7 @@ export default function Flows() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Flow Cards */}

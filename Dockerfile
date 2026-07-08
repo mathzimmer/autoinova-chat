@@ -15,8 +15,9 @@ RUN pnpm build
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 
-# ffmpeg: conversão de áudio webm→ogg 100% compatível com o WhatsApp
-RUN apk add --no-cache ffmpeg
+# ffmpeg: conversão de áudio; tzdata: fuso America/Sao_Paulo (horário de Brasília)
+RUN apk add --no-cache ffmpeg tzdata
+ENV TZ=America/Sao_Paulo
 
 WORKDIR /app
 

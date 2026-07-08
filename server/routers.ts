@@ -3479,6 +3479,96 @@ const vendorRouter = router({
 
 // ─── Chat Flow Router ─────────────────────────────────────────
 const flowRouter = router({
+  /**
+   * Monta o Fluxo-Mestre de Triagem pronto para editar:
+   * start → classifica intenção → ramifica (compra/pós-venda/informação/financeiro)
+   * → para compra: verifica horário → agente Recepção → encaminha vendedor.
+   * Usa os agentes que já existem (Recepção/Financeiro/Pós-venda).
+   */
+  seedMasterFlow: adminProcedure
+    .input(z.object({
+      postSaleNumber: z.string().optional(), // número do pós-venda
+    }).optional())
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { createChatFlow, createChatFlowNode, createChatFlowEdge, getActiveAiAgents } = await import("./db");
+
+      // Localiza os agentes por nome (criados no seedTemplates)
+      const agents = await getActiveAiAgents();
+      const byName = (n: string) => agents.find(a => a.name.toLowerCase().includes(n))?.id ?? null;
+      const recepcaoId = byName("recep");
+      const financeiroId = byName("financ");
+      const posVendaId = byName("pós") ?? byName("pos");
+
+      const flow = await createChatFlow({
+        name: "Triagem Automática",
+        description: "Fluxo-mestre: classifica a intenção do cliente e encaminha para o agente/vendedor certo. Edite à vontade.",
+        trigger: "first_contact",
+        active: false, // você ativa quando quiser
+        priority: 100,
+        createdBy: ctx.user.id,
+      });
+      const flowId = (flow as any).id;
+
+      const mk = async (nodeType: string, label: string, data: any, x: number, y: number) =>
+        (await createChatFlowNode({ flowId, nodeType: nodeType as any, label, data, positionX: x, positionY: y } as any) as any).id;
+      const link = async (from: number, to: number, handle = "default", label?: string) =>
+        createChatFlowEdge({ flowId, sourceNodeId: from, targetNodeId: to, sourceHandle: handle, label } as any);
+
+      // Nós
+      const start = await mk("start", "Início", {}, 50, 300);
+      const classify = await mk("classify_intent", "Classificar intenção", { categories: ["compra", "pos_venda", "informacao", "financeiro", "outro"] }, 300, 300);
+
+      // Ramo COMPRA → horário → recepção → vendedor
+      const hours = await mk("business_hours", "Horário comercial", {
+        schedule: {
+          "1": [["08:30", "11:30"], ["13:00", "18:00"]],
+          "2": [["08:30", "11:30"], ["13:00", "18:00"]],
+          "3": [["08:30", "11:30"], ["13:00", "18:00"]],
+          "4": [["08:30", "11:30"], ["13:00", "18:00"]],
+          "5": [["08:30", "11:30"], ["13:00", "18:00"]],
+          "6": [["08:30", "12:00"]],
+        },
+      }, 600, 150);
+      const recepDentro = await mk("ai_response", "IA Recepção (horário)", { agentId: recepcaoId, instruction: "Cumprimente, entenda o veículo de interesse, mande fotos e qualifique (cidade, pagamento, troca). Quando o cliente definir um veículo, encaminhe ao vendedor." }, 900, 80);
+      const recepFora = await mk("ai_response", "IA Recepção (fora de hora)", { agentId: recepcaoId, instruction: "Atenda normalmente e qualifique, mas avise que um vendedor entrará em contato no próximo horário comercial. Colete nome, veículo de interesse e cidade." }, 900, 260);
+      const assignSeller = await mk("assign_seller", "Encaminhar vendedor", { storeLocation: "Matriz" }, 1250, 150);
+
+      // Ramo PÓS-VENDA → coleta + notifica número
+      const posVendaAI = await mk("ai_response", "IA Pós-venda", { agentId: posVendaId, instruction: "Cliente já comprou. Colete nome, veículo comprado e o motivo do contato (garantia, revisão, documentação). Seja acolhedor." }, 600, 400);
+      const notifyPos = await mk("notify_number", "Avisar Pós-venda", {
+        number: (input?.postSaleNumber || "").replace(/\D/g, ""),
+        label: "Pós-venda",
+        template: "🔧 Pós-venda: {nome} ({telefone}) precisa de atendimento. Assunto coletado na conversa do CRM.",
+      }, 900, 400);
+
+      // Ramo INFORMAÇÃO → agente resolve (usa Recepção/padrão)
+      const infoAI = await mk("ai_response", "IA Informação", { agentId: recepcaoId, instruction: "Responda dúvidas gerais (horário, endereço, o que temos em estoque). Resolva sem encaminhar a vendedor, a menos que vire interesse de compra." }, 600, 560);
+
+      // Ramo FINANCEIRO → agente financeiro
+      const finAI = await mk("ai_response", "IA Financeiro", { agentId: financeiroId, instruction: "Ajude com financiamento, entrada e simulação. Se o cliente definir veículo e condições, encaminhe ao vendedor." }, 600, 700);
+
+      const endNode = await mk("end", "Fim", {}, 1550, 400);
+
+      // Ligações
+      await link(start, classify);
+      await link(classify, hours, "compra");
+      await link(classify, posVendaAI, "pos_venda");
+      await link(classify, infoAI, "informacao");
+      await link(classify, finAI, "financeiro");
+      await link(classify, infoAI, "outro"); // "outro" cai em informação por padrão
+      await link(hours, recepDentro, "dentro");
+      await link(hours, recepFora, "fora");
+      await link(recepDentro, assignSeller);
+      await link(recepFora, endNode);
+      await link(assignSeller, endNode);
+      await link(posVendaAI, notifyPos);
+      await link(notifyPos, endNode);
+
+      return { flowId, message: "Fluxo 'Triagem Automática' criado (inativo). Edite e ative em Fluxos." };
+    }),
+
   list: protectedProcedure.query(async () => {
     const flows = await listChatFlows();
     // Count nodes per flow
@@ -3652,7 +3742,7 @@ const flowRouter = router({
       flowId: z.number(),
       nodes: z.array(z.object({
         id: z.number().optional(),
-        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status"]),
+        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number"]),
         label: z.string().optional(),
         data: z.any(),
         positionX: z.number(),

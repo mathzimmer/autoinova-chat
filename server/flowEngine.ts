@@ -669,6 +669,85 @@ async function executeFromNode(
       break;
     }
 
+    case "classify_intent": {
+      // IA classifica a intenção da mensagem e roteia pela edge com o handle
+      // igual à categoria. Config: { categories: ["compra","pos_venda","informacao","financeiro","outro"] }
+      const categories: string[] = (config.categories && config.categories.length > 0)
+        ? config.categories
+        : ["compra", "pos_venda", "informacao", "financeiro", "outro"];
+      const recent = ctx.customerMessage || "";
+      let intent = categories[categories.length - 1]; // fallback = última (ex.: "outro")
+      try {
+        const { invokeAgentLLM: classifyLLM } = await import("./openaiLLM");
+        const resp = await classifyLLM({
+          messages: [
+            { role: "system", content: `Você classifica a intenção de uma mensagem de um cliente de concessionária de veículos. Responda APENAS com UMA palavra, exatamente uma destas opções: ${categories.join(", ")}.
+Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. "pos_venda" = já é cliente, garantia, revisão, problema no carro comprado, documentação. "informacao" = horário, endereço, dúvida geral. "financeiro" = financiamento, entrada, simulação, parcelas. "outro" = qualquer coisa fora disso.` },
+            { role: "user", content: recent || "(sem texto)" },
+          ],
+        });
+        const raw = resp.choices?.[0]?.message?.content;
+        const answer = (typeof raw === "string" ? raw : "").toLowerCase().trim();
+        const found = categories.find(c => answer.includes(c.toLowerCase()));
+        if (found) intent = found;
+        console.log(`[FlowEngine] classify_intent: "${recent.substring(0, 40)}" → ${intent}`);
+      } catch (err) {
+        console.error("[FlowEngine] classify_intent falhou:", err);
+      }
+      // Salva a intenção no contexto do lead/sessão
+      await updateFlowSession(session.id, { context: { ...((session.context as any) || {}), intent } });
+      const intentEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === intent)
+        || edges.find(e => e.sourceNodeId === node.id); // fallback: primeira edge
+      if (intentEdge) {
+        await executeFromNode(intentEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+      }
+      break;
+    }
+
+    case "business_hours": {
+      // Verifica se AGORA (horário de Brasília) está dentro do expediente.
+      // Config: { schedule: { "1": [["08:30","11:30"],["13:00","18:00"]], "6": [["08:30","12:00"]], ... } }
+      // chave = dia da semana (0=dom ... 6=sáb). Roteia handle "dentro" | "fora".
+      const now = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+      const dow = String(now.getDay());
+      const mins = now.getHours() * 60 + now.getMinutes();
+      const schedule: Record<string, [string, string][]> = config.schedule || {};
+      const ranges = schedule[dow] || [];
+      const toMin = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
+      const isOpen = ranges.some(([a, b]) => mins >= toMin(a) && mins <= toMin(b));
+      const handle = isOpen ? "dentro" : "fora";
+      console.log(`[FlowEngine] business_hours: ${now.toLocaleString("pt-BR")} → ${handle}`);
+      const hoursEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === handle)
+        || edges.find(e => e.sourceNodeId === node.id);
+      if (hoursEdge) {
+        await executeFromNode(hoursEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+      }
+      break;
+    }
+
+    case "notify_number": {
+      // Envia os dados coletados do lead para um número fixo (ex.: pós-venda).
+      // Config: { number: "5551...", template: "..." }
+      const targetNumber = (config.number || "").replace(/\D/g, "");
+      if (targetNumber) {
+        const lead = ctx.leadData || {};
+        const body = (config.template
+          ? replaceVariables(config.template, ctx)
+          : `🔔 Novo contato de ${config.label || "atendimento"}\n\nCliente: ${ctx.contactName || lead.name || "—"}\nTelefone: ${ctx.phone}\nAssunto: ${(lead as any).intention || ctx.customerMessage || "—"}`);
+        try {
+          await sendTextMessage(targetNumber, body);
+          console.log(`[FlowEngine] notify_number: enviado para ${targetNumber}`);
+        } catch (err) {
+          console.error("[FlowEngine] notify_number falhou:", err);
+        }
+      }
+      const nextEdge = edges.find(e => e.sourceNodeId === node.id);
+      if (nextEdge) {
+        await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+      }
+      break;
+    }
+
     case "ai_response": {
       // Let AI handle this message - stop flow execution temporarily
       result.handled = false; // Pass to AI
