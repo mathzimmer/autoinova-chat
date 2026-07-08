@@ -74,19 +74,30 @@ export async function transcribeAudio(
   options: TranscribeOptions
 ): Promise<TranscriptionResponse | TranscriptionError> {
   try {
-    // Step 1: Validate environment configuration
-    if (!ENV.forgeApiUrl) {
+    // Step 1: Escolhe o serviço de transcrição, nesta ordem de preferência:
+    // 1. Groq (GROQ_API_KEY) — gratuito, Whisper Large v3, API compatível OpenAI
+    // 2. OpenAI (OPENAI_API_KEY)
+    // 3. Forge (BUILT_IN_FORGE_API_URL/KEY)
+    let transcribeBaseUrl = "";
+    let transcribeApiKey = "";
+    let transcribeModel = "whisper-1";
+    const groqKey = process.env.GROQ_API_KEY;
+    if (groqKey) {
+      transcribeBaseUrl = "https://api.groq.com/openai/";
+      transcribeApiKey = groqKey;
+      transcribeModel = "whisper-large-v3-turbo"; // rápido e gratuito no Groq
+    } else if (ENV.openaiApiKey) {
+      transcribeBaseUrl = "https://api.openai.com/";
+      transcribeApiKey = ENV.openaiApiKey;
+    } else if (ENV.forgeApiUrl && ENV.forgeApiKey) {
+      transcribeBaseUrl = ENV.forgeApiUrl;
+      transcribeApiKey = ENV.forgeApiKey;
+    }
+    if (!transcribeBaseUrl || !transcribeApiKey) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_URL is not set"
-      };
-    }
-    if (!ENV.forgeApiKey) {
-      return {
-        error: "Voice transcription service authentication is missing",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_KEY is not set"
+        details: "Configure GROQ_API_KEY (grátis) ou OPENAI_API_KEY no .env"
       };
     }
 
@@ -132,7 +143,7 @@ export async function transcribeAudio(
     const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: baseMime });
     formData.append("file", audioBlob, filename);
     
-    formData.append("model", "whisper-1");
+    formData.append("model", transcribeModel);
     formData.append("response_format", "verbose_json");
     
     // Add language if specified (helps Whisper accuracy)
@@ -149,19 +160,20 @@ export async function transcribeAudio(
     formData.append("prompt", prompt);
 
     // Step 4: Call the transcription service
-    const baseUrl = ENV.forgeApiUrl.endsWith("/")
-      ? ENV.forgeApiUrl
-      : `${ENV.forgeApiUrl}/`;
-    
+    const baseUrl = transcribeBaseUrl.endsWith("/")
+      ? transcribeBaseUrl
+      : `${transcribeBaseUrl}/`;
+
     const fullUrl = new URL(
       "v1/audio/transcriptions",
       baseUrl
     ).toString();
+    console.log(`[Transcription] Serviço: ${transcribeBaseUrl} modelo: ${transcribeModel} (${(audioBuffer.length / 1024).toFixed(0)}KB)`);
 
     const response = await fetch(fullUrl, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${ENV.forgeApiKey}`,
+        authorization: `Bearer ${transcribeApiKey}`,
         "Accept-Encoding": "identity",
       },
       body: formData,

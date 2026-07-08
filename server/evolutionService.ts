@@ -613,9 +613,9 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
       console.log(`[Evolution] media final: type=${parsed.messageType} url=${(finalMediaUrl || "VAZIA").substring(0, 80)}`);
     }
 
-    // Transcreve áudios recebidos (para a IA e a inteligência de conversa "lerem" o áudio)
+    // Transcreve áudios (inbound e outbound) para a IA e a inteligência "lerem"
     let audioTranscript = "";
-    if (parsed.messageType === "audio" && finalMediaUrl && isInbound) {
+    if (parsed.messageType === "audio" && finalMediaUrl) {
       try {
         const { transcribeAudio } = await import("./_core/voiceTranscription");
         const t = await transcribeAudio({ audioUrl: finalMediaUrl, language: "pt", prompt: "Conversa de venda de veículos" });
