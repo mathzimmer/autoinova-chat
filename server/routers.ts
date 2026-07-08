@@ -3501,19 +3501,18 @@ const flowRouter = router({
       const financeiroId = byName("financ");
       const posVendaId = byName("pós") ?? byName("pos");
 
-      const flow = await createChatFlow({
+      const flowId = await createChatFlow({
         name: "Triagem Automática",
         description: "Fluxo-mestre: classifica a intenção do cliente e encaminha para o agente/vendedor certo. Edite à vontade.",
         trigger: "first_contact",
         active: false, // você ativa quando quiser
         priority: 100,
         createdBy: ctx.user.id,
-      });
-      const flowId = (flow as any).id;
+      } as any);
 
       const mk = async (nodeType: string, label: string, data: any, x: number, y: number) =>
-        (await createChatFlowNode({ flowId, nodeType: nodeType as any, label, data, positionX: x, positionY: y } as any) as any).id;
-      const link = async (from: number, to: number, handle = "default", label?: string) =>
+        await createChatFlowNode({ flowId, nodeType: nodeType as any, label, data, positionX: x, positionY: y } as any);
+      const link = async (from: any, to: any, handle = "default", label?: string) =>
         createChatFlowEdge({ flowId, sourceNodeId: from, targetNodeId: to, sourceHandle: handle, label } as any);
 
       // Nós
