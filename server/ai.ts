@@ -629,10 +629,22 @@ export async function processAIMessage(
     personalityPrompt = await getPersonalityPrompt();
   }
 
-  // Filter tools based on agent config
-  const activeTools: Tool[] = agent?.enabledTools && agent.enabledTools.length > 0
-    ? TOOLS.filter(t => (agent!.enabledTools as string[]).includes(t.function.name))
-    : TOOLS; // If no agent or no tool filter, use all tools
+  // Ferramentas do modo livre (Agente Geral) — configuráveis em Agentes
+  let freeTools: string[] | null = null;
+  if (!agent && !isFlowMode) {
+    try {
+      const raw = await getSetting("ai_free_tools");
+      if (raw) { const parsed = JSON.parse(raw); if (Array.isArray(parsed) && parsed.length > 0) freeTools = parsed; }
+    } catch { /* usa todas */ }
+  }
+
+  // Filter tools based on agent config OR free-mode config
+  const toolFilter = agent?.enabledTools && agent.enabledTools.length > 0
+    ? (agent.enabledTools as string[])
+    : freeTools;
+  const activeTools: Tool[] = toolFilter && toolFilter.length > 0
+    ? TOOLS.filter(t => toolFilter.includes(t.function.name))
+    : TOOLS;
   console.log(`[AI] Conv ${conversation.id}: activeTools=[${activeTools.map(t => t.function.name).join(', ')}] (${activeTools.length}/${TOOLS.length})`);
   console.log(`[AI] Conv ${conversation.id}: mode=${agent ? 'AGENT' : isFlowMode ? 'FLOW_LEGACY' : 'FREE'}, corePrompt=${corePrompt.length}ch, commercialPrompt=${commercialPrompt.length}ch, personalityPrompt=${personalityPrompt.length}ch`);
 

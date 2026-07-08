@@ -2060,6 +2060,21 @@ const settingsRouter = router({
       return { success: true };
     }),
 
+  /** Ferramentas/config do Agente Geral (modo livre) */
+  getFreeAgentConfig: protectedProcedure.query(async () => {
+    const raw = await getSetting("ai_free_tools");
+    let tools: string[] = [];
+    try { tools = raw ? JSON.parse(raw) : []; } catch { tools = []; }
+    return { enabledTools: tools };
+  }),
+
+  saveFreeAgentConfig: adminProcedure
+    .input(z.object({ enabledTools: z.array(z.string()) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ai_free_tools", JSON.stringify(input.enabledTools), ctx.user.id);
+      return { success: true };
+    }),
+
   getPrompt: protectedProcedure.query(async () => {
     // Return all layers (current values from DB or defaults)
     const corePrompt = await getCorePrompt();

@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -226,6 +226,9 @@ export default function Agents() {
           </Button>
         </div>
       </div>
+
+      {/* Agente Geral (modo livre — 3 camadas) */}
+      <GeneralAgentCard toolsQuery={toolsQuery} />
 
       {/* Como funciona — hierarquia */}
       <Card className="mb-6 bg-primary/5 border-primary/20">
@@ -698,5 +701,102 @@ export default function Agents() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ─── Card do Agente Geral (modo livre — 3 camadas + ferramentas) ─────────────
+function GeneralAgentCard({ toolsQuery }: { toolsQuery: any }) {
+  const utils = trpc.useUtils();
+  const promptQuery = trpc.settings.getPrompt.useQuery();
+  const freeCfgQuery = trpc.settings.getFreeAgentConfig.useQuery();
+  const [core, setCore] = useState("");
+  const [commercial, setCommercial] = useState("");
+  const [personality, setPersonality] = useState("");
+  const [tools, setTools] = useState<string[]>([]);
+  const [open, setOpen] = useState(false);
+  const [layer, setLayer] = useState<"personality" | "commercial" | "core">("personality");
+
+  useEffect(() => {
+    if (promptQuery.data) {
+      setCore(promptQuery.data.corePrompt || "");
+      setCommercial(promptQuery.data.commercialPrompt || "");
+      setPersonality(promptQuery.data.personalityPrompt || "");
+    }
+  }, [promptQuery.data]);
+  useEffect(() => { if ((freeCfgQuery as any).data) setTools((freeCfgQuery as any).data.enabledTools || []); }, [(freeCfgQuery as any).data]);
+
+  const savePrompt = trpc.settings.savePrompt.useMutation({
+    onSuccess: () => { toast.success("Prompt salvo"); utils.settings.getPrompt.invalidate(); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const saveFreeCfg = trpc.settings.saveFreeAgentConfig.useMutation({
+    onSuccess: () => toast.success("Ferramentas do Agente Geral salvas"),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const allTools = (toolsQuery?.data as any[]) || [];
+  const layers = {
+    core: { label: "🛡 Núcleo (regras invioláveis)", value: core, set: setCore, hint: "Formato, proibições, limpeza. Raramente mexer." },
+    commercial: { label: "💼 Comercial (motor de vendas)", value: commercial, set: setCommercial, hint: "Como conduzir a venda, quando oferecer." },
+    personality: { label: "😊 Personalidade (tom da loja)", value: personality, set: setPersonality, hint: "Jeito de falar, saudação, estilo." },
+  } as const;
+  const cur = layers[layer];
+
+  return (
+    <Card className="mb-6 border-emerald-500/30">
+      <CardHeader className="pb-3 cursor-pointer" onClick={() => setOpen(o => !o)}>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Bot className="h-4 w-4 text-emerald-500" />
+          Agente Geral (responde quando nenhum outro está ativo)
+          <span className="ml-auto text-xs text-muted-foreground">{open ? "▲ fechar" : "▼ configurar"}</span>
+        </CardTitle>
+        <CardDescription>Este é o cérebro padrão da IA — 3 camadas de prompt + ferramentas. Antes ficava em Configurações.</CardDescription>
+      </CardHeader>
+      {open && (
+        <CardContent className="space-y-4">
+          {/* Seletor de camada */}
+          <div className="flex gap-1">
+            {(Object.keys(layers) as (keyof typeof layers)[]).map(k => (
+              <button key={k} onClick={() => setLayer(k)}
+                className={`px-2.5 py-1.5 rounded-md text-xs font-medium ${layer === k ? "bg-primary text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>
+                {layers[k].label.split(" ")[0]} {k === "core" ? "Núcleo" : k === "commercial" ? "Comercial" : "Personalidade"}
+              </button>
+            ))}
+          </div>
+          <div>
+            <Label className="text-xs">{cur.label}</Label>
+            <p className="text-[10px] text-muted-foreground mb-1">{cur.hint}</p>
+            <Textarea value={cur.value} onChange={e => cur.set(e.target.value)} className="min-h-[200px] text-sm font-mono" />
+            <Button size="sm" className="mt-2" disabled={savePrompt.isPending}
+              onClick={() => savePrompt.mutate({ layer, prompt: cur.value })}>
+              Salvar {layer === "core" ? "Núcleo" : layer === "commercial" ? "Comercial" : "Personalidade"}
+            </Button>
+          </div>
+
+          {/* Ferramentas do modo livre */}
+          <div className="border-t pt-3">
+            <Label className="text-xs">Ferramentas disponíveis para o Agente Geral</Label>
+            <p className="text-[10px] text-muted-foreground mb-2">Vazio = todas. Marque para restringir.</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {allTools.map((t: any) => {
+                const name = t.name || t.function?.name || t;
+                const checked = tools.includes(name);
+                return (
+                  <label key={name} className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input type="checkbox" className="accent-primary" checked={checked}
+                      onChange={() => setTools(prev => prev.includes(name) ? prev.filter(x => x !== name) : [...prev, name])} />
+                    {name}
+                  </label>
+                );
+              })}
+            </div>
+            <Button size="sm" variant="outline" className="mt-2" disabled={saveFreeCfg.isPending}
+              onClick={() => saveFreeCfg.mutate({ enabledTools: tools })}>
+              Salvar ferramentas
+            </Button>
+          </div>
+        </CardContent>
+      )}
+    </Card>
   );
 }

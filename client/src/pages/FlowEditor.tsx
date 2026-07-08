@@ -80,6 +80,9 @@ const NODE_TYPES_CONFIG: Record<string, {
   send_vehicle_photos: { label: "Fotos do Veículo", icon: Camera, color: "text-rose-400", bgColor: "border-rose-500/50 bg-rose-500/5", description: "Enviar fotos do veículo com legendas" },
   vehicle_presentation: { label: "Apresentar Veículo", icon: Car, color: "text-indigo-400", bgColor: "border-indigo-500/50 bg-indigo-500/5", description: "Apresentação personalizada do veículo" },
   update_lead_status: { label: "Status do Lead", icon: Thermometer, color: "text-amber-400", bgColor: "border-amber-500/50 bg-amber-500/5", description: "Atualizar etapa do funil e temperatura" },
+  classify_intent: { label: "Classificar Intenção", icon: GitBranch, color: "text-fuchsia-400", bgColor: "border-fuchsia-500/50 bg-fuchsia-500/5", description: "IA ramifica por intenção (compra, pós-venda...)" },
+  business_hours: { label: "Horário Comercial", icon: Clock, color: "text-sky-400", bgColor: "border-sky-500/50 bg-sky-500/5", description: "Ramifica dentro/fora do expediente" },
+  notify_number: { label: "Avisar Número", icon: MessageSquare, color: "text-green-400", bgColor: "border-green-500/50 bg-green-500/5", description: "Envia dados para um número fixo (pós-venda)" },
 };
 
 // ─── Custom Node Component ───────────────────────────────────
@@ -105,6 +108,16 @@ function FlowNode({ data, selected, id }: NodeProps) {
       return [
         { id: "yes", label: "Sim ✓" },
         { id: "no", label: "Não ✗" },
+      ];
+    }
+    if (nodeType === "classify_intent") {
+      const cats = ((data.config as any)?.categories || ["compra", "pos_venda", "informacao", "financeiro", "outro"]) as string[];
+      return cats.map(c => ({ id: c, label: c }));
+    }
+    if (nodeType === "business_hours") {
+      return [
+        { id: "dentro", label: "Dentro ✓" },
+        { id: "fora", label: "Fora 🌙" },
       ];
     }
     return [{ id: "default", label: "" }];
@@ -764,8 +777,93 @@ function PropertiesPanel({
         {nodeType === "update_lead_status" && (
           <UpdateLeadStatusConfig config={config} onUpdate={onUpdate} node={node} />
         )}
+        {nodeType === "classify_intent" && (
+          <ClassifyIntentConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
+        {nodeType === "business_hours" && (
+          <BusinessHoursConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
+        {nodeType === "notify_number" && (
+          <NotifyNumberConfig config={config} onUpdate={onUpdate} node={node} />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Classify Intent Config ──────────────────────────────────
+function ClassifyIntentConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const cats: string[] = config.categories || ["compra", "pos_venda", "informacao", "financeiro", "outro"];
+  const set = (v: string[]) => onUpdate(node.id, { ...node.data, config: { ...config, categories: v } });
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Categorias de intenção (cada uma vira uma saída)</Label>
+      {cats.map((c, i) => (
+        <div key={i} className="flex gap-1">
+          <Input className="h-8 text-sm" value={c} onChange={e => { const n = [...cats]; n[i] = e.target.value.toLowerCase().replace(/\s+/g, "_"); set(n); }} />
+          <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive" onClick={() => set(cats.filter((_, j) => j !== i))}>×</Button>
+        </div>
+      ))}
+      <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => set([...cats, "nova"])}>+ Categoria</Button>
+      <p className="text-[10px] text-muted-foreground">A IA lê a 1ª mensagem e escolhe a categoria. Ligue cada saída ao próximo nó.</p>
+    </div>
+  );
+}
+
+// ─── Business Hours Config ───────────────────────────────────
+const DOW_LABELS: [string, string][] = [["1", "Segunda"], ["2", "Terça"], ["3", "Quarta"], ["4", "Quinta"], ["5", "Sexta"], ["6", "Sábado"], ["0", "Domingo"]];
+function BusinessHoursConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const schedule: Record<string, [string, string][]> = config.schedule || {};
+  const setSchedule = (s: Record<string, [string, string][]>) => onUpdate(node.id, { ...node.data, config: { ...config, schedule: s } });
+  const setRange = (dow: string, idx: number, pos: 0 | 1, val: string) => {
+    const s = { ...schedule }; const ranges = [...(s[dow] || [])] as [string, string][];
+    ranges[idx] = [pos === 0 ? val : ranges[idx][0], pos === 1 ? val : ranges[idx][1]]; s[dow] = ranges; setSchedule(s);
+  };
+  const addRange = (dow: string) => { const s = { ...schedule }; s[dow] = [...(s[dow] || []), ["08:00", "18:00"]]; setSchedule(s); };
+  const rmRange = (dow: string, idx: number) => { const s = { ...schedule }; s[dow] = (s[dow] || []).filter((_, j) => j !== idx); setSchedule(s); };
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs">Horários de atendimento (Brasília)</Label>
+      {DOW_LABELS.map(([dow, label]) => (
+        <div key={dow} className="border border-border rounded-md p-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium">{label}</span>
+            <Button size="sm" variant="ghost" className="h-6 text-[10px]" onClick={() => addRange(dow)}>+ faixa</Button>
+          </div>
+          {(schedule[dow] || []).map((r, idx) => (
+            <div key={idx} className="flex items-center gap-1 mt-1">
+              <Input type="time" className="h-7 text-xs" value={r[0]} onChange={e => setRange(dow, idx, 0, e.target.value)} />
+              <span className="text-xs">às</span>
+              <Input type="time" className="h-7 text-xs" value={r[1]} onChange={e => setRange(dow, idx, 1, e.target.value)} />
+              <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => rmRange(dow, idx)}>×</Button>
+            </div>
+          ))}
+          {(schedule[dow] || []).length === 0 && <span className="text-[10px] text-muted-foreground">Fechado</span>}
+        </div>
+      ))}
+      <p className="text-[10px] text-muted-foreground">Saída "Dentro" = está aberto agora; "Fora" = fechado.</p>
+    </div>
+  );
+}
+
+// ─── Notify Number Config ────────────────────────────────────
+function NotifyNumberConfig({ config, onUpdate, node }: { config: any; onUpdate: (id: string, data: any) => void; node: Node }) {
+  const set = (k: string, v: string) => onUpdate(node.id, { ...node.data, config: { ...config, [k]: v } });
+  return (
+    <div className="space-y-2">
+      <div>
+        <Label className="text-xs">Número de destino (com DDI)</Label>
+        <Input className="h-8 text-sm" placeholder="5551999998888" value={config.number || ""} onChange={e => set("number", e.target.value.replace(/\D/g, ""))} />
+      </div>
+      <div>
+        <Label className="text-xs">Rótulo (ex.: Pós-venda)</Label>
+        <Input className="h-8 text-sm" value={config.label || ""} onChange={e => set("label", e.target.value)} />
+      </div>
+      <div>
+        <Label className="text-xs">Mensagem (variáveis: {"{nome}"}, {"{telefone}"})</Label>
+        <Textarea className="text-sm min-h-16" value={config.template || ""} onChange={e => set("template", e.target.value)} placeholder="🔧 Pós-venda: {nome} ({telefone}) precisa de atendimento." />
+      </div>
+    </div>
   );
 }
 
