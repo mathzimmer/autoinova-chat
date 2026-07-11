@@ -676,12 +676,29 @@ const conversationRouter = router({
       id: z.number(),
       agentId: z.number().nullable(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      const before = await getConversationById(input.id);
       const conv = await updateConversation(input.id, {
         assignedTo: input.agentId,
         aiActive: input.agentId ? false : true,
       });
       emitConversationUpdate(input.id, conv);
+      // Linha do tempo: transferência/atribuição de atendente
+      if (before?.assignedTo !== input.agentId) {
+        const { logTimeline } = await import("./db");
+        let fromName: string | null = null, toName: string | null = null;
+        try {
+          const members = await listTeamMembersAuth();
+          fromName = (members as any[]).find((m: any) => m.id === before?.assignedTo)?.name || null;
+          toName = (members as any[]).find((m: any) => m.id === input.agentId)?.name || null;
+        } catch {}
+        logTimeline({
+          conversationId: input.id,
+          userId: ctx.user.id,
+          action: input.agentId ? "atribuido_atendente" : "liberado_atendente",
+          details: { de: fromName, para: toName },
+        }).catch(() => {});
+      }
       return conv;
     }),
 
@@ -2380,6 +2397,38 @@ const activityRouter = router({
     }).optional())
     .query(async ({ input }) => {
       return listActivityLogs(input?.conversationId, input?.limit);
+    }),
+
+  /** Linha do tempo do lead: eventos + notas, com nome do usuário resolvido */
+  timeline: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const logs = await listActivityLogs(input.conversationId, 200);
+      let members: any[] = [];
+      try { members = (await listTeamMembersAuth()) as any[]; } catch {}
+      const nameOf = (uid: number) => uid === 0 ? "Sistema" : (members.find(m => m.id === uid)?.name || "Usuário");
+      return (logs as any[]).map(l => ({
+        id: l.id,
+        action: l.action,
+        userId: l.userId,
+        userName: nameOf(l.userId),
+        details: l.details,
+        createdAt: l.createdAt,
+      }));
+    }),
+
+  /** Adiciona uma nota manual à linha do tempo (registra quem, quando) */
+  addNote: protectedProcedure
+    .input(z.object({ conversationId: z.number(), note: z.string().min(1).max(2000) }))
+    .mutation(async ({ input, ctx }) => {
+      const { logTimeline } = await import("./db");
+      await logTimeline({
+        conversationId: input.conversationId,
+        userId: ctx.user.id,
+        action: "nota",
+        details: { note: input.note.trim(), authorName: ctx.user.name || "Atendente" },
+      });
+      return { success: true };
     }),
 });
 

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2, Copy, GitBranch, PlayCircle, PauseCircle, Megaphone, Loader2 } from "lucide-react";
+import { Bot, UserCheck, Phone, Car, CreditCard, ArrowLeftRight, Target, Zap, ZapOff, Pencil, Save, X, Mail, StickyNote, DollarSign, ExternalLink, Link2, FileText, UserCog, Trash2, Copy, GitBranch, PlayCircle, PauseCircle, Megaphone, Loader2, ClipboardList, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 const FUNNEL_STAGES: { value: string; label: string }[] = [
@@ -79,6 +79,17 @@ export default function ConversationPanel({ conversationId }: Props) {
       toast.success("Agente da conversa atualizado");
     },
     onError: (err) => toast.error(err.message),
+  });
+
+  // ── Linha do tempo do lead ──
+  const { data: timeline, refetch: refetchTimeline } = trpc.activity.timeline.useQuery(
+    { conversationId },
+    { refetchInterval: 30000 }
+  );
+  const [noteText, setNoteText] = useState("");
+  const addNoteMutation = trpc.activity.addNote.useMutation({
+    onSuccess: () => { setNoteText(""); refetchTimeline(); toast.success("Nota adicionada"); },
+    onError: (e) => toast.error(e.message),
   });
 
   // ── Análise de IA (temperatura da conversa) ──
@@ -729,6 +740,55 @@ ${(lead as any).notes || "N/A"}
         ) : (
           <p className="text-xs text-muted-foreground text-center py-3">Nenhum dado de lead coletado ainda. A IA coletará automaticamente durante a conversa.</p>
         )}
+      </div>
+
+      {/* ── LINHA DO TEMPO DO LEAD ── */}
+      <div className="p-4 border-t border-border shrink-0">
+        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
+          <ClipboardList className="h-3.5 w-3.5" /> Linha do Tempo
+        </h4>
+        {/* Adicionar nota */}
+        <div className="flex items-start gap-1.5 mb-3">
+          <Textarea
+            value={noteText}
+            onChange={e => setNoteText(e.target.value)}
+            placeholder="Adicionar anotação..."
+            className="text-sm bg-input border-border min-h-[38px] flex-1"
+          />
+          <Button size="icon" className="h-9 w-9 shrink-0" disabled={!noteText.trim() || addNoteMutation.isPending}
+            onClick={() => addNoteMutation.mutate({ conversationId, note: noteText.trim() })}>
+            {addNoteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+          </Button>
+        </div>
+        {/* Eventos */}
+        <div className="space-y-2.5 max-h-72 overflow-y-auto">
+          {(timeline || []).length === 0 ? (
+            <p className="text-xs text-muted-foreground">Sem eventos ainda.</p>
+          ) : (timeline || []).map((ev: any) => <TimelineItem key={ev.id} ev={ev} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TimelineItem({ ev }: { ev: any }) {
+  const d = ev.details || {};
+  const when = new Date(ev.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+  const meta: Record<string, { icon: string; color: string; text: string }> = {
+    lead_entrou: { icon: "📥", color: "text-sky-500", text: `Lead entrou via ${d.instance || (d.channel === "evolution" ? "instância" : "WhatsApp oficial")}` },
+    etapa_funil: { icon: "📊", color: "text-primary", text: `Funil: ${d.de || "?"} → ${d.para || "?"}` },
+    negocio_fechado: { icon: "🎉", color: "text-green-600", text: "Negócio fechado!" },
+    atribuido_atendente: { icon: "👤", color: "text-blue-500", text: `Atribuído${d.para ? ` a ${d.para}` : ""}${d.de ? ` (era ${d.de})` : ""}` },
+    liberado_atendente: { icon: "🔓", color: "text-muted-foreground", text: "Atendente liberado (IA reativada)" },
+    nota: { icon: "📝", color: "text-amber-600", text: d.note || "" },
+  };
+  const m = meta[ev.action] || { icon: "•", color: "text-muted-foreground", text: ev.action };
+  return (
+    <div className="flex gap-2 text-xs">
+      <span className="shrink-0">{m.icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className={`${m.color} ${ev.action === "nota" ? "" : "font-medium"} whitespace-pre-wrap break-words`}>{m.text}</p>
+        <p className="text-[10px] text-muted-foreground">{ev.userName} · {when}</p>
       </div>
     </div>
   );

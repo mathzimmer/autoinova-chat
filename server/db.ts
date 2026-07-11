@@ -330,6 +330,16 @@ export async function createConversation(data: InsertConversation) {
   if (!db) throw new Error("Database not available");
   const result = await db.insert(conversations).values(data).returning({ id: conversations.id });
   const id = result[0].id;
+  // Linha do tempo: entrada do lead (canal/instância de origem)
+  logTimeline({
+    conversationId: id,
+    action: "lead_entrou",
+    details: {
+      channel: data.channel || "whatsapp",
+      instance: (data as any).instanceName || null,
+      phone: data.phone,
+    },
+  }).catch(() => {});
   return getConversationById(id);
 }
 
@@ -583,6 +593,12 @@ export async function updateLeadFunnelStatus(conversationId: number, funnelStatu
       trackLeadProgress(lead.id, { funnelStatus })
     ).catch(err => console.error("[CAPI] hook updateLeadFunnelStatus:", err));
     if (funnelStatus === "fechado") promoteContactToCliente(lead.id).catch(() => {});
+    // Linha do tempo: mudança de etapa (venda se "fechado")
+    logTimeline({
+      conversationId,
+      action: funnelStatus === "fechado" ? "negocio_fechado" : "etapa_funil",
+      details: { de: lead.funnelStatus, para: funnelStatus },
+    }).catch(() => {});
   }
   return { ...lead, funnelStatus, temperature };
 }
@@ -847,6 +863,30 @@ export async function createActivityLog(data: InsertActivityLog) {
   const db = await getDb();
   if (!db) return;
   await db.insert(activityLogs).values(data);
+}
+
+/**
+ * Registra um evento na linha do tempo do lead/conversa.
+ * userId 0 = sistema (evento automático). Nunca lança erro (best-effort).
+ */
+export async function logTimeline(params: {
+  conversationId: number;
+  userId?: number;
+  action: string;
+  details?: Record<string, unknown>;
+}): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(activityLogs).values({
+      conversationId: params.conversationId,
+      userId: params.userId ?? 0,
+      action: params.action,
+      details: params.details ?? null,
+    });
+  } catch (err) {
+    console.error("[Timeline] falha ao registrar:", err);
+  }
 }
 
 export async function listActivityLogs(conversationId?: number, limit = 50) {
