@@ -286,6 +286,130 @@ export async function mirrorEvolutionMessage(params: {
   return { conversationId: conv.id, message };
 }
 
+// ─── Espelhamento de mensagens do Zernio (coexistência WhatsApp oficial) ──────
+// Isolado do fluxo Meta/Evolution. Conversas ficam com channel "zernio" e o
+// zernioConversationId salvo em metadata (essencial para responder pela API).
+export async function mirrorZernioMessage(params: {
+  zernioConversationId?: string;
+  accountId?: string;
+  phone: string;
+  contactName?: string;
+  content: string;
+  transcript?: string;
+  messageType: string; // text|image|audio|video|document
+  direction: "inbound" | "outbound";
+  senderName: string;
+  mediaUrl?: string;
+  externalId?: string;
+  timestamp: number; // epoch ms
+}): Promise<{ conversationId: number; message: any } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Dedupe por externalId (webhook é at-least-once)
+  if (params.externalId) {
+    const existing = await getMessageByExternalId(params.externalId);
+    if (existing) return null;
+  }
+
+  const isInbound = params.direction === "inbound";
+  const bestPhone = params.phone;
+  const bestName = params.contactName && params.contactName !== bestPhone ? params.contactName : undefined;
+
+  // Localiza conversa: pelo zernioConversationId no metadata, senão pelo phone+canal
+  let conv = params.zernioConversationId
+    ? (await db.select().from(conversations)
+        .where(and(
+          eq(conversations.channel, "zernio" as any),
+          sql`metadata->>'zernioConversationId' = ${params.zernioConversationId}`,
+        )).limit(1))[0]
+    : undefined;
+  if (!conv && bestPhone) {
+    conv = (await db.select().from(conversations)
+      .where(and(
+        eq(conversations.channel, "zernio" as any),
+        eq(conversations.phone, bestPhone),
+      )).limit(1))[0];
+  }
+
+  const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
+
+  if (!conv) {
+    const inserted = await db.insert(conversations).values({
+      phone: bestPhone,
+      contactName: bestName || null,
+      channel: "zernio" as any,
+      metadata: {
+        ...(params.zernioConversationId ? { zernioConversationId: params.zernioConversationId } : {}),
+        ...(params.accountId ? { zernioAccountId: params.accountId } : {}),
+      },
+      status: "open",
+      aiActive: false, // por segurança começa sem IA (igual Evolution); ligar por conversa
+      unreadCount: isInbound ? 1 : 0,
+      lastMessageAt: params.timestamp,
+      lastCustomerMessageAt: isInbound ? params.timestamp : null,
+      lastMessagePreview: preview,
+    }).returning();
+    conv = inserted[0];
+  } else {
+    const nameIsPlaceholder = !conv.contactName || conv.contactName === conv.phone;
+    const existingMeta = (conv.metadata as Record<string, unknown>) || {};
+    await db.update(conversations).set({
+      lastMessageAt: params.timestamp,
+      lastMessagePreview: preview,
+      metadata: {
+        ...existingMeta,
+        ...(params.zernioConversationId ? { zernioConversationId: params.zernioConversationId } : {}),
+        ...(params.accountId ? { zernioAccountId: params.accountId } : {}),
+      },
+      ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
+      ...(isInbound ? {
+        unreadCount: (conv.unreadCount || 0) + 1,
+        lastCustomerMessageAt: params.timestamp,
+      } : {}),
+      updatedAt: new Date(),
+    }).where(eq(conversations.id, conv.id));
+  }
+
+  const typeMap: Record<string, string> = { sticker: "image", reaction: "text" };
+  const mappedType = typeMap[params.messageType] || params.messageType;
+
+  const message = await createMessage({
+    conversationId: conv.id,
+    content: params.content || `[${params.messageType}]`,
+    senderType: isInbound ? "customer" : "agent",
+    senderName: params.senderName,
+    messageType: mappedType as any,
+    metadata: (params.mediaUrl || params.transcript)
+      ? { ...(params.mediaUrl ? { mediaUrl: params.mediaUrl } : {}), ...(params.transcript ? { transcribedText: params.transcript } : {}) }
+      : undefined,
+    externalId: params.externalId,
+  });
+
+  // Sync agenda de contatos
+  try {
+    if (bestPhone) {
+      const existing = await getContactByPhone(bestPhone);
+      if (!existing) {
+        await createContact({
+          name: bestName || bestPhone,
+          phone: bestPhone,
+          conversationId: conv.id,
+          source: "whatsapp",
+          createdByInstance: "zernio",
+          isActive: true,
+        } as any);
+      } else if (isInbound && bestName && (!existing.name || existing.name === existing.phone || existing.name === "Cliente")) {
+        await updateContact(existing.id, { name: bestName });
+      }
+    }
+  } catch (err) {
+    console.error("[Zernio] sync contato falhou:", err);
+  }
+
+  return { conversationId: conv.id, message };
+}
+
 export async function getConversationById(id: number) {
   const db = await getDb();
   if (!db) return undefined;

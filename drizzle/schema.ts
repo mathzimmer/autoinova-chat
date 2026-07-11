@@ -9,7 +9,7 @@ import {
 // ══════════════════════════════════════════════════════════════════════════════
 
 export const userRoleEnum               = pgEnum("user_role",                ["user", "admin"]);
-export const conversationChannelEnum    = pgEnum("conversation_channel",     ["whatsapp", "instagram", "facebook", "web", "webhook", "evolution"]);
+export const conversationChannelEnum    = pgEnum("conversation_channel",     ["whatsapp", "instagram", "facebook", "web", "webhook", "evolution", "zernio"]);
 export const conversationStatusEnum     = pgEnum("conversation_status",      ["open", "pending", "resolved", "closed"]);
 export const messageSenderTypeEnum      = pgEnum("message_sender_type",      ["customer", "bot", "agent", "internal"]);
 export const messageTypeEnum            = pgEnum("message_type",             ["text", "audio", "image", "document", "system", "video"]);

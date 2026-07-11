@@ -22,6 +22,9 @@ import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
 import { emitNewMessage, emitConversationUpdate } from "../socket";
 import { getPlatformUserProfile } from "../instagramFacebook";
+import { verifyZernioSignature, parseZernioMessage, zernioEnabled } from "../zernioService";
+import { mirrorZernioMessage } from "../db";
+import { transcribeAudio } from "./voiceTranscription";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -55,6 +58,21 @@ async function fetchMetaLeadData(leadgenId: string): Promise<any> {
   } catch {
     return null;
   }
+}
+
+// Transcrição segura para o conector Zernio (retorna o texto ou undefined)
+async function transcribeAudioSafe(audioUrl: string): Promise<string | undefined> {
+  try {
+    const r = await transcribeAudio({
+      audioUrl,
+      language: "pt",
+      prompt: "Transcrever mensagem de voz do cliente sobre veículos e automóveis",
+    });
+    if (r && "text" in r && r.text) return r.text;
+  } catch (e) {
+    console.error("[Zernio] transcribeAudioSafe erro:", e);
+  }
+  return undefined;
 }
 
 function normalizePhone(phone: string | undefined): string {
@@ -421,6 +439,131 @@ async function startServer() {
       return res.status(200).send(req.query["hub.challenge"]);
     }
     res.sendStatus(403);
+  });
+
+  // ─── Webhook Zernio (coexistência WhatsApp oficial) ─────────────────────────
+  // Isolado dos webhooks Meta/Evolution. Zernio envia eventos no formato próprio
+  // (message.received / message.sent / message.delivered|read|failed).
+  // Docs: https://docs.zernio.com/webhooks
+  const zernioSeenEvents = new Set<string>(); // dedupe simples em memória por payload.id
+  app.post("/api/webhook/zernio", async (req, res) => {
+    // Assinatura HMAC-SHA256 hex do corpo cru
+    const signature = (req.headers["x-zernio-signature"] || req.headers["x-late-signature"]) as string | undefined;
+    const rawBody = (req as any).rawBody as Buffer | undefined;
+    if (!verifyZernioSignature(rawBody ?? JSON.stringify(req.body), signature)) {
+      console.warn(`[Zernio] Assinatura inválida rejeitada (ip: ${req.ip})`);
+      return res.sendStatus(401);
+    }
+
+    // Zernio exige 2xx em até 5s → responde já e processa depois
+    res.sendStatus(200);
+
+    try {
+      const payload = req.body || {};
+      const event: string = payload.event || "unknown";
+      const eventId: string | undefined = payload.id;
+
+      // Dedupe at-least-once
+      if (eventId) {
+        if (zernioSeenEvents.has(eventId)) return;
+        zernioSeenEvents.add(eventId);
+        if (zernioSeenEvents.size > 5000) zernioSeenEvents.clear(); // evita vazamento
+      }
+
+      // LOG do payload cru (as primeiras entregas nos dão o shape real para
+      // enxugar o parser depois — ver comentários em zernioService.ts)
+      console.log(`[Zernio] Evento "${event}" recebido:`, JSON.stringify(payload).substring(0, 1500));
+
+      if (event === "webhook.test") {
+        console.log("[Zernio] webhook.test OK — endpoint validado.");
+        return;
+      }
+
+      // ── Mensagem recebida do cliente ──
+      if (event === "message.received") {
+        const m = parseZernioMessage(payload);
+        if (!m.phone && !m.conversationId) {
+          console.warn("[Zernio] message.received sem telefone/conversa — payload logado acima.");
+          return;
+        }
+
+        // Transcreve áudio (mesmo pipeline Groq/Whisper do restante)
+        let transcript: string | undefined;
+        let content = m.content;
+        if (m.messageType === "audio" && m.mediaUrl) {
+          try {
+            const t = await transcribeAudioSafe(m.mediaUrl);
+            if (t) { transcript = t; content = t; }
+          } catch (e) {
+            console.error("[Zernio] transcrição falhou:", e);
+          }
+        }
+
+        const result = await mirrorZernioMessage({
+          zernioConversationId: m.conversationId,
+          accountId: m.accountId,
+          phone: m.phone,
+          contactName: m.name,
+          content,
+          transcript,
+          messageType: m.messageType,
+          direction: "inbound",
+          senderName: m.name || m.phone || "Cliente",
+          mediaUrl: m.mediaUrl,
+          externalId: m.externalId,
+          timestamp: m.timestamp,
+        });
+
+        if (result) {
+          emitNewMessage(result.conversationId, result.message);
+          emitConversationUpdate(result.conversationId, {});
+          await updateLastCustomerMessageAt(result.conversationId, m.timestamp).catch(() => {});
+        }
+        return;
+      }
+
+      // ── Mensagem enviada (pela Bianca no app / dashboard Zernio) → espelha ──
+      if (event === "message.sent") {
+        const m = parseZernioMessage(payload);
+        const result = await mirrorZernioMessage({
+          zernioConversationId: m.conversationId,
+          accountId: m.accountId,
+          phone: m.phone,
+          contactName: m.name,
+          content: m.content,
+          messageType: m.messageType,
+          direction: "outbound",
+          senderName: m.name || "Atendente",
+          mediaUrl: m.mediaUrl,
+          externalId: m.externalId,
+          timestamp: m.timestamp,
+        });
+        if (result) emitNewMessage(result.conversationId, result.message);
+        return;
+      }
+
+      // ── Status de entrega ──
+      if (event === "message.delivered" || event === "message.read" || event === "message.failed") {
+        const msg = payload.message || {};
+        const externalId = msg._id || msg.id || msg.platformMessageId || msg.messageId;
+        const status = event === "message.delivered" ? "delivered" : event === "message.read" ? "read" : "failed";
+        const errDetail = payload.error ? `${payload.error.code || ""}: ${payload.error.title || payload.error.message || ""}` : undefined;
+        if (externalId) {
+          await updateMessageDeliveryStatus(String(externalId), status as any, errDetail).catch(() => {});
+        }
+        return;
+      }
+
+      // outros eventos (conversation.started, reaction.received, etc.) — só loga por ora
+    } catch (err) {
+      console.error("[Zernio] Erro ao processar webhook:", err);
+    }
+  });
+
+  // Verificação GET do endpoint Zernio (retorna 200 simples; Zernio valida via
+  // dashboard + webhook.test, não usa o challenge da Meta)
+  app.get("/api/webhook/zernio", (_req, res) => {
+    res.status(200).send(zernioEnabled() ? "zernio-ok" : "zernio-disabled");
   });
 
   // ─── Webhook Meta Ads Lead Forms (GET — verificação) ────────────────────────

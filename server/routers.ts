@@ -1129,6 +1129,16 @@ const messageRouter = router({
                 sendResult = { success: false, error: errMsg };
               }
             }
+          } else if (conv.channel === "zernio") {
+            // Conversa Zernio: responde via API do Zernio dentro da conversa dele.
+            const zConvId = (conv.metadata as any)?.zernioConversationId as string | undefined;
+            const zAccId = (conv.metadata as any)?.zernioAccountId as string | undefined;
+            if (!zConvId) {
+              sendResult = { success: false, error: "Conversa sem zernioConversationId (só é possível responder após a 1ª mensagem do cliente)" };
+            } else {
+              const { zernioReply } = await import("./zernioService");
+              sendResult = await zernioReply(zConvId, input.content, zAccId);
+            }
           } else if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
             sendResult = await sendTextMessage(conv.phone, input.content);
           } else if (conv.channel === "instagram" && isInstagramConfigured() && conv.platformUserId) {
