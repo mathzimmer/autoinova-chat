@@ -41,6 +41,13 @@ type MessageData = {
   externalId?: string | null;
 };
 
+// Hora sempre no fuso de Brasília, independente do device de quem visualiza
+function horaBR(date: Date | string | number): string {
+  return new Date(date).toLocaleTimeString("pt-BR", {
+    hour: "2-digit", minute: "2-digit", timeZone: "America/Sao_Paulo",
+  });
+}
+
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 const EMOJI_LIST = [
@@ -1476,7 +1483,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
             <span className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide">Nota interna · {message.senderName || "Equipe"}</span>
           </div>
           <p className="text-sm text-amber-900 whitespace-pre-wrap break-words">{message.content}</p>
-          <p className="text-[10px] text-amber-600/50 text-right mt-0.5">{format(new Date(message.createdAt), "HH:mm")}</p>
+          <p className="text-[10px] text-amber-600/50 text-right mt-0.5">{horaBR(message.createdAt)}</p>
         </div>
       </div>
     );
@@ -1518,7 +1525,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
             <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-white/10">
               <span className={`text-[10px] font-medium ${statusColor}`}>{statusLabel}</span>
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-[#54656f]">{format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}</span>
+                <span className="text-[10px] text-[#54656f]">{horaBR(message.createdAt)}</span>
                 <DeliveryStatusIcon status={message.status} deliveryError={message.deliveryError} />
               </div>
             </div>
@@ -1680,7 +1687,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
               <span className="text-[10px] text-[#54656f]/60">IA ·</span>
             )}
             <span className="text-[10px] text-[#54656f]">
-              {format(new Date(message.createdAt), "HH:mm", { locale: ptBR })}
+              {horaBR(message.createdAt)}
             </span>
             {!isCustomer && <DeliveryStatusIcon status={message.status} deliveryError={message.deliveryError} />}
           </div>

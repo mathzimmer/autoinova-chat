@@ -46,19 +46,6 @@ export async function getDb() {
         idle_timeout: 30,      // fecha conexões ociosas
         max_lifetime: 60 * 30, // recicla conexões a cada 30min
         connect_timeout: 10,
-        // Fuso da sessão = Brasília (mesmo do host). Garante que now()
-        // e a leitura de "timestamp without time zone" fiquem consistentes.
-        connection: { timezone: "America/Sao_Paulo" },
-        types: {
-          // Parser de "timestamp without time zone" (OID 1114): interpreta o
-          // valor como horário LOCAL (Brasília), não UTC — evita o desvio de 3h.
-          timestamp: {
-            to: 1114,
-            from: [1114],
-            serialize: (v: Date | string) => (v instanceof Date ? v.toISOString() : v),
-            parse: (v: string) => new Date(v.replace(" ", "T") + "-03:00"),
-          },
-        },
       });
       _db = drizzle(client);
     } catch (error) {
