@@ -167,29 +167,39 @@ export async function zernioSendMedia(
   }
 }
 
-/** Botões de resposta (WhatsApp interactive.type=button) via Zernio. Máx 3. */
+/**
+ * Botões de resposta via Zernio. Usa o campo `quickReplies` (Meta quick_replies),
+ * que é o caminho suportado para botões de resposta no WhatsApp. Se falhar, cai
+ * para texto com as opções numeradas (o cliente sempre recebe algo utilizável).
+ */
 export async function zernioSendButtons(
   conversationId: string,
   body: string,
   buttons: Array<{ id: string; title: string }>,
   accountId?: string,
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const acc = accountId || zernioAccountId();
+  if (!acc) return { success: false, error: "accountId não informado" };
+  const apiKey = await resolveApiKey(acc);
+  const path = `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`;
+  // 1) Botões nativos (quickReplies)
   try {
-    const acc = accountId || zernioAccountId();
-    if (!acc) return { success: false, error: "accountId não informado" };
-    const apiKey = await resolveApiKey(acc);
-    const interactive = {
-      type: "button",
-      body: { text: body },
-      action: { buttons: buttons.slice(0, 3).map(b => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
-    };
-    const data = await zernioFetch(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
-      method: "POST", body: JSON.stringify({ accountId: acc, interactive }),
+    const data = await zernioFetch(path, {
+      method: "POST",
+      body: JSON.stringify({
+        accountId: acc,
+        message: body,
+        quickReplies: buttons.slice(0, 13).map(b => ({ title: b.title.slice(0, 24), payload: b.id })),
+      }),
     }, apiKey);
+    console.log(`[Zernio] botões (quickReplies) enviados na conversa ${conversationId}`);
     return { success: true, messageId: data?.data?.messageId || data?.message?.id };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Falha ao enviar botões Zernio" };
+    console.error(`[Zernio] quickReplies falhou, fallback texto:`, err instanceof Error ? err.message : err);
   }
+  // 2) Fallback: texto com as opções
+  const txt = body + "\n\n" + buttons.map((b, i) => `${i + 1}️⃣ ${b.title}`).join("\n");
+  return zernioReply(conversationId, txt, acc);
 }
 
 /** Lista interativa (WhatsApp interactive.type=list) via Zernio. */
@@ -200,22 +210,27 @@ export async function zernioSendList(
   sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>,
   accountId?: string,
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const acc = accountId || zernioAccountId();
+  if (!acc) return { success: false, error: "accountId não informado" };
+  const apiKey = await resolveApiKey(acc);
+  const path = `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`;
   try {
-    const acc = accountId || zernioAccountId();
-    if (!acc) return { success: false, error: "accountId não informado" };
-    const apiKey = await resolveApiKey(acc);
     const interactive = {
       type: "list",
       body: { text: body },
       action: { button: buttonText.slice(0, 20), sections },
     };
-    const data = await zernioFetch(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
+    const data = await zernioFetch(path, {
       method: "POST", body: JSON.stringify({ accountId: acc, interactive }),
     }, apiKey);
+    console.log(`[Zernio] lista enviada na conversa ${conversationId}`);
     return { success: true, messageId: data?.data?.messageId || data?.message?.id };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Falha ao enviar lista Zernio" };
+    console.error(`[Zernio] lista falhou, fallback texto:`, err instanceof Error ? err.message : err);
   }
+  const rows = sections.flatMap(s => s.rows);
+  const txt = body + "\n\n" + rows.map((r, i) => `${i + 1}️⃣ ${r.title}${r.description ? ` — ${r.description}` : ""}`).join("\n");
+  return zernioReply(conversationId, txt, acc);
 }
 
 // ─── Normalização defensiva do payload de mensagem ────────────────────────────
