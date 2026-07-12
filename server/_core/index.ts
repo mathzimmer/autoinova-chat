@@ -487,12 +487,24 @@ async function startServer() {
           return;
         }
 
-        // Transcreve áudio (mesmo pipeline Groq/Whisper do restante)
+        // Mídia do Zernio exige Bearer token → re-hospeda no S3/MinIO para o
+        // inbox renderizar (imagem/áudio/vídeo) e a transcrição conseguir baixar.
+        let hostedMediaUrl: string | undefined = m.mediaUrl;
+        if (m.mediaUrl && m.messageType !== "text") {
+          const { hostZernioMedia } = await import("../zernioService");
+          const kind = m.messageType === "audio" ? "audio"
+            : m.messageType === "image" ? "image"
+            : m.messageType === "video" ? "video" : "document";
+          const hosted = await hostZernioMedia(m.mediaUrl, m.mimeType || "", kind, m.accountId);
+          if (hosted) hostedMediaUrl = hosted;
+        }
+
+        // Transcreve áudio (mesmo pipeline Groq/Whisper do restante), já da URL pública
         let transcript: string | undefined;
         let content = m.content;
-        if (m.messageType === "audio" && m.mediaUrl) {
+        if (m.messageType === "audio" && hostedMediaUrl) {
           try {
-            const t = await transcribeAudioSafe(m.mediaUrl);
+            const t = await transcribeAudioSafe(hostedMediaUrl);
             if (t) { transcript = t; content = t; }
           } catch (e) {
             console.error("[Zernio] transcrição falhou:", e);
@@ -509,7 +521,7 @@ async function startServer() {
           messageType: m.messageType,
           direction: "inbound",
           senderName: m.name || m.phone || "Cliente",
-          mediaUrl: m.mediaUrl,
+          mediaUrl: hostedMediaUrl,
           externalId: m.externalId,
           timestamp: m.timestamp,
         });
@@ -525,6 +537,15 @@ async function startServer() {
       // ── Mensagem enviada (pela Bianca no app / dashboard Zernio) → espelha ──
       if (event === "message.sent") {
         const m = parseZernioMessage(payload);
+        let hostedMediaUrl: string | undefined = m.mediaUrl;
+        if (m.mediaUrl && m.messageType !== "text") {
+          const { hostZernioMedia } = await import("../zernioService");
+          const kind = m.messageType === "audio" ? "audio"
+            : m.messageType === "image" ? "image"
+            : m.messageType === "video" ? "video" : "document";
+          const hosted = await hostZernioMedia(m.mediaUrl, m.mimeType || "", kind, m.accountId);
+          if (hosted) hostedMediaUrl = hosted;
+        }
         const result = await mirrorZernioMessage({
           zernioConversationId: m.conversationId,
           accountId: m.accountId,
@@ -534,7 +555,7 @@ async function startServer() {
           messageType: m.messageType,
           direction: "outbound",
           senderName: m.senderName || "Atendente",
-          mediaUrl: m.mediaUrl,
+          mediaUrl: hostedMediaUrl,
           externalId: m.externalId,
           timestamp: m.timestamp,
         });

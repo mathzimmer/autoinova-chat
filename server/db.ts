@@ -426,6 +426,27 @@ export async function mirrorZernioMessage(params: {
     }).where(eq(conversations.id, conv.id));
   }
 
+  // Dedupe de ECO: quando enviamos pelo CRM (zernioReply), o Zernio devolve um
+  // message.sent com id próprio → o dedupe por externalId não pega. Aqui evitamos
+  // duplicar uma mensagem de saída idêntica criada há poucos segundos pelo CRM.
+  if (!isInbound && conv) {
+    const recent = await db.select().from(messages)
+      .where(and(eq(messages.conversationId, conv.id), eq(messages.senderType, "agent")))
+      .orderBy(desc(messages.createdAt)).limit(6);
+    const cutoff = Date.now() - 120000; // 2 min
+    const dup = recent.find(r =>
+      (r.content || "") === (params.content || "") &&
+      new Date(r.createdAt as any).getTime() > cutoff
+    );
+    if (dup) {
+      // Já existe (eco da nossa própria mensagem) — grava o externalId se faltar
+      if (params.externalId && !dup.externalId) {
+        try { await updateMessageExternalId(dup.id, params.externalId); } catch { /* noop */ }
+      }
+      return { conversationId: conv.id, message: dup };
+    }
+  }
+
   const typeMap: Record<string, string> = { sticker: "image", reaction: "text" };
   const mappedType = typeMap[params.messageType] || params.messageType;
 

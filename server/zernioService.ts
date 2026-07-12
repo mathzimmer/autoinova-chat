@@ -107,6 +107,66 @@ export async function zernioReply(
   }
 }
 
+/**
+ * Baixa uma mídia do Zernio (URL autenticada) e sobe no S3/MinIO, retornando a
+ * URL pública. As URLs de mídia do Zernio exigem Bearer token, então não dá
+ * para renderizá-las direto no inbox — precisam ser re-hospedadas.
+ */
+export async function hostZernioMedia(
+  mediaUrl: string,
+  mimeType: string,
+  kind: "image" | "audio" | "video" | "document",
+  accountId?: string,
+): Promise<string | undefined> {
+  try {
+    const apiKey = await resolveApiKey(accountId);
+    const res = await fetch(mediaUrl, {
+      headers: apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
+    });
+    if (!res.ok) {
+      console.error(`[Zernio] download de mídia falhou ${res.status}: ${mediaUrl}`);
+      return undefined;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    const { uploadMediaToS3 } = await import("./media");
+    const uploaded = await uploadMediaToS3(buf, kind, mimeType || "application/octet-stream");
+    return uploaded?.url;
+  } catch (err) {
+    console.error("[Zernio] hostZernioMedia erro:", err);
+    return undefined;
+  }
+}
+
+/**
+ * Envia mídia numa conversa Zernio via attachmentUrl (deve ser URL pública —
+ * usamos a URL do S3/MinIO). Áudio de voz vai com voiceNote=true (precisa .ogg opus).
+ */
+export async function zernioSendMedia(
+  conversationId: string,
+  attachmentUrl: string,
+  attachmentType: "image" | "video" | "audio" | "file",
+  accountId?: string,
+  caption?: string,
+  voiceNote?: boolean,
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const acc = accountId || zernioAccountId();
+    if (!acc) return { success: false, error: "accountId da conta Zernio não informado" };
+    const apiKey = await resolveApiKey(acc);
+    const body: Record<string, any> = { accountId: acc, attachmentUrl, attachmentType };
+    if (caption) body.message = caption;
+    if (voiceNote && attachmentType === "audio") body.voiceNote = true;
+    const data = await zernioFetch(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }, apiKey);
+    const msgId = data?.data?.messageId || data?.message?.id || data?.id;
+    return { success: true, messageId: msgId ? String(msgId) : undefined };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Falha no envio de mídia Zernio" };
+  }
+}
+
 // ─── Normalização defensiva do payload de mensagem ────────────────────────────
 export interface ZernioParsedMessage {
   eventId?: string;
@@ -119,6 +179,7 @@ export interface ZernioParsedMessage {
   content: string;
   messageType: "text" | "audio" | "image" | "document" | "video";
   mediaUrl?: string;
+  mimeType?: string;
   externalId?: string;      // id da mensagem no Zernio / plataforma
   direction: "inbound" | "outbound";
   timestamp: number;        // epoch ms
@@ -177,6 +238,7 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
   const attachments: any[] = msg?.attachments || msg?.media || [];
   const att = Array.isArray(attachments) ? attachments[0] : attachments;
   const mediaUrl = firstDefined<string>(att?.url, att?.link, att?.mediaUrl, msg?.mediaUrl);
+  const mimeType = firstDefined<string>(att?.payload?.mimeType, att?.mimeType, msg?.mimeType);
   const rawType = firstDefined<string>(att?.type, att?.payload?.mimeType, msg?.type, msg?.messageType);
   const messageType: ZernioParsedMessage["messageType"] = mediaUrl ? mapMediaType(rawType) : "text";
 
@@ -204,6 +266,7 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     content,
     messageType,
     mediaUrl,
+    mimeType,
     externalId: firstDefined<string>(msg?.id, msg?._id, msg?.platformMessageId, msg?.messageId),
     direction,
     timestamp: toEpochMs(firstDefined(msg?.sentAt, msg?.receivedAt, msg?.createdAt, msg?.timestamp, payload?.timestamp)),

@@ -988,12 +988,33 @@ const messageRouter = router({
       // Atendente assume a conversa ao enviar fotos
       await updateConversation(input.conversationId, { aiActive: false, assignedTo: ctx.user.id });
 
+      // Roteia por canal da conversa (bug: antes ia sempre pela Matriz oficial)
+      const zConvId = conv.channel === "zernio" ? ((conv.metadata as any)?.zernioConversationId as string | undefined) : undefined;
+      const zAccId = conv.channel === "zernio" ? (((conv.metadata as any)?.zernioAccountId as string | undefined) || (conv as any).instanceName || undefined) : undefined;
+      const evoInstance = conv.channel === "evolution" ? (conv as any).instanceName as string | undefined : undefined;
+      const evoJid = conv.channel === "evolution" ? (((conv.metadata as any)?.evolutionLidJid as string) || ((conv.metadata as any)?.evolutionRemoteJid as string) || conv.phone) : conv.phone;
+
       let sent = 0;
       const errors: string[] = [];
       for (let i = 0; i < input.imageUrls.length; i++) {
         const url = input.imageUrls[i];
         const caption = i === 0 ? (input.caption || "") : "";
-        const result = await sendImageMessage(conv.phone, url, caption);
+        let result: { success: boolean; messageId?: string; error?: string };
+        if (conv.channel === "zernio") {
+          if (!zConvId) { result = { success: false, error: "Zernio: conversa sem sessão ativa (cliente precisa ter mandado a 1ª mensagem)" }; }
+          else {
+            const { zernioSendMedia } = await import("./zernioService");
+            result = await zernioSendMedia(zConvId, url, "image", zAccId, caption);
+          }
+        } else if (conv.channel === "evolution" && evoInstance) {
+          const { evolutionSendMedia } = await import("./evolutionService");
+          try {
+            const r = await evolutionSendMedia(evoInstance, evoJid!, url, "image", caption);
+            result = { success: true, messageId: (r as any)?.key?.id ? `evo_${(r as any).key.id}` : undefined };
+          } catch (e) { result = { success: false, error: e instanceof Error ? e.message : "erro" }; }
+        } else {
+          result = await sendImageMessage(conv.phone, url, caption);
+        }
         if (result.success) {
           const msg = await createMessage({
             conversationId: input.conversationId,
@@ -1319,6 +1340,24 @@ const messageRouter = router({
         }).catch((err) => {
           console.error(`[SendMedia] ❌ Evolution ${input.mediaType} falhou:`, err);
         });
+        return message;
+      }
+
+      // === ENVIO PARA INSTÂNCIA ZERNIO (coexistência oficial) ===
+      if (convForSend?.channel === "zernio") {
+        const zConvId = (convForSend.metadata as any)?.zernioConversationId as string | undefined;
+        const zAccId = ((convForSend.metadata as any)?.zernioAccountId as string | undefined) || (convForSend as any).instanceName || undefined;
+        if (!zConvId) {
+          console.error("[SendMedia] Zernio sem zernioConversationId — não é possível enviar mídia");
+        } else {
+          const { zernioSendMedia } = await import("./zernioService");
+          const attType = input.mediaType === "image" ? "image" : input.mediaType === "video" ? "video" : "audio";
+          // Áudio de voz precisa ser .ogg opus → usa a versão convertida (whatsappAudioUrl)
+          const urlToSend = input.mediaType === "audio" ? (whatsappAudioUrl || mediaUrl) : mediaUrl;
+          zernioSendMedia(zConvId, urlToSend, attType as any, zAccId, input.caption, input.mediaType === "audio")
+            .then((r) => console.log(`[SendMedia] ${r.success ? "✅" : "❌"} Zernio ${input.mediaType}:`, r.error || r.messageId))
+            .catch((err) => console.error(`[SendMedia] ❌ Zernio ${input.mediaType} falhou:`, err));
+        }
         return message;
       }
 

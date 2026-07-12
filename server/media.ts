@@ -56,7 +56,7 @@ export async function processWhatsAppMedia(
  */
 export async function uploadMediaToS3(
   data: Buffer,
-  type: "image" | "audio" | "document",
+  type: "image" | "audio" | "document" | "video",
   mimeType: string
 ): Promise<{ url: string; key: string } | null> {
   try {
@@ -74,7 +74,7 @@ export async function uploadMediaToS3(
   }
 }
 
-function getExtension(type: "image" | "audio" | "document", mimeType?: string): string {
+function getExtension(type: "image" | "audio" | "document" | "video", mimeType?: string): string {
   if (mimeType) {
     // Strip codec parameters (e.g., 'audio/ogg; codecs=opus' -> 'audio/ogg')
     const baseMime = mimeType.split(';')[0].trim().toLowerCase();
@@ -90,6 +90,9 @@ function getExtension(type: "image" | "audio" | "document", mimeType?: string): 
       "audio/opus": "ogg",
       "audio/webm": "webm",
       "application/pdf": "pdf",
+      "video/mp4": "mp4",
+      "video/3gpp": "3gp",
+      "video/quicktime": "mov",
     };
     if (mimeMap[baseMime]) return mimeMap[baseMime];
   }
@@ -98,13 +101,15 @@ function getExtension(type: "image" | "audio" | "document", mimeType?: string): 
     case "image": return "jpg";
     case "audio": return "ogg";
     case "document": return "pdf";
+    case "video": return "mp4";
   }
 }
 
-function getDefaultMimeType(type: "image" | "audio" | "document"): string {
+function getDefaultMimeType(type: "image" | "audio" | "document" | "video"): string {
   switch (type) {
     case "image": return "image/jpeg";
     case "audio": return "audio/ogg";
     case "document": return "application/octet-stream";
+    case "video": return "video/mp4";
   }
 }
