@@ -221,6 +221,48 @@ export async function markAsReadFromNumber(
   }
 }
 
+/** Envia um objeto interactive (Meta Cloud API) pelo token de um número. */
+async function sendInteractiveFromNumber(
+  phoneNumberId: string,
+  to: string,
+  interactive: any
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const numRecord = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
+  const token = numRecord ? getTokenForNumber(numRecord) : getGlobalToken();
+  try {
+    const response = await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      { messaging_product: "whatsapp", recipient_type: "individual", to, type: "interactive", interactive },
+      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+    );
+    return { success: true, messageId: response.data?.messages?.[0]?.id };
+  } catch (error: any) {
+    return { success: false, error: error?.response?.data?.error?.message || error.message };
+  }
+}
+
+export async function sendButtonsFromNumber(
+  phoneNumberId: string, to: string, body: string,
+  buttons: Array<{ id: string; title: string }>
+) {
+  return sendInteractiveFromNumber(phoneNumberId, to, {
+    type: "button",
+    body: { text: body },
+    action: { buttons: buttons.slice(0, 3).map(b => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+  });
+}
+
+export async function sendListFromNumber(
+  phoneNumberId: string, to: string, body: string, buttonText: string,
+  sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>
+) {
+  return sendInteractiveFromNumber(phoneNumberId, to, {
+    type: "list",
+    body: { text: body },
+    action: { button: buttonText.slice(0, 20), sections },
+  });
+}
+
 // ─── Conversation management ───────────────────────────────────────────────────
 
 export async function upsertWNConversation(data: {

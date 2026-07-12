@@ -11,7 +11,7 @@ import { processWhatsAppMedia } from "./media";
 import { getMediaUrl } from "./whatsapp";
 import { processFlowMessage } from "./flowEngine";
 import { processAIMessage } from "./ai";
-import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber } from "./whatsappMultiNumber";
+import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber, sendButtonsFromNumber, sendListFromNumber } from "./whatsappMultiNumber";
 import { transcribeAudio } from "./_core/voiceTranscription";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
 
@@ -110,19 +110,30 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
 
   emitTypingIndicator(conversationId, true, BOT_NAME);
   try {
+    // Remetente pelo token deste número (evita disparar a Matriz)
+    const oSender = {
+      text: (b: string) => sendTextFromNumber(phoneNumberId, conv.phone!, b),
+      image: (url: string, caption?: string) => sendMediaFromNumber(phoneNumberId, conv.phone!, url, "image", caption),
+      buttons: (b: string, buttons: Array<{ id: string; title: string }>) => sendButtonsFromNumber(phoneNumberId, conv.phone!, b, buttons),
+      list: (b: string, buttonText: string, sections: any) => sendListFromNumber(phoneNumberId, conv.phone!, b, buttonText, sections),
+    };
+
     if (flowsEnabled) {
       try {
-        const flowResult = await processFlowMessage({ conversationId, phone: conv.phone, customerMessage, contactName: conv.contactName || undefined });
+        const flowResult = await processFlowMessage({ conversationId, phone: conv.phone, customerMessage, contactName: conv.contactName || undefined, sender: oSender });
         if (flowResult.handled) {
           for (const response of flowResult.responses) {
             const botMsg = await createMessage({ conversationId, content: response, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
             emitNewMessage(conversationId, botMsg);
-            await sendTextFromNumber(phoneNumberId, conv.phone, response);
           }
           for (const img of flowResult.imageMessages) {
             const imgMsg = await createMessage({ conversationId, content: img.caption || "[Imagem]", senderType: "bot", senderName: BOT_NAME, messageType: "image", metadata: { mediaUrl: img.imageUrl, caption: img.caption } });
             emitNewMessage(conversationId, imgMsg);
-            await sendMediaFromNumber(phoneNumberId, conv.phone, img.imageUrl, "image", img.caption);
+          }
+          for (const im of flowResult.interactiveMessages) {
+            const body = (im as any).data?.body || "";
+            const imMsg = await createMessage({ conversationId, content: body || "[Mensagem interativa]", senderType: "bot", senderName: BOT_NAME, messageType: "text", metadata: { interactiveType: im.type, interactiveData: (im as any).data } });
+            emitNewMessage(conversationId, imMsg);
           }
           return;
         }

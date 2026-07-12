@@ -10,7 +10,7 @@ import {
 } from "./db";
 import { processFlowMessage } from "./flowEngine";
 import { processAIMessage } from "./ai";
-import { zernioReply, zernioSendMedia } from "./zernioService";
+import { zernioReply, zernioSendMedia, zernioSendButtons, zernioSendList } from "./zernioService";
 import { emitNewMessage, emitTypingIndicator } from "./socket";
 
 const BOT_NAME = "Auto Inova - IA";
@@ -37,7 +37,15 @@ export async function runZernioAI(conversationId: number, customerMessage: strin
 
   emitTypingIndicator(conversationId, true, BOT_NAME);
   try {
-    // ── 1) Fluxo programado ──
+    // Remetente Zernio: o motor de fluxo envia por aqui (evita disparar a Matriz)
+    const zSender = {
+      text: (b: string) => zernioReply(zConvId, b, accountId),
+      image: (url: string, caption?: string) => zernioSendMedia(zConvId, url, "image", accountId, caption),
+      buttons: (b: string, buttons: Array<{ id: string; title: string }>) => zernioSendButtons(zConvId, b, buttons, accountId),
+      list: (b: string, buttonText: string, sections: any) => zernioSendList(zConvId, b, buttonText, sections, accountId),
+    };
+
+    // ── 1) Fluxo programado ── (o fluxo ENVIA via zSender; aqui só persistimos+emitimos)
     if (flowsEnabled) {
       try {
         const flowResult = await processFlowMessage({
@@ -45,17 +53,21 @@ export async function runZernioAI(conversationId: number, customerMessage: strin
           phone: conv.phone || "",
           customerMessage,
           contactName: conv.contactName || undefined,
+          sender: zSender,
         });
         if (flowResult.handled) {
           for (const response of flowResult.responses) {
             const botMsg = await createMessage({ conversationId, content: response, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
             emitNewMessage(conversationId, botMsg);
-            await zernioReply(zConvId, response, accountId);
           }
           for (const img of flowResult.imageMessages) {
             const imgMsg = await createMessage({ conversationId, content: img.caption || "[Imagem]", senderType: "bot", senderName: BOT_NAME, messageType: "image", metadata: { mediaUrl: img.imageUrl, caption: img.caption } });
             emitNewMessage(conversationId, imgMsg);
-            await zernioSendMedia(zConvId, img.imageUrl, "image", accountId, img.caption);
+          }
+          for (const im of flowResult.interactiveMessages) {
+            const body = (im as any).data?.body || "";
+            const imMsg = await createMessage({ conversationId, content: body || "[Mensagem interativa]", senderType: "bot", senderName: BOT_NAME, messageType: "text", metadata: { interactiveType: im.type, interactiveData: (im as any).data } });
+            emitNewMessage(conversationId, imMsg);
           }
           return; // fluxo tratou, não passa para a IA
         }

@@ -167,6 +167,57 @@ export async function zernioSendMedia(
   }
 }
 
+/** Botões de resposta (WhatsApp interactive.type=button) via Zernio. Máx 3. */
+export async function zernioSendButtons(
+  conversationId: string,
+  body: string,
+  buttons: Array<{ id: string; title: string }>,
+  accountId?: string,
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const acc = accountId || zernioAccountId();
+    if (!acc) return { success: false, error: "accountId não informado" };
+    const apiKey = await resolveApiKey(acc);
+    const interactive = {
+      type: "button",
+      body: { text: body },
+      action: { buttons: buttons.slice(0, 3).map(b => ({ type: "reply", reply: { id: b.id, title: b.title.slice(0, 20) } })) },
+    };
+    const data = await zernioFetch(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      method: "POST", body: JSON.stringify({ accountId: acc, interactive }),
+    }, apiKey);
+    return { success: true, messageId: data?.data?.messageId || data?.message?.id };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Falha ao enviar botões Zernio" };
+  }
+}
+
+/** Lista interativa (WhatsApp interactive.type=list) via Zernio. */
+export async function zernioSendList(
+  conversationId: string,
+  body: string,
+  buttonText: string,
+  sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>,
+  accountId?: string,
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const acc = accountId || zernioAccountId();
+    if (!acc) return { success: false, error: "accountId não informado" };
+    const apiKey = await resolveApiKey(acc);
+    const interactive = {
+      type: "list",
+      body: { text: body },
+      action: { button: buttonText.slice(0, 20), sections },
+    };
+    const data = await zernioFetch(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
+      method: "POST", body: JSON.stringify({ accountId: acc, interactive }),
+    }, apiKey);
+    return { success: true, messageId: data?.data?.messageId || data?.message?.id };
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : "Falha ao enviar lista Zernio" };
+  }
+}
+
 // ─── Normalização defensiva do payload de mensagem ────────────────────────────
 export interface ZernioParsedMessage {
   eventId?: string;

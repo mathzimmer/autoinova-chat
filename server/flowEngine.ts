@@ -29,6 +29,31 @@ interface FlowContext {
   customerMessage: string;
   contactName?: string;
   leadData?: Record<string, any>;
+  /**
+   * Remetente por canal. Quando presente (Zernio, número oficial adicional, etc.),
+   * o fluxo envia por aqui em vez de usar a Matriz oficial. Sem isso, usa o
+   * número padrão (comportamento original).
+   */
+  sender?: {
+    text: (body: string) => Promise<any>;
+    image: (url: string, caption?: string) => Promise<any>;
+    buttons?: (body: string, buttons: Array<{ id: string; title: string }>) => Promise<any>;
+    list?: (body: string, buttonText: string, sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>) => Promise<any>;
+  };
+}
+
+// Wrappers: roteiam o envio para o remetente do canal (se houver) ou para a Matriz.
+function outText(ctx: FlowContext, body: string) {
+  return ctx.sender ? ctx.sender.text(body) : sendTextMessage(ctx.phone, body);
+}
+function outImage(ctx: FlowContext, url: string, caption?: string) {
+  return ctx.sender ? ctx.sender.image(url, caption) : sendImageMessage(ctx.phone, url, caption);
+}
+function outButtons(ctx: FlowContext, body: string, buttons: Array<{ id: string; title: string }>) {
+  return ctx.sender?.buttons ? ctx.sender.buttons(body, buttons) : sendReplyButtons(ctx.phone, body, buttons);
+}
+function outList(ctx: FlowContext, body: string, buttonText: string, sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>) {
+  return ctx.sender?.list ? ctx.sender.list(body, buttonText, sections) : sendListMessage(ctx.phone, body, buttonText, sections);
 }
 
 interface FlowResult {
@@ -239,9 +264,9 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
           title: replaceVariables(b.text || `Opção ${i + 1}`, ctx).substring(0, 20),
         }));
         const retryMsg = "☝️ Por favor, toque em uma das opções abaixo para continuar:";
-        await sendTextMessage(ctx.phone, retryMsg);
+        await outText(ctx, retryMsg);
         if (body && buttons.length > 0) {
-          await sendReplyButtons(ctx.phone, body, buttons);
+          await outButtons(ctx, body, buttons);
         }
         result.responses.push(retryMsg);
       } else if (currentNode.nodeType === "send_list") {
@@ -256,9 +281,9 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
           })),
         }));
         const retryMsg = "☝️ Por favor, selecione uma das opções da lista para continuar:";
-        await sendTextMessage(ctx.phone, retryMsg);
+        await outText(ctx, retryMsg);
         if (body && sections.length > 0) {
-          await sendListMessage(ctx.phone, body, buttonText, sections);
+          await outList(ctx, body, buttonText, sections);
         }
         result.responses.push(retryMsg);
       }
@@ -597,7 +622,7 @@ async function executeFromNode(
     case "send_message": {
       const text = replaceVariables(config.text || "", ctx);
       if (text) {
-        await sendTextMessage(ctx.phone, text);
+        await outText(ctx, text);
         result.responses.push(text);
       }
       // Auto-advance to next node
@@ -615,7 +640,7 @@ async function executeFromNode(
         title: replaceVariables(b.text || `Opção ${i + 1}`, ctx).substring(0, 20),
       }));
       if (body && buttons.length > 0) {
-        await sendReplyButtons(ctx.phone, body, buttons);
+        await outButtons(ctx, body, buttons);
         result.interactiveMessages.push({ type: "buttons", data: { body, buttons } });
       }
       // Wait for customer response
@@ -636,7 +661,7 @@ async function executeFromNode(
         })),
       }));
       if (body && sections.length > 0) {
-        await sendListMessage(ctx.phone, body, buttonText, sections);
+        await outList(ctx, body, buttonText, sections);
         result.interactiveMessages.push({ type: "list", data: { body, buttonText, sections } });
       }
       // Wait for customer response
@@ -649,7 +674,7 @@ async function executeFromNode(
       const imageUrl = config.imageUrl || "";
       const caption = replaceVariables(config.caption || "", ctx);
       if (imageUrl) {
-        await sendImageMessage(ctx.phone, imageUrl, caption);
+        await outImage(ctx, imageUrl, caption);
         result.imageMessages.push({ imageUrl, caption: caption || "[Imagem]" });
       }
       const nextEdge = edges.find(e => e.sourceNodeId === node.id);
@@ -769,7 +794,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
       // Send prompt message if configured
       const promptText = replaceVariables(config.promptText || "", ctx);
       if (promptText) {
-        await sendTextMessage(ctx.phone, promptText);
+        await outText(ctx, promptText);
         result.responses.push(promptText);
       }
       // Wait for customer response - store which variable to save the response to
@@ -902,7 +927,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
       const seller = await getNextSellerInQueue(storeLocation);
       if (!seller) {
         const fallbackMsg = "Desculpe, no momento não temos vendedores disponíveis. Tente novamente em breve!";
-        await sendTextMessage(ctx.phone, fallbackMsg);
+        await outText(ctx, fallbackMsg);
         result.responses.push(fallbackMsg);
         const nextEdge = edges.find(e => e.sourceNodeId === node.id);
         if (nextEdge) {
@@ -975,13 +1000,13 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
           )
         : defaultMsg;
 
-      await sendTextMessage(ctx.phone, messageText);
+      await outText(ctx, messageText);
       result.responses.push(messageText);
 
       // Send seller photo as image message (WhatsApp API doesn't support photo in contact cards)
       if (seller.photoUrl) {
         const sellerCaption = `${seller.name} - ${storeLocation}`;
-        await sendImageMessage(ctx.phone, seller.photoUrl, sellerCaption);
+        await outImage(ctx, seller.photoUrl, sellerCaption);
         result.imageMessages.push({ imageUrl: seller.photoUrl, caption: sellerCaption });
       }
 
@@ -1070,7 +1095,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
 
       if (!vehicleId) {
         const fallback = config.fallbackMessage || "Desculpe, não consegui identificar o veículo de interesse. Pode me dizer qual carro você gostou?";
-        await sendTextMessage(ctx.phone, fallback);
+        await outText(ctx, fallback);
         result.responses.push(fallback);
         const nextEdge = edges.find(e => e.sourceNodeId === node.id);
         if (nextEdge) {
@@ -1082,7 +1107,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
       const vehicle = await getVehicleById(vehicleId);
       if (!vehicle) {
         const fallback = config.fallbackMessage || "Desculpe, não encontrei as fotos desse veículo no momento.";
-        await sendTextMessage(ctx.phone, fallback);
+        await outText(ctx, fallback);
         result.responses.push(fallback);
         const nextEdge = edges.find(e => e.sourceNodeId === node.id);
         if (nextEdge) {
@@ -1102,7 +1127,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
           .replace(/\{\{veiculo_interesse\}\}/gi, vehicleName)
           .replace(/\{\{loja\}\}/gi, vehicleSeller);
         intro = replaceVariables(intro, ctx);
-        await sendTextMessage(ctx.phone, intro);
+        await outText(ctx, intro);
         result.responses.push(intro);
       }
 
@@ -1129,7 +1154,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
             .replace(/\{\{ano\}\}/gi, vehicle.year?.toString() || "")
             .replace(/\{\{preco\}\}/gi, vehicle.price ? `R$ ${Number(vehicle.price).toLocaleString("pt-BR")}` : "")
             .replace(/\{\{loja\}\}/gi, vehicleSeller);
-          await sendImageMessage(ctx.phone, imageUrl, caption);
+          await outImage(ctx, imageUrl, caption);
           result.imageMessages.push({ imageUrl, caption });
           sentCount++;
           // Configurable delay between images
@@ -1200,7 +1225,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
 
       if (!vpVehicleId) {
         const fallback = config.fallbackMessage || "Desculpe, não consegui identificar o veículo de interesse. Pode me dizer qual carro você gostou?";
-        await sendTextMessage(ctx.phone, replaceVariables(fallback, ctx));
+        await outText(ctx, replaceVariables(fallback, ctx));
         result.responses.push(fallback);
         const nextEdge = edges.find(e => e.sourceNodeId === node.id);
         if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
@@ -1210,7 +1235,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
       const vpVehicle = await getVehicleById(vpVehicleId);
       if (!vpVehicle) {
         const fallback = config.fallbackMessage || "Desculpe, não encontrei os dados desse veículo no momento.";
-        await sendTextMessage(ctx.phone, replaceVariables(fallback, ctx));
+        await outText(ctx, replaceVariables(fallback, ctx));
         result.responses.push(fallback);
         const nextEdge = edges.find(e => e.sourceNodeId === node.id);
         if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
@@ -1255,7 +1280,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
       // Send main message if configured
       if (config.message) {
         const msg = replaceVehicleVars(config.message);
-        await sendTextMessage(ctx.phone, msg);
+        await outText(ctx, msg);
         result.responses.push(msg);
       }
 
@@ -1270,7 +1295,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
         if (imgIndex >= 0 && imgIndex < vpImages.length) {
           const imageUrl = vpImages[imgIndex];
           const caption = replaceVehicleVars(slot.caption);
-          await sendImageMessage(ctx.phone, imageUrl, caption);
+          await outImage(ctx, imageUrl, caption);
           result.imageMessages.push({ imageUrl, caption });
           vpSentCount++;
           if (vpSentCount < vpPhotoSlots.length) {
