@@ -427,19 +427,23 @@ export async function mirrorZernioMessage(params: {
   }
 
   // Dedupe de ECO: quando enviamos pelo CRM (zernioReply), o Zernio devolve um
-  // message.sent com id próprio → o dedupe por externalId não pega. Aqui evitamos
-  // duplicar uma mensagem de saída idêntica criada há poucos segundos pelo CRM.
+  // message.sent com id próprio → o dedupe por externalId não pega. Casamos por
+  // conteúdo entre as ÚLTIMAS mensagens de saída (por id, sem depender de horário —
+  // o timestamp do banco é naive e a conta de tempo é pouco confiável).
   if (!isInbound && conv) {
     const recent = await db.select().from(messages)
-      .where(and(eq(messages.conversationId, conv.id), eq(messages.senderType, "agent")))
-      .orderBy(desc(messages.createdAt)).limit(6);
-    const cutoff = Date.now() - 120000; // 2 min
+      .where(and(
+        eq(messages.conversationId, conv.id),
+        inArray(messages.senderType, ["agent", "bot"] as any),
+      ))
+      .orderBy(desc(messages.id)).limit(8);
+    // Só considera eco se a mensagem existente ainda NÃO tem o externalId deste eco
+    // (evita suprimir um reenvio intencional que já foi ecoado antes).
     const dup = recent.find(r =>
       (r.content || "") === (params.content || "") &&
-      new Date(r.createdAt as any).getTime() > cutoff
+      (!r.externalId || r.externalId !== params.externalId)
     );
     if (dup) {
-      // Já existe (eco da nossa própria mensagem) — grava o externalId se faltar
       if (params.externalId && !dup.externalId) {
         try { await updateMessageExternalId(dup.id, params.externalId); } catch { /* noop */ }
       }
