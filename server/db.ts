@@ -403,6 +403,10 @@ export async function mirrorZernioMessage(params: {
   } else {
     const nameIsPlaceholder = !conv.contactName || conv.contactName === conv.phone;
     const existingMeta = (conv.metadata as Record<string, unknown>) || {};
+    // Backfill: conversas antigas (criadas antes do fix do parser) podem estar
+    // sem phone/instanceName — regrava quando vier um valor melhor.
+    const needsPhone = (!conv.phone || conv.phone.trim() === "") && !!bestPhone;
+    const needsInstance = (!(conv as any).instanceName) && !!params.accountId;
     await db.update(conversations).set({
       lastMessageAt: params.timestamp,
       lastMessagePreview: preview,
@@ -411,6 +415,8 @@ export async function mirrorZernioMessage(params: {
         ...(params.zernioConversationId ? { zernioConversationId: params.zernioConversationId } : {}),
         ...(params.accountId ? { zernioAccountId: params.accountId } : {}),
       },
+      ...(needsPhone ? { phone: bestPhone } : {}),
+      ...(needsInstance ? { instanceName: params.accountId } : {}),
       ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
       ...(isInbound ? {
         unreadCount: (conv.unreadCount || 0) + 1,
