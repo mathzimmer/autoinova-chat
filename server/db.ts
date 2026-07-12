@@ -350,7 +350,7 @@ export async function mirrorZernioMessage(params: {
   mediaUrl?: string;
   externalId?: string;
   timestamp: number; // epoch ms
-}): Promise<{ conversationId: number; message: any } | null> {
+}): Promise<{ conversationId: number; message: any; isDuplicate?: boolean } | null> {
   const db = await getDb();
   if (!db) return null;
 
@@ -443,7 +443,7 @@ export async function mirrorZernioMessage(params: {
       if (params.externalId && !dup.externalId) {
         try { await updateMessageExternalId(dup.id, params.externalId); } catch { /* noop */ }
       }
-      return { conversationId: conv.id, message: dup };
+      return { conversationId: conv.id, message: dup, isDuplicate: true };
     }
   }
 

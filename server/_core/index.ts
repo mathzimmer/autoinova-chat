@@ -559,7 +559,8 @@ async function startServer() {
           externalId: m.externalId,
           timestamp: m.timestamp,
         });
-        if (result) emitNewMessage(result.conversationId, result.message);
+        // Só emite se for mensagem nova (não o eco de algo que já enviamos pelo CRM)
+        if (result && !result.isDuplicate) emitNewMessage(result.conversationId, result.message);
         return;
       }
 
