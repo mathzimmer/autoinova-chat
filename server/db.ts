@@ -116,12 +116,19 @@ export async function listConversations(filters?: {
       )!
     );
   }
-  // Filtro de fonte: matriz (canais oficiais) vs instância Evolution específica
-  if (!filters?.instance || filters.instance === "matriz") {
-    conditions.push(ne(conversations.channel, "evolution" as any));
+  // Filtro de fonte:
+  //  • "matriz" (padrão) = canais oficiais (exclui Evolution E Zernio, que têm abas próprias)
+  //  • "zernio:<accountId>" = uma conta Zernio específica
+  //  • qualquer outro = instância Evolution
+  const src = filters?.instance;
+  if (!src || src === "matriz") {
+    conditions.push(notInArray(conversations.channel, ["evolution", "zernio"] as any));
+  } else if (src.startsWith("zernio:")) {
+    conditions.push(eq(conversations.channel, "zernio" as any));
+    conditions.push(eq(conversations.instanceName, src.slice("zernio:".length)));
   } else {
     conditions.push(eq(conversations.channel, "evolution" as any));
-    conditions.push(eq(conversations.instanceName, filters.instance));
+    conditions.push(eq(conversations.instanceName, src));
   }
   const limit = Math.min(Math.max(filters?.limit ?? 100, 1), 300);
   const offset = Math.max(filters?.offset ?? 0, 0);
@@ -339,6 +346,7 @@ export async function mirrorZernioMessage(params: {
       phone: bestPhone,
       contactName: bestName || null,
       channel: "zernio" as any,
+      instanceName: params.accountId || null, // cada conta Zernio = uma instância separada
       metadata: {
         ...(params.zernioConversationId ? { zernioConversationId: params.zernioConversationId } : {}),
         ...(params.accountId ? { zernioAccountId: params.accountId } : {}),

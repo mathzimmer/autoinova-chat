@@ -21,6 +21,10 @@ export default function Inbox() {
   const { data: instances } = trpc.evolution.listInstances.useQuery(undefined, {
     refetchInterval: 30000,
   });
+  // Contas Zernio (coexistência oficial) — cada uma é uma aba/instância separada
+  const { data: zernioInstances } = trpc.zernio.listInstances.useQuery(undefined, {
+    refetchInterval: 60000,
+  });
 
   // Auto-select conversation (?conv=123) ou instância (?instance=nome) via URL
   useEffect(() => {
@@ -74,6 +78,22 @@ export default function Inbox() {
             {statusDot(inst.status)}
             <Smartphone className="h-3 w-3" />
             {inst.displayName || inst.instanceName}
+          </button>
+        ))}
+        {(zernioInstances || []).map((inst: any) => (
+          <button
+            key={inst.instanceName}
+            onClick={() => { setSource(inst.instanceName); setSelectedConversationId(null); }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+              source === inst.instanceName
+                ? "bg-blue-600 text-white"
+                : "bg-secondary text-muted-foreground hover:text-foreground"
+            }`}
+            title={`Zernio (coexistência) — ${inst.phone || ""}`}
+          >
+            {statusDot(inst.status)}
+            <MessageSquare className="h-3 w-3" />
+            {inst.displayName || inst.phone || "Zernio"}
           </button>
         ))}
       </div>

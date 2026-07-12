@@ -1132,7 +1132,7 @@ const messageRouter = router({
           } else if (conv.channel === "zernio") {
             // Conversa Zernio: responde via API do Zernio dentro da conversa dele.
             const zConvId = (conv.metadata as any)?.zernioConversationId as string | undefined;
-            const zAccId = (conv.metadata as any)?.zernioAccountId as string | undefined;
+            const zAccId = ((conv.metadata as any)?.zernioAccountId as string | undefined) || (conv as any).instanceName || undefined;
             if (!zConvId) {
               sendResult = { success: false, error: "Conversa sem zernioConversationId (só é possível responder após a 1ª mensagem do cliente)" };
             } else {
@@ -5799,6 +5799,36 @@ const capiRouter = router({
     }),
 });
 
+// ─── Zernio Router ────────────────────────────────────────────────────────────
+const zernioRouter = router({
+  // Lista as contas WhatsApp conectadas no Zernio como "instâncias" do inbox.
+  // Cada conta vira uma aba separada. Adicionar mais contas no Zernio faz elas
+  // aparecerem aqui automaticamente (não precisa mexer no código).
+  listInstances: protectedProcedure.query(async () => {
+    try {
+      const { zernioEnabled, zernioListAccounts } = await import("./zernioService");
+      if (!zernioEnabled()) return [];
+      const accounts = await zernioListAccounts();
+      return (accounts || [])
+        .filter((a: any) => String(a?.platform || "").toLowerCase() === "whatsapp")
+        .map((a: any) => {
+          const accountId = a?._id || a?.id || a?.accountId;
+          return {
+            instanceName: `zernio:${accountId}`, // valor da aba/fonte no inbox
+            accountId,
+            displayName: a?.displayName || a?.name || a?.username || "WhatsApp (Zernio)",
+            phone: a?.username || a?.phoneNumber,
+            status: a?.status || a?.connectionStatus || "connected",
+            channel: "zernio" as const,
+          };
+        });
+    } catch (err) {
+      console.error("[Zernio] listInstances falhou:", err);
+      return [];
+    }
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -5832,6 +5862,7 @@ export const appRouter = router({
   rescue: rescueRouter,
   contact: contactsRouter,
   evolution: evolutionRouter,
+  zernio: zernioRouter,
   quickReply: quickReplyRouter,
   label: labelRouter,
   reminder: reminderRouter,

@@ -533,7 +533,7 @@ async function startServer() {
           content: m.content,
           messageType: m.messageType,
           direction: "outbound",
-          senderName: m.name || "Atendente",
+          senderName: m.senderName || "Atendente",
           mediaUrl: m.mediaUrl,
           externalId: m.externalId,
           timestamp: m.timestamp,
@@ -545,7 +545,7 @@ async function startServer() {
       // ── Status de entrega ──
       if (event === "message.delivered" || event === "message.read" || event === "message.failed") {
         const msg = payload.message || {};
-        const externalId = msg._id || msg.id || msg.platformMessageId || msg.messageId;
+        const externalId = msg.id || msg._id || msg.platformMessageId || msg.messageId;
         const status = event === "message.delivered" ? "delivered" : event === "message.read" ? "read" : "failed";
         const errDetail = payload.error ? `${payload.error.code || ""}: ${payload.error.title || payload.error.message || ""}` : undefined;
         if (externalId) {

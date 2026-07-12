@@ -102,6 +102,7 @@ export interface ZernioParsedMessage {
   platform?: string;
   phone: string;
   name?: string;
+  senderName?: string;      // nome de quem enviou (negócio no outbound, cliente no inbound)
   content: string;
   messageType: "text" | "audio" | "image" | "document" | "video";
   mediaUrl?: string;
@@ -139,25 +140,31 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
   const msg = payload?.message || {};
   const conv = payload?.conversation || msg?.conversation || {};
   const account = payload?.account || {};
-  const contact = conv?.contact || conv?.participant || conv?.sender || msg?.from || {};
 
-  // telefone: WhatsApp normalmente traz em contact.phone / .platformUserId / .id
+  // O PARTICIPANTE da conversa é SEMPRE o cliente (nos dois sentidos). Em uma
+  // mensagem "outgoing" o message.sender é o negócio (CRM), então NÃO dá para
+  // usar sender.phoneNumber como telefone do cliente — usa-se conversation.*
   const phoneRaw = firstDefined<string>(
-    contact?.phone, contact?.phoneNumber, contact?.platformUserId, contact?.waId,
-    contact?.id, conv?.phone, conv?.recipientPhone, msg?.fromPhone,
+    conv?.participantId, conv?.platformConversationId, conv?.participantUsername,
+    conv?.phone, conv?.recipientPhone,
+    // fallbacks antigos (caso o shape mude)
+    conv?.contact?.phone, conv?.contact?.phoneNumber,
   );
   const phone = String(phoneRaw || "").replace(/[^\d]/g, "");
 
   const name = firstDefined<string>(
-    contact?.name, contact?.displayName, contact?.username, contact?.profileName,
-    conv?.name, conv?.title,
+    conv?.participantName, conv?.name, conv?.title,
+    conv?.contact?.name,
   );
+
+  // Nome de quem enviou (para outbound = o negócio; inbound = o cliente)
+  const senderName = firstDefined<string>(msg?.sender?.name, msg?.sender?.username);
 
   // mídia: attachments[0].url + type
   const attachments: any[] = msg?.attachments || msg?.media || [];
   const att = Array.isArray(attachments) ? attachments[0] : attachments;
   const mediaUrl = firstDefined<string>(att?.url, att?.link, att?.mediaUrl, msg?.mediaUrl);
-  const rawType = firstDefined<string>(att?.type, msg?.type, msg?.messageType);
+  const rawType = firstDefined<string>(att?.type, att?.payload?.mimeType, msg?.type, msg?.messageType);
   const messageType: ZernioParsedMessage["messageType"] = mediaUrl ? mapMediaType(rawType) : "text";
 
   const text = firstDefined<string>(msg?.text, msg?.body, msg?.content, msg?.caption) || "";
@@ -165,24 +172,27 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     ? (messageType === "audio" ? "[Áudio]" : messageType === "image" ? "[Imagem]" : messageType === "video" ? "[Vídeo]" : "[Documento]")
     : "");
 
-  const directionRaw = String(firstDefined(msg?.direction, payload?.event?.includes?.("sent") ? "outbound" : undefined) || "").toLowerCase();
+  // Zernio usa "outgoing"/"incoming"; o evento também indica o sentido
+  const directionRaw = String(msg?.direction || "").toLowerCase();
   const direction: "inbound" | "outbound" =
     payload?.event === "message.sent" ? "outbound"
-    : directionRaw === "outbound" || directionRaw === "out" ? "outbound"
+    : payload?.event === "message.received" ? "inbound"
+    : (directionRaw === "outgoing" || directionRaw === "outbound" || directionRaw === "out") ? "outbound"
     : "inbound";
 
   return {
     eventId: payload?.id,
-    conversationId: firstDefined<string>(conv?._id, conv?.id, conv?.conversationId),
-    accountId: firstDefined<string>(account?._id, account?.id, msg?.accountId),
+    conversationId: firstDefined<string>(conv?.id, conv?._id, conv?.conversationId, msg?.conversationId),
+    accountId: firstDefined<string>(account?.id, account?._id, account?.accountId, msg?.accountId),
     platform: firstDefined<string>(account?.platform, conv?.platform, msg?.platform),
     phone,
     name,
+    senderName,
     content,
     messageType,
     mediaUrl,
-    externalId: firstDefined<string>(msg?._id, msg?.id, msg?.platformMessageId, msg?.messageId),
+    externalId: firstDefined<string>(msg?.id, msg?._id, msg?.platformMessageId, msg?.messageId),
     direction,
-    timestamp: toEpochMs(firstDefined(msg?.createdAt, msg?.timestamp, payload?.timestamp)),
+    timestamp: toEpochMs(firstDefined(msg?.sentAt, msg?.receivedAt, msg?.createdAt, msg?.timestamp, payload?.timestamp)),
   };
 }
