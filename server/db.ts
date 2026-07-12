@@ -46,18 +46,6 @@ export async function getDb() {
         idle_timeout: 30,      // fecha conexões ociosas
         max_lifetime: 60 * 30, // recicla conexões a cada 30min
         connect_timeout: 10,
-        // ── Fuso: o postgres.js interpreta "timestamp without time zone" (oid 1114)
-        // como UTC, ignorando o TZ do container. Como os dados são gravados em
-        // horário de Brasília (host/DB em -03, sem horário de verão), lemos esses
-        // valores como -03 para o instante ficar correto no app/tela.
-        types: {
-          bkTimestamp: {
-            to: 1114,
-            from: [1114],
-            serialize: (v: any) => (v instanceof Date ? v.toISOString() : v),
-            parse: (v: any) => new Date(String(v).replace(" ", "T") + "-03:00"),
-          },
-        },
       });
       _db = drizzle(client);
     } catch (error) {
