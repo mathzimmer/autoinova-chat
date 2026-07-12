@@ -750,6 +750,23 @@ export const evolutionInstances = pgTable("evolutionInstances", {
 export type EvolutionInstance = typeof evolutionInstances.$inferSelect;
 export type InsertEvolutionInstance = typeof evolutionInstances.$inferInsert;
 
+// ─── Instâncias Zernio (coexistência WhatsApp oficial) ────────────────────────
+// Cada linha = uma conta WhatsApp conectada no Zernio, cadastrada manualmente.
+// apiKey é opcional: se vazio, usa a ZERNIO_API_KEY global do ambiente.
+export const zernioInstances = pgTable("zernioInstances", {
+  id:            serial("id").primaryKey(),
+  accountId:     varchar("accountId", { length: 100 }).notNull().unique(), // id da conta no Zernio
+  displayName:   varchar("displayName", { length: 255 }),
+  phone:         varchar("phone", { length: 32 }),
+  apiKey:        text("apiKey"),        // opcional; fallback para ZERNIO_API_KEY
+  active:        boolean("active").default(true).notNull(),
+  createdAt:     timestamp("createdAt").defaultNow().notNull(),
+  updatedAt:     timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type ZernioInstance = typeof zernioInstances.$inferSelect;
+export type InsertZernioInstance = typeof zernioInstances.$inferInsert;
+
 /**
  * Evolution conversations - chats from vendor WhatsApp numbers.
  */

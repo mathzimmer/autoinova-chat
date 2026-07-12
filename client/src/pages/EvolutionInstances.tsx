@@ -107,6 +107,31 @@ export default function EvolutionInstances() {
     onError: (e) => toast.error("Erro ao remover: " + e.message),
   });
 
+  // ── Zernio (coexistência oficial) — cadastro separado da Evolution ──
+  const [zCreateOpen, setZCreateOpen] = useState(false);
+  const [zAccountId, setZAccountId] = useState("");
+  const [zDisplay, setZDisplay] = useState("");
+  const [zApiKey, setZApiKey] = useState("");
+
+  const zernioQuery = trpc.zernio.listInstances.useQuery(undefined, { refetchInterval: 60000 });
+  const zAvailableQuery = trpc.zernio.availableAccounts.useQuery(
+    zApiKey ? { apiKey: zApiKey } : undefined,
+    { enabled: zCreateOpen },
+  );
+  const zCreateMutation = trpc.zernio.createInstance.useMutation({
+    onSuccess: () => {
+      zernioQuery.refetch();
+      setZCreateOpen(false); setZAccountId(""); setZDisplay(""); setZApiKey("");
+      toast.success("Instância Zernio cadastrada!");
+    },
+    onError: (e) => toast.error("Erro ao cadastrar Zernio: " + e.message),
+  });
+  const zDeleteMutation = trpc.zernio.deleteInstance.useMutation({
+    onSuccess: () => { zernioQuery.refetch(); toast.success("Instância Zernio removida"); },
+    onError: (e) => toast.error("Erro ao remover: " + e.message),
+  });
+  const zernioInstances = zernioQuery.data || [];
+
   const instances = instancesQuery.data || [];
 
   const statusColor = (status: Instance["status"]) => {
@@ -149,6 +174,10 @@ export default function EvolutionInstances() {
           <Button size="sm" onClick={() => setCreateOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Adicionar Número
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setZCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Adicionar Zernio
           </Button>
         </div>
       </div>
@@ -328,6 +357,120 @@ export default function EvolutionInstances() {
               disabled={!newName || createMutation.isPending}
             >
               {createMutation.isPending ? "Criando..." : "Criar e Gerar QR Code"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Seção Zernio (coexistência oficial) ── */}
+      <div className="mt-10">
+        <div className="flex items-center gap-2 mb-3">
+          <MessageSquare className="w-5 h-5 text-blue-500" />
+          <h2 className="text-lg font-semibold">Zernio (coexistência oficial)</h2>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Números em coexistência via Zernio — WhatsApp oficial no mesmo número do app. Cada conta vira uma aba própria no inbox.
+        </p>
+        {zernioInstances.length === 0 ? (
+          <Card className="text-center py-10 border-dashed">
+            <CardContent>
+              <MessageSquare className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+              <p className="text-muted-foreground mb-4">Nenhuma instância Zernio cadastrada</p>
+              <Button variant="secondary" onClick={() => setZCreateOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Cadastrar Zernio
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {zernioInstances.map((inst: any) => (
+              <Card key={inst.id} className="relative overflow-hidden">
+                <div className={`absolute top-0 left-0 right-0 h-1 ${inst.status === "connected" ? "bg-blue-500" : "bg-red-500"}`} />
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
+                        <MessageSquare className="w-5 h-5 text-blue-500" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">{inst.displayName}</CardTitle>
+                        <p className="text-xs text-muted-foreground">{inst.phone || inst.accountId}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      <span className={`w-2 h-2 rounded-full mr-1 ${inst.status === "connected" ? "bg-blue-500" : "bg-red-500"}`} />
+                      Zernio
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href={`/inbox?instance=${encodeURIComponent(inst.instanceName)}`}>
+                      <Button size="sm" variant="outline" className="flex-1">
+                        <MessageSquare className="w-3 h-3 mr-1" />
+                        Mensagens
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm" variant="outline" className="text-red-500 hover:text-red-600"
+                      onClick={() => { if (confirm(`Remover instância Zernio "${inst.displayName}"?`)) zDeleteMutation.mutate({ id: inst.id }); }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dialog: cadastrar Zernio */}
+      <Dialog open={zCreateOpen} onOpenChange={setZCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cadastrar instância Zernio</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Nome de Exibição</Label>
+              <Input placeholder="ex: Recepção / Bianca" value={zDisplay} onChange={e => setZDisplay(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Account ID (Zernio) *</Label>
+              <Input placeholder="ex: 6a52a4ba3ecd8aa344b8c656" value={zAccountId} onChange={e => setZAccountId(e.target.value.trim())} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">
+                O ID da conta WhatsApp no Zernio. {zAvailableQuery.data && zAvailableQuery.data.length > 0 ? "Ou escolha abaixo:" : "Você encontra no painel do Zernio (Accounts)."}
+              </p>
+              {(zAvailableQuery.data || []).length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(zAvailableQuery.data || []).map((a: any) => (
+                    <button
+                      key={a.accountId}
+                      type="button"
+                      onClick={() => { setZAccountId(a.accountId); if (!zDisplay) setZDisplay(a.displayName || a.phone || ""); }}
+                      className={`px-2 py-1 rounded text-xs border ${zAccountId === a.accountId ? "bg-blue-600 text-white border-blue-600" : "bg-secondary text-muted-foreground"}`}
+                    >
+                      {a.displayName || a.phone || a.accountId}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <Label>API Key (opcional)</Label>
+              <Input placeholder="deixe vazio para usar a chave global do servidor" value={zApiKey} onChange={e => setZApiKey(e.target.value.trim())} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">Só preencha se esta conta usa uma chave Zernio diferente da configurada no servidor.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setZCreateOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={() => zCreateMutation.mutate({ accountId: zAccountId, displayName: zDisplay || undefined, apiKey: zApiKey || undefined })}
+              disabled={!zAccountId || zCreateMutation.isPending}
+            >
+              {zCreateMutation.isPending ? "Cadastrando..." : "Cadastrar"}
             </Button>
           </DialogFooter>
         </DialogContent>

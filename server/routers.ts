@@ -860,20 +860,24 @@ const conversationRouter = router({
       const { eq, and: andOp, ne: neOp } = await import("drizzle-orm");
 
       const isMatriz = input.instance === "matriz";
+      const isZernio = input.instance.startsWith("zernio:");
+      const zAccountId = isZernio ? input.instance.slice("zernio:".length) : null;
 
       // Localiza conversa existente na fonte escolhida
       let conv = (await db.select().from(convTable).where(
         isMatriz
-          ? andOp(eq(convTable.phone, phone), neOp(convTable.channel, "evolution" as any))
-          : andOp(eq(convTable.phone, phone), eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
+          ? andOp(eq(convTable.phone, phone), neOp(convTable.channel, "evolution" as any), neOp(convTable.channel, "zernio" as any))
+          : isZernio
+            ? andOp(eq(convTable.phone, phone), eq(convTable.channel, "zernio" as any), eq(convTable.instanceName, zAccountId!))
+            : andOp(eq(convTable.phone, phone), eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
       ).limit(1))[0];
 
       if (!conv) {
         const inserted = await db.insert(convTable).values({
           phone,
           contactName: input.name || null,
-          channel: isMatriz ? "whatsapp" : ("evolution" as any),
-          instanceName: isMatriz ? null : input.instance,
+          channel: isMatriz ? "whatsapp" : isZernio ? ("zernio" as any) : ("evolution" as any),
+          instanceName: isMatriz ? null : isZernio ? zAccountId : input.instance,
           status: "open",
           aiActive: false, // conversa iniciada pelo atendente: sem IA
           assignedTo: ctx.user.id,
@@ -918,6 +922,27 @@ const conversationRouter = router({
                 emitNewMessage(conv.id, msg);
               }
             } else sendError = "WhatsApp oficial não configurado";
+          } else if (isZernio) {
+            // No Zernio só dá para responder DENTRO de uma conversa existente
+            // (a API precisa do zernioConversationId). Iniciar do zero exige que
+            // o cliente já tenha falado — ou envio de template (fora do escopo).
+            const zConvId = (conv.metadata as any)?.zernioConversationId as string | undefined;
+            if (!zConvId) {
+              sendError = "No Zernio, só é possível responder a uma conversa iniciada pelo cliente. Este número ainda não tem conversa ativa (fora da janela, seria preciso um template).";
+            } else {
+              const { zernioReply } = await import("./zernioService");
+              const r = await zernioReply(zConvId, input.firstMessage.trim(), zAccountId || undefined);
+              if (!r.success) {
+                sendError = r.error || "Falha no envio Zernio";
+              } else {
+                const msg = await createMessage({
+                  conversationId: conv.id, content: input.firstMessage.trim(),
+                  senderType: "agent", senderName: ctx.user.name || "Atendente",
+                  messageType: "text", externalId: r.messageId,
+                });
+                emitNewMessage(conv.id, msg);
+              }
+            }
           } else {
             const { evolutionSendText } = await import("./evolutionService");
             const r = await evolutionSendText(input.instance, phone, input.firstMessage.trim());
@@ -5801,32 +5826,63 @@ const capiRouter = router({
 
 // ─── Zernio Router ────────────────────────────────────────────────────────────
 const zernioRouter = router({
-  // Lista as contas WhatsApp conectadas no Zernio como "instâncias" do inbox.
-  // Cada conta vira uma aba separada. Adicionar mais contas no Zernio faz elas
-  // aparecerem aqui automaticamente (não precisa mexer no código).
+  // Instâncias Zernio CADASTRADAS (uma aba por conta). Lê da tabela dedicada —
+  // nada a ver com Evolution.
   listInstances: protectedProcedure.query(async () => {
-    try {
-      const { zernioEnabled, zernioListAccounts } = await import("./zernioService");
-      if (!zernioEnabled()) return [];
-      const accounts = await zernioListAccounts();
-      return (accounts || [])
-        .filter((a: any) => String(a?.platform || "").toLowerCase() === "whatsapp")
-        .map((a: any) => {
-          const accountId = a?._id || a?.id || a?.accountId;
-          return {
-            instanceName: `zernio:${accountId}`, // valor da aba/fonte no inbox
-            accountId,
-            displayName: a?.displayName || a?.name || a?.username || "WhatsApp (Zernio)",
-            phone: a?.username || a?.phoneNumber,
-            status: a?.status || a?.connectionStatus || "connected",
-            channel: "zernio" as const,
-          };
-        });
-    } catch (err) {
-      console.error("[Zernio] listInstances falhou:", err);
-      return [];
-    }
+    const { listZernioInstances } = await import("./db");
+    const rows = await listZernioInstances();
+    return rows.map((r: any) => ({
+      id: r.id,
+      instanceName: `zernio:${r.accountId}`, // valor da aba/fonte no inbox
+      accountId: r.accountId,
+      displayName: r.displayName || r.phone || "WhatsApp (Zernio)",
+      phone: r.phone,
+      status: r.active ? "connected" : "disconnected",
+      channel: "zernio" as const,
+    }));
   }),
+
+  // Lista as contas disponíveis na conta Zernio (via API) para o usuário escolher
+  // qual cadastrar. Aceita uma apiKey opcional (se ainda não estiver no .env).
+  availableAccounts: protectedProcedure
+    .input(z.object({ apiKey: z.string().optional() }).optional())
+    .query(async ({ input }) => {
+      try {
+        const { zernioListAccounts } = await import("./zernioService");
+        const accounts = await zernioListAccounts(input?.apiKey);
+        return (accounts || [])
+          .filter((a: any) => String(a?.platform || "").toLowerCase() === "whatsapp")
+          .map((a: any) => ({
+            accountId: a?._id || a?.id || a?.accountId,
+            displayName: a?.displayName || a?.name || a?.username,
+            phone: a?.username || a?.phoneNumber,
+          }));
+      } catch (err) {
+        console.error("[Zernio] availableAccounts falhou:", err);
+        return [];
+      }
+    }),
+
+  // Cadastra (ou atualiza) uma instância Zernio
+  createInstance: protectedProcedure
+    .input(z.object({
+      accountId: z.string().min(4),
+      displayName: z.string().optional(),
+      phone: z.string().optional(),
+      apiKey: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { createZernioInstance } = await import("./db");
+      return createZernioInstance(input);
+    }),
+
+  deleteInstance: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { deleteZernioInstance } = await import("./db");
+      await deleteZernioInstance(input.id);
+      return { success: true };
+    }),
 });
 
 export const appRouter = router({

@@ -293,6 +293,47 @@ export async function mirrorEvolutionMessage(params: {
   return { conversationId: conv.id, message };
 }
 
+// ─── CRUD de instâncias Zernio ────────────────────────────────────────────────
+export async function listZernioInstances() {
+  const db = await getDb();
+  if (!db) return [];
+  const { zernioInstances } = await import("../drizzle/schema");
+  return db.select().from(zernioInstances).orderBy(desc(zernioInstances.createdAt));
+}
+
+export async function createZernioInstance(data: {
+  accountId: string; displayName?: string; phone?: string; apiKey?: string;
+}) {
+  const db = await getDb();
+  if (!db) throw new Error("DB indisponível");
+  const { zernioInstances } = await import("../drizzle/schema");
+  const inserted = await db.insert(zernioInstances).values({
+    accountId: data.accountId,
+    displayName: data.displayName || null,
+    phone: data.phone || null,
+    apiKey: data.apiKey || null,
+    active: true,
+  }).onConflictDoUpdate({
+    target: zernioInstances.accountId,
+    set: { displayName: data.displayName || null, phone: data.phone || null, ...(data.apiKey ? { apiKey: data.apiKey } : {}), active: true, updatedAt: new Date() },
+  }).returning();
+  return inserted[0];
+}
+
+export async function deleteZernioInstance(id: number) {
+  const db = await getDb();
+  if (!db) return;
+  const { zernioInstances } = await import("../drizzle/schema");
+  await db.delete(zernioInstances).where(eq(zernioInstances.id, id));
+}
+
+export async function getZernioInstanceByAccount(accountId: string) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const { zernioInstances } = await import("../drizzle/schema");
+  return (await db.select().from(zernioInstances).where(eq(zernioInstances.accountId, accountId)).limit(1))[0];
+}
+
 // ─── Espelhamento de mensagens do Zernio (coexistência WhatsApp oficial) ──────
 // Isolado do fluxo Meta/Evolution. Conversas ficam com channel "zernio" e o
 // zernioConversationId salvo em metadata (essencial para responder pela API).

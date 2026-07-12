@@ -45,9 +45,9 @@ export function verifyZernioSignature(rawBody: Buffer | string, signatureHeader:
 }
 
 // ─── Chamada genérica à API do Zernio ─────────────────────────────────────────
-async function zernioFetch(path: string, init?: RequestInit): Promise<any> {
-  const key = process.env.ZERNIO_API_KEY;
-  if (!key) throw new Error("ZERNIO_API_KEY não configurado");
+async function zernioFetch(path: string, init?: RequestInit, apiKey?: string): Promise<any> {
+  const key = apiKey || process.env.ZERNIO_API_KEY;
+  if (!key) throw new Error("ZERNIO_API_KEY não configurado (nem chave por instância)");
   const res = await fetch(`${ZERNIO_API_BASE}${path}`, {
     ...init,
     headers: {
@@ -65,9 +65,21 @@ async function zernioFetch(path: string, init?: RequestInit): Promise<any> {
   return json;
 }
 
-/** Lista as contas conectadas (para descobrir o accountId do WhatsApp). */
-export async function zernioListAccounts(): Promise<any[]> {
-  const data = await zernioFetch("/accounts");
+/** Resolve a chave de API de uma conta: chave da instância cadastrada ou a global. */
+async function resolveApiKey(accountId?: string): Promise<string | undefined> {
+  if (accountId) {
+    try {
+      const { getZernioInstanceByAccount } = await import("./db");
+      const inst = await getZernioInstanceByAccount(accountId);
+      if (inst?.apiKey) return inst.apiKey;
+    } catch { /* fallback global */ }
+  }
+  return process.env.ZERNIO_API_KEY;
+}
+
+/** Lista as contas conectadas no Zernio (para descobrir/validar o accountId). */
+export async function zernioListAccounts(apiKey?: string): Promise<any[]> {
+  const data = await zernioFetch("/accounts", undefined, apiKey);
   return data?.accounts || data?.data || (Array.isArray(data) ? data : []);
 }
 
@@ -82,11 +94,12 @@ export async function zernioReply(
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
     const acc = accountId || zernioAccountId();
-    if (!acc) return { success: false, error: "ZERNIO_ACCOUNT_ID não configurado" };
+    if (!acc) return { success: false, error: "accountId da conta Zernio não informado" };
+    const apiKey = await resolveApiKey(acc);
     const data = await zernioFetch(`/inbox/conversations/${encodeURIComponent(conversationId)}/messages`, {
       method: "POST",
       body: JSON.stringify({ accountId: acc, message }),
-    });
+    }, apiKey);
     const msgId = data?.message?._id || data?.message?.id || data?._id || data?.id;
     return { success: true, messageId: msgId ? String(msgId) : undefined };
   } catch (err) {
