@@ -132,6 +132,28 @@ export default function EvolutionInstances() {
   });
   const zernioInstances = zernioQuery.data || [];
 
+  // ── API Oficial adicional (multi-número) ──
+  const [oCreateOpen, setOCreateOpen] = useState(false);
+  const [oPhoneNumberId, setOPhoneNumberId] = useState("");
+  const [oDisplay, setODisplay] = useState("");
+  const [oPhoneDisplay, setOPhoneDisplay] = useState("");
+  const [oToken, setOToken] = useState("");
+
+  const officialQuery = trpc.whatsappNumber.listInstances.useQuery(undefined, { refetchInterval: 60000 });
+  const oCreateMutation = trpc.whatsappNumber.createInstance.useMutation({
+    onSuccess: () => {
+      officialQuery.refetch();
+      setOCreateOpen(false); setOPhoneNumberId(""); setODisplay(""); setOPhoneDisplay(""); setOToken("");
+      toast.success("Número oficial cadastrado!");
+    },
+    onError: (e) => toast.error("Erro ao cadastrar número: " + e.message),
+  });
+  const oDeleteMutation = trpc.whatsappNumber.deleteInstance.useMutation({
+    onSuccess: () => { officialQuery.refetch(); toast.success("Número oficial removido"); },
+    onError: (e) => toast.error("Erro ao remover: " + e.message),
+  });
+  const officialInstances = officialQuery.data || [];
+
   const instances = instancesQuery.data || [];
 
   const statusColor = (status: Instance["status"]) => {
@@ -178,6 +200,10 @@ export default function EvolutionInstances() {
           <Button size="sm" variant="secondary" onClick={() => setZCreateOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Adicionar Zernio
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setOCreateOpen(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Adicionar API Oficial
           </Button>
         </div>
       </div>
@@ -471,6 +497,105 @@ export default function EvolutionInstances() {
               disabled={!zAccountId || zCreateMutation.isPending}
             >
               {zCreateMutation.isPending ? "Cadastrando..." : "Cadastrar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Seção API Oficial adicional ── */}
+      <div className="mt-10">
+        <div className="flex items-center gap-2 mb-3">
+          <Wifi className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-semibold">API Oficial (números adicionais)</h2>
+        </div>
+        <p className="text-sm text-muted-foreground mb-4">
+          Números oficiais da WhatsApp Cloud API além do número da Matriz. Cada um vira uma aba própria no inbox, com IA e fluxos.
+        </p>
+        {officialInstances.length === 0 ? (
+          <Card className="text-center py-10 border-dashed">
+            <CardContent>
+              <Wifi className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+              <p className="text-muted-foreground mb-4">Nenhum número oficial adicional</p>
+              <Button variant="secondary" onClick={() => setOCreateOpen(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Cadastrar Número Oficial
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {officialInstances.map((inst: any) => (
+              <Card key={inst.id} className="relative overflow-hidden">
+                <div className="absolute top-0 left-0 right-0 h-1 bg-primary" />
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                        <Wifi className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <CardTitle className="text-base">{inst.displayName}</CardTitle>
+                        <p className="text-xs text-muted-foreground">{inst.phone || inst.phoneNumberId}</p>
+                      </div>
+                    </div>
+                    <Badge variant="outline" className="text-xs">Oficial</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-2">
+                    <Link href={`/inbox?instance=${encodeURIComponent(inst.instanceName)}`}>
+                      <Button size="sm" variant="outline" className="flex-1">
+                        <MessageSquare className="w-3 h-3 mr-1" />
+                        Mensagens
+                      </Button>
+                    </Link>
+                    <Button
+                      size="sm" variant="outline" className="text-red-500 hover:text-red-600"
+                      onClick={() => { if (confirm(`Remover número oficial "${inst.displayName}"?`)) oDeleteMutation.mutate({ id: inst.id }); }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Dialog: cadastrar API Oficial */}
+      <Dialog open={oCreateOpen} onOpenChange={setOCreateOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cadastrar número API Oficial</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Nome de Exibição *</Label>
+              <Input placeholder="ex: Pós-venda" value={oDisplay} onChange={e => setODisplay(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Phone Number ID (Meta) *</Label>
+              <Input placeholder="ex: 1186992007834259" value={oPhoneNumberId} onChange={e => setOPhoneNumberId(e.target.value.trim())} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">Encontrado no painel da Meta (WhatsApp → API Setup).</p>
+            </div>
+            <div>
+              <Label>Número (exibição)</Label>
+              <Input placeholder="ex: +55 51 99999-9999" value={oPhoneDisplay} onChange={e => setOPhoneDisplay(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label>Access Token (opcional)</Label>
+              <Input placeholder="deixe vazio para usar o token global do servidor" value={oToken} onChange={e => setOToken(e.target.value.trim())} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">Só preencha se este número usa um token diferente do configurado no .env.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOCreateOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={() => oCreateMutation.mutate({ phoneNumberId: oPhoneNumberId, displayName: oDisplay, phoneDisplay: oPhoneDisplay || undefined, accessToken: oToken || undefined })}
+              disabled={!oPhoneNumberId || !oDisplay || oCreateMutation.isPending}
+            >
+              {oCreateMutation.isPending ? "Cadastrando..." : "Cadastrar"}
             </Button>
           </DialogFooter>
         </DialogContent>

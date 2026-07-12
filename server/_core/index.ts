@@ -165,14 +165,26 @@ async function startServer() {
         return res.sendStatus(403);
       }
 
-      // ── Multi-number routing: check if this phone_number_id is a registered WA number ──
+      // ── Multi-número: se o phone_number_id for de um número oficial registrado,
+      // espelha no inbox unificado (channel whatsapp + instanceName) e roda a IA.
       const phoneNumberId = body?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
       if (phoneNumberId) {
-        const handled = await handleWNWebhook(body);
-        if (handled) {
-          return res.sendStatus(200);
+        try {
+          const { getWhatsappNumberByPhoneNumberId } = await import("../whatsappMultiNumber");
+          const registered = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
+          // Só desvia se for um número ADICIONAL (não o número padrão do .env)
+          const envNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+          if (registered && registered.isActive && phoneNumberId !== envNumberId) {
+            const { handleOfficialMessage } = await import("../officialInstance");
+            // status updates ainda seguem o fluxo padrão abaixo; mensagens vão para o handler oficial
+            if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+              await handleOfficialMessage(body, phoneNumberId);
+              return res.sendStatus(200);
+            }
+          }
+        } catch (e) {
+          console.error("[Official] roteamento falhou:", e);
         }
-        // Not handled by multi-number → fall through to main handler
       }
 
       // Process incoming messages from WhatsApp Cloud API
@@ -530,6 +542,11 @@ async function startServer() {
           emitNewMessage(result.conversationId, result.message);
           emitConversationUpdate(result.conversationId, {});
           await updateLastCustomerMessageAt(result.conversationId, m.timestamp).catch(() => {});
+          // Dispara IA + fluxos (assíncrono, para responder rápido ao webhook)
+          const { runZernioAI } = await import("../zernioAI");
+          runZernioAI(result.conversationId, content).catch((e) =>
+            console.error("[Zernio] runZernioAI falhou:", e)
+          );
         }
         return;
       }

@@ -1,4 +1,4 @@
-import { eq, ne, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull } from "drizzle-orm";
+import { eq, ne, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -122,10 +122,16 @@ export async function listConversations(filters?: {
   //  • qualquer outro = instância Evolution
   const src = filters?.instance;
   if (!src || src === "matriz") {
+    // Matriz = canais oficiais SEM instância (número da matriz via .env + IG/FB/web).
+    // Números oficiais adicionais e Zernio/Evolution têm abas próprias.
     conditions.push(notInArray(conversations.channel, ["evolution", "zernio"] as any));
+    conditions.push(isNull(conversations.instanceName));
   } else if (src.startsWith("zernio:")) {
     conditions.push(eq(conversations.channel, "zernio" as any));
     conditions.push(eq(conversations.instanceName, src.slice("zernio:".length)));
+  } else if (src.startsWith("official:")) {
+    conditions.push(eq(conversations.channel, "whatsapp" as any));
+    conditions.push(eq(conversations.instanceName, src.slice("official:".length)));
   } else {
     conditions.push(eq(conversations.channel, "evolution" as any));
     conditions.push(eq(conversations.instanceName, src));
@@ -334,6 +340,109 @@ export async function getZernioInstanceByAccount(accountId: string) {
   return (await db.select().from(zernioInstances).where(eq(zernioInstances.accountId, accountId)).limit(1))[0];
 }
 
+// ─── Espelhamento de mensagens de um NÚMERO OFICIAL adicional (multi-número) ──
+// Conversas ficam com channel "whatsapp" + instanceName = phoneNumberId, para
+// aparecerem numa aba própria no inbox (o número da Matriz tem instanceName null).
+export async function mirrorOfficialMessage(params: {
+  phoneNumberId: string;
+  phone: string;
+  contactName?: string;
+  content: string;
+  transcript?: string;
+  messageType: string; // text|image|audio|video|document
+  direction: "inbound" | "outbound";
+  senderName: string;
+  mediaUrl?: string;
+  externalId?: string;
+  timestamp: number;
+}): Promise<{ conversationId: number; message: any; isDuplicate?: boolean } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  if (params.externalId) {
+    const existing = await getMessageByExternalId(params.externalId);
+    if (existing) return null;
+  }
+
+  const isInbound = params.direction === "inbound";
+  const bestPhone = params.phone;
+  const bestName = params.contactName && params.contactName !== bestPhone ? params.contactName : undefined;
+
+  let conv = (await db.select().from(conversations)
+    .where(and(
+      eq(conversations.channel, "whatsapp" as any),
+      eq(conversations.instanceName, params.phoneNumberId),
+      eq(conversations.phone, bestPhone),
+    )).limit(1))[0];
+
+  const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
+
+  if (!conv) {
+    const inserted = await db.insert(conversations).values({
+      phone: bestPhone,
+      contactName: bestName || null,
+      channel: "whatsapp" as any,
+      instanceName: params.phoneNumberId,
+      metadata: { officialPhoneNumberId: params.phoneNumberId },
+      status: "open",
+      aiActive: true,
+      unreadCount: isInbound ? 1 : 0,
+      lastMessageAt: params.timestamp,
+      lastCustomerMessageAt: isInbound ? params.timestamp : null,
+      lastMessagePreview: preview,
+    }).returning();
+    conv = inserted[0];
+  } else {
+    const nameIsPlaceholder = !conv.contactName || conv.contactName === conv.phone;
+    await db.update(conversations).set({
+      lastMessageAt: params.timestamp,
+      lastMessagePreview: preview,
+      ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
+      ...(isInbound ? { unreadCount: (conv.unreadCount || 0) + 1, lastCustomerMessageAt: params.timestamp } : {}),
+      updatedAt: new Date(),
+    }).where(eq(conversations.id, conv.id));
+  }
+
+  // Dedupe de eco (mensagens enviadas pelo próprio CRM)
+  if (!isInbound && conv) {
+    const recent = await db.select().from(messages)
+      .where(and(eq(messages.conversationId, conv.id), inArray(messages.senderType, ["agent", "bot"] as any)))
+      .orderBy(desc(messages.id)).limit(8);
+    const dup = recent.find(r => (r.content || "") === (params.content || "") && (!r.externalId || r.externalId !== params.externalId));
+    if (dup) {
+      if (params.externalId && !dup.externalId) { try { await updateMessageExternalId(dup.id, params.externalId); } catch { /* noop */ } }
+      return { conversationId: conv.id, message: dup, isDuplicate: true };
+    }
+  }
+
+  const typeMap: Record<string, string> = { sticker: "image", reaction: "text" };
+  const mappedType = typeMap[params.messageType] || params.messageType;
+  const message = await createMessage({
+    conversationId: conv.id,
+    content: params.content || `[${params.messageType}]`,
+    senderType: isInbound ? "customer" : "agent",
+    senderName: params.senderName,
+    messageType: mappedType as any,
+    metadata: (params.mediaUrl || params.transcript)
+      ? { ...(params.mediaUrl ? { mediaUrl: params.mediaUrl } : {}), ...(params.transcript ? { transcribedText: params.transcript } : {}) }
+      : undefined,
+    externalId: params.externalId,
+  });
+
+  try {
+    if (bestPhone) {
+      const existing = await getContactByPhone(bestPhone);
+      if (!existing) {
+        await createContact({ name: bestName || bestPhone, phone: bestPhone, conversationId: conv.id, source: "whatsapp", createdByInstance: params.phoneNumberId, isActive: true } as any);
+      } else if (isInbound && bestName && (!existing.name || existing.name === existing.phone || existing.name === "Cliente")) {
+        await updateContact(existing.id, { name: bestName });
+      }
+    }
+  } catch (err) { console.error("[Official] sync contato falhou:", err); }
+
+  return { conversationId: conv.id, message };
+}
+
 // ─── Espelhamento de mensagens do Zernio (coexistência WhatsApp oficial) ──────
 // Isolado do fluxo Meta/Evolution. Conversas ficam com channel "zernio" e o
 // zernioConversationId salvo em metadata (essencial para responder pela API).
@@ -393,7 +502,7 @@ export async function mirrorZernioMessage(params: {
         ...(params.accountId ? { zernioAccountId: params.accountId } : {}),
       },
       status: "open",
-      aiActive: false, // por segurança começa sem IA (igual Evolution); ligar por conversa
+      aiActive: true, // IA ligada por padrão (pode pausar por conversa no painel)
       unreadCount: isInbound ? 1 : 0,
       lastMessageAt: params.timestamp,
       lastCustomerMessageAt: isInbound ? params.timestamp : null,

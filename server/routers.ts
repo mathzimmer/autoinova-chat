@@ -1012,6 +1012,9 @@ const messageRouter = router({
             const r = await evolutionSendMedia(evoInstance, evoJid!, url, "image", caption);
             result = { success: true, messageId: (r as any)?.key?.id ? `evo_${(r as any).key.id}` : undefined };
           } catch (e) { result = { success: false, error: e instanceof Error ? e.message : "erro" }; }
+        } else if (conv.channel === "whatsapp" && (conv as any).instanceName) {
+          const { sendMediaFromNumber } = await import("./whatsappMultiNumber");
+          result = await sendMediaFromNumber((conv as any).instanceName, conv.phone, url, "image", caption);
         } else {
           result = await sendImageMessage(conv.phone, url, caption);
         }
@@ -1185,6 +1188,10 @@ const messageRouter = router({
               const { zernioReply } = await import("./zernioService");
               sendResult = await zernioReply(zConvId, input.content, zAccId);
             }
+          } else if (conv.channel === "whatsapp" && (conv as any).instanceName && conv.phone) {
+            // Número oficial ADICIONAL: envia pelo token daquele número
+            const { sendTextFromNumber } = await import("./whatsappMultiNumber");
+            sendResult = await sendTextFromNumber((conv as any).instanceName, conv.phone, input.content);
           } else if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
             sendResult = await sendTextMessage(conv.phone, input.content);
           } else if (conv.channel === "instagram" && isInstagramConfigured() && conv.platformUserId) {
@@ -1358,6 +1365,16 @@ const messageRouter = router({
             .then((r) => console.log(`[SendMedia] ${r.success ? "✅" : "❌"} Zernio ${input.mediaType}:`, r.error || r.messageId))
             .catch((err) => console.error(`[SendMedia] ❌ Zernio ${input.mediaType} falhou:`, err));
         }
+        return message;
+      }
+
+      // === ENVIO POR NÚMERO OFICIAL ADICIONAL (multi-número) ===
+      if (convForSend?.channel === "whatsapp" && (convForSend as any).instanceName && convForSend.phone) {
+        const { sendMediaFromNumber } = await import("./whatsappMultiNumber");
+        const urlToSend = input.mediaType === "audio" ? (whatsappAudioUrl || mediaUrl) : mediaUrl;
+        sendMediaFromNumber((convForSend as any).instanceName, convForSend.phone, urlToSend, input.mediaType, input.caption)
+          .then((r) => console.log(`[SendMedia] ${r.success ? "✅" : "❌"} Oficial ${input.mediaType}:`, r.error || r.messageId))
+          .catch((err) => console.error(`[SendMedia] ❌ Oficial ${input.mediaType} falhou:`, err));
         return message;
       }
 
@@ -5924,6 +5941,44 @@ const zernioRouter = router({
     }),
 });
 
+// ─── WhatsApp API Oficial (multi-número) Router ───────────────────────────────
+const whatsappNumberRouter = router({
+  // Lista números oficiais adicionais como "instâncias" (abas no inbox)
+  listInstances: protectedProcedure.query(async () => {
+    const { listWhatsappNumbers } = await import("./whatsappMultiNumber");
+    const rows = await listWhatsappNumbers();
+    return (rows || []).map((r: any) => ({
+      id: r.id,
+      instanceName: `official:${r.phoneNumberId}`,
+      phoneNumberId: r.phoneNumberId,
+      displayName: r.displayName,
+      phone: r.phoneDisplay,
+      status: r.isActive ? "connected" : "disconnected",
+      channel: "whatsapp" as const,
+    }));
+  }),
+
+  createInstance: protectedProcedure
+    .input(z.object({
+      phoneNumberId: z.string().min(4),
+      displayName: z.string().min(1),
+      phoneDisplay: z.string().optional(),
+      accessToken: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { createWhatsappNumber } = await import("./whatsappMultiNumber");
+      return createWhatsappNumber(input);
+    }),
+
+  deleteInstance: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { deleteWhatsappNumber } = await import("./whatsappMultiNumber");
+      await deleteWhatsappNumber(input.id);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -5958,6 +6013,7 @@ export const appRouter = router({
   contact: contactsRouter,
   evolution: evolutionRouter,
   zernio: zernioRouter,
+  whatsappNumber: whatsappNumberRouter,
   quickReply: quickReplyRouter,
   label: labelRouter,
   reminder: reminderRouter,

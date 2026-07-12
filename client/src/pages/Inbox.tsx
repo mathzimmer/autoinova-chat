@@ -25,6 +25,10 @@ export default function Inbox() {
   const { data: zernioInstances } = trpc.zernio.listInstances.useQuery(undefined, {
     refetchInterval: 60000,
   });
+  // Números de API Oficial adicionais — cada um é uma aba própria
+  const { data: officialInstances } = trpc.whatsappNumber.listInstances.useQuery(undefined, {
+    refetchInterval: 60000,
+  });
 
   // Auto-select conversation (?conv=123) ou instância (?instance=nome) via URL
   useEffect(() => {
@@ -94,6 +98,22 @@ export default function Inbox() {
             {statusDot(inst.status)}
             <MessageSquare className="h-3 w-3" />
             {inst.displayName || inst.phone || "Zernio"}
+          </button>
+        ))}
+        {(officialInstances || []).map((inst: any) => (
+          <button
+            key={inst.instanceName}
+            onClick={() => { setSource(inst.instanceName); setSelectedConversationId(null); }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+              source === inst.instanceName
+                ? "bg-primary text-primary-foreground"
+                : "bg-secondary text-muted-foreground hover:text-foreground"
+            }`}
+            title={`API Oficial — ${inst.phone || ""}`}
+          >
+            {statusDot(inst.status)}
+            <Building2 className="h-3 w-3" />
+            {inst.displayName || inst.phone || "Oficial"}
           </button>
         ))}
       </div>
