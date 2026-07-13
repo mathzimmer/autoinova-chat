@@ -1161,20 +1161,10 @@ function AdsConfigPanel() {
   if (!form) return <div className="mb-6 p-4 rounded-xl border border-border bg-card text-sm text-muted-foreground">Carregando configurações…</div>;
 
   const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
-  const inputCls = "w-full h-8 text-sm rounded-md border border-border bg-background px-2";
 
   const onSave = () => {
-    saveMut.mutate({
-      pageId: form.pageId || undefined,
-      instagramActorId: form.instagramActorId || undefined,
-      whatsappNumber: form.whatsappNumber || undefined,
-      dailyBudgetCents: Math.round(parseFloat(form.dailyBudgetReais || "30") * 100),
-      welcomeMessageTemplate: form.welcomeMessageTemplate || undefined,
-      targetCityKey: form.targetCityKey || undefined,
-      targetRadiusKm: Number(form.targetRadiusKm) || 80,
-      ageMin: Number(form.ageMin) || 25,
-      ageMax: Number(form.ageMax) || 65,
-    });
+    // Só a mensagem de boas-vindas é editável aqui; o resto fica na Meta.
+    saveMut.mutate({ welcomeMessageTemplate: form.welcomeMessageTemplate || undefined });
   };
 
   return (
@@ -1187,59 +1177,24 @@ function AdsConfigPanel() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div>
-          <label className="text-xs text-muted-foreground">ID da Página (Facebook)</label>
-          <input className={inputCls} value={form.pageId} onChange={(e) => set("pageId", e.target.value.trim())} placeholder="ex: 4901993" />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Instagram Actor ID (opcional)</label>
-          <input className={inputCls} value={form.instagramActorId} onChange={(e) => set("instagramActorId", e.target.value.trim())} placeholder="ex: 8045575383" />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Número WhatsApp de destino</label>
-          <input className={inputCls} value={form.whatsappNumber} onChange={(e) => set("whatsappNumber", e.target.value.replace(/\D/g, ""))} placeholder="ex: 555131919081" />
-          <p className="text-[10px] text-muted-foreground mt-0.5">No CTWA, o número real é o WhatsApp vinculado à Página. Este é o do link wa.me.</p>
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Orçamento diário (R$)</label>
-          <input className={inputCls} type="number" step="1" min="1" value={form.dailyBudgetReais} onChange={(e) => set("dailyBudgetReais", e.target.value)} />
-        </div>
-      </div>
-
       <div>
         <label className="text-xs text-muted-foreground">Mensagem de boas-vindas do anúncio (o cliente envia ao clicar)</label>
         <Textarea rows={2} value={form.welcomeMessageTemplate}
           onChange={(e) => set("welcomeMessageTemplate", e.target.value)}
           placeholder="Olá, tenho interesse no veículo: {{marca}} {{modelo}} {{ano}} {{id}}" className="text-sm" />
         <p className="text-[10px] text-muted-foreground mt-0.5">
-          Variáveis: <b>{"{{marca}}"}</b> <b>{"{{modelo}}"}</b> <b>{"{{ano}}"}</b> <b>{"{{preco}}"}</b> <b>{"{{id}}"}</b>. O ID é sempre incluído (o fluxo depende dele).
+          Variáveis: <b>{"{{marca}}"}</b> <b>{"{{modelo}}"}</b> <b>{"{{ano}}"}</b> <b>{"{{preco}}"}</b> <b>{"{{id}}"}</b>. O ID é sempre incluído no fim (o fluxo depende dele).
         </p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div>
-          <label className="text-xs text-muted-foreground">Cidade (key Meta)</label>
-          <input className={inputCls} value={form.targetCityKey} onChange={(e) => set("targetCityKey", e.target.value.trim())} placeholder="ex: 229180" />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Raio (km)</label>
-          <input className={inputCls} type="number" min="1" max="500" value={form.targetRadiusKm} onChange={(e) => set("targetRadiusKm", e.target.value)} />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Idade mín.</label>
-          <input className={inputCls} type="number" min="13" max="65" value={form.ageMin} onChange={(e) => set("ageMin", e.target.value)} />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground">Idade máx.</label>
-          <input className={inputCls} type="number" min="13" max="65" value={form.ageMax} onChange={(e) => set("ageMax", e.target.value)} />
-        </div>
-      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Orçamento, segmentação, idade e número de WhatsApp ficam na <b>campanha/conjunto que você já criou na Meta</b> — o CRM só cria os anúncios dos carros dentro dele.
+      </p>
 
       <div className="flex justify-end">
         <Button size="sm" onClick={onSave} disabled={saveMut.isPending} className="bg-purple-600 hover:bg-purple-700">
           {saveMut.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : null}
-          Salvar configurações
+          Salvar mensagem
         </Button>
       </div>
     </div>

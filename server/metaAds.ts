@@ -638,12 +638,26 @@ export async function createAdInExistingAdSet(
       },
     });
 
+    // Garante o ID no fim (o fluxo depende de "ID<n>")
+    const withId = (s: string) => (s.includes(`ID${vehicle.id}`) ? s : `${s} ID${vehicle.id}`.trim());
+    const fmtP = vehicle.price?.toLocaleString?.("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) || "";
+    const fillVars = (tpl: string) => tpl
+      .replace(/\{\{\s*marca\s*\}\}/gi, vehicle.brand || "")
+      .replace(/\{\{\s*modelo\s*\}\}/gi, vehicle.model || "")
+      .replace(/\{\{\s*ano\s*\}\}/gi, String(vehicle.year || ""))
+      .replace(/\{\{\s*preco\s*\}\}/gi, fmtP)
+      .replace(/\{\{\s*id\s*\}\}/gi, `ID${vehicle.id}`)
+      .trim();
+
+    const tpl = config.welcomeMessageTemplate?.trim()
+      || "Olá, tenho interesse no veículo: {{marca}} {{modelo}} {{ano}} {{id}}";
+    const customContent = withId(fillVars(tpl));
+
     const attempts = [
-      { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
-      { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá! Bem-vindo!` },
-      { content: `Interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá!` },
-      { content: "Olá, tenho interesse neste veículo!", text: vehicle.brand },
-      { content: "Olá, tenho interesse!", text: "" },
+      { content: customContent, text: `Olá! Bem-vindo à Auto Inova! 👋` },
+      { content: withId(fillVars("Interesse no veículo: {{marca}} {{modelo}} {{id}}")), text: `Olá!` },
+      { content: withId("Olá, tenho interesse neste veículo!"), text: vehicle.brand },
+      { content: withId("Olá!"), text: "" },
     ];
 
     for (const a of attempts) {
@@ -651,7 +665,7 @@ export async function createAdInExistingAdSet(
         return makeObj(a.content, a.text);
       }
     }
-    return makeObj("Olá!", "");
+    return makeObj(`ID${vehicle.id}`, "");
   }
 
   let objectStorySpec: any;
