@@ -4,7 +4,7 @@
  * Suporte a carrossel e personalizações de IA.
  */
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -964,6 +964,7 @@ function AdCard({ ad, vehicle, onRefresh }: { ad: any; vehicle: any; onRefresh: 
 export default function MetaAdsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [filter, setFilter] = useState<"all" | "active" | "paused" | "imported">("all");
+  const [showConfig, setShowConfig] = useState(false);
 
   const { data: configStatus } = trpc.metaAds.isConfigured.useQuery();
   const { data: adsList, isLoading, refetch } = trpc.metaAds.list.useQuery();
@@ -1014,6 +1015,9 @@ export default function MetaAdsPage() {
             <p className="text-muted-foreground text-sm mt-1">Crie anúncios em campanhas e conjuntos existentes com IA</p>
           </div>
           <div className="flex gap-3">
+            <Button variant="outline" size="sm" onClick={() => setShowConfig(v => !v)}>
+              <Settings2 size={14} className="mr-2" /> Configurações
+            </Button>
             <Button variant="outline" size="sm" onClick={() => syncAllMutation.mutate()}
               disabled={syncAllMutation.isPending}>
               {syncAllMutation.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : <RefreshCw size={14} className="mr-2" />}
@@ -1025,6 +1029,9 @@ export default function MetaAdsPage() {
             </Button>
           </div>
         </div>
+
+        {/* Configurações do anúncio */}
+        {showConfig && <AdsConfigPanel />}
 
         {/* Not configured */}
         {configStatus && !configStatus.configured && (
@@ -1115,6 +1122,126 @@ export default function MetaAdsPage() {
           onCreated={() => { setShowCreateModal(false); refetch(); }}
         />
       )}
+    </div>
+  );
+}
+
+// ─── Painel de Configurações do Anúncio ───────────────────────────────────────
+function AdsConfigPanel() {
+  const { data, refetch } = trpc.metaAds.getAdsConfig.useQuery();
+  const saveMut = trpc.metaAds.saveAdsConfig.useMutation({
+    onSuccess: () => { toast.success("Configurações salvas!"); refetch(); },
+    onError: (e) => toast.error("Erro ao salvar: " + e.message),
+  });
+  const testMut = trpc.metaAds.testConnection.useMutation({
+    onSuccess: (r: any) => r.ok
+      ? toast.success(`✅ Conectado — Conta: ${r.account || "?"}${r.currency ? " (" + r.currency + ")" : ""}${r.page ? " · Página: " + r.page : ""}`)
+      : toast.error("❌ " + (r.error || "Falha na conexão")),
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+
+  const [form, setForm] = useState<any>(null);
+  useEffect(() => {
+    if (data?.effective && !form) {
+      const e = data.effective;
+      setForm({
+        pageId: e.pageId || "",
+        instagramActorId: e.instagramActorId || "",
+        whatsappNumber: e.whatsappNumber || "",
+        dailyBudgetReais: ((e.dailyBudgetCents || 3000) / 100).toFixed(2),
+        welcomeMessageTemplate: e.welcomeMessageTemplate || "",
+        targetCityKey: e.targetCityKey || "",
+        targetRadiusKm: e.targetRadiusKm || 80,
+        ageMin: e.ageMin || 25,
+        ageMax: e.ageMax || 65,
+      });
+    }
+  }, [data, form]);
+
+  if (!form) return <div className="mb-6 p-4 rounded-xl border border-border bg-card text-sm text-muted-foreground">Carregando configurações…</div>;
+
+  const set = (k: string, v: any) => setForm((f: any) => ({ ...f, [k]: v }));
+  const inputCls = "w-full h-8 text-sm rounded-md border border-border bg-background px-2";
+
+  const onSave = () => {
+    saveMut.mutate({
+      pageId: form.pageId || undefined,
+      instagramActorId: form.instagramActorId || undefined,
+      whatsappNumber: form.whatsappNumber || undefined,
+      dailyBudgetCents: Math.round(parseFloat(form.dailyBudgetReais || "30") * 100),
+      welcomeMessageTemplate: form.welcomeMessageTemplate || undefined,
+      targetCityKey: form.targetCityKey || undefined,
+      targetRadiusKm: Number(form.targetRadiusKm) || 80,
+      ageMin: Number(form.ageMin) || 25,
+      ageMax: Number(form.ageMax) || 65,
+    });
+  };
+
+  return (
+    <div className="mb-6 p-4 rounded-xl border border-border bg-card space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-semibold flex items-center gap-2"><Settings2 size={16} /> Configurações do Anúncio</h3>
+        <Button size="sm" variant="outline" onClick={() => testMut.mutate()} disabled={testMut.isPending}>
+          {testMut.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : <CheckCircle2 size={14} className="mr-2" />}
+          Testar conexão
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground">ID da Página (Facebook)</label>
+          <input className={inputCls} value={form.pageId} onChange={(e) => set("pageId", e.target.value.trim())} placeholder="ex: 4901993" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Instagram Actor ID (opcional)</label>
+          <input className={inputCls} value={form.instagramActorId} onChange={(e) => set("instagramActorId", e.target.value.trim())} placeholder="ex: 8045575383" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Número WhatsApp de destino</label>
+          <input className={inputCls} value={form.whatsappNumber} onChange={(e) => set("whatsappNumber", e.target.value.replace(/\D/g, ""))} placeholder="ex: 555131919081" />
+          <p className="text-[10px] text-muted-foreground mt-0.5">No CTWA, o número real é o WhatsApp vinculado à Página. Este é o do link wa.me.</p>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Orçamento diário (R$)</label>
+          <input className={inputCls} type="number" step="1" min="1" value={form.dailyBudgetReais} onChange={(e) => set("dailyBudgetReais", e.target.value)} />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs text-muted-foreground">Mensagem de boas-vindas do anúncio (o cliente envia ao clicar)</label>
+        <Textarea rows={2} value={form.welcomeMessageTemplate}
+          onChange={(e) => set("welcomeMessageTemplate", e.target.value)}
+          placeholder="Olá, tenho interesse no veículo: {{marca}} {{modelo}} {{ano}} {{id}}" className="text-sm" />
+        <p className="text-[10px] text-muted-foreground mt-0.5">
+          Variáveis: <b>{"{{marca}}"}</b> <b>{"{{modelo}}"}</b> <b>{"{{ano}}"}</b> <b>{"{{preco}}"}</b> <b>{"{{id}}"}</b>. O ID é sempre incluído (o fluxo depende dele).
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground">Cidade (key Meta)</label>
+          <input className={inputCls} value={form.targetCityKey} onChange={(e) => set("targetCityKey", e.target.value.trim())} placeholder="ex: 229180" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Raio (km)</label>
+          <input className={inputCls} type="number" min="1" max="500" value={form.targetRadiusKm} onChange={(e) => set("targetRadiusKm", e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Idade mín.</label>
+          <input className={inputCls} type="number" min="13" max="65" value={form.ageMin} onChange={(e) => set("ageMin", e.target.value)} />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">Idade máx.</label>
+          <input className={inputCls} type="number" min="13" max="65" value={form.ageMax} onChange={(e) => set("ageMax", e.target.value)} />
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button size="sm" onClick={onSave} disabled={saveMut.isPending} className="bg-purple-600 hover:bg-purple-700">
+          {saveMut.isPending ? <Loader2 size={14} className="mr-2 animate-spin" /> : null}
+          Salvar configurações
+        </Button>
+      </div>
     </div>
   );
 }

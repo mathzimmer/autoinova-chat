@@ -21,6 +21,14 @@ export type MetaAdsConfig = {
   instagramActorId?: string;
   defaultBudgetCents: number;
   defaultTargeting: MetaTargeting;
+  /** Número WhatsApp de destino (exibição/wa.me). O CTWA real usa o WhatsApp vinculado à Página. */
+  whatsappNumber?: string;
+  /**
+   * Template da mensagem de boas-vindas que o cliente envia ao clicar no anúncio.
+   * Suporta {{marca}} {{modelo}} {{ano}} {{id}} {{preco}}. O ID é SEMPRE garantido
+   * no final (o fluxo depende dele para identificar o veículo).
+   */
+  welcomeMessageTemplate?: string;
 };
 
 export type MetaTargeting = {
@@ -205,11 +213,27 @@ export async function createAdCreative(
       },
     });
 
+    // Garante o ID do veículo no fim do texto (o fluxo depende de "ID<n>")
+    const withId = (s: string) => (s.includes(`ID${vehicle.id}`) ? s : `${s} ID${vehicle.id}`.trim());
+    const fmtPrice2 = vehicle.price?.toLocaleString?.("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 }) || "";
+    const fillVars = (tpl: string) => tpl
+      .replace(/\{\{\s*marca\s*\}\}/gi, vehicle.brand || "")
+      .replace(/\{\{\s*modelo\s*\}\}/gi, vehicle.model || "")
+      .replace(/\{\{\s*ano\s*\}\}/gi, String(vehicle.year || ""))
+      .replace(/\{\{\s*preco\s*\}\}/gi, fmtPrice2)
+      .replace(/\{\{\s*id\s*\}\}/gi, `ID${vehicle.id}`)
+      .trim();
+
+    // Template personalizado (ou o padrão), sempre com o ID garantido
+    const tpl = config.welcomeMessageTemplate?.trim()
+      || "Olá, tenho interesse no veículo: {{marca}} {{modelo}} {{ano}} {{id}}";
+    const customContent = withId(fillVars(tpl));
+
     const attempts = [
-      { content: `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ${vehicle.year} ID${vehicle.id}`, text: `Olá! Bem-vindo à Auto Inova! 👋` },
-      { content: `Interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`, text: `Olá!` },
-      { content: "Olá, tenho interesse neste veículo!", text: vehicle.brand },
-      { content: "Olá, tenho interesse!", text: "" },
+      { content: customContent, text: `Olá! Bem-vindo à Auto Inova! 👋` },
+      { content: withId(fillVars("Interesse no veículo: {{marca}} {{modelo}} {{id}}")), text: `Olá!` },
+      { content: withId("Olá, tenho interesse neste veículo!"), text: vehicle.brand },
+      { content: withId("Olá!"), text: "" },
     ];
 
     for (const a of attempts) {
@@ -217,7 +241,7 @@ export async function createAdCreative(
         return makeObj(a.content, a.text);
       }
     }
-    return makeObj("Olá!", "");
+    return makeObj(`ID${vehicle.id}`, "");
   }
 
   console.log(`[MetaAds] Criando criativo Click to WhatsApp para ${vehicle.brand} ${vehicle.model}`);
@@ -302,7 +326,7 @@ export async function createAdForVehicle(
     const waMsg = encodeURIComponent(
       `Olá, tenho interesse no veículo: ${v.brand} ${v.model} ${v.year} ID${v.id}`
     );
-    const whatsappLink = `https://wa.me/${AUTOINOVA_WHATSAPP}?text=${waMsg}`;
+    const whatsappLink = `https://wa.me/${config.whatsappNumber || AUTOINOVA_WHATSAPP}?text=${waMsg}`;
 
     const finalCampaignId = campaignId ?? (await createOrGetCampaign(config));
     const adSetId       = await createAdSet(config, finalCampaignId, v, budgetCents);
@@ -337,6 +361,22 @@ export async function createAdForVehicle(
     const msg = error instanceof Error ? error.message : "Erro desconhecido";
     console.error(`[MetaAds] ❌ Falha ao criar anúncio para veículo #${vehicleId}:`, msg);
     return { success: false, error: msg, vehicleId };
+  }
+}
+
+// ─── Testar conexão ───────────────────────────────────────────────────────────
+export async function testMetaConnection(config: MetaAdsConfig): Promise<{ ok: boolean; account?: string; currency?: string; page?: string; error?: string }> {
+  try {
+    if (!config.accessToken) return { ok: false, error: "Token de acesso não configurado (META_ADS_ACCESS_TOKEN)" };
+    if (!config.adAccountId) return { ok: false, error: "ID da conta de anúncios não configurado (META_ADS_ACCOUNT_ID)" };
+    const acc = await metaGet(`act_${config.adAccountId}`, { fields: "name,account_status,currency" }, config.accessToken) as any;
+    let page: string | undefined;
+    if (config.pageId) {
+      try { const p = await metaGet(config.pageId, { fields: "name" }, config.accessToken) as any; page = p?.name; } catch { /* página inválida */ }
+    }
+    return { ok: true, account: acc?.name, currency: acc?.currency, page };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Falha na conexão" };
   }
 }
 
@@ -765,4 +805,32 @@ export function buildMetaConfig(overrides?: Partial<MetaAdsConfig>): MetaAdsConf
     },
     ...overrides,
   };
+}
+
+/**
+ * Config efetiva: env (token/conta) + ajustes salvos pelo usuário (settings JSON):
+ * página, número WhatsApp, orçamento, segmentação e mensagem de boas-vindas.
+ */
+export async function getMetaConfig(overrides?: Partial<MetaAdsConfig>): Promise<MetaAdsConfig> {
+  const base = buildMetaConfig();
+  try {
+    const { getSetting } = await import("./db");
+    const raw = await getSetting("meta_ads_config");
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.whatsappNumber) base.whatsappNumber = String(s.whatsappNumber).replace(/\D/g, "");
+      if (s.welcomeMessageTemplate) base.welcomeMessageTemplate = String(s.welcomeMessageTemplate);
+      if (s.pageId) base.pageId = String(s.pageId);
+      if (s.instagramActorId) base.instagramActorId = String(s.instagramActorId);
+      if (typeof s.dailyBudgetCents === "number" && s.dailyBudgetCents >= 100) base.defaultBudgetCents = s.dailyBudgetCents;
+      const t = base.defaultTargeting;
+      if (s.targetCityKey) t.geo_locations = { cities: [{ key: String(s.targetCityKey), radius: Number(s.targetRadiusKm) || 80, distance_unit: "kilometer" }] };
+      if (typeof s.ageMin === "number") t.age_min = s.ageMin;
+      if (typeof s.ageMax === "number") t.age_max = s.ageMax;
+      if (Array.isArray(s.interests) && s.interests.length) t.flexible_spec = [{ interests: s.interests.map((i: any) => ({ id: String(i.id), name: String(i.name || "") })) }];
+    }
+  } catch (e) {
+    console.error("[MetaAds] getMetaConfig settings falhou:", e);
+  }
+  return { ...base, ...overrides };
 }

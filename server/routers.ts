@@ -58,6 +58,8 @@ import {
   setAdStatus,
   getAdInsights,
   buildMetaConfig,
+  getMetaConfig,
+  testMetaConnection,
   importAdsFromMeta,
   listCampaigns,
   listAdSets,
@@ -2959,6 +2961,57 @@ const metaAdsRouter = router({
     return { configured: missingVars.length === 0, missingVars };
   }),
 
+  // Ler a config de anúncios (env + ajustes salvos) para a tela de configurações
+  getAdsConfig: protectedProcedure.query(async () => {
+    const raw = await getSetting("meta_ads_config");
+    const saved = raw ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+    const cfg = await getMetaConfig();
+    return {
+      saved,
+      effective: {
+        pageId: cfg.pageId,
+        instagramActorId: cfg.instagramActorId || "",
+        whatsappNumber: cfg.whatsappNumber || "",
+        dailyBudgetCents: cfg.defaultBudgetCents,
+        welcomeMessageTemplate: cfg.welcomeMessageTemplate || "Olá, tenho interesse no veículo: {{marca}} {{modelo}} {{ano}} {{id}}",
+        targetCityKey: cfg.defaultTargeting.geo_locations.cities?.[0]?.key || "",
+        targetRadiusKm: cfg.defaultTargeting.geo_locations.cities?.[0]?.radius || 80,
+        ageMin: cfg.defaultTargeting.age_min,
+        ageMax: cfg.defaultTargeting.age_max,
+        interests: cfg.defaultTargeting.flexible_spec?.[0]?.interests || [],
+      },
+      envReady: !!(cfg.accessToken && cfg.adAccountId),
+    };
+  }),
+
+  // Salvar ajustes da config de anúncios
+  saveAdsConfig: protectedProcedure
+    .input(z.object({
+      pageId: z.string().optional(),
+      instagramActorId: z.string().optional(),
+      whatsappNumber: z.string().optional(),
+      dailyBudgetCents: z.number().min(100).optional(),
+      welcomeMessageTemplate: z.string().optional(),
+      targetCityKey: z.string().optional(),
+      targetRadiusKm: z.number().min(1).max(500).optional(),
+      ageMin: z.number().min(13).max(65).optional(),
+      ageMax: z.number().min(13).max(65).optional(),
+      interests: z.array(z.object({ id: z.string(), name: z.string() })).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const raw = await getSetting("meta_ads_config");
+      const cur = raw ? (() => { try { return JSON.parse(raw); } catch { return {}; } })() : {};
+      const merged = { ...cur, ...input };
+      await upsertSetting("meta_ads_config", JSON.stringify(merged));
+      return { success: true };
+    }),
+
+  // Testar a conexão com a Meta (valida token/conta/página)
+  testConnection: protectedProcedure.mutation(async () => {
+    const cfg = await getMetaConfig();
+    return testMetaConnection(cfg);
+  }),
+
   // Listar anúncios com dados do veículo
   list: protectedProcedure.query(async () => {
     const db = await getDb();
@@ -2975,7 +3028,7 @@ const metaAdsRouter = router({
 
   // Listar campanhas existentes da conta Meta
   listCampaigns: protectedProcedure.query(async () => {
-    const config = buildMetaConfig();
+    const config = await getMetaConfig();
     if (!config.accessToken || !config.adAccountId) {
       throw new Error("Meta Ads não configurado.");
     }
@@ -2986,7 +3039,7 @@ const metaAdsRouter = router({
   listAdSets: protectedProcedure
     .input(z.object({ campaignId: z.string() }))
     .query(async ({ input }) => {
-      const config = buildMetaConfig();
+      const config = await getMetaConfig();
       if (!config.accessToken) throw new Error("Meta Ads não configurado.");
       return listAdSets(config.accessToken, input.campaignId);
     }),
@@ -3007,7 +3060,7 @@ const metaAdsRouter = router({
       pixelId: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const config = buildMetaConfig();
+      const config = await getMetaConfig();
       if (!config.accessToken || !config.adAccountId || !config.pageId) {
         throw new Error("Meta Ads não configurado.");
       }
@@ -3064,7 +3117,7 @@ const metaAdsRouter = router({
   activate: protectedProcedure
     .input(z.object({ adId: z.string() }))
     .mutation(async ({ input }) => {
-      const config = buildMetaConfig();
+      const config = await getMetaConfig();
       const ok = await setAdStatus(input.adId, "ACTIVE", config.accessToken);
       if (!ok) throw new Error("Falha ao ativar anúncio");
       const db = await getDb();
@@ -3080,7 +3133,7 @@ const metaAdsRouter = router({
   pause: protectedProcedure
     .input(z.object({ adId: z.string() }))
     .mutation(async ({ input }) => {
-      const config = buildMetaConfig();
+      const config = await getMetaConfig();
       const ok = await setAdStatus(input.adId, "PAUSED", config.accessToken);
       if (!ok) throw new Error("Falha ao pausar anúncio");
       const db = await getDb();
@@ -3096,7 +3149,7 @@ const metaAdsRouter = router({
   syncInsights: protectedProcedure
     .input(z.object({ adId: z.string() }))
     .mutation(async ({ input }) => {
-      const config = buildMetaConfig();
+      const config = await getMetaConfig();
       const insights = await getAdInsights(input.adId, config.accessToken);
       if (!insights) throw new Error("Não foi possível obter métricas");
       const db = await getDb();
@@ -3119,7 +3172,7 @@ const metaAdsRouter = router({
   syncAllInsights: protectedProcedure.mutation(async () => {
     const db = await getDb();
     if (!db) throw new Error("Database indisponível");
-    const config = buildMetaConfig();
+    const config = await getMetaConfig();
     const activeAds = await db
       .select({ adId: metaAdsTable.adId })
       .from(metaAdsTable)
@@ -3147,7 +3200,7 @@ const metaAdsRouter = router({
 
   // Importar anúncios existentes da conta Meta
   importFromMeta: protectedProcedure.mutation(async () => {
-    const config = buildMetaConfig();
+    const config = await getMetaConfig();
     if (!config.accessToken || !config.adAccountId) {
       throw new Error("Meta Ads não configurado. Adicione ACCESS_TOKEN e ACCOUNT_ID.");
     }
@@ -3157,7 +3210,7 @@ const metaAdsRouter = router({
 
   // Sincronizar tudo: importar + atualizar métricas
   syncAll: protectedProcedure.mutation(async () => {
-    const config = buildMetaConfig();
+    const config = await getMetaConfig();
     if (!config.accessToken || !config.adAccountId) {
       throw new Error("Meta Ads não configurado.");
     }
@@ -3297,7 +3350,7 @@ Retorne um JSON com:
       campaignId: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
-      const config = buildMetaConfig();
+      const config = await getMetaConfig();
       if (!config.accessToken || !config.adAccountId || !config.pageId) {
         throw new Error("Meta Ads não configurado.");
       }
