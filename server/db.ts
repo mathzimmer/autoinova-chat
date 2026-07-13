@@ -1412,6 +1412,13 @@ export async function createFlowSession(data: InsertChatFlowSession) {
   return result[0].id;
 }
 
+/** Todas as sessões de fluxo ativas (para o worker de sem-resposta). */
+export async function listActiveFlowSessions() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(chatFlowSessions).where(eq(chatFlowSessions.status, "active"));
+}
+
 export async function updateFlowSession(id: number, data: Partial<InsertChatFlowSession>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");

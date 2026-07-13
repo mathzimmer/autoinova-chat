@@ -95,14 +95,22 @@ function FlowNode({ data, selected, id }: NodeProps) {
   const getOutputHandles = () => {
     if (nodeType === "end" || nodeType === "goto_flow" || nodeType === "assign_seller") return [];
     if (nodeType === "send_buttons") {
-      const buttons = ((data.config as any)?.buttons || []) as Array<{ text: string }>;
-      if (buttons.length === 0) return [{ id: "default", label: "Próximo" }];
-      return buttons.map((b: { text: string }, i: number) => ({ id: `button_${i}`, label: b.text || `Botão ${i + 1}` }));
+      const cfg = (data.config as any) || {};
+      const buttons = (cfg.buttons || []) as Array<{ text: string }>;
+      const extra: Array<{ id: string; label: string }> = [];
+      if (cfg.showFreeTextHandle) extra.push({ id: "default", label: "✍️ Texto livre" });
+      if (cfg.noReplyMinutes) extra.push({ id: "noreply", label: "⏰ Sem resposta" });
+      if (buttons.length === 0) return [{ id: "default", label: "Próximo" }, ...extra.filter(e => e.id !== "default")];
+      return [...buttons.map((b, i) => ({ id: `button_${i}`, label: b.text || `Botão ${i + 1}` })), ...extra];
     }
     if (nodeType === "send_list") {
-      const rows = ((data.config as any)?.sections || []).flatMap((s: any) => s.rows || []) as Array<{ title: string }>;
-      if (rows.length === 0) return [{ id: "default", label: "Próximo" }];
-      return rows.map((r: { title: string }, i: number) => ({ id: `row_${i}`, label: r.title || `Item ${i + 1}` }));
+      const cfg = (data.config as any) || {};
+      const rows = (cfg.sections || []).flatMap((s: any) => s.rows || []) as Array<{ title: string }>;
+      const extra: Array<{ id: string; label: string }> = [];
+      if (cfg.showFreeTextHandle) extra.push({ id: "default", label: "✍️ Texto livre" });
+      if (cfg.noReplyMinutes) extra.push({ id: "noreply", label: "⏰ Sem resposta" });
+      if (rows.length === 0) return [{ id: "default", label: "Próximo" }, ...extra.filter(e => e.id !== "default")];
+      return [...rows.map((r, i) => ({ id: `row_${i}`, label: r.title || `Item ${i + 1}` })), ...extra];
     }
     if (nodeType === "condition") {
       return [
@@ -461,6 +469,7 @@ function PropertiesPanel({
                 )}
               </div>
             </div>
+            <AdvancedInputConfig config={config} updateConfig={updateConfig} />
           </>
         )}
 
@@ -571,6 +580,7 @@ function PropertiesPanel({
                 <Plus className="h-3 w-3 mr-1" /> Adicionar Seção
               </Button>
             </div>
+            <AdvancedInputConfig config={config} updateConfig={updateConfig} />
           </>
         )}
 
@@ -788,6 +798,94 @@ function PropertiesPanel({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// ─── Config avançada de nós de espera (botões/lista): entrada inesperada + sem-resposta ──
+function AdvancedInputConfig({ config, updateConfig }: { config: any; updateConfig: (key: string, value: any) => void }) {
+  const onInvalid = config.onInvalid || "repeat";
+  return (
+    <div className="space-y-3 border-t border-border pt-3 mt-3">
+      {/* Entrada inesperada */}
+      <div>
+        <Label className="text-xs font-semibold">Se o cliente digitar em vez de clicar</Label>
+        <select
+          value={onInvalid}
+          onChange={(e) => updateConfig("onInvalid", e.target.value)}
+          className="w-full mt-1 h-8 text-sm rounded-md border border-border bg-background px-2"
+        >
+          <option value="repeat">Insistir no botão (mensagem + tentativas)</option>
+          <option value="ai">Deixar a IA interpretar o texto</option>
+        </select>
+        {onInvalid === "repeat" && (
+          <div className="mt-2 space-y-2">
+            <Textarea
+              value={config.invalidMessage || ""}
+              onChange={(e) => updateConfig("invalidMessage", e.target.value)}
+              placeholder="Mensagem quando não reconhecer (ex: 'Toque numa opção acima 👆')"
+              rows={2}
+              className="text-sm"
+            />
+            <div className="flex items-center gap-2">
+              <Label className="text-[11px]">Máx. tentativas antes de ir pra IA</Label>
+              <Input type="number" min={1} max={9} value={config.maxInvalidRetries ?? 3}
+                onChange={(e) => updateConfig("maxInvalidRetries", parseInt(e.target.value) || 3)}
+                className="h-7 w-16 text-sm" />
+            </div>
+          </div>
+        )}
+        <label className="flex items-center gap-2 mt-2 text-[11px] cursor-pointer">
+          <input type="checkbox" checked={!!config.showFreeTextHandle} onChange={(e) => updateConfig("showFreeTextHandle", e.target.checked)} />
+          Criar saída "✍️ Texto livre" para rotear manualmente no editor
+        </label>
+      </div>
+
+      {/* Sem resposta */}
+      <div>
+        <Label className="text-xs font-semibold">Se o cliente não responder</Label>
+        <div className="flex items-center gap-2 mt-1">
+          <Label className="text-[11px]">Aguardar (minutos, 0 = desativado)</Label>
+          <Input type="number" min={0} value={config.noReplyMinutes ?? 0}
+            onChange={(e) => updateConfig("noReplyMinutes", parseInt(e.target.value) || 0)}
+            className="h-7 w-20 text-sm" />
+        </div>
+        {!!config.noReplyMinutes && (
+          <div className="mt-2 space-y-2">
+            <Textarea
+              value={config.noReplyMessage || ""}
+              onChange={(e) => updateConfig("noReplyMessage", e.target.value)}
+              placeholder="Lembrete (ex: 'Oi {{nome}}, ainda posso te ajudar com esse carro?')"
+              rows={2}
+              className="text-sm"
+            />
+            <div className="flex items-center gap-2">
+              <Label className="text-[11px]">Nº de lembretes</Label>
+              <Input type="number" min={1} max={5} value={config.noReplyMaxAttempts ?? 1}
+                onChange={(e) => updateConfig("noReplyMaxAttempts", parseInt(e.target.value) || 1)}
+                className="h-7 w-16 text-sm" />
+            </div>
+            <p className="text-[11px] font-medium text-muted-foreground">Ao esgotar os lembretes:</p>
+            <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+              <input type="checkbox" checked={!!config.noReplyMarkCold} onChange={(e) => updateConfig("noReplyMarkCold", e.target.checked)} />
+              Marcar lead como frio
+            </label>
+            <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+              <input type="checkbox" checked={config.noReplyEndFlow !== false} onChange={(e) => updateConfig("noReplyEndFlow", e.target.checked)} />
+              Encerrar o fluxo
+            </label>
+            <label className="flex items-center gap-2 text-[11px] cursor-pointer">
+              <input type="checkbox" checked={!!config.noReplyNotifySeller} onChange={(e) => updateConfig("noReplyNotifySeller", e.target.checked)} />
+              Avisar vendedor
+            </label>
+            {config.noReplyNotifySeller && (
+              <Input value={config.noReplyNotifyNumber || ""} onChange={(e) => updateConfig("noReplyNotifyNumber", e.target.value.replace(/\D/g, ""))}
+                placeholder="Número do vendedor (DDI+DDD+número)" className="h-7 text-sm" />
+            )}
+            <p className="text-[10px] text-muted-foreground">Dica: você também pode ligar a saída "⏰ Sem resposta" a outro nó no editor.</p>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -18,8 +18,13 @@ import {
   getStoreLocationByVehicleId,
   getDistinctStoreLocations,
   getVehicleById,
+  listActiveFlowSessions,
+  getConversationById,
+  createMessage,
 } from "./db";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
+import { getFlowSender } from "./flowChannelSender";
+import { emitNewMessage } from "./socket";
 import type { ChatFlowNode, ChatFlowEdge } from "../drizzle/schema";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -253,22 +258,40 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
       // Advance to next node and execute it
       await executeFromNode(nextNodeId, nodes, edges, session, ctx, result);
     } else {
-      // No match - client sent free text instead of clicking a button/list item
-      // Re-send the interactive message so they can select properly
+      // Cliente digitou texto livre em vez de clicar. Comportamento configurável:
+      //  - onInvalid "ai": passa o texto para a IA interpretar (não trava)
+      //  - onInvalid "repeat" (padrão): reenvia com mensagem personalizável, até
+      //    maxInvalidRetries; ao estourar, cai para a IA.
+      // (Rotear para outro nó já é possível ligando a saída "default" no editor.)
       const config = (currentNode.data as any) || {};
-      
+      const sessionCtx = (session.context as any) || {};
+      const invalidKey = `invalidCount_${currentNode.id}`;
+      const invalidCount = (sessionCtx[invalidKey] || 0) + 1;
+      const maxRetries = config.maxInvalidRetries ?? 3;
+      const onInvalid = config.onInvalid || "repeat";
+
+      if (onInvalid === "ai" || invalidCount > maxRetries) {
+        await updateFlowSession(session.id, { context: { ...sessionCtx, [invalidKey]: 0 } });
+        result.handled = false; // deixa a IA interpretar o texto livre
+        console.log(`[FlowEngine] entrada inesperada → IA (count=${invalidCount}, onInvalid=${onInvalid})`);
+        return result;
+      }
+
+      await updateFlowSession(session.id, { context: { ...sessionCtx, [invalidKey]: invalidCount } });
+      const defaultMsg = currentNode.nodeType === "send_buttons"
+        ? "☝️ Por favor, toque em uma das opções abaixo para continuar:"
+        : "☝️ Por favor, selecione uma das opções da lista para continuar:";
+      const retryMsg = replaceVariables(config.invalidMessage || defaultMsg, ctx);
+      await outText(ctx, retryMsg);
+      result.responses.push(retryMsg);
+
       if (currentNode.nodeType === "send_buttons") {
         const body = replaceVariables(config.body || "", ctx);
         const buttons = (config.buttons || []).map((b: any, i: number) => ({
           id: `flow_btn_${currentNode.id}_${i}`,
           title: replaceVariables(b.text || `Opção ${i + 1}`, ctx).substring(0, 20),
         }));
-        const retryMsg = "☝️ Por favor, toque em uma das opções abaixo para continuar:";
-        await outText(ctx, retryMsg);
-        if (body && buttons.length > 0) {
-          await outButtons(ctx, body, buttons);
-        }
-        result.responses.push(retryMsg);
+        if (body && buttons.length > 0) await outButtons(ctx, body, buttons);
       } else if (currentNode.nodeType === "send_list") {
         const body = replaceVariables(config.body || "", ctx);
         const buttonText = config.buttonText || "Ver Opções";
@@ -280,16 +303,11 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
             description: replaceVariables(r.description || "", ctx).substring(0, 72),
           })),
         }));
-        const retryMsg = "☝️ Por favor, selecione uma das opções da lista para continuar:";
-        await outText(ctx, retryMsg);
-        if (body && sections.length > 0) {
-          await outList(ctx, body, buttonText, sections);
-        }
-        result.responses.push(retryMsg);
+        if (body && sections.length > 0) await outList(ctx, body, buttonText, sections);
       }
-      
+
       result.waitingForInput = true;
-      console.log(`[FlowEngine] Button/list re-prompt: client sent free text "${ctx.customerMessage}" instead of selecting an option`);
+      console.log(`[FlowEngine] Button/list re-prompt (${invalidCount}/${maxRetries}): texto livre "${ctx.customerMessage}"`);
     }
     return result;
   }
@@ -643,8 +661,8 @@ async function executeFromNode(
         await outButtons(ctx, body, buttons);
         result.interactiveMessages.push({ type: "buttons", data: { body, buttons } });
       }
-      // Wait for customer response
-      await updateFlowSession(session.id, { currentNodeId: node.id });
+      // Aguarda resposta do cliente — registra o início da espera p/ o lembrete de sem-resposta
+      await updateFlowSession(session.id, { currentNodeId: node.id, context: { ...((session.context as any) || {}), waitingSince: Date.now(), noReplyAttempts: 0 } });
       result.waitingForInput = true;
       break;
     }
@@ -664,8 +682,8 @@ async function executeFromNode(
         await outList(ctx, body, buttonText, sections);
         result.interactiveMessages.push({ type: "list", data: { body, buttonText, sections } });
       }
-      // Wait for customer response
-      await updateFlowSession(session.id, { currentNodeId: node.id });
+      // Aguarda resposta — registra início da espera p/ o lembrete de sem-resposta
+      await updateFlowSession(session.id, { currentNodeId: node.id, context: { ...((session.context as any) || {}), waitingSince: Date.now(), noReplyAttempts: 0 } });
       result.waitingForInput = true;
       break;
     }
@@ -1536,4 +1554,80 @@ export async function startFlowManually(params: {
     customerMessage: "",
     contactName: params.contactName,
   });
+}
+
+
+// ─── Worker: lembrete de "sem resposta" nos nós de espera ─────────────────────
+// Roda periodicamente (via scheduler). Para cada sessão ativa parada num nó de
+// botões/lista com no-reply configurado: se o cliente não respondeu no tempo,
+// manda lembrete(s); ao esgotar, dá o desfecho (marcar frio / avisar vendedor /
+// rota "sem resposta" / encerrar).
+export async function runFlowNoReplyCheck(): Promise<void> {
+  let sessions: any[] = [];
+  try { sessions = await listActiveFlowSessions(); } catch { return; }
+  const now = Date.now();
+
+  for (const session of sessions) {
+    try {
+      const sctx = (session.context as any) || {};
+      const waitingSince = sctx.waitingSince as number | undefined;
+      if (!waitingSince || !session.currentNodeId) continue;
+
+      const nodes = await listChatFlowNodes(session.flowId);
+      const node = nodes.find(n => n.id === session.currentNodeId);
+      if (!node) continue;
+      const cfg = (node.data as any) || {};
+      const minutes = Number(cfg.noReplyMinutes || 0);
+      if (!minutes) continue; // no-reply não configurado neste nó
+
+      const maxAttempts = Number(cfg.noReplyMaxAttempts ?? 1);
+      const attempts = Number(sctx.noReplyAttempts || 0);
+      const dueAt = waitingSince + minutes * 60000 * (attempts + 1);
+      if (now < dueAt) continue;
+
+      const conv = await getConversationById(session.conversationId);
+      if (!conv) continue;
+      const edges = await listChatFlowEdges(session.flowId);
+      const ctx: FlowContext = {
+        conversationId: conv.id,
+        phone: conv.phone || "",
+        customerMessage: "",
+        contactName: conv.contactName || undefined,
+        sender: getFlowSender(conv),
+      };
+
+      if (attempts < maxAttempts) {
+        // Envia lembrete
+        const msg = replaceVariables(cfg.noReplyMessage || "Oi! Ainda posso te ajudar? 😊", ctx);
+        if (ctx.sender) await ctx.sender.text(msg); else await sendTextMessage(ctx.phone, msg);
+        const botMsg = await createMessage({ conversationId: conv.id, content: msg, senderType: "bot", senderName: "Auto Inova - IA", messageType: "text" });
+        emitNewMessage(conv.id, botMsg);
+        await updateFlowSession(session.id, { context: { ...sctx, noReplyAttempts: attempts + 1 } });
+        console.log(`[FlowNoReply] lembrete ${attempts + 1}/${maxAttempts} (conversa ${conv.id})`);
+      } else {
+        // Esgotou → desfecho configurado
+        console.log(`[FlowNoReply] sem resposta após ${maxAttempts} lembrete(s) (conversa ${conv.id})`);
+        if (cfg.noReplyMarkCold) { try { await updateLeadFunnelStatus(conv.id, "frio"); } catch { /* noop */ } }
+        if (cfg.noReplyNotifySeller && cfg.noReplyNotifyNumber) {
+          try { await sendTextMessage(String(cfg.noReplyNotifyNumber), `⏰ Lead sem resposta: ${conv.contactName || conv.phone}`); } catch { /* noop */ }
+        }
+        // limpa o estado de espera (0 = não aguardando)
+        await updateFlowSession(session.id, { context: { ...sctx, waitingSince: 0, noReplyAttempts: 0 } });
+
+        const noReplyEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === "noreply");
+        if (noReplyEdge) {
+          const result: FlowResult = { handled: true, responses: [], imageMessages: [], interactiveMessages: [], waitingForInput: false, flowCompleted: false };
+          await executeFromNode(noReplyEdge.targetNodeId, nodes, edges, session, ctx, result);
+          for (const r of result.responses) {
+            const bm = await createMessage({ conversationId: conv.id, content: r, senderType: "bot", senderName: "Auto Inova - IA", messageType: "text" });
+            emitNewMessage(conv.id, bm);
+          }
+        } else if (cfg.noReplyEndFlow !== false) {
+          await updateFlowSession(session.id, { status: "completed", completedAt: new Date() });
+        }
+      }
+    } catch (err) {
+      console.error(`[FlowNoReply] erro na sessão ${session.id}:`, err);
+    }
+  }
 }

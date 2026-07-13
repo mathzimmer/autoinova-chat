@@ -140,6 +140,11 @@ async function startServer() {
 
   // Lembretes de conversa + mensagens agendadas (a cada 30s)
   startScheduler();
+
+  // Lembrete de "sem resposta" nos fluxos (a cada 60s)
+  setInterval(() => {
+    import("../flowEngine").then(m => m.runFlowNoReplyCheck().catch(e => console.error("[FlowNoReply] erro:", e)));
+  }, 60000);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API
