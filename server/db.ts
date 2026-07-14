@@ -772,10 +772,42 @@ export async function setWindowExpired(conversationId: number, expired: boolean)
 export async function listLeads(filters?: { status?: string }) {
   const db = await getDb();
   if (!db) return [];
+  // Esconde os descartados (fornecedor/colega/…) do painel de leads
+  const notDiscarded = eq(leads.isLead, true);
   if (filters?.status && filters.status !== "all") {
-    return db.select().from(leads).where(eq(leads.status, filters.status as any)).orderBy(desc(leads.updatedAt));
+    return db.select().from(leads).where(and(eq(leads.status, filters.status as any), notDiscarded)).orderBy(desc(leads.updatedAt));
   }
-  return db.select().from(leads).orderBy(desc(leads.updatedAt));
+  return db.select().from(leads).where(notDiscarded).orderBy(desc(leads.updatedAt));
+}
+
+/** Linha do tempo UNIFICADA do lead (todos os números/conversas). */
+export async function listActivityLogsByLead(leadId: number, limit = 80) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(activityLogs).where(eq(activityLogs.leadId, leadId)).orderBy(desc(activityLogs.createdAt)).limit(limit);
+}
+
+/** Marca que o contato NÃO é um lead (fornecedor, colega, etc.) e o tira do funil. */
+export async function setLeadNotLead(leadId: number, reason: string) {
+  const db = await getDb();
+  if (!db) return;
+  const lead = (await db.select().from(leads).where(eq(leads.id, leadId)).limit(1))[0];
+  if (!lead) return;
+  await db.update(leads).set({ isLead: false, discardReason: reason, updatedAt: new Date() }).where(eq(leads.id, leadId));
+  await closeOpenOpportunity(leadId, "lost", `não é lead: ${reason}`).catch(() => {});
+  // Marca o contato com o tipo escolhido (fornecedor/colega/…)
+  try {
+    const contact = await getContactByPhone(lead.phone);
+    if (contact) await updateContact(contact.id, { kind: reason } as any);
+  } catch { /* opcional */ }
+  await logTimeline({ conversationId: lead.conversationId, leadId, action: "nao_e_lead", details: { motivo: reason } }).catch(() => {});
+}
+
+/** Reverte: volta a ser um lead. */
+export async function setLeadIsLead(leadId: number) {
+  const db = await getDb();
+  if (!db) return;
+  await db.update(leads).set({ isLead: true, discardReason: null, updatedAt: new Date() }).where(eq(leads.id, leadId));
 }
 
 export async function getLeadByConversationId(conversationId: number) {
@@ -912,7 +944,13 @@ export async function getOrCreateLeadByPhone(params: {
   const lead = inserted[0];
   await db.update(conversations).set({ leadId: lead.id }).where(eq(conversations.id, params.conversationId)).catch(() => {});
   await openOpportunity(lead.id, { funnelStatus: "novo", isReactivation: false });
-  await logTimeline({ conversationId: params.conversationId, leadId: lead.id, action: "lead_criado", details: { origem: params.ctwaId ? "anuncio" : "organico" } });
+  // Registra a instância/canal do PRIMEIRO contato na timeline
+  let origemInstancia = "matriz";
+  try {
+    const c = (await db.select({ channel: conversations.channel, instanceName: conversations.instanceName }).from(conversations).where(eq(conversations.id, params.conversationId)).limit(1))[0];
+    origemInstancia = (c?.instanceName as string) || (c?.channel as string) || "matriz";
+  } catch { /* opcional */ }
+  await logTimeline({ conversationId: params.conversationId, leadId: lead.id, action: "lead_criado", details: { origem: params.ctwaId ? "anuncio" : "organico", instancia: origemInstancia } });
   return { lead, created: true, reactivated: false };
 }
 

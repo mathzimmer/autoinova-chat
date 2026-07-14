@@ -208,6 +208,15 @@ export default function Leads() {
     onError: (err: any) => toast.error(`Erro ao gerar resumo: ${err.message}`),
   });
 
+  const setNotLead = trpc.lead.setNotLead.useMutation({
+    onSuccess: () => { toast.success("Marcado — removido do funil"); refetch(); },
+    onError: (err: any) => toast.error(`Erro: ${err.message}`),
+  });
+  const handleNotLead = (lead: any) => {
+    const reason = window.prompt("Este contato não é um lead. Marcar como? (ex: fornecedor, colega, revenda, outro)", "fornecedor");
+    if (reason && reason.trim()) setNotLead.mutate({ leadId: lead.id, reason: reason.trim().slice(0, 40) });
+  };
+
   const leads = useMemo(() => {
     if (!leadsRaw) return [];
     let filtered = leadsRaw as unknown as LeadWithDetails[];
@@ -694,17 +703,19 @@ export default function Leads() {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-8 text-xs"
-                        onClick={(e) => { e.stopPropagation(); generateSummary.mutate({ conversationId: lead.conversationId }); }}
-                        disabled={generateSummary.isPending}
+                        className="h-8 text-xs text-muted-foreground hover:text-red-600"
+                        onClick={(e) => { e.stopPropagation(); handleNotLead(lead); }}
                       >
-                        <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                        {generateSummary.isPending ? "Gerando..." : "Gerar resumo IA"}
+                        Não é lead
                       </Button>
                     </div>
 
+                    {/* Linha do tempo do lead */}
+                    <LeadTimeline leadId={lead.id} />
+
+
                     {/* Lead Details Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 gap-4">
                       {/* Left: Lead Info */}
                       <div className="space-y-3">
                         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Dados do Lead</h3>
@@ -873,73 +884,6 @@ export default function Leads() {
                         )}
                       </div>
 
-                      {/* Right: Summaries */}
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between">
-                          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5" />
-                            Resumo da Conversa
-                          </h3>
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => setSummaryTab("full")}
-                              className={`px-2 py-0.5 text-[10px] rounded font-medium transition-colors ${
-                                summaryTab === "full"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                              }`}
-                            >
-                              Completo
-                            </button>
-                            <button
-                              onClick={() => setSummaryTab("daily")}
-                              className={`px-2 py-0.5 text-[10px] rounded font-medium transition-colors ${
-                                summaryTab === "daily"
-                                  ? "bg-primary text-primary-foreground"
-                                  : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                              }`}
-                            >
-                              Por Dia
-                            </button>
-                          </div>
-                        </div>
-
-                        {summaryTab === "full" ? (
-                          /* Full Summary */
-                          lead.fullSummary ? (
-                            <div className="p-3 rounded-lg bg-muted/30 border border-border max-h-80 overflow-y-auto">
-                              <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{lead.fullSummary}</p>
-                            </div>
-                          ) : (
-                            <div className="text-center py-6 text-muted-foreground/50">
-                              <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                              <p className="text-xs">Nenhum resumo disponível</p>
-                              <p className="text-[10px] mt-1">Clique em "Gerar resumo IA" para criar</p>
-                            </div>
-                          )
-                        ) : (
-                          /* Daily Summaries */
-                          lead.summaries && lead.summaries.length > 0 ? (
-                            <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
-                              {lead.summaries.map((s) => (
-                                <div key={s.id} className="p-3 rounded-lg bg-muted/30 border border-border">
-                                  <div className="flex items-center justify-between mb-1.5">
-                                    <span className="text-xs font-semibold text-card-foreground">{formatDate(s.date)}</span>
-                                    <span className="text-[10px] text-muted-foreground">{s.messageCount} msgs</span>
-                                  </div>
-                                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">{s.summary}</p>
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="text-center py-6 text-muted-foreground/50">
-                              <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                              <p className="text-xs">Nenhum resumo disponível</p>
-                              <p className="text-[10px] mt-1">Clique em "Gerar resumo IA" para criar</p>
-                            </div>
-                          )
-                        )}
-                      </div>
                     </div>
                   </CardContent>
                 )}
@@ -1086,6 +1030,57 @@ export default function Leads() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Linha do tempo do lead (unificada, todos os números) ────────────────────
+function fmtTimelineDate(d: any) {
+  try { return new Date(d).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }); } catch { return ""; }
+}
+function LeadTimeline({ leadId }: { leadId: number }) {
+  const { data: events, isLoading } = trpc.activity.timelineByLead.useQuery({ leadId }, { enabled: !!leadId });
+  const meta: Record<string, { label: string; icon: string; color: string }> = {
+    lead_criado:       { label: "Lead criado", icon: "✨", color: "text-emerald-600" },
+    lead_reativado:    { label: "Lead reativado", icon: "🔄", color: "text-blue-600" },
+    etapa_funil:       { label: "Avançou etapa", icon: "📈", color: "text-violet-600" },
+    negocio_fechado:   { label: "Negócio fechado", icon: "🏆", color: "text-green-600" },
+    lead_transferido:  { label: "Transferido ao vendedor", icon: "📤", color: "text-orange-600" },
+    nota:              { label: "Nota", icon: "📝", color: "text-slate-600" },
+    ia_comentario:     { label: "IA analisou", icon: "🤖", color: "text-fuchsia-600" },
+    nao_e_lead:        { label: "Marcado: não é lead", icon: "🚫", color: "text-red-600" },
+  };
+  if (isLoading) return <div className="mt-4 text-xs text-muted-foreground">Carregando linha do tempo…</div>;
+  if (!events || events.length === 0) return null;
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <p className="text-xs font-semibold text-muted-foreground uppercase mb-2 flex items-center gap-1.5">🕑 Linha do tempo</p>
+      <ol className="space-y-2">
+        {events.map((ev: any) => {
+          const m = meta[ev.action] || { label: ev.action, icon: "•", color: "text-muted-foreground" };
+          const d = ev.details || {};
+          let extra = "";
+          if (ev.action === "etapa_funil") extra = `${d.de || ""} → ${d.para || ""}`;
+          else if (ev.action === "ia_comentario") extra = d.resumo || "";
+          else if (ev.action === "nao_e_lead") extra = d.motivo || "";
+          else if (ev.action === "lead_criado") extra = `${d.origem === "anuncio" ? "via anúncio" : "orgânico"}${d.instancia ? ` · ${d.instancia}` : ""}`;
+          else if (ev.action === "lead_transferido") extra = `→ ${d.para || ""}${d.por ? ` (por ${d.por})` : ""}`;
+          else if (ev.action === "lead_reativado") extra = `estava: ${d.de || ""}`;
+          return (
+            <li key={ev.id} className="flex gap-2 text-xs">
+              <span className="shrink-0">{m.icon}</span>
+              <div className="min-w-0">
+                <span className={`font-medium ${m.color}`}>{m.label}</span>
+                {extra && <span className="text-muted-foreground"> — {extra}</span>}
+                {ev.action === "ia_comentario" && d.proximaAcao && (
+                  <div className="text-[11px] text-fuchsia-700/80 mt-0.5">➡️ {d.proximaAcao}</div>
+                )}
+                <div className="text-[10px] text-muted-foreground">{fmtTimelineDate(ev.createdAt)} · {ev.userName}</div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

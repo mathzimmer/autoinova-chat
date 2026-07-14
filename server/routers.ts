@@ -782,7 +782,9 @@ const conversationRouter = router({
       // 4. Transferência = marco de funil: sobe o lead CANÔNICO para "encaminhado
       //    ao vendedor" (dispara InitiateCheckout na Meta, atribuído ao anúncio).
       try {
-        const { updateLeadFunnelStatus: updFunnel, getCanonicalLead: getCanon, upsertLead: upLead } = await import("./db");
+        const { updateLeadFunnelStatus: updFunnel, getCanonicalLead: getCanon, upsertLead: upLead, logTimeline: logTl } = await import("./db");
+        const canonForLog = conv.phone ? await getCanon(conv.phone) : undefined;
+        await logTl({ conversationId: input.conversationId, leadId: canonForLog?.id, userId: ctx.user.id, action: "lead_transferido", details: { para: input.instanceName, por: ctx.user.name || "atendente" } });
         await updFunnel(input.conversationId, "encaminhado_vendedor");
         // 5. Propaga a atribuição do anúncio (ctwaId) + interesse para o lead do
         //    número do vendedor, para a venda lá continuar atribuída ao anúncio.
@@ -1466,6 +1468,24 @@ const leadRouter = router({
       return listLeads(input);
     }),
 
+  /** Marca que o contato NÃO é lead (fornecedor, colega, etc.) — tira do funil */
+  setNotLead: protectedProcedure
+    .input(z.object({ leadId: z.number(), reason: z.string().min(2).max(40) }))
+    .mutation(async ({ input }) => {
+      const { setLeadNotLead } = await import("./db");
+      await setLeadNotLead(input.leadId, input.reason);
+      return { success: true };
+    }),
+
+  /** Reverte: volta a ser lead */
+  setIsLead: protectedProcedure
+    .input(z.object({ leadId: z.number() }))
+    .mutation(async ({ input }) => {
+      const { setLeadIsLead } = await import("./db");
+      await setLeadIsLead(input.leadId);
+      return { success: true };
+    }),
+
   /** IA analisa UMA conversa: temperatura, objeções, crédito, próxima ação */
   analyze: protectedProcedure
     .input(z.object({ conversationId: z.number() }))
@@ -1540,14 +1560,15 @@ const leadRouter = router({
       const db = await getDb();
       if (!db) return [];
       const { leads: leadsTable, conversations: convsTable, leadSummaries: summariesTable, vehicles: vehiclesTable, teamMembers: membersTable, sellerAssignments: assignmentsTable, sellers: sellersTable, rescueAttempts: rescueTable } = await import("../drizzle/schema");
-      const { eq, desc, inArray } = await import("drizzle-orm");
+      const { eq, desc, inArray, and: andOp } = await import("drizzle-orm");
 
-      // Get all leads
+      // Get all leads (esconde os descartados / "não é lead")
+      const notDiscarded = eq(leadsTable.isLead, true);
       let allLeads;
       if (input?.status && input.status !== "all") {
-        allLeads = await db.select().from(leadsTable).where(eq(leadsTable.status, input.status as any)).orderBy(desc(leadsTable.updatedAt));
+        allLeads = await db.select().from(leadsTable).where(andOp(eq(leadsTable.status, input.status as any), notDiscarded)).orderBy(desc(leadsTable.updatedAt));
       } else {
-        allLeads = await db.select().from(leadsTable).orderBy(desc(leadsTable.updatedAt));
+        allLeads = await db.select().from(leadsTable).where(notDiscarded).orderBy(desc(leadsTable.updatedAt));
       }
       if (allLeads.length === 0) return [];
 
@@ -2556,6 +2577,21 @@ const activityRouter = router({
         userName: nameOf(l.userId),
         details: l.details,
         createdAt: l.createdAt,
+      }));
+    }),
+
+  /** Linha do tempo UNIFICADA por lead (todos os números/conversas da pessoa) */
+  timelineByLead: protectedProcedure
+    .input(z.object({ leadId: z.number() }))
+    .query(async ({ input }) => {
+      const { listActivityLogsByLead } = await import("./db");
+      const logs = await listActivityLogsByLead(input.leadId, 120);
+      let members: any[] = [];
+      try { members = (await listTeamMembersAuth()) as any[]; } catch {}
+      const nameOf = (uid: number) => uid === 0 ? "Sistema" : (members.find(m => m.id === uid)?.name || "Usuário");
+      return (logs as any[]).map(l => ({
+        id: l.id, action: l.action, userId: l.userId, userName: nameOf(l.userId),
+        details: l.details, createdAt: l.createdAt,
       }));
     }),
 

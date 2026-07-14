@@ -148,6 +148,8 @@ export const leads = pgTable("leads", {
   ownerId:         integer("ownerId"),                     // vendedor dono do lead
   reactivations:   integer("reactivations").default(0).notNull(), // nº de reaberturas
   reopenedAt:      timestamp("reopenedAt"),                // última reativação
+  isLead:          boolean("isLead").default(true).notNull(), // false = não é lead (fornecedor/colega...)
+  discardReason:   varchar("discardReason", { length: 100 }),  // motivo/tipo quando não é lead
   score:           integer("score").default(0),
   city:            varchar("city", { length: 255 }),
   email:           varchar("email", { length: 320 }),
