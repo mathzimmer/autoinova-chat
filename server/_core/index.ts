@@ -145,6 +145,11 @@ async function startServer() {
   setInterval(() => {
     import("../flowEngine").then(m => m.runFlowNoReplyCheck().catch(e => console.error("[FlowNoReply] erro:", e)));
   }, 60000);
+
+  // Auto-qualificação de leads por IA (a cada 2 min, se ligado nas configs)
+  setInterval(() => {
+    import("../autoQualify").then(m => m.runAutoQualify().catch(e => console.error("[AutoQualify] erro:", e)));
+  }, 120000);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

@@ -773,6 +773,34 @@ export async function getLeadByConversationId(conversationId: number) {
   return result[0];
 }
 
+// Ordem do funil (para avanço monotônico da auto-qualificação)
+export const FUNNEL_ORDER = [
+  "novo", "interesse_definido", "pagamento_definido", "dados_pessoais",
+  "dados_troca", "encaminhado_vendedor", "negociando", "fechado",
+] as const;
+export function funnelRank(status?: string | null): number {
+  const i = FUNNEL_ORDER.indexOf(String(status || "novo") as any);
+  return i < 0 ? 0 : i;
+}
+
+/**
+ * Lead CANÔNICO da pessoa (por telefone): a mesma pessoa pode ter conversas em
+ * vários números (recepção → vendedor), mas é UM lead. Prioriza o lead que tem
+ * ctwaId (atribuição do anúncio) para o funil/CAPI ficarem unificados e a venda
+ * no número do vendedor continuar atribuída ao anúncio.
+ */
+export async function getCanonicalLead(phone: string) {
+  const db = await getDb();
+  if (!db || !phone) return undefined;
+  let norm = phone;
+  try { const { normalizePhone } = await import("./phoneNormalize"); norm = normalizePhone(phone) || phone; } catch { /* usa phone */ }
+  const rows = await db.select().from(leads).where(or(eq(leads.phone, phone), eq(leads.phone, norm))!);
+  if (!rows.length) return undefined;
+  const withCtwa = rows.filter(r => (r as any).ctwaId);
+  const pool = withCtwa.length ? withCtwa : rows;
+  return pool.sort((a, b) => a.id - b.id)[0]; // o mais antigo (origem)
+}
+
 // ─── Temperature Calculation ─────────────────────────────────
 /**
  * Calcula a temperatura do lead automaticamente baseado no status do funil.
@@ -896,7 +924,12 @@ export async function promoteContactToCliente(leadId: number): Promise<void> {
 export async function updateLeadFunnelStatus(conversationId: number, funnelStatus: string) {
   const db = await getDb();
   if (!db) return null;
-  const lead = await getLeadByConversationId(conversationId);
+  // Resolve o lead CANÔNICO da pessoa (por telefone) — assim uma transferência
+  // para o número do vendedor atualiza o mesmo lead (com o ctwaId do anúncio),
+  // mantendo funil e CAPI unificados.
+  const conv = await getConversationById(conversationId);
+  let lead = conv?.phone ? await getCanonicalLead(conv.phone) : undefined;
+  if (!lead) lead = await getLeadByConversationId(conversationId);
   if (!lead) return null;
   const temperature = calculateTemperature(funnelStatus);
   await db.update(leads).set({ funnelStatus: funnelStatus as any, temperature: temperature as any }).where(eq(leads.id, lead.id));

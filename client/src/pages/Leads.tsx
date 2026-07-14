@@ -1090,6 +1090,38 @@ export default function Leads() {
   );
 }
 
+// ─── Barra de Auto-qualificação por IA ───────────────────────────────────────
+function AutoQualifyBar() {
+  const { data, refetch } = trpc.settings.getAutoQualify.useQuery();
+  const save = trpc.settings.saveAutoQualify.useMutation({
+    onSuccess: () => { refetch(); },
+  });
+  if (!data) return null;
+  const stages: Record<string, string> = {
+    interesse_definido: "Interesse", pagamento_definido: "Pagamento", dados_pessoais: "Dados pessoais",
+    dados_troca: "Troca", encaminhado_vendedor: "Encaminhado", negociando: "Negociando",
+  };
+  return (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+      <label className="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" checked={data.enabled}
+          onChange={(e) => save.mutate({ enabled: e.target.checked, maxStage: data.maxStage as any })} />
+        <span className="font-medium">Auto-qualificar leads com IA</span>
+      </label>
+      <span className="text-muted-foreground text-xs">A IA lê as conversas (recepção + vendedor) e avança o funil sozinha — a venda continua manual.</span>
+      <div className="flex items-center gap-2 ml-auto">
+        <span className="text-xs text-muted-foreground">Avançar até:</span>
+        <Select value={data.maxStage} onValueChange={(v) => save.mutate({ enabled: data.enabled, maxStage: v as any })}>
+          <SelectTrigger className="h-8 w-40"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {Object.entries(stages).map(([k, v]) => <SelectItem key={k} value={k}>{v}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
 // ─── Painel de Inteligência Comercial ────────────────────────────────────────
 
 const TEMP_STYLE: Record<string, { label: string; bar: string; badge: string }> = {
@@ -1157,6 +1189,8 @@ function IntelligencePanel() {
           </Button>
         </div>
       </div>
+
+      <AutoQualifyBar />
 
       {/* Resumo */}
       <div className="grid grid-cols-3 gap-3">

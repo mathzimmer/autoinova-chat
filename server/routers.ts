@@ -779,6 +779,29 @@ const conversationRouter = router({
       await updateConversation(input.conversationId, { status: "resolved", aiActive: false });
       emitConversationUpdate(input.conversationId, { status: "resolved" });
 
+      // 4. Transferência = marco de funil: sobe o lead CANÔNICO para "encaminhado
+      //    ao vendedor" (dispara InitiateCheckout na Meta, atribuído ao anúncio).
+      try {
+        const { updateLeadFunnelStatus: updFunnel, getCanonicalLead: getCanon, upsertLead: upLead } = await import("./db");
+        await updFunnel(input.conversationId, "encaminhado_vendedor");
+        // 5. Propaga a atribuição do anúncio (ctwaId) + interesse para o lead do
+        //    número do vendedor, para a venda lá continuar atribuída ao anúncio.
+        if (mirrored?.conversationId && conv.phone) {
+          const canon = await getCanon(conv.phone);
+          if (canon && (canon.ctwaId || canon.metaLeadId || (canon as any).vehicleInterest)) {
+            await upLead({
+              conversationId: mirrored.conversationId,
+              phone: conv.phone,
+              ctwaId: canon.ctwaId || undefined,
+              metaLeadId: canon.metaLeadId || undefined,
+              vehicleInterest: (canon as any).vehicleInterest || undefined,
+            } as any);
+          }
+        }
+      } catch (e) {
+        console.error("[Transfer] funil/atribuição:", e);
+      }
+
       return { success: true, sellerConversationId: mirrored?.conversationId ?? null };
     }),
 
@@ -2117,6 +2140,24 @@ const webhookRouter = router({
 });
 
 const settingsRouter = router({
+  /** Auto-qualificação de leads por IA (liga/desliga + teto de estágio) */
+  getAutoQualify: protectedProcedure.query(async () => {
+    return {
+      enabled: (await getSetting("auto_qualify_enabled")) === "true",
+      maxStage: (await getSetting("auto_qualify_max_stage")) || "negociando",
+    };
+  }),
+  saveAutoQualify: adminProcedure
+    .input(z.object({
+      enabled: z.boolean(),
+      maxStage: z.enum(["interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "encaminhado_vendedor", "negociando"]).default("negociando"),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("auto_qualify_enabled", input.enabled ? "true" : "false", ctx.user.id);
+      await upsertSetting("auto_qualify_max_stage", input.maxStage, ctx.user.id);
+      return { success: true };
+    }),
+
   /** Nomes customizados das etapas do funil (ex.: renomear "Dados pessoais" → "Documentação") */
   getFunnelLabels: protectedProcedure.query(async () => {
     const raw = await getSetting("funnel_stage_labels");

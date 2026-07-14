@@ -19,6 +19,7 @@ export type InsightResult = {
   creditStatus: string;
   nextAction: string;
   vehicleInterest: string;
+  funnelStage: "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando";
 };
 
 const SYSTEM = `Você é um gerente comercial experiente de uma concessionária de veículos analisando uma conversa de WhatsApp entre um cliente e um vendedor/atendente.
@@ -31,8 +32,17 @@ Sua tarefa é avaliar friamente o potencial de fechamento e retornar um JSON EXA
   "objections": ["<travas/objeções: preço, crédito, indecisão, prazo, troca...>"],
   "creditStatus": "<situação de pagamento/crédito mencionada: entrada, financiamento, à vista, restrição, ou 'não mencionado'>",
   "nextAction": "<a próxima ação mais eficaz para o vendedor fazer AGORA>",
-  "vehicleInterest": "<veículo(s) de interesse ou 'não definido'>"
+  "vehicleInterest": "<veículo(s) de interesse ou 'não definido'>",
+  "funnelStage": "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando"
 }
+Critérios do funnelStage (escolha o mais avançado que a conversa JÁ atingiu de fato):
+- novo: só cumprimentou ou pergunta genérica, sem veículo definido.
+- interesse_definido: demonstrou interesse claro num veículo específico.
+- pagamento_definido: falou como vai pagar (à vista, financiamento, entrada).
+- dados_pessoais: forneceu dados pessoais (nome completo, CPF, etc.).
+- dados_troca: falou de um veículo na troca.
+- negociando: discutindo condições/proposta/valores finais para fechar.
+Nunca escolha um estágio que a conversa não comprova. Não existe "fechado" aqui — a venda é confirmada manualmente.
 Critérios de temperatura:
 - muito_quente: cliente quer fechar, pediu proposta/condições finais, definiu veículo e pagamento.
 - quente: interesse claro num veículo específico, discutindo preço/troca/financiamento.
@@ -91,6 +101,7 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       creditStatus: String(json.creditStatus || "não mencionado").slice(0, 200),
       nextAction: String(json.nextAction || "").slice(0, 500),
       vehicleInterest: String(json.vehicleInterest || "não definido").slice(0, 300),
+      funnelStage: (["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "negociando"].includes(json.funnelStage) ? json.funnelStage : "novo"),
     };
   } catch (err) {
     console.error(`[Intel] Falha ao analisar conversa ${conversationId}:`, err);
