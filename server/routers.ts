@@ -1547,6 +1547,55 @@ const leadRouter = router({
       return { success: true };
     }),
 
+  /** Situação de crédito (com/sem crédito, valor, condições, banco) */
+  setCredit: protectedProcedure
+    .input(z.object({
+      leadId: z.number(),
+      approved: z.enum(["sim", "nao"]),
+      amount: z.string().max(50).optional(),
+      conditions: z.string().max(255).optional(),
+      bank: z.string().max(40).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB indisponível");
+      const { leads: leadsT } = await import("../drizzle/schema");
+      const lead = (await db.select().from(leadsT).where(eq(leadsT.id, input.leadId)).limit(1))[0];
+      if (!lead) throw new Error("Lead não encontrado");
+      await db.update(leadsT).set({
+        creditApproved: input.approved,
+        creditAmount: input.approved === "sim" ? (input.amount ?? null) : null,
+        creditConditions: input.approved === "sim" ? (input.conditions ?? null) : null,
+        creditBank: input.approved === "sim" ? (input.bank ?? null) : null,
+        updatedAt: new Date(),
+      } as any).where(eq(leadsT.id, input.leadId));
+      const { logTimeline } = await import("./db");
+      await logTimeline({
+        conversationId: lead.conversationId, leadId: input.leadId, userId: ctx.user.id,
+        action: "credito",
+        details: { aprovado: input.approved, valor: input.amount, condicoes: input.conditions, banco: input.bank },
+      });
+      return { success: true };
+    }),
+
+  /** Vincula (ou desvincula) um veículo do estoque ao lead */
+  linkVehicle: protectedProcedure
+    .input(z.object({ leadId: z.number(), vehicleId: z.number().nullable() }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB indisponível");
+      const { leads: leadsT, vehicles: vehT } = await import("../drizzle/schema");
+      const lead = (await db.select().from(leadsT).where(eq(leadsT.id, input.leadId)).limit(1))[0];
+      if (!lead) throw new Error("Lead não encontrado");
+      await db.update(leadsT).set({ vehicleId: input.vehicleId, updatedAt: new Date() } as any).where(eq(leadsT.id, input.leadId));
+      if (input.vehicleId) {
+        const v = (await db.select().from(vehT).where(eq(vehT.id, input.vehicleId)).limit(1))[0];
+        const { logTimeline } = await import("./db");
+        await logTimeline({ conversationId: lead.conversationId, leadId: input.leadId, userId: ctx.user.id, action: "veiculo_vinculado", details: { veiculo: v ? `${v.brand} ${v.model} ${v.year}` : String(input.vehicleId) } });
+      }
+      return { success: true };
+    }),
+
   /** IA analisa UMA conversa: temperatura, objeções, crédito, próxima ação */
   analyze: protectedProcedure
     .input(z.object({ conversationId: z.number() }))

@@ -148,6 +148,39 @@ function DebounceConfig() {
   );
 }
 
+function AutoQualifySettings() {
+  const { data, refetch } = trpc.settings.getAutoQualify.useQuery();
+  const save = trpc.settings.saveAutoQualify.useMutation({ onSuccess: () => refetch() });
+  const stages: Record<string, string> = {
+    interesse_definido: "Interesse", pagamento_definido: "Pagamento", dados_pessoais: "Dados pessoais",
+    dados_troca: "Troca", encaminhado_vendedor: "Encaminhado", negociando: "Negociando",
+  };
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Auto-qualificação de leads (IA)</CardTitle>
+        <CardDescription className="mt-0.5">A IA lê as conversas (recepção + vendedor) e avança o funil sozinha. A venda ("fechado") continua manual.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!data ? <p className="text-sm text-muted-foreground">Carregando…</p> : (
+          <div className="flex flex-wrap items-center gap-4">
+            <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={data.enabled} onChange={(e) => save.mutate({ enabled: e.target.checked, maxStage: data.maxStage as any })} />
+              <span className="font-medium">Ativar auto-qualificação</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Avançar até:</span>
+              <select value={data.maxStage} onChange={(e) => save.mutate({ enabled: data.enabled, maxStage: e.target.value as any })} className="h-8 px-2 text-sm rounded-md border border-border bg-background">
+                {Object.entries(stages).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+              </select>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data: promptData, refetch, isLoading } = trpc.settings.getPrompt.useQuery();
 
@@ -246,6 +279,9 @@ export default function Settings() {
             <p className="text-sm text-muted-foreground">Arquitetura de prompt em 4 camadas — todas editáveis</p>
           </div>
         </div>
+
+        {/* Auto-qualificação de leads */}
+        <AutoQualifySettings />
 
         {/* Architecture Overview */}
         <Card className="bg-card border-border">

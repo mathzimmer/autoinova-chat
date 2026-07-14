@@ -150,6 +150,10 @@ export const leads = pgTable("leads", {
   reopenedAt:      timestamp("reopenedAt"),                // última reativação
   isLead:          boolean("isLead").default(true).notNull(), // false = não é lead (fornecedor/colega...)
   discardReason:   varchar("discardReason", { length: 100 }),  // motivo/tipo quando não é lead
+  creditApproved:  varchar("creditApproved", { length: 10 }),   // "sim" | "nao" | null (não avaliado)
+  creditAmount:    varchar("creditAmount", { length: 50 }),     // valor liberado
+  creditConditions: varchar("creditConditions", { length: 255 }), // condições de parcela
+  creditBank:      varchar("creditBank", { length: 40 }),        // banco
   score:           integer("score").default(0),
   city:            varchar("city", { length: 255 }),
   email:           varchar("email", { length: 320 }),

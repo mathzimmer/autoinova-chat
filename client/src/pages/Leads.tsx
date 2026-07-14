@@ -181,6 +181,12 @@ export default function Leads() {
   const [colName, setColName] = useState("");
   const [colPhone, setColPhone] = useState("");
   const [colVehicle, setColVehicle] = useState("");
+  const [sortField, setSortField] = useState<"entrada" | "lastmsg" | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const toggleSort = (f: "entrada" | "lastmsg") => {
+    if (sortField === f) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortField(f); setSortDir("desc"); }
+  };
 
   // Opções de filtro: instâncias (todas as fontes) e atendentes
   const { data: evoInstances } = trpc.evolution.listInstances.useQuery();
@@ -302,8 +308,16 @@ export default function Leads() {
       });
     }
 
+    // Ordenação por coluna (clique no título)
+    if (sortField) {
+      const val = (l: any) => sortField === "entrada"
+        ? (l.createdAt ? new Date(l.createdAt).getTime() : 0)
+        : (l.conversation?.lastMessageAt || 0);
+      filtered = [...filtered].sort((a, b) => sortDir === "asc" ? val(a) - val(b) : val(b) - val(a));
+    }
+
     return filtered;
-  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, colName, colPhone, colVehicle]);
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, colName, colPhone, colVehicle, sortField, sortDir]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -621,7 +635,9 @@ export default function Leads() {
           <div className="min-w-[1000px]">
             {/* Cabeçalho com filtro por coluna (estilo Excel) */}
             <div className="grid items-center gap-2 px-2 py-1.5 border-b border-border bg-muted/40 sticky top-0 z-10 text-[10px]" style={{ gridTemplateColumns: LEAD_GRID }}>
-              <div className="text-muted-foreground font-semibold uppercase">Entrada</div>
+              <button onClick={() => toggleSort("entrada")} className="text-muted-foreground font-semibold uppercase text-left hover:text-foreground flex items-center gap-0.5">
+                Entrada {sortField === "entrada" ? (sortDir === "asc" ? "↑" : "↓") : "⇅"}
+              </button>
               <input value={colName} onChange={(e) => setColName(e.target.value)} placeholder="Nome…" className="h-6 px-1.5 rounded border border-border bg-background text-[11px]" />
               <input value={colPhone} onChange={(e) => setColPhone(e.target.value)} placeholder="Telefone…" className="h-6 px-1.5 rounded border border-border bg-background text-[11px]" />
               <input value={colVehicle} onChange={(e) => setColVehicle(e.target.value)} placeholder="Veículo…" className="h-6 px-1.5 rounded border border-border bg-background text-[11px]" />
@@ -633,7 +649,9 @@ export default function Leads() {
                 <option value="all">Instância</option>
                 {instanceOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
-              <div className="text-muted-foreground font-semibold uppercase text-center">Últ.</div>
+              <button onClick={() => toggleSort("lastmsg")} className="text-muted-foreground font-semibold uppercase text-center hover:text-foreground">
+                Últ. {sortField === "lastmsg" ? (sortDir === "asc" ? "↑" : "↓") : "⇅"}
+              </button>
               <select value={funnelFilter} onChange={(e) => setFunnelFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
                 <option value="all">Estágio</option>
                 {FUNNEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -661,9 +679,13 @@ export default function Leads() {
                   onClick={() => setExpandedLeadId(isExpanded ? null : lead.id)}
                 >
                   <span className="text-[10px] text-muted-foreground">
-                    {(lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
+                    {(lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—"}
                   </span>
-                  <span className="font-semibold truncate" title={displayName}>{displayName}</span>
+                  <span className="font-semibold truncate flex items-center gap-1" title={displayName}>
+                    {(lead as any).creditApproved === "sim" && <span title={`Crédito aprovado${(lead as any).creditBank ? ` · ${(lead as any).creditBank}` : ""}`}>💳</span>}
+                    {(lead as any).creditApproved === "nao" && <span title="Sem crédito" className="grayscale opacity-60">💳</span>}
+                    <span className="truncate">{displayName}</span>
+                  </span>
                   <span className="text-[11px] text-muted-foreground truncate">{displayPhone}</span>
                   <span className="truncate text-[11px]" title={lead.linkedVehicle ? `${lead.linkedVehicle.brand} ${lead.linkedVehicle.model}` : lead.vehicleInterest || ""}>
                     {lead.linkedVehicle ? `🚗 ${lead.linkedVehicle.brand} ${lead.linkedVehicle.model}` : (lead.vehicleInterest && lead.vehicleInterest !== "não definido") ? <span className="text-muted-foreground">🔎 {lead.vehicleInterest}</span> : <span className="text-muted-foreground/40">—</span>}
@@ -683,45 +705,19 @@ export default function Leads() {
                 {/* Expanded Panel */}
                 {isExpanded && (
                   <CardContent className="pt-0 pb-4 px-4 border-t border-border">
-                    {/* Action Buttons */}
-                    <div className="flex flex-wrap gap-2 mt-3 mb-4">
+                    {/* Ações do lead */}
+                    <div className="flex flex-wrap gap-2 mt-3 mb-3 items-center">
                       <GoToConversation lead={lead} />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs"
-                        onClick={(e) => { e.stopPropagation(); copyLeadInfo(lead); }}
-                      >
-                        <Copy className="h-3.5 w-3.5 mr-1.5" />
-                        Copiar lead
+                      <Button size="sm" variant="outline" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); openEditDialog(lead); }}>
+                        <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs"
-                        onClick={(e) => { e.stopPropagation(); copySummary(lead); }}
-                      >
-                        <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
-                        Copiar resumo
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs"
-                        onClick={(e) => { e.stopPropagation(); openEditDialog(lead); }}
-                      >
-                        <Pencil className="h-3.5 w-3.5 mr-1.5" />
-                        Editar
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-8 text-xs text-muted-foreground hover:text-red-600"
-                        onClick={(e) => { e.stopPropagation(); handleNotLead(lead); }}
-                      >
+                      <Button size="sm" variant="outline" className="h-8 text-xs text-muted-foreground hover:text-red-600" onClick={(e) => { e.stopPropagation(); handleNotLead(lead); }}>
                         Não é lead
                       </Button>
                     </div>
+
+                    {/* Crédito + Vincular carro + Comentário */}
+                    <LeadActions lead={lead} onChanged={refetch} />
 
                     {/* Linha do tempo do lead */}
                     <LeadTimeline leadId={lead.id} />
@@ -1165,6 +1161,80 @@ function GoToConversation({ lead, compact }: { lead: any; compact?: boolean }) {
   );
 }
 
+// ─── Ações do lead: comentário, crédito, vincular carro ───────────────────────
+const BANKS = ["Santander", "BV", "Pan", "Sicredi", "C6", "Itaú", "Bradesco", "Safra", "Cresol", "Sicoob", "Outro"];
+function LeadActions({ lead, onChanged }: { lead: any; onChanged: () => void }) {
+  const [tab, setTab] = useState<null | "comment" | "credit" | "vehicle">(null);
+  const [comment, setComment] = useState("");
+  const [credApproved, setCredApproved] = useState<"sim" | "nao" | null>(lead.creditApproved || null);
+  const [amount, setAmount] = useState(lead.creditAmount || "");
+  const [conditions, setConditions] = useState(lead.creditConditions || "");
+  const [bank, setBank] = useState(lead.creditBank || "");
+  const [vSearch, setVSearch] = useState("");
+  const addNote = trpc.activity.addNote.useMutation({ onSuccess: () => { toast.success("Comentário adicionado"); setComment(""); setTab(null); onChanged(); }, onError: (e: any) => toast.error(e.message) });
+  const setCredit = trpc.lead.setCredit.useMutation({ onSuccess: () => { toast.success("Crédito atualizado"); onChanged(); }, onError: (e: any) => toast.error(e.message) });
+  const linkVehicle = trpc.lead.linkVehicle.useMutation({ onSuccess: () => { toast.success("Veículo vinculado"); setTab(null); onChanged(); }, onError: (e: any) => toast.error(e.message) });
+  const { data: vehicles } = trpc.vehicle.list.useQuery(undefined, { enabled: tab === "vehicle" });
+  const vList = (vehicles || []).filter((v: any) => v.available && `${v.brand} ${v.model} ${v.year}`.toLowerCase().includes(vSearch.toLowerCase())).slice(0, 30);
+  const inputCls = "w-full h-8 px-2 text-sm rounded border border-border bg-background";
+
+  return (
+    <div className="space-y-2 mb-3">
+      <div className="flex flex-wrap gap-2 items-center">
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab(tab === "comment" ? null : "comment")}>💬 Comentário</Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab(tab === "credit" ? null : "credit")}>💳 Crédito</Button>
+        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab(tab === "vehicle" ? null : "vehicle")}>🚗 Vincular carro</Button>
+        {lead.creditApproved === "sim" && <span className="text-[11px] text-green-600 self-center">✓ Crédito aprovado{lead.creditAmount ? `: ${lead.creditAmount}` : ""}{lead.creditBank ? ` (${lead.creditBank})` : ""}</span>}
+        {lead.creditApproved === "nao" && <span className="text-[11px] text-red-600 self-center">✗ Sem crédito</span>}
+      </div>
+
+      {tab === "comment" && (
+        <div className="space-y-1">
+          <Textarea value={comment} onChange={(e) => setComment(e.target.value)} rows={2} placeholder="Comentário (entra na linha do tempo e no contexto da IA)" className="text-sm" />
+          <Button size="sm" className="h-7 text-xs" disabled={!comment.trim() || addNote.isPending} onClick={() => addNote.mutate({ conversationId: lead.conversationId, note: comment.trim() })}>Adicionar</Button>
+        </div>
+      )}
+
+      {tab === "credit" && (
+        <div className="space-y-2 border border-border rounded-md p-2">
+          <div className="flex gap-2">
+            <button onClick={() => { setCredApproved("sim"); }} className={`px-3 py-1 rounded text-xs font-medium ${credApproved === "sim" ? "bg-green-600 text-white" : "bg-green-500/10 text-green-700"}`}>Com crédito</button>
+            <button onClick={() => { setCredApproved("nao"); setCredit.mutate({ leadId: lead.id, approved: "nao" }); }} className={`px-3 py-1 rounded text-xs font-medium ${credApproved === "nao" ? "bg-red-600 text-white" : "bg-red-500/10 text-red-700"}`}>Sem crédito</button>
+          </div>
+          {credApproved === "sim" && (
+            <div className="space-y-2">
+              <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="Valor liberado (ex: R$ 45.000)" className={inputCls} />
+              <input value={conditions} onChange={(e) => setConditions(e.target.value)} placeholder="Condições de parcela (ex: 48x de R$ 1.200)" className={inputCls} />
+              <select value={bank} onChange={(e) => setBank(e.target.value)} className={inputCls}>
+                <option value="">Banco…</option>
+                {BANKS.map((b) => <option key={b} value={b}>{b}</option>)}
+              </select>
+              <Button size="sm" className="h-7 text-xs" disabled={setCredit.isPending} onClick={() => setCredit.mutate({ leadId: lead.id, approved: "sim", amount: amount || undefined, conditions: conditions || undefined, bank: bank || undefined })}>Salvar crédito</Button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "vehicle" && (
+        <div className="space-y-2 border border-border rounded-md p-2">
+          <input value={vSearch} onChange={(e) => setVSearch(e.target.value)} placeholder="Buscar veículo no estoque…" className={inputCls} />
+          <div className="max-h-48 overflow-y-auto space-y-1">
+            {vList.map((v: any) => (
+              <button key={v.id} onClick={() => linkVehicle.mutate({ leadId: lead.id, vehicleId: v.id })} className="w-full flex items-center gap-2 p-1.5 rounded hover:bg-accent text-left text-xs">
+                {v.imageUrl && <img src={v.imageUrl} className="w-8 h-8 rounded object-cover" alt="" />}
+                <span className="flex-1 truncate">{v.brand} {v.model} {v.year}</span>
+                <span className="text-muted-foreground">{v.price ? `R$ ${Number(v.price).toLocaleString("pt-BR")}` : ""}</span>
+              </button>
+            ))}
+            {vList.length === 0 && <div className="text-[11px] text-muted-foreground text-center py-2">Nenhum veículo</div>}
+          </div>
+          {lead.linkedVehicle && <button onClick={() => linkVehicle.mutate({ leadId: lead.id, vehicleId: null })} className="text-[11px] text-red-600">Desvincular veículo atual</button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Linha do tempo do lead (unificada, todos os números) ────────────────────
 function fmtTimelineDate(d: any) {
   try { return new Date(d).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "UTC" }); } catch { return ""; }
@@ -1180,6 +1250,9 @@ function LeadTimeline({ leadId }: { leadId: number }) {
     nota:              { label: "Nota", icon: "📝", color: "text-slate-600" },
     ia_comentario:     { label: "IA analisou", icon: "🤖", color: "text-fuchsia-600" },
     nao_e_lead:        { label: "Marcado: não é lead", icon: "🚫", color: "text-red-600" },
+    credito:           { label: "Crédito", icon: "💳", color: "text-emerald-600" },
+    veiculo_vinculado: { label: "Veículo vinculado", icon: "🚗", color: "text-blue-600" },
+    atribuido_atendente: { label: "Atribuído a atendente", icon: "👤", color: "text-slate-600" },
   };
   if (isLoading) return <div className="mt-4 text-xs text-muted-foreground">Carregando linha do tempo…</div>;
   if (!events || events.length === 0) return null;
@@ -1197,6 +1270,9 @@ function LeadTimeline({ leadId }: { leadId: number }) {
           else if (ev.action === "lead_criado") extra = `${d.origem === "anuncio" ? "via anúncio" : "orgânico"}${d.instancia ? ` · ${d.instancia}` : ""}`;
           else if (ev.action === "lead_transferido") extra = `→ ${d.para || ""}${d.por ? ` (por ${d.por})` : ""}`;
           else if (ev.action === "lead_reativado") extra = `estava: ${d.de || ""}`;
+          else if (ev.action === "credito") extra = d.aprovado === "sim" ? `aprovado${d.valor ? ` ${d.valor}` : ""}${d.banco ? ` · ${d.banco}` : ""}` : "sem crédito";
+          else if (ev.action === "veiculo_vinculado") extra = d.veiculo || "";
+          else if (ev.action === "nota") extra = d.note || d.texto || "";
           return (
             <li key={ev.id} className="flex gap-2 text-xs">
               <span className="shrink-0">{m.icon}</span>
