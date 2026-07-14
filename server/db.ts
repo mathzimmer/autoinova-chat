@@ -296,6 +296,10 @@ export async function mirrorEvolutionMessage(params: {
     console.error("[Evolution] sync contato falhou:", err);
   }
 
+  if (isInbound && bestPhone) {
+    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: bestName }); } catch (err) { console.error("[Lead] ensure (evolution):", err); }
+  }
+
   return { conversationId: conv.id, message };
 }
 
@@ -439,6 +443,10 @@ export async function mirrorOfficialMessage(params: {
       }
     }
   } catch (err) { console.error("[Official] sync contato falhou:", err); }
+
+  if (isInbound && bestPhone) {
+    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: bestName }); } catch (err) { console.error("[Lead] ensure (official):", err); }
+  }
 
   return { conversationId: conv.id, message };
 }
@@ -594,6 +602,10 @@ export async function mirrorZernioMessage(params: {
     }
   } catch (err) {
     console.error("[Zernio] sync contato falhou:", err);
+  }
+
+  if (isInbound && bestPhone) {
+    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: bestName }); } catch (err) { console.error("[Lead] ensure (zernio):", err); }
   }
 
   return { conversationId: conv.id, message };
@@ -829,10 +841,90 @@ export function calculateTemperature(funnelStatus: string): "frio" | "morno" | "
   }
 }
 
+// ─── Oportunidades (ciclos de compra) ────────────────────────────────────────
+export async function openOpportunity(leadId: number, opts?: { funnelStatus?: string; vehicleId?: number; vehicleInterest?: string; isReactivation?: boolean }) {
+  const db = await getDb();
+  if (!db) return;
+  const { leadOpportunities } = await import("../drizzle/schema");
+  await db.insert(leadOpportunities).values({
+    leadId,
+    funnelStatus: (opts?.funnelStatus || "novo") as any,
+    vehicleId: opts?.vehicleId ?? null,
+    vehicleInterest: opts?.vehicleInterest ?? null,
+    isReactivation: !!opts?.isReactivation,
+    status: "open",
+  }).catch(() => {});
+}
+export async function closeOpenOpportunity(leadId: number, status: "won" | "lost", outcome?: string | null, valueCents?: number | null) {
+  const db = await getDb();
+  if (!db) return;
+  const { leadOpportunities } = await import("../drizzle/schema");
+  await db.update(leadOpportunities)
+    .set({ status, outcome: outcome ?? null, valueCents: valueCents ?? null, closedAt: new Date() })
+    .where(and(eq(leadOpportunities.leadId, leadId), eq(leadOpportunities.status, "open"))).catch(() => {});
+}
+export async function setOpenOpportunityStage(leadId: number, funnelStatus: string) {
+  const db = await getDb();
+  if (!db) return;
+  const { leadOpportunities } = await import("../drizzle/schema");
+  await db.update(leadOpportunities)
+    .set({ funnelStatus: funnelStatus as any })
+    .where(and(eq(leadOpportunities.leadId, leadId), eq(leadOpportunities.status, "open"))).catch(() => {});
+}
+
+/**
+ * Identidade única do lead pela PESSOA (telefone). Cria no 1º contato (em qualquer
+ * número). Se já existe, continua nele. Se estava finalizado (fechado/perdido) e a
+ * pessoa volta, REATIVA: abre nova oportunidade e reseta o funil, mantendo o histórico.
+ */
+export async function getOrCreateLeadByPhone(params: {
+  phone: string; conversationId: number; name?: string; ctwaId?: string;
+}): Promise<{ lead: any; created: boolean; reactivated: boolean }> {
+  const db = await getDb();
+  if (!db) throw new Error("DB indisponível");
+  let norm = params.phone;
+  try { const { normalizePhone } = await import("./phoneNormalize"); norm = normalizePhone(params.phone) || params.phone; } catch { /* usa phone */ }
+
+  const existing = await getCanonicalLead(params.phone);
+  if (existing) {
+    await db.update(conversations).set({ leadId: existing.id }).where(eq(conversations.id, params.conversationId)).catch(() => {});
+    const finalized = existing.funnelStatus === "fechado" || existing.funnelStatus === "perdido";
+    if (finalized) {
+      await closeOpenOpportunity(existing.id, existing.funnelStatus === "fechado" ? "won" : "lost");
+      await openOpportunity(existing.id, { funnelStatus: "novo", vehicleInterest: existing.vehicleInterest || undefined, isReactivation: true });
+      await db.update(leads).set({
+        funnelStatus: "novo" as any, temperature: "morno" as any, status: "new" as any,
+        reactivations: (existing.reactivations || 0) + 1, reopenedAt: new Date(), updatedAt: new Date(),
+      }).where(eq(leads.id, existing.id));
+      await logTimeline({ conversationId: params.conversationId, leadId: existing.id, action: "lead_reativado", details: { de: existing.funnelStatus } });
+      return { lead: { ...existing, funnelStatus: "novo", reactivated: true }, created: false, reactivated: true };
+    }
+    return { lead: existing, created: false, reactivated: false };
+  }
+
+  const inserted = await db.insert(leads).values({
+    conversationId: params.conversationId,
+    phone: norm || params.phone,
+    name: params.name || null,
+    funnelStatus: "novo" as any,
+    ...(params.ctwaId ? { ctwaId: params.ctwaId } : {}),
+  } as any).returning();
+  const lead = inserted[0];
+  await db.update(conversations).set({ leadId: lead.id }).where(eq(conversations.id, params.conversationId)).catch(() => {});
+  await openOpportunity(lead.id, { funnelStatus: "novo", isReactivation: false });
+  await logTimeline({ conversationId: params.conversationId, leadId: lead.id, action: "lead_criado", details: { origem: params.ctwaId ? "anuncio" : "organico" } });
+  return { lead, created: true, reactivated: false };
+}
+
 export async function upsertLead(data: InsertLead) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const existing = await getLeadByConversationId(data.conversationId);
+  // Prefere o lead JÁ vinculado à conversa (modelo por pessoa); senão por conversa.
+  let existing = await getLeadByConversationId(data.conversationId);
+  if (!existing) {
+    const conv = (await db.select({ leadId: conversations.leadId }).from(conversations).where(eq(conversations.id, data.conversationId)).limit(1))[0];
+    if (conv?.leadId) existing = (await db.select().from(leads).where(eq(leads.id, conv.leadId)).limit(1))[0];
+  }
   if (existing) {
     // Update non-undefined fields (null is allowed to explicitly clear a field)
     const updateData: Record<string, unknown> = {};
@@ -938,10 +1030,13 @@ export async function updateLeadFunnelStatus(conversationId: number, funnelStatu
     import("./metaConversions").then(({ trackLeadProgress }) =>
       trackLeadProgress(lead.id, { funnelStatus })
     ).catch(err => console.error("[CAPI] hook updateLeadFunnelStatus:", err));
-    if (funnelStatus === "fechado") promoteContactToCliente(lead.id).catch(() => {});
+    // Oportunidade: fecha (ganho/perdido) ou atualiza o estágio da aberta
+    if (funnelStatus === "fechado") { closeOpenOpportunity(lead.id, "won").catch(() => {}); promoteContactToCliente(lead.id).catch(() => {}); }
+    else if (funnelStatus === "perdido") { closeOpenOpportunity(lead.id, "lost").catch(() => {}); }
+    else { setOpenOpportunityStage(lead.id, funnelStatus).catch(() => {}); }
     // Linha do tempo: mudança de etapa (venda se "fechado")
     logTimeline({
-      conversationId,
+      conversationId, leadId: lead.id,
       action: funnelStatus === "fechado" ? "negocio_fechado" : "etapa_funil",
       details: { de: lead.funnelStatus, para: funnelStatus },
     }).catch(() => {});
@@ -1217,6 +1312,7 @@ export async function createActivityLog(data: InsertActivityLog) {
  */
 export async function logTimeline(params: {
   conversationId: number;
+  leadId?: number;
   userId?: number;
   action: string;
   details?: Record<string, unknown>;
@@ -1224,8 +1320,15 @@ export async function logTimeline(params: {
   try {
     const db = await getDb();
     if (!db) return;
+    // Resolve o lead (pessoa) da conversa para a timeline ficar unificada
+    let leadId = params.leadId;
+    if (!leadId) {
+      const conv = (await db.select({ leadId: conversations.leadId }).from(conversations).where(eq(conversations.id, params.conversationId)).limit(1))[0];
+      leadId = conv?.leadId ?? undefined;
+    }
     await db.insert(activityLogs).values({
       conversationId: params.conversationId,
+      leadId: leadId ?? null,
       userId: params.userId ?? 0,
       action: params.action,
       details: params.details ?? null,

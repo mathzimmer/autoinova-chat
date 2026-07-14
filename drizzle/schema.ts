@@ -80,6 +80,7 @@ export const conversations = pgTable("conversations", {
   instanceName:            varchar("instanceName", { length: 100 }),
   // Agente de IA fixado nesta conversa (null = usa a hierarquia padrão)
   agentId:                 integer("agentId"),
+  leadId:                  integer("leadId"),           // lead (pessoa) desta conversa
   // Arquivamento (sai da caixa principal sem apagar)
   archived:                boolean("archived").default(false).notNull(),
   platformUserId:          varchar("platformUserId", { length: 255 }),  // BSUID vai aqui
@@ -144,6 +145,9 @@ export const leads = pgTable("leads", {
   status:          leadStatusEnum("leadStatus").default("new").notNull(),
   funnelStatus:    funnelStatusEnum("funnelStatus").default("novo").notNull(),
   temperature:     leadTemperatureEnum("leadTemperature").default("frio").notNull(),
+  ownerId:         integer("ownerId"),                     // vendedor dono do lead
+  reactivations:   integer("reactivations").default(0).notNull(), // nº de reaberturas
+  reopenedAt:      timestamp("reopenedAt"),                // última reativação
   score:           integer("score").default(0),
   city:            varchar("city", { length: 255 }),
   email:           varchar("email", { length: 320 }),
@@ -327,11 +331,31 @@ export type InsertConversationAssignment = typeof conversationAssignments.$infer
 /**
  * Activity Logs - tracks all actions by team members.
  */
+// ─── Oportunidades (ciclos de compra de um lead) ─────────────────────────────
+// Um lead (pessoa) pode ter várias oportunidades ao longo do tempo. Cada uma é
+// um ciclo com abertura, estágio e desfecho (won/lost). Reativação = nova linha.
+export const leadOpportunities = pgTable("leadOpportunities", {
+  id:            serial("id").primaryKey(),
+  leadId:        integer("leadId").notNull(),
+  status:        varchar("status", { length: 20 }).default("open").notNull(), // open | won | lost
+  funnelStatus:  varchar("funnelStatus", { length: 50 }).default("novo").notNull(),
+  vehicleId:     integer("vehicleId"),
+  vehicleInterest: varchar("vehicleInterest", { length: 500 }),
+  valueCents:    bigint("valueCents", { mode: "number" }),
+  outcome:       varchar("outcome", { length: 100 }),  // motivo de perda / detalhe
+  isReactivation: boolean("isReactivation").default(false).notNull(),
+  openedAt:      timestamp("openedAt").defaultNow().notNull(),
+  closedAt:      timestamp("closedAt"),
+});
+export type LeadOpportunity = typeof leadOpportunities.$inferSelect;
+export type InsertLeadOpportunity = typeof leadOpportunities.$inferInsert;
+
 export const activityLogs = pgTable("activityLogs", {
   id:             serial("id").primaryKey(),
   userId:         integer("userId").notNull(),
   action:         varchar("action", { length: 100 }).notNull(),
   conversationId: integer("conversationId"),
+  leadId:         integer("leadId"),        // timeline unificada por lead (pessoa)
   details:        jsonb("details"),
   createdAt:      timestamp("createdAt").defaultNow().notNull(),
 });

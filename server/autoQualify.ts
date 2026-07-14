@@ -7,7 +7,7 @@
 
 import {
   getDb, getSetting, getCanonicalLead, getLeadByConversationId,
-  funnelRank, FUNNEL_ORDER, updateLeadFunnelStatus, updateConversation,
+  funnelRank, FUNNEL_ORDER, updateLeadFunnelStatus, updateConversation, logTimeline,
 } from "./db";
 import { conversations } from "../drizzle/schema";
 import { and, gt, isNotNull, desc } from "drizzle-orm";
@@ -53,7 +53,7 @@ export async function runAutoQualify(): Promise<void> {
     processed++;
     try {
       const insight = await analyzeConversation(conv.id);
-      if (insight?.funnelStage) {
+      if (insight) {
         const canon = conv.phone ? await getCanonicalLead(conv.phone) : lead;
         const curRank = funnelRank(canon?.funnelStatus);
         const target = Math.min(funnelRank(insight.funnelStage), capRank);
@@ -61,6 +61,18 @@ export async function runAutoQualify(): Promise<void> {
           await updateLeadFunnelStatus(conv.id, FUNNEL_ORDER[target]);
           console.log(`[AutoQualify] conversa ${conv.id}: ${canon?.funnelStatus || "novo"} → ${FUNNEL_ORDER[target]} (IA)`);
         }
+        // IA comenta a negociação na timeline do lead (visão gerencial + vendedor)
+        await logTimeline({
+          conversationId: conv.id,
+          action: "ia_comentario",
+          details: {
+            resumo: insight.summary,
+            proximaAcao: insight.nextAction,
+            temperatura: insight.temperature,
+            score: insight.score,
+            objecoes: insight.objections,
+          },
+        }).catch(() => {});
       }
     } catch (e) {
       console.error(`[AutoQualify] conversa ${conv.id}:`, e);

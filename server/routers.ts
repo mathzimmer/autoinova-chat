@@ -2022,6 +2022,14 @@ const webhookRouter = router({
 
       if (!conversation) throw new Error("Failed to create conversation");
 
+      // === LEAD ÚNICO POR PESSOA (cria no 1º contato; reativa se finalizado) ===
+      try {
+        const { getOrCreateLeadByPhone } = await import("./db");
+        await getOrCreateLeadByPhone({ phone: input.phone, conversationId: conversation.id, name: input.name });
+      } catch (err) {
+        console.error("[Lead] ensure (whatsapp):", err);
+      }
+
       // === AUTO-SYNC CONTATO NA AGENDA ===
       try {
         const existingContact = await getContactByPhone(input.phone);
