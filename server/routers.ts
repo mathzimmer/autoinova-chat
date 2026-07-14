@@ -1710,6 +1710,8 @@ const leadRouter = router({
             contactName: conv.contactName,
             contactPhoto: conv.contactPhoto,
             channel: conv.channel,
+            instanceName: conv.instanceName,
+            source: conversationSourceValue(conv as any),
             status: conv.status,
             aiActive: conv.aiActive,
             lastMessageAt: conv.lastMessageAt,

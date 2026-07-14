@@ -174,6 +174,22 @@ export default function Leads() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [funnelFilter, setFunnelFilter] = useState("all");
   const [tempFilter, setTempFilter] = useState("all");
+  const [instanceFilter, setInstanceFilter] = useState("all");
+  const [attendantFilter, setAttendantFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
+
+  // Opções de filtro: instâncias (todas as fontes) e atendentes
+  const { data: evoInstances } = trpc.evolution.listInstances.useQuery();
+  const { data: zernioInst } = trpc.zernio.listInstances.useQuery();
+  const { data: officialInst } = trpc.whatsappNumber.listInstances.useQuery();
+  const { data: teamList } = trpc.team.list.useQuery();
+  const instanceOptions = useMemo(() => {
+    const opts: { value: string; label: string }[] = [{ value: "matriz", label: "Matriz (oficial)" }];
+    (evoInstances || []).forEach((i: any) => opts.push({ value: i.instanceName, label: i.displayName || i.instanceName }));
+    (zernioInst || []).forEach((i: any) => opts.push({ value: i.instanceName, label: `Zernio: ${i.displayName || i.phone}` }));
+    (officialInst || []).forEach((i: any) => opts.push({ value: i.instanceName, label: `Oficial: ${i.displayName || i.phone}` }));
+    return opts;
+  }, [evoInstances, zernioInst, officialInst]);
   const [searchQuery, setSearchQuery] = useState("");
   const [expandedLeadId, setExpandedLeadId] = useState<number | null>(null);
   const [editingLead, setEditingLead] = useState<LeadWithDetails | null>(null);
@@ -231,6 +247,27 @@ export default function Leads() {
       filtered = filtered.filter((l) => l.temperature === tempFilter);
     }
 
+    // Instância (fonte da conversa)
+    if (instanceFilter !== "all") {
+      filtered = filtered.filter((l) => ((l.conversation as any)?.source || "matriz") === instanceFilter);
+    }
+
+    // Atendente/vendedor (dono do lead)
+    if (attendantFilter !== "all") {
+      const aid = attendantFilter === "none" ? null : parseInt(attendantFilter);
+      filtered = filtered.filter((l) => ((l as any).ownerId ?? null) === aid);
+    }
+
+    // Data de entrada
+    if (dateFilter !== "all") {
+      const days = dateFilter === "today" ? 1 : parseInt(dateFilter);
+      const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+      filtered = filtered.filter((l) => {
+        const t = (l as any).createdAt ? new Date((l as any).createdAt).getTime() : 0;
+        return t >= cutoff;
+      });
+    }
+
     // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -244,7 +281,7 @@ export default function Leads() {
     }
 
     return filtered;
-  }, [leadsRaw, searchQuery, funnelFilter, tempFilter]);
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -379,7 +416,7 @@ export default function Leads() {
     })),
   ];
 
-  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all";
+  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all" || instanceFilter !== "all" || attendantFilter !== "all" || dateFilter !== "all";
 
   if (view === "kanban") {
     return (
@@ -408,12 +445,6 @@ export default function Leads() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto overflow-y-auto h-full pb-16">
-      {/* Alterna Leads / Funil / Inteligência */}
-      <div className="flex items-center gap-2">
-        <button className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground">Leads</button>
-        <button onClick={() => setView("kanban")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">📊 Funil</button>
-        <button onClick={() => setView("intel")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">🧠 Inteligência</button>
-      </div>
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
@@ -487,12 +518,45 @@ export default function Leads() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="min-w-[180px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Instância</label>
+                <Select value={instanceFilter} onValueChange={setInstanceFilter}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as instâncias</SelectItem>
+                    {instanceOptions.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[160px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Atendente</label>
+                <Select value={attendantFilter} onValueChange={setAttendantFilter}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="none">Sem atendente</SelectItem>
+                    {(teamList || []).map((m: any) => <SelectItem key={m.id} value={String(m.id)}>{m.name || m.email}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[130px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Entrada</label>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Qualquer data</SelectItem>
+                    <SelectItem value="today">Hoje</SelectItem>
+                    <SelectItem value="7">Últimos 7 dias</SelectItem>
+                    <SelectItem value="30">Últimos 30 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               {hasActiveFilters && (
                 <Button
                   variant="ghost"
                   size="sm"
                   className="h-8 text-xs text-muted-foreground"
-                  onClick={() => { setFunnelFilter("all"); setTempFilter("all"); }}
+                  onClick={() => { setFunnelFilter("all"); setTempFilter("all"); setInstanceFilter("all"); setAttendantFilter("all"); setDateFilter("all"); }}
                 >
                   <X className="h-3 w-3 mr-1" />
                   Limpar filtros
@@ -546,130 +610,43 @@ export default function Leads() {
                 key={lead.id}
                 className={`bg-card border-border transition-all ${isExpanded ? "ring-1 ring-primary/30" : "hover:border-primary/20"}`}
               >
-                {/* Lead Row (always visible) */}
+                {/* Lead Row (compacta) */}
                 <div
-                  className="flex items-center gap-3 p-3 cursor-pointer select-none"
+                  className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none text-xs"
                   onClick={() => setExpandedLeadId(isExpanded ? null : lead.id)}
                 >
-                  {/* Avatar / Channel */}
-                  <div className="relative flex-shrink-0">
-                    {lead.conversation?.contactPhoto ? (
-                      <img
-                        src={lead.conversation.contactPhoto}
-                        alt=""
-                        className="w-10 h-10 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold text-muted-foreground">
-                        {displayName.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <span className="absolute -bottom-0.5 -right-0.5 text-xs" title={lead.conversation?.channel}>
-                      {channel?.icon}
-                    </span>
+                  <span className="w-12 shrink-0 text-[10px] text-muted-foreground" title="Data de entrada">
+                    {(lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
+                  </span>
+                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[11px] font-semibold text-muted-foreground shrink-0 relative">
+                    {displayName.charAt(0).toUpperCase()}
+                    <span className="absolute -bottom-1 -right-1 text-[10px]">{channel?.icon}</span>
                   </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-semibold text-sm text-card-foreground truncate">{displayName}</span>
-                      {/* Funnel Stage Badge */}
-                      {funnel && (
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${funnel.bg} ${funnel.color}`}>
-                          {funnel.icon} {funnel.label}
-                        </Badge>
-                      )}
-                      {/* Temperature Badge */}
-                      {temp && (
-                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${temp.bg} ${temp.color}`}>
-                          <Thermometer className="h-2.5 w-2.5 mr-0.5" />
-                          {temp.icon} {temp.label}
-                        </Badge>
-                      )}
-                      {/* Rescue indicator */}
-                      {lead.rescueInfo && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-amber-500/30 bg-amber-500/10 text-amber-400">
-                              <LifeBuoy className="h-2.5 w-2.5 mr-0.5" />
-                              Resgate {lead.rescueInfo.totalAttempts}x
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {lead.rescueInfo.totalAttempts} tentativa(s) de resgate
-                            {lead.rescueInfo.responded ? " - Respondeu" : " - Sem resposta"}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                      {/* Seller assignment indicator */}
-                      {lead.sellerAssignment && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-500/30 bg-violet-500/10 text-violet-400 hidden sm:flex">
-                              <Store className="h-2.5 w-2.5 mr-0.5" />
-                              {lead.sellerAssignment.sellerName.split(" ")[0]}
-                            </Badge>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            Vendedor: {lead.sellerAssignment.sellerName}
-                            <br />
-                            Loja: {lead.sellerAssignment.storeLocation}
-                            {lead.sellerAssignment.assignedAt && (
-                              <><br />Atribuído: {formatTimestamp(lead.sellerAssignment.assignedAt)}</>
-                            )}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-semibold truncate">{displayName}</span>
+                      {funnel && <span className={`text-[9px] px-1 rounded ${funnel.bg} ${funnel.color} whitespace-nowrap`}>{funnel.icon} {funnel.label}</span>}
+                      {temp && <span className={`text-[9px] px-1 rounded ${temp.bg} ${temp.color}`}>{temp.icon}</span>}
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                      <span className="flex items-center gap-1">
-                        <Phone className="h-3 w-3" />
-                        {displayPhone}
-                      </span>
-                      {lead.city && (
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {lead.city}
-                        </span>
-                      )}
-                      {lead.vehicleInterest && (
-                        <span className="flex items-center gap-1 hidden sm:flex">
-                          <Car className="h-3 w-3" />
-                          {lead.vehicleInterest}
-                        </span>
-                      )}
-                    </div>
-                    {/* Summary preview */}
-                    {lead.summaryPreview && (
-                      <p className="text-xs text-muted-foreground/70 mt-1 line-clamp-2 leading-relaxed">
-                        {lead.summaryPreview}
-                      </p>
-                    )}
+                    <span className="text-[10px] text-muted-foreground">{displayPhone}</span>
                   </div>
-
-                  {/* Right side */}
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {lead.assignedAgent && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Badge variant="outline" className="text-[10px] border-blue-500/30 text-blue-400 hidden sm:flex">
-                            <UserCheck className="h-3 w-3 mr-1" />
-                            {lead.assignedAgent.name.split(" ")[0]}
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent>{lead.assignedAgent.name} ({lead.assignedAgent.cargo})</TooltipContent>
-                      </Tooltip>
-                    )}
-                    {lead.conversation?.lastMessageAt && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {timeAgo(lead.conversation.lastMessageAt)}
-                      </span>
-                    )}
-                    {isExpanded ? (
-                      <ChevronUp className="h-4 w-4 text-muted-foreground" />
-                    ) : (
-                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
-                    )}
+                  <div className="w-40 shrink-0 hidden md:block truncate text-[11px]" title="Veículo de interesse">
+                    {lead.linkedVehicle
+                      ? <span>🚗 {lead.linkedVehicle.brand} {lead.linkedVehicle.model}</span>
+                      : (lead.vehicleInterest && lead.vehicleInterest !== "não definido")
+                        ? <span className="text-muted-foreground">🔎 {lead.vehicleInterest}</span>
+                        : <span className="text-muted-foreground/40">—</span>}
+                  </div>
+                  <div className="w-24 shrink-0 hidden lg:block truncate text-[10px] text-muted-foreground" title="Atendente">
+                    {lead.assignedAgent?.name?.split(" ")[0] || "—"}
+                  </div>
+                  <div className="w-12 shrink-0 text-right text-[10px] text-muted-foreground" title="Última mensagem">
+                    {lead.conversation?.lastMessageAt ? timeAgo(lead.conversation.lastMessageAt) : "—"}
+                  </div>
+                  <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <button title="Vincular estoque / editar" className="p-1.5 rounded hover:bg-accent" onClick={() => openEditDialog(lead)}>🚗</button>
+                    <GoToConversation lead={lead} compact />
+                    {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                   </div>
                 </div>
 
@@ -1106,7 +1083,7 @@ function KanbanView({ leads, onMoved, setLocation }: { leads: any[]; onMoved: ()
 }
 
 // ─── Botão "Ir para conversa" (resolve a instância certa; pergunta se >1) ─────
-function GoToConversation({ lead }: { lead: any }) {
+function GoToConversation({ lead, compact }: { lead: any; compact?: boolean }) {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
   const [options, setOptions] = useState<any[] | null>(null);
@@ -1128,10 +1105,16 @@ function GoToConversation({ lead }: { lead: any }) {
   };
   return (
     <div className="relative inline-block">
-      <Button size="sm" variant="default" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); handleClick(); }} disabled={loading}>
-        <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
-        {loading ? "Abrindo..." : "Ir para conversa"}
-      </Button>
+      {compact ? (
+        <button title="Ir para conversa" className="p-1.5 rounded hover:bg-accent text-primary" onClick={(e) => { e.stopPropagation(); handleClick(); }} disabled={loading}>
+          <MessageSquare className="h-4 w-4" />
+        </button>
+      ) : (
+        <Button size="sm" variant="default" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); handleClick(); }} disabled={loading}>
+          <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+          {loading ? "Abrindo..." : "Ir para conversa"}
+        </Button>
+      )}
       {options && (
         <div className="absolute z-30 mt-1 bg-popover border border-border rounded-md shadow-lg p-1 min-w-52" onClick={(e) => e.stopPropagation()}>
           <div className="text-[10px] text-muted-foreground px-2 py-1">Este contato falou em vários números:</div>
