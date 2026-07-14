@@ -5,7 +5,7 @@
  *
  * Roda sob demanda (botão do gestor). Não interfere no atendimento.
  */
-import { eq, desc, and, gte } from "drizzle-orm";
+import { eq, desc, and, gte, inArray } from "drizzle-orm";
 import { conversationInsights, messages as messagesTable, conversations as convTable } from "../drizzle/schema";
 import { getDb } from "./db";
 import { invokeLLM } from "./_core/llm";
@@ -59,13 +59,28 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
   const db = await getDb();
   if (!db) return null;
 
-  // Últimas 40 mensagens, em ordem cronológica (usa transcrição de áudio quando houver)
+  // Contexto COMPLETO do lead: mensagens de TODAS as conversas/instâncias da
+  // pessoa (recepção → vendedor), rotuladas com a origem — para a IA entender a
+  // jornada inteira em vez de analisar cada número isoladamente.
+  const thisConv = (await db.select().from(convTable).where(eq(convTable.id, conversationId)).limit(1))[0];
+  let convs = thisConv ? [thisConv] : [];
+  if (thisConv?.leadId) {
+    convs = await db.select().from(convTable).where(eq(convTable.leadId, thisConv.leadId));
+  } else if (thisConv?.phone) {
+    convs = await db.select().from(convTable).where(eq(convTable.phone, thisConv.phone));
+  }
+  const convIds = convs.map(c => c.id);
+  const instLabel = new Map<number, string>(convs.map(c => [c.id,
+    c.channel === "evolution" ? `Vendedor ${c.instanceName || ""}`.trim()
+    : c.channel === "zernio" ? "Recepção" : c.instanceName ? `Oficial ${c.instanceName}` : "Matriz",
+  ]));
   const rows = await db.select().from(messagesTable)
-    .where(eq(messagesTable.conversationId, conversationId))
+    .where(inArray(messagesTable.conversationId, convIds.length ? convIds : [conversationId]))
     .orderBy(desc(messagesTable.createdAt))
-    .limit(40);
+    .limit(60);
   if (rows.length === 0) return null;
 
+  const multiInstance = convIds.length > 1;
   const ordered = [...rows].reverse();
   const transcript = ordered
     .filter(m => m.senderType !== "internal")
@@ -73,7 +88,8 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       const meta = m.metadata as Record<string, unknown> | null;
       const text = (meta?.transcribedText as string) || m.content || `[${m.messageType}]`;
       const role = m.senderType === "customer" ? "Cliente" : m.senderType === "bot" ? "IA" : "Vendedor";
-      return `${role}: ${text}`;
+      const tag = multiInstance ? `[${instLabel.get(m.conversationId) || "?"}] ` : "";
+      return `${tag}${role}: ${text}`;
     }).join("\n");
 
   if (!transcript.trim()) return null;

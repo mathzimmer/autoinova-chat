@@ -177,6 +177,10 @@ export default function Leads() {
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [attendantFilter, setAttendantFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
+  // Filtros por coluna (estilo Excel)
+  const [colName, setColName] = useState("");
+  const [colPhone, setColPhone] = useState("");
+  const [colVehicle, setColVehicle] = useState("");
 
   // Opções de filtro: instâncias (todas as fontes) e atendentes
   const { data: evoInstances } = trpc.evolution.listInstances.useQuery();
@@ -268,6 +272,24 @@ export default function Leads() {
       });
     }
 
+    // Filtros por coluna (Excel)
+    if (colName.trim()) {
+      const q = colName.toLowerCase();
+      filtered = filtered.filter((l) => (l.name || l.conversation?.contactName || "").toLowerCase().includes(q));
+    }
+    if (colPhone.trim()) {
+      const q = colPhone.replace(/\D/g, "");
+      filtered = filtered.filter((l) => (l.phone || "").replace(/\D/g, "").includes(q));
+    }
+    if (colVehicle.trim()) {
+      const q = colVehicle.toLowerCase();
+      filtered = filtered.filter((l) => {
+        const lv = (l as any).linkedVehicle;
+        const s = `${l.vehicleInterest || ""} ${lv ? `${lv.brand} ${lv.model}` : ""}`.toLowerCase();
+        return s.includes(q);
+      });
+    }
+
     // Search
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -281,7 +303,7 @@ export default function Leads() {
     }
 
     return filtered;
-  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter]);
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, colName, colPhone, colVehicle]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -595,58 +617,66 @@ export default function Leads() {
           <p className="text-xs text-muted-foreground mt-1">Os leads são criados automaticamente pela IA durante o atendimento.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="border border-border rounded-lg overflow-x-auto bg-card">
+          <div className="min-w-[1000px]">
+            {/* Cabeçalho com filtro por coluna (estilo Excel) */}
+            <div className="grid items-center gap-2 px-2 py-1.5 border-b border-border bg-muted/40 sticky top-0 z-10 text-[10px]" style={{ gridTemplateColumns: LEAD_GRID }}>
+              <div className="text-muted-foreground font-semibold uppercase">Entrada</div>
+              <input value={colName} onChange={(e) => setColName(e.target.value)} placeholder="Nome…" className="h-6 px-1.5 rounded border border-border bg-background text-[11px]" />
+              <input value={colPhone} onChange={(e) => setColPhone(e.target.value)} placeholder="Telefone…" className="h-6 px-1.5 rounded border border-border bg-background text-[11px]" />
+              <input value={colVehicle} onChange={(e) => setColVehicle(e.target.value)} placeholder="Veículo…" className="h-6 px-1.5 rounded border border-border bg-background text-[11px]" />
+              <select value={attendantFilter} onChange={(e) => setAttendantFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
+                <option value="all">Atendente</option><option value="none">Sem</option>
+                {(teamList || []).map((m: any) => <option key={m.id} value={String(m.id)}>{m.name || m.email}</option>)}
+              </select>
+              <select value={instanceFilter} onChange={(e) => setInstanceFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
+                <option value="all">Instância</option>
+                {instanceOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <div className="text-muted-foreground font-semibold uppercase text-center">Últ.</div>
+              <select value={funnelFilter} onChange={(e) => setFunnelFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
+                <option value="all">Estágio</option>
+                {FUNNEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <select value={tempFilter} onChange={(e) => setTempFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
+                <option value="all">Temp</option>
+                {TEMP_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              <div className="text-muted-foreground font-semibold uppercase text-right">Ações</div>
+            </div>
           {leads.map((lead) => {
             const isExpanded = expandedLeadId === lead.id;
-            const cfg = STATUS_CONFIG[lead.status] || STATUS_CONFIG.new;
             const displayName = lead.name || lead.conversation?.contactName || "Sem nome";
             const displayPhone = formatPhone(lead.phone);
-            const channel = CHANNEL_ICONS[lead.conversation?.channel || "whatsapp"];
             const funnel = FUNNEL_CONFIG[lead.funnelStatus || "novo"];
             const temp = TEMP_CONFIG[lead.temperature || "frio"];
+            const instLabel = (lead.conversation as any)?.instanceName || (lead.conversation?.channel === "zernio" ? "Recepção" : "Matriz");
 
             return (
-              <Card
-                key={lead.id}
-                className={`bg-card border-border transition-all ${isExpanded ? "ring-1 ring-primary/30" : "hover:border-primary/20"}`}
-              >
-                {/* Lead Row (compacta) */}
+              <div key={lead.id} className={`border-b border-border ${isExpanded ? "bg-accent/30" : "hover:bg-accent/20"}`}>
+                {/* Linha (grid) */}
                 <div
-                  className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none text-xs"
+                  className="grid items-center gap-2 px-2 py-1.5 cursor-pointer select-none text-xs"
+                  style={{ gridTemplateColumns: LEAD_GRID }}
                   onClick={() => setExpandedLeadId(isExpanded ? null : lead.id)}
                 >
-                  <span className="w-12 shrink-0 text-[10px] text-muted-foreground" title="Data de entrada">
+                  <span className="text-[10px] text-muted-foreground">
                     {(lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }) : "—"}
                   </span>
-                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-[11px] font-semibold text-muted-foreground shrink-0 relative">
-                    {displayName.charAt(0).toUpperCase()}
-                    <span className="absolute -bottom-1 -right-1 text-[10px]">{channel?.icon}</span>
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-semibold truncate">{displayName}</span>
-                      {funnel && <span className={`text-[9px] px-1 rounded ${funnel.bg} ${funnel.color} whitespace-nowrap`}>{funnel.icon} {funnel.label}</span>}
-                      {temp && <span className={`text-[9px] px-1 rounded ${temp.bg} ${temp.color}`}>{temp.icon}</span>}
-                    </div>
-                    <span className="text-[10px] text-muted-foreground">{displayPhone}</span>
-                  </div>
-                  <div className="w-40 shrink-0 hidden md:block truncate text-[11px]" title="Veículo de interesse">
-                    {lead.linkedVehicle
-                      ? <span>🚗 {lead.linkedVehicle.brand} {lead.linkedVehicle.model}</span>
-                      : (lead.vehicleInterest && lead.vehicleInterest !== "não definido")
-                        ? <span className="text-muted-foreground">🔎 {lead.vehicleInterest}</span>
-                        : <span className="text-muted-foreground/40">—</span>}
-                  </div>
-                  <div className="w-24 shrink-0 hidden lg:block truncate text-[10px] text-muted-foreground" title="Atendente">
-                    {lead.assignedAgent?.name?.split(" ")[0] || "—"}
-                  </div>
-                  <div className="w-12 shrink-0 text-right text-[10px] text-muted-foreground" title="Última mensagem">
-                    {lead.conversation?.lastMessageAt ? timeAgo(lead.conversation.lastMessageAt) : "—"}
-                  </div>
-                  <div className="flex items-center gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
-                    <button title="Vincular estoque / editar" className="p-1.5 rounded hover:bg-accent" onClick={() => openEditDialog(lead)}>🚗</button>
+                  <span className="font-semibold truncate" title={displayName}>{displayName}</span>
+                  <span className="text-[11px] text-muted-foreground truncate">{displayPhone}</span>
+                  <span className="truncate text-[11px]" title={lead.linkedVehicle ? `${lead.linkedVehicle.brand} ${lead.linkedVehicle.model}` : lead.vehicleInterest || ""}>
+                    {lead.linkedVehicle ? `🚗 ${lead.linkedVehicle.brand} ${lead.linkedVehicle.model}` : (lead.vehicleInterest && lead.vehicleInterest !== "não definido") ? <span className="text-muted-foreground">🔎 {lead.vehicleInterest}</span> : <span className="text-muted-foreground/40">—</span>}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground truncate">{lead.assignedAgent?.name?.split(" ")[0] || "—"}</span>
+                  <span className="text-[10px] text-muted-foreground truncate" title={instLabel}>{instLabel}</span>
+                  <span className="text-[10px] text-muted-foreground text-center">{lead.conversation?.lastMessageAt ? timeAgo(lead.conversation.lastMessageAt) : "—"}</span>
+                  <span>{funnel && <span className={`text-[9px] px-1 rounded ${funnel.bg} ${funnel.color} whitespace-nowrap`}>{funnel.label}</span>}</span>
+                  <span>{temp && <span className={`text-[9px] px-1 rounded ${temp.bg} ${temp.color} whitespace-nowrap`}>{temp.icon} {temp.label}</span>}</span>
+                  <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
+                    <button title="Vincular estoque / editar" className="p-1 rounded hover:bg-accent" onClick={() => openEditDialog(lead)}>🚗</button>
                     <GoToConversation lead={lead} compact />
-                    {isExpanded ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                    {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                   </div>
                 </div>
 
@@ -870,9 +900,10 @@ export default function Leads() {
                     </div>
                   </CardContent>
                 )}
-              </Card>
+              </div>
             );
           })}
+          </div>
         </div>
       )}
 
@@ -1016,6 +1047,9 @@ export default function Leads() {
     </div>
   );
 }
+
+// Grid da tabela de leads (mesmo template no cabeçalho e nas linhas)
+const LEAD_GRID = "60px minmax(130px,1.3fr) 112px minmax(120px,1.3fr) 110px 110px 52px 120px 84px 78px";
 
 // ─── Kanban do funil (por lead) ───────────────────────────────────────────────
 const KANBAN_STAGES: { key: string; label: string; color: string }[] = [

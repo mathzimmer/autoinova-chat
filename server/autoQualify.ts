@@ -36,6 +36,7 @@ export async function runAutoQualify(): Promise<void> {
   }
 
   let processed = 0;
+  const analyzedLeads = new Set<number>(); // 1 análise por lead por ciclo (economia de IA)
   for (const conv of candidates) {
     if (processed >= MAX_PER_RUN) break;
     const meta = (conv.metadata as any) || {};
@@ -44,11 +45,17 @@ export async function runAutoQualify(): Promise<void> {
     if (lastQ >= lastMsg) continue; // já analisado após a última mensagem do cliente
 
     // Precisa ter lead (senão não há o que qualificar) — marca como visto e segue
-    const lead = (await getLeadByConversationId(conv.id)) || (conv.phone ? await getCanonicalLead(conv.phone) : undefined);
+    const lead = (conv.phone ? await getCanonicalLead(conv.phone) : undefined) || (await getLeadByConversationId(conv.id));
     if (!lead) {
       await updateConversation(conv.id, { metadata: { ...meta, autoQualifiedAt: Date.now() } }).catch(() => {});
       continue;
     }
+    // Mesma PESSOA já analisada neste ciclo (várias instâncias) → não repete a IA
+    if (analyzedLeads.has(lead.id)) {
+      await updateConversation(conv.id, { metadata: { ...meta, autoQualifiedAt: Date.now() } }).catch(() => {});
+      continue;
+    }
+    analyzedLeads.add(lead.id);
 
     processed++;
     try {
