@@ -624,7 +624,24 @@ async function sendPlatformVehicleImages(platform: "instagram" | "facebook", rec
   }
 }
 
+// Deriva o valor da "fonte" (aba do inbox) de uma conversa
+function conversationSourceValue(conv: { channel?: string | null; instanceName?: string | null }): string {
+  if (conv.channel === "evolution" && conv.instanceName) return conv.instanceName;
+  if (conv.channel === "zernio" && conv.instanceName) return `zernio:${conv.instanceName}`;
+  if (conv.channel === "whatsapp" && conv.instanceName) return `official:${conv.instanceName}`;
+  return "matriz";
+}
+
 const conversationRouter = router({
+  /** Resolve a "fonte"/aba do inbox de uma conversa (corrige o "Ir para conversa") */
+  sourceOf: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const conv = await getConversationById(input.conversationId);
+      if (!conv) return { source: "matriz" };
+      return { source: conversationSourceValue(conv as any) };
+    }),
+
   list: protectedProcedure
     .input(z.object({
       status: z.string().optional(),
@@ -785,6 +802,23 @@ const conversationRouter = router({
         const { updateLeadFunnelStatus: updFunnel, getCanonicalLead: getCanon, upsertLead: upLead, logTimeline: logTl } = await import("./db");
         const canonForLog = conv.phone ? await getCanon(conv.phone) : undefined;
         await logTl({ conversationId: input.conversationId, leadId: canonForLog?.id, userId: ctx.user.id, action: "lead_transferido", details: { para: input.instanceName, por: ctx.user.name || "atendente" } });
+        // Dono do lead = usuário/vendedor associado à instância de destino (base do acesso do vendedor)
+        try {
+          const db2 = await getDb();
+          if (db2 && canonForLog?.id) {
+            const { evolutionInstances, leads: leadsT } = await import("../drizzle/schema");
+            const inst = (await db2.select().from(evolutionInstances).where(eq(evolutionInstances.instanceName, input.instanceName)).limit(1))[0];
+            const ownerId = (inst as any)?.assignedUserId || (inst as any)?.sellerId || null;
+            if (ownerId) {
+              await db2.update(leadsT).set({ ownerId }).where(eq(leadsT.id, canonForLog.id));
+              // Atribui a conversa do vendedor a ele → aparece no portal "Meus leads"
+              if (mirrored?.conversationId) {
+                const { conversations: convT2 } = await import("../drizzle/schema");
+                await db2.update(convT2).set({ assignedTo: ownerId }).where(eq(convT2.id, mirrored.conversationId));
+              }
+            }
+          }
+        } catch (e) { console.error("[Transfer] set owner:", e); }
         await updFunnel(input.conversationId, "encaminhado_vendedor");
         // 5. Propaga a atribuição do anúncio (ctwaId) + interesse para o lead do
         //    número do vendedor, para a venda lá continuar atribuída ao anúncio.
@@ -1466,6 +1500,33 @@ const leadRouter = router({
     .input(z.object({ status: z.string().optional() }).optional())
     .query(async ({ input }) => {
       return listLeads(input);
+    }),
+
+  /** Conversas do lead (todos os números) — para o "Ir para conversa" com escolha de instância */
+  conversations: protectedProcedure
+    .input(z.object({ leadId: z.number(), phone: z.string().optional() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return [];
+      const { conversations: convTable } = await import("../drizzle/schema");
+      const { eq, or: orOp, desc: descOp } = await import("drizzle-orm");
+      let where = eq(convTable.leadId, input.leadId);
+      // fallback por telefone (leads/conversas antigas sem leadId vinculado)
+      const rows = await db.select().from(convTable)
+        .where(input.phone ? orOp(where, eq(convTable.phone, input.phone))! : where)
+        .orderBy(descOp(convTable.lastMessageAt))
+        .limit(20);
+      return rows.map((c: any) => ({
+        conversationId: c.id,
+        source: conversationSourceValue(c),
+        channel: c.channel,
+        instanceName: c.instanceName,
+        label: c.channel === "zernio" ? `Zernio ${c.instanceName || ""}`
+          : c.channel === "evolution" ? `Vendedor: ${c.instanceName || ""}`
+          : c.channel === "whatsapp" && c.instanceName ? `Oficial ${c.instanceName}`
+          : "Matriz (oficial)",
+        lastMessageAt: c.lastMessageAt,
+      }));
     }),
 
   /** Marca que o contato NÃO é lead (fornecedor, colega, etc.) — tira do funil */
@@ -5045,6 +5106,14 @@ const evolutionRouter = router({
   listInstances: protectedProcedure.query(async () => {
     return listEvolutionInstances();
   }),
+
+  /** Vincula um vendedor (usuário da equipe) a uma instância (número dele) */
+  assignUser: adminProcedure
+    .input(z.object({ id: z.number(), userId: z.number().nullable() }))
+    .mutation(async ({ input }) => {
+      await updateEvolutionInstance(input.id, { assignedUserId: input.userId ?? null } as any);
+      return { success: true };
+    }),
 
   // Sync instances from Evolution API into DB
   syncInstances: protectedProcedure.mutation(async () => {

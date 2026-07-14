@@ -170,7 +170,7 @@ const TEMP_OPTIONS = Object.entries(TEMP_CONFIG).map(([value, cfg]) => ({ value,
 
 // ─── Main Component ───────────────────────────────────────────────
 export default function Leads() {
-  const [view, setView] = useState<"leads" | "intel">("leads");
+  const [view, setView] = useState<"leads" | "intel" | "kanban">("leads");
   const [statusFilter, setStatusFilter] = useState("all");
   const [funnelFilter, setFunnelFilter] = useState("all");
   const [tempFilter, setTempFilter] = useState("all");
@@ -381,6 +381,19 @@ export default function Leads() {
 
   const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all";
 
+  if (view === "kanban") {
+    return (
+      <div className="p-4 md:p-6 h-full flex flex-col max-w-full">
+        <div className="flex items-center gap-2 mb-4">
+          <button onClick={() => setView("leads")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">Leads</button>
+          <button className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground">📊 Funil</button>
+          <button onClick={() => setView("intel")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">🧠 Inteligência</button>
+        </div>
+        <KanbanView leads={(leadsRaw as any[]) || []} onMoved={refetch} setLocation={setLocation} />
+      </div>
+    );
+  }
+
   if (view === "intel") {
     return (
       <div className="p-4 md:p-6 max-w-7xl mx-auto overflow-y-auto h-full pb-16">
@@ -395,9 +408,10 @@ export default function Leads() {
 
   return (
     <div className="p-4 md:p-6 space-y-4 max-w-7xl mx-auto overflow-y-auto h-full pb-16">
-      {/* Alterna Leads / Inteligência */}
+      {/* Alterna Leads / Funil / Inteligência */}
       <div className="flex items-center gap-2">
         <button className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground">Leads</button>
+        <button onClick={() => setView("kanban")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">📊 Funil</button>
         <button onClick={() => setView("intel")} className="px-3 py-1.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-accent">🧠 Inteligência</button>
       </div>
       {/* Header */}
@@ -664,15 +678,7 @@ export default function Leads() {
                   <CardContent className="pt-0 pb-4 px-4 border-t border-border">
                     {/* Action Buttons */}
                     <div className="flex flex-wrap gap-2 mt-3 mb-4">
-                      <Button
-                        size="sm"
-                        variant="default"
-                        className="h-8 text-xs"
-                        onClick={(e) => { e.stopPropagation(); setLocation(`/inbox?conv=${lead.conversationId}`); }}
-                      >
-                        <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
-                        Ir para conversa
-                      </Button>
+                      <GoToConversation lead={lead} />
                       <Button
                         size="sm"
                         variant="outline"
@@ -1030,6 +1036,114 @@ export default function Leads() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+// ─── Kanban do funil (por lead) ───────────────────────────────────────────────
+const KANBAN_STAGES: { key: string; label: string; color: string }[] = [
+  { key: "novo", label: "Novo", color: "border-slate-300" },
+  { key: "interesse_definido", label: "Interesse", color: "border-blue-300" },
+  { key: "pagamento_definido", label: "Pagamento", color: "border-amber-300" },
+  { key: "dados_pessoais", label: "Dados", color: "border-amber-300" },
+  { key: "dados_troca", label: "Troca", color: "border-amber-300" },
+  { key: "encaminhado_vendedor", label: "No vendedor", color: "border-orange-300" },
+  { key: "negociando", label: "Negociando", color: "border-violet-300" },
+  { key: "fechado", label: "Fechado", color: "border-green-400" },
+];
+const tempEmoji: Record<string, string> = { frio: "🧊", morno: "🌤️", quente: "🔥", muito_quente: "🚀" };
+
+function KanbanView({ leads, onMoved, setLocation }: { leads: any[]; onMoved: () => void; setLocation: (u: string) => void }) {
+  const move = trpc.lead.update.useMutation({ onSuccess: onMoved, onError: (e: any) => toast.error(e.message) });
+  const byStage = (stage: string) => leads.filter(l => (l.funnelStatus || "novo") === stage);
+  const stageIndex = (s: string) => KANBAN_STAGES.findIndex(x => x.key === s);
+
+  return (
+    <div className="flex-1 min-h-0 overflow-x-auto">
+      <div className="flex gap-3 h-full pb-2" style={{ minWidth: "max-content" }}>
+        {KANBAN_STAGES.map((col) => {
+          const cards = byStage(col.key);
+          return (
+            <div key={col.key} className="w-64 shrink-0 flex flex-col bg-muted/30 rounded-lg">
+              <div className={`px-3 py-2 border-t-4 ${col.color} rounded-t-lg flex items-center justify-between`}>
+                <span className="text-sm font-semibold">{col.label}</span>
+                <span className="text-xs text-muted-foreground bg-background rounded-full px-2">{cards.length}</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-2">
+                {cards.map((l) => {
+                  const idx = stageIndex(col.key);
+                  return (
+                    <div key={l.id} className="bg-card border border-border rounded-lg p-2.5 text-xs shadow-sm">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="font-semibold truncate">{l.name || l.contactName || l.phone}</span>
+                        <span>{tempEmoji[l.temperature] || ""}</span>
+                      </div>
+                      <div className="text-muted-foreground truncate">{l.phone}</div>
+                      {l.vehicleInterest && l.vehicleInterest !== "não definido" && (
+                        <div className="text-[11px] text-muted-foreground truncate mt-0.5">🚗 {l.vehicleInterest}</div>
+                      )}
+                      <div className="flex items-center justify-between mt-2 gap-1">
+                        <button title="Voltar etapa" disabled={idx <= 0 || move.isPending}
+                          onClick={() => idx > 0 && move.mutate({ conversationId: l.conversationId, funnelStatus: KANBAN_STAGES[idx - 1].key as any })}
+                          className="px-1.5 py-0.5 rounded border border-border disabled:opacity-30 hover:bg-accent">←</button>
+                        <button onClick={() => setLocation(`/inbox?conv=${l.conversationId}`)}
+                          className="px-2 py-0.5 rounded bg-primary/10 text-primary text-[10px] hover:bg-primary/20">Abrir</button>
+                        <button title="Avançar etapa" disabled={idx >= KANBAN_STAGES.length - 1 || move.isPending}
+                          onClick={() => idx < KANBAN_STAGES.length - 1 && move.mutate({ conversationId: l.conversationId, funnelStatus: KANBAN_STAGES[idx + 1].key as any })}
+                          className="px-1.5 py-0.5 rounded border border-border disabled:opacity-30 hover:bg-accent">→</button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {cards.length === 0 && <div className="text-[11px] text-muted-foreground/50 text-center py-4">vazio</div>}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Botão "Ir para conversa" (resolve a instância certa; pergunta se >1) ─────
+function GoToConversation({ lead }: { lead: any }) {
+  const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
+  const [options, setOptions] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const go = (conversationId: number, source: string) =>
+    setLocation(`/inbox?conv=${conversationId}&src=${encodeURIComponent(source)}`);
+  const handleClick = async () => {
+    setLoading(true);
+    try {
+      const convs = await utils.lead.conversations.fetch({ leadId: lead.id, phone: lead.phone });
+      setLoading(false);
+      if (!convs || convs.length === 0) return go(lead.conversationId, "matriz");
+      if (convs.length === 1) return go(convs[0].conversationId, convs[0].source);
+      setOptions(convs);
+    } catch {
+      setLoading(false);
+      go(lead.conversationId, "matriz");
+    }
+  };
+  return (
+    <div className="relative inline-block">
+      <Button size="sm" variant="default" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); handleClick(); }} disabled={loading}>
+        <MessageSquare className="h-3.5 w-3.5 mr-1.5" />
+        {loading ? "Abrindo..." : "Ir para conversa"}
+      </Button>
+      {options && (
+        <div className="absolute z-30 mt-1 bg-popover border border-border rounded-md shadow-lg p-1 min-w-52" onClick={(e) => e.stopPropagation()}>
+          <div className="text-[10px] text-muted-foreground px-2 py-1">Este contato falou em vários números:</div>
+          {options.map((o: any) => (
+            <button key={o.conversationId} onClick={() => { setOptions(null); go(o.conversationId, o.source); }}
+              className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent">
+              {o.label}
+            </button>
+          ))}
+          <button onClick={() => setOptions(null)} className="w-full text-left px-2 py-1 text-[10px] text-muted-foreground rounded hover:bg-accent">Cancelar</button>
+        </div>
+      )}
     </div>
   );
 }

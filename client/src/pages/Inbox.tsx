@@ -30,16 +30,26 @@ export default function Inbox() {
     refetchInterval: 60000,
   });
 
+  const utils = trpc.useUtils();
+
   // Auto-select conversation (?conv=123) ou instância (?instance=nome) via URL
   useEffect(() => {
     const params = new URLSearchParams(searchString);
     const convId = params.get("conv");
+    const srcParam = params.get("src"); // aba/fonte opcional já resolvida
     const instanceParam = params.get("instance");
     if (convId) {
       const id = parseInt(convId, 10);
       if (!isNaN(id) && id > 0) {
-        setSource("matriz");
         setSelectedConversationId(id);
+        if (srcParam) {
+          setSource(srcParam);
+        } else {
+          // Descobre a instância correta da conversa (corrige "sempre Matriz")
+          utils.conversation.sourceOf.fetch({ conversationId: id })
+            .then(r => setSource(r?.source || "matriz"))
+            .catch(() => setSource("matriz"));
+        }
       }
     } else if (instanceParam) {
       setSource(instanceParam);

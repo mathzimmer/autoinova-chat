@@ -36,6 +36,11 @@ export default function EvolutionInstances() {
   const instancesQuery = trpc.evolution.listInstances.useQuery(undefined, {
     refetchInterval: pollingInstance ? 5000 : 30000,
   });
+  const { data: teamMembers } = trpc.team.list.useQuery();
+  const assignUserMutation = trpc.evolution.assignUser.useMutation({
+    onSuccess: () => { instancesQuery.refetch(); toast.success("Vendedor vinculado à instância"); },
+    onError: (e) => toast.error("Erro ao vincular: " + e.message),
+  });
 
   const syncMutation = trpc.evolution.syncInstances.useMutation({
     onSuccess: () => {
@@ -307,6 +312,20 @@ export default function EvolutionInstances() {
                     Última conexão: {new Date(inst.lastConnectedAt).toLocaleString("pt-BR")}
                   </p>
                 )}
+                {/* Vendedor vinculado a esta instância (dono dos leads transferidos pra cá) */}
+                <div className="mb-3">
+                  <label className="text-[10px] text-muted-foreground uppercase block mb-1">Vendedor desta instância</label>
+                  <select
+                    className="w-full h-8 text-sm rounded-md border border-border bg-background px-2"
+                    value={(inst as any).assignedUserId ?? ""}
+                    onChange={(e) => assignUserMutation.mutate({ id: inst.id, userId: e.target.value ? parseInt(e.target.value) : null })}
+                  >
+                    <option value="">— Sem vendedor —</option>
+                    {(teamMembers || []).map((m: any) => (
+                      <option key={m.id} value={m.id}>{m.name || m.email || `Usuário ${m.id}`}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   {inst.status !== "connected" && (
                     <Button size="sm" variant="outline" onClick={() => handleOpenQr(inst)} className="flex-1">
