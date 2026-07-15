@@ -1,0 +1,109 @@
+<!--
+  ══════════════════════════════════════════════════════════════════════════════
+  RASTREAMENTO DE CONVERSÕES — autoinovars.com.br  (Meta Pixel + CAPI, sem Stape)
+  ══════════════════════════════════════════════════════════════════════════════
+  Cole este bloco INTEIRO antes de </body> em TODAS as páginas do site.
+
+  O que ele faz:
+    • Dispara o Pixel no navegador (browser).
+    • Manda o MESMO evento pro seu CRM, que repassa à API de Conversões (servidor).
+    • Usa o mesmo event_id nos dois → a Meta deduplica (não conta em dobro).
+    • Eventos: "Contact" (clique no botão de WhatsApp) e "Lead" (envio de formulário).
+
+  ANTES DE USAR, ajuste as 2 constantes abaixo:
+    1. PIXEL_ID   → o ID do seu pixel (o mesmo dataset do CRM).
+    2. CRM_ENDPOINT → a URL do seu CRM. Ex.: https://autoinovacrm.com.br/api/site/track
+-->
+
+<!-- ── 1) PIXEL BASE (pule este <script> se o Pixel JÁ estiver instalado no site) ── -->
+<script>
+!function(f,b,e,v,n,t,s)
+{if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];
+s.parentNode.insertBefore(t,s)}(window,document,'script',
+'https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', 'PIXEL_ID');          /* ← troque PIXEL_ID */
+fbq('track', 'PageView');
+</script>
+
+<!-- ── 2) PONTE PIXEL + CAPI (clique WhatsApp e formulários) ── -->
+<script>
+(function () {
+  var CRM_ENDPOINT = 'https://autoinovacrm.com.br/api/site/track'; // ← confirme a URL do seu CRM
+
+  // --- helpers de cookie / identificadores do Pixel ---
+  function getCookie(name) {
+    var m = document.cookie.match('(^|;)\\s*' + name + '\\s*=\\s*([^;]+)');
+    return m ? decodeURIComponent(m.pop()) : '';
+  }
+  function getFbp() { return getCookie('_fbp'); }
+  function getFbc() {
+    var c = getCookie('_fbc');
+    if (c) return c;
+    var m = location.search.match(/[?&]fbclid=([^&]+)/);
+    return m ? 'fb.1.' + Date.now() + '.' + m[1] : '';
+  }
+  function genId() { return 'site_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10); }
+
+  // Envia pro navegador (Pixel) E pro servidor (CAPI) com o mesmo event_id
+  function track(eventName, userData) {
+    var eventId = genId();
+    try { if (window.fbq) fbq('track', eventName, {}, { eventID: eventId }); } catch (e) {}
+    var payload = {
+      event: eventName,
+      eventId: eventId,
+      eventSourceUrl: location.href,
+      fbp: getFbp(),
+      fbc: getFbc()
+    };
+    if (userData) {
+      if (userData.email) payload.email = userData.email;
+      if (userData.phone) payload.phone = userData.phone;
+      if (userData.firstName) payload.firstName = userData.firstName;
+      if (userData.lastName) payload.lastName = userData.lastName;
+    }
+    try {
+      fetch(CRM_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        keepalive: true            // garante o envio mesmo se a página navegar (clique WhatsApp)
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // --- A) Clique no botão de WhatsApp → evento "Contact" ---
+  document.addEventListener('click', function (ev) {
+    var a = ev.target && ev.target.closest
+      ? ev.target.closest('a[href*="wa.me"], a[href*="api.whatsapp.com"], a[href*="whatsapp.com/send"], [data-whatsapp]')
+      : null;
+    if (a) track('Contact', null);
+  }, true);
+
+  // --- B) Envio de formulário → evento "Lead" (lê email/telefone/nome do form) ---
+  document.addEventListener('submit', function (ev) {
+    var form = ev.target;
+    if (!form || form.tagName !== 'FORM') return;
+    function pick(selectors) {
+      for (var i = 0; i < selectors.length; i++) {
+        var el = form.querySelector(selectors[i]);
+        if (el && el.value && el.value.trim()) return el.value.trim();
+      }
+      return '';
+    }
+    var email = pick(['input[type=email]', 'input[name*=mail i]', 'input[id*=mail i]']);
+    var phone = pick(['input[type=tel]', 'input[name*=fone i]', 'input[name*=phone i]', 'input[name*=whats i]', 'input[name*=celular i]']);
+    var fullName = pick(['input[name*=nome i]', 'input[id*=nome i]', 'input[name*=name i]']);
+    var firstName = '', lastName = '';
+    if (fullName) {
+      var parts = fullName.split(/\s+/);
+      firstName = parts[0];
+      if (parts.length > 1) lastName = parts[parts.length - 1];
+    }
+    track('Lead', { email: email, phone: phone, firstName: firstName, lastName: lastName });
+  }, true);
+})();
+</script>

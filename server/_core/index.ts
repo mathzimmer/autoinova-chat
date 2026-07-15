@@ -1035,6 +1035,55 @@ async function startServer() {
 
   const LEGAL_HTML_FOOTER = `<footer>AutoInova CRM &mdash; autoinovacrm.com.br</footer></div></body></html>`;
 
+  // ── Conversões do SITE (Meta CAPI sem Stape) ────────────────────────────────
+  // O site autoinovars.com.br chama este endpoint no clique do WhatsApp e no
+  // envio de formulário; o servidor repassa à CAPI com PII hasheada.
+  const SITE_ALLOWED_ORIGINS = [
+    "https://www.autoinovars.com.br",
+    "https://autoinovars.com.br",
+  ];
+  function applySiteCors(req: any, res: any) {
+    const origin = req.headers.origin as string | undefined;
+    if (origin && SITE_ALLOWED_ORIGINS.includes(origin)) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
+  app.options("/api/site/track", (req, res) => { applySiteCors(req, res); res.sendStatus(204); });
+  app.post("/api/site/track", async (req, res) => {
+    applySiteCors(req, res);
+    try {
+      const b = req.body || {};
+      const allowed = ["Contact", "Lead", "SubmitApplication", "ViewContent", "Schedule"];
+      const eventName = allowed.includes(b.event) ? b.event : "Lead";
+      const xff = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim();
+      const clientIp = xff || req.socket?.remoteAddress || undefined;
+      const clientUserAgent = (req.headers["user-agent"] as string | undefined) || undefined;
+      const { sendWebsiteConversion } = await import("../metaConversions");
+      const r = await sendWebsiteConversion({
+        eventName,
+        eventId: typeof b.eventId === "string" ? b.eventId : undefined,
+        eventSourceUrl: typeof b.eventSourceUrl === "string" ? b.eventSourceUrl : undefined,
+        fbp: typeof b.fbp === "string" ? b.fbp : undefined,
+        fbc: typeof b.fbc === "string" ? b.fbc : undefined,
+        email: typeof b.email === "string" ? b.email : undefined,
+        phone: typeof b.phone === "string" ? b.phone : undefined,
+        firstName: typeof b.firstName === "string" ? b.firstName : undefined,
+        lastName: typeof b.lastName === "string" ? b.lastName : undefined,
+        value: typeof b.value === "number" ? b.value : undefined,
+        currency: typeof b.currency === "string" ? b.currency : undefined,
+        clientIp, clientUserAgent,
+      });
+      // Nunca vaza erro de tracking pro visitante; sempre 200 pro navegador
+      res.status(200).json({ ok: r.success });
+    } catch (err) {
+      console.error("[CAPI-Site] erro no endpoint:", err);
+      res.status(200).json({ ok: false });
+    }
+  });
+
   // Privacy Policy
   app.get("/privacy", (_req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");

@@ -1006,7 +1006,7 @@ export type InsertScheduledMessage = typeof scheduledMessages.$inferInsert;
  */
 export const capiEvents = pgTable("capiEvents", {
   id:             serial("id").primaryKey(),
-  leadId:         integer("leadId").notNull(),
+  leadId:         integer("leadId"),          // null = conversão vinda do site (sem lead no CRM)
   conversationId: integer("conversationId"),
   eventName:      varchar("eventName", { length: 100 }).notNull(),
   funnelStatus:   varchar("funnelStatus", { length: 50 }),

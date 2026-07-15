@@ -163,15 +163,21 @@ function buildUserData(lead: Lead): { userData: Record<string, unknown>; actionS
   const userData: Record<string, unknown> = {};
   if (lead.phone) userData.ph = [sha256(normalizePhoneForHash(lead.phone))];
   if (lead.email) userData.em = [sha256(lead.email)];
-  addHashedName(userData, lead.name);
   if (lead.fbc) userData.fbc = lead.fbc;
   if (lead.fbp) userData.fbp = lead.fbp;
+
+  // Só envia se houver ao menos UM identificador que casa com uma pessoa
+  // (telefone, e-mail ou cookie do Pixel). Nome/país/external_id sozinhos não
+  // identificam ninguém — sem isso, não vale a pena enviar (evita lixo no dataset).
+  const hasMatchKey = !!(userData.ph || userData.em || userData.fbc || userData.fbp);
+  if (!hasMatchKey) return null;
+
+  addHashedName(userData, lead.name);
   if (lead.externalId) userData.external_id = [sha256(lead.externalId)];
   if (lead.clientIp) userData.client_ip_address = lead.clientIp;
   if (lead.clientUserAgent) userData.client_user_agent = lead.clientUserAgent;
   addCommonSignals(userData, lead);
 
-  if (Object.keys(userData).length === 0) return null;
   return { userData, actionSource: "website" };
 }
 
@@ -315,6 +321,96 @@ export async function sendCapiEvent(
       leadId: lead.id, conversationId: lead.conversationId, eventName: eventDef.eventName,
       funnelStatus, actionSource: identity.actionSource, value, status: "failed", error: errMsg,
     });
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
+ * Conversão vinda do SITE (autoinovars.com.br) — enviada direto pela CAPI,
+ * sem Stape. O navegador dispara o Pixel; o servidor envia o mesmo evento
+ * (mesmo event_id → deduplicado pela Meta). PII é hasheada aqui no servidor.
+ */
+export type SiteConversionInput = {
+  eventName: string;              // "Contact" (clique WhatsApp) | "Lead" (formulário) | outro
+  eventId?: string;               // p/ dedupe com o Pixel do navegador
+  eventSourceUrl?: string;        // URL onde ocorreu
+  fbp?: string;                   // cookie _fbp
+  fbc?: string;                   // fbclid → fbc
+  email?: string;
+  phone?: string;
+  firstName?: string;
+  lastName?: string;
+  clientIp?: string;              // preenchido pelo servidor
+  clientUserAgent?: string;       // preenchido pelo servidor
+  value?: number;
+  currency?: string;
+  customData?: Record<string, unknown>;
+};
+
+export async function sendWebsiteConversion(input: SiteConversionInput): Promise<{ success: boolean; error?: string }> {
+  const config = await getCapiConfig();
+  if (!isCapiConfigured(config)) return { success: false, error: "CAPI não configurado" };
+
+  const userData: Record<string, unknown> = {};
+  if (input.email) userData.em = [sha256(input.email)];
+  if (input.phone) userData.ph = [sha256(normalizePhoneForHash(input.phone))];
+  if (input.firstName) userData.fn = [sha256(input.firstName.toLowerCase().trim())];
+  if (input.lastName) userData.ln = [sha256(input.lastName.toLowerCase().trim())];
+  if (input.fbp) userData.fbp = input.fbp;
+  if (input.fbc) userData.fbc = input.fbc;
+  if (input.clientIp) userData.client_ip_address = input.clientIp;
+  if (input.clientUserAgent) userData.client_user_agent = input.clientUserAgent;
+  userData.country = [sha256("br")];
+  // external_id estável: e-mail ou telefone quando houver
+  const ext = input.email || input.phone;
+  if (ext) userData.external_id = [sha256(ext.toLowerCase().trim())];
+
+  // Sem nenhum identificador não vale a pena enviar (não casa com ninguém)
+  if (Object.keys(userData).length <= 1) return { success: false, error: "Sem identificadores (fbp/fbc/email/telefone)" };
+
+  const customData: Record<string, unknown> = {
+    lead_event_source: "AutoInova Site",
+    event_source: "site",
+    ...(input.customData || {}),
+  };
+  if (input.value != null) { customData.value = input.value; customData.currency = input.currency || "BRL"; }
+
+  const event: Record<string, unknown> = {
+    event_name: input.eventName,
+    event_time: Math.floor(Date.now() / 1000),
+    event_id: input.eventId || `site_${input.eventName}_${Date.now()}`,
+    action_source: "website",
+    event_source_url: input.eventSourceUrl,
+    user_data: userData,
+    custom_data: customData,
+  };
+
+  const body: Record<string, unknown> = {
+    data: [event],
+    partner_agent: "autoinova_crm",
+    ...buildAuthParams(config),
+  };
+  if (config.testEventCode) body.test_event_code = config.testEventCode;
+
+  try {
+    const res = await fetch(`${GRAPH_BASE}/${config.datasetId}/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (res.ok && (json as any).events_received >= 1) {
+      await logEvent({ leadId: null as any, eventName: input.eventName, actionSource: "website", value: input.value ?? null, currency: input.value != null ? (input.currency || "BRL") : null, status: "sent", fbtraceId: (json as any).fbtrace_id ?? null, payload: event });
+      console.log(`[CAPI-Site] ${input.eventName} enviado (${input.eventSourceUrl || "?"})`);
+      return { success: true };
+    }
+    const errMsg = (json as any)?.error?.message || `HTTP ${res.status}`;
+    await logEvent({ leadId: null as any, eventName: input.eventName, actionSource: "website", status: "failed", error: errMsg, payload: event });
+    console.error(`[CAPI-Site] Falha ${input.eventName}: ${errMsg}`);
+    return { success: false, error: errMsg };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    await logEvent({ leadId: null as any, eventName: input.eventName, actionSource: "website", status: "failed", error: errMsg });
     return { success: false, error: errMsg };
   }
 }
