@@ -3243,6 +3243,18 @@ const metaAdsRouter = router({
     }),
 
   // Criar anúncio em adset existente (fluxo simplificado)
+  /** Upload de uma imagem própria (ex: arte de stories) para usar no anúncio */
+  uploadCreativeImage: protectedProcedure
+    .input(z.object({ base64Data: z.string(), mimeType: z.string() }))
+    .mutation(async ({ input }) => {
+      const { storagePut } = await import("./storage");
+      const buffer = Buffer.from(input.base64Data, "base64");
+      const ext = input.mimeType.split("/")[1]?.split(";")[0] || "jpg";
+      const key = `meta-ads/creative-${crypto.randomBytes(8).toString("hex")}.${ext}`;
+      const { url } = await storagePut(key, buffer, input.mimeType);
+      return { url };
+    }),
+
   createAdInAdSet: protectedProcedure
     .input(z.object({
       vehicleId:    z.number(),

@@ -104,6 +104,10 @@ function CreateAdModal({
   const [selectedAdSetName, setSelectedAdSetName] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null); // imagem própria (stories)
+  const [uploading, setUploading] = useState(false);
+  const [titleVariations, setTitleVariations] = useState<string[]>([]); // títulos extras → 1 anúncio por título
+  const uploadCreative = trpc.metaAds.uploadCreativeImage.useMutation();
   const [vehicleSearch, setVehicleSearch] = useState("");
 
   // Carrossel
@@ -236,25 +240,55 @@ function CreateAdModal({
     if (!selectedVehicleId || !selectedCampaignId || !selectedAdSetId) return;
     setStep("publishing");
     try {
-      const isCarousel = adFormat === "carousel" && carouselSelectedImages.length >= 2;
-      await createMutation.mutateAsync({
-        vehicleId: selectedVehicleId,
-        campaignId: selectedCampaignId,
-        adSetId: selectedAdSetId,
-        headline: editedTexts.headline,
-        description: editedTexts.description,
-        primaryText: editedTexts.primaryText,
-        selectedImageUrl: selectedImageUrl || undefined,
-        campaignObjective: selectedCampaignObjective || undefined,
-        carouselImageUrls: isCarousel ? carouselSelectedImages : undefined,
-        carouselCaptions: isCarousel ? carouselCaptions : undefined,
-        pixelId: "587774608991001",
-      });
+      // Imagem própria (stories) tem prioridade e força formato único
+      const imageUrl = uploadedImageUrl || selectedImageUrl || undefined;
+      const isCarousel = !uploadedImageUrl && adFormat === "carousel" && carouselSelectedImages.length >= 2;
+      // 1 anúncio por título (título principal + variações preenchidas)
+      const titles = [editedTexts.headline, ...titleVariations.map(t => t.trim()).filter(Boolean)];
+      let created = 0;
+      for (const headline of titles) {
+        await createMutation.mutateAsync({
+          vehicleId: selectedVehicleId,
+          campaignId: selectedCampaignId,
+          adSetId: selectedAdSetId,
+          headline,
+          description: editedTexts.description,
+          primaryText: editedTexts.primaryText,
+          selectedImageUrl: imageUrl,
+          campaignObjective: selectedCampaignObjective || undefined,
+          carouselImageUrls: isCarousel ? carouselSelectedImages : undefined,
+          carouselCaptions: isCarousel ? carouselCaptions : undefined,
+          pixelId: "587774608991001",
+        });
+        created++;
+      }
+      toast.success(`${created} anúncio(s) criado(s)${titles.length > 1 ? " (variações de título)" : ""}`);
       setStep("done");
       onCreated();
     } catch (e: any) {
       toast.error("Erro ao criar anúncio: " + e.message);
       setStep("review");
+    }
+  }
+
+  async function handleUploadCreative(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res((r.result as string).split(",")[1] || "");
+        r.onerror = rej;
+        r.readAsDataURL(file);
+      });
+      const { url } = await uploadCreative.mutateAsync({ base64Data: base64, mimeType: file.type });
+      setUploadedImageUrl(url);
+      toast.success("Imagem enviada");
+    } catch (err: any) {
+      toast.error("Erro no upload: " + err.message);
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -700,6 +734,30 @@ function CreateAdModal({
                   maxLength={40}
                 />
                 <div className="text-xs text-gray-600 text-right mt-1">{editedTexts.headline.length}/40</div>
+              </div>
+
+              {/* Variações de título (1 anúncio por título) */}
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">Variações de título (cria 1 anúncio por título)</label>
+                {titleVariations.map((t, i) => (
+                  <div key={i} className="flex gap-1 mt-1">
+                    <input value={t} onChange={(e) => setTitleVariations(v => v.map((x, j) => j === i ? e.target.value : x))} maxLength={40} placeholder={`Variação ${i + 1}`} className="flex-1 bg-muted border border-border rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500" />
+                    <button onClick={() => setTitleVariations(v => v.filter((_, j) => j !== i))} className="px-2 text-gray-500 hover:text-red-500">✕</button>
+                  </div>
+                ))}
+                <button onClick={() => setTitleVariations(v => [...v, ""])} className="mt-1 text-xs text-purple-400 hover:text-purple-300">+ Adicionar variação de título</button>
+              </div>
+
+              {/* Imagem própria (stories) */}
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">Imagem própria (arte de stories, vertical)</label>
+                <div className="flex items-center gap-2 mt-1">
+                  <input type="file" accept="image/*" onChange={handleUploadCreative} className="text-xs" />
+                  {uploading && <Loader2 size={14} className="animate-spin text-purple-400" />}
+                  {uploadedImageUrl && <img src={uploadedImageUrl} className="h-16 rounded border border-border object-cover" alt="" />}
+                  {uploadedImageUrl && <button onClick={() => setUploadedImageUrl(null)} className="text-xs text-red-500">remover</button>}
+                </div>
+                <p className="text-[10px] text-gray-500 mt-0.5">Se enviar, esta imagem substitui a do estoque. Ideal 9:16 (stories) — o anúncio aparece inteiro.</p>
               </div>
 
               <div>
