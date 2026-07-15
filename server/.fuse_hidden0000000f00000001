@@ -67,7 +67,7 @@ function normalizePhoneForHash(phone: string): string {
  *  Meta exige minúsculas, sem acentos/pontuação antes do hash. */
 function addHashedName(userData: Record<string, unknown>, name?: string | null): void {
   if (!name) return;
-  const clean = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove acentos
+  const clean = name.normalize("NFD").replace(/[̀-ͯ]/g, "") // remove acentos
     .toLowerCase().replace(/[^a-z\s]/g, "").trim().replace(/\s+/g, " ");
   if (!clean) return;
   const parts = clean.split(" ");
