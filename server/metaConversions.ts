@@ -77,6 +77,13 @@ function addHashedName(userData: Record<string, unknown>, name?: string | null):
   if (last) userData.ln = [sha256(last)];
 }
 
+/** Sinais estáveis presentes em (quase) todo lead: país BR + external_id do CRM.
+ *  external_id é um identificador estável — reforça o matching sem expor PII. */
+function addCommonSignals(userData: Record<string, unknown>, lead: Lead): void {
+  if (!userData.country) userData.country = [sha256("br")];
+  if (!userData.external_id && lead.id) userData.external_id = [sha256(String(lead.id))];
+}
+
 export type CapiConfig = {
   enabled: boolean;
   datasetId: string | null;
@@ -134,6 +141,7 @@ function buildUserData(lead: Lead): { userData: Record<string, unknown>; actionS
     if (lead.phone) userData.ph = [sha256(normalizePhoneForHash(lead.phone))];
     if (lead.email) userData.em = [sha256(lead.email)];
     addHashedName(userData, lead.name);
+    addCommonSignals(userData, lead);
     return { userData, actionSource: "system_generated" };
   }
 
@@ -147,6 +155,7 @@ function buildUserData(lead: Lead): { userData: Record<string, unknown>; actionS
     if (lead.phone) userData.ph = [sha256(normalizePhoneForHash(lead.phone))];
     if (lead.email) userData.em = [sha256(lead.email)];
     addHashedName(userData, lead.name);
+    addCommonSignals(userData, lead);
     return { userData, actionSource: "business_messaging" };
   }
 
@@ -160,6 +169,7 @@ function buildUserData(lead: Lead): { userData: Record<string, unknown>; actionS
   if (lead.externalId) userData.external_id = [sha256(lead.externalId)];
   if (lead.clientIp) userData.client_ip_address = lead.clientIp;
   if (lead.clientUserAgent) userData.client_user_agent = lead.clientUserAgent;
+  addCommonSignals(userData, lead);
 
   if (Object.keys(userData).length === 0) return null;
   return { userData, actionSource: "website" };
