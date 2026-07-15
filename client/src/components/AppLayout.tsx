@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser, Smartphone, Inbox, TrendingUp } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser, Smartphone, Inbox, TrendingUp, Trophy } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -38,6 +38,7 @@ const navItems: NavItem[] = [
   { icon: BookUser, label: "Contatos", path: "/contacts", allowedCargos: ["admin", "gerente"] },
   { icon: GitBranch, label: "Fluxos", path: "/flows", allowedCargos: ["admin", "gerente"] },
   { icon: UserCheck, label: "Vendedores", path: "/sellers", allowedCargos: ["admin", "gerente"] },
+  { icon: Trophy, label: "Performance", path: "/performance", allowedCargos: ["admin", "gerente"] },
   { icon: Cpu, label: "Agentes IA", path: "/agents", allowedCargos: ["admin"] },
   { icon: Brain, label: "Auditoria IA", path: "/ai-audit", allowedCargos: ["admin"] },
   { icon: Smartphone, label: "Instâncias WhatsApp", path: "/evolution-instances", allowedCargos: ["admin", "gerente"] },

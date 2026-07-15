@@ -1061,3 +1061,35 @@ export const conversationInsights = pgTable("conversationInsights", {
 
 export type ConversationInsight = typeof conversationInsights.$inferSelect;
 export type InsertConversationInsight = typeof conversationInsights.$inferInsert;
+
+// ── Avaliação de vendedores/pré-vendedores (coaching IA) ─────────────────────
+// Cada linha é uma "foto" da performance de um atendente num período/instância,
+// com a nota composta (5 pilares), métricas e o parecer qualitativo da IA.
+export const sellerEvaluations = pgTable("sellerEvaluations", {
+  id:                 serial("id").primaryKey(),
+  memberId:           integer("memberId").notNull(),                 // teamMembers.id
+  instanceName:       varchar("instanceName", { length: 100 }),      // null = todas as instâncias
+  periodDays:         integer("periodDays").default(30).notNull(),
+  // Nota final e pilares (0-100)
+  score:              integer("score").default(0).notNull(),
+  conversionScore:    integer("conversionScore").default(0).notNull(),
+  speedScore:         integer("speedScore").default(0).notNull(),
+  conductScore:       integer("conductScore").default(0).notNull(),  // avaliado pela IA
+  valueScore:         integer("valueScore").default(0).notNull(),
+  activityScore:      integer("activityScore").default(0).notNull(),
+  // Métricas brutas
+  leadsReceived:      integer("leadsReceived").default(0).notNull(),
+  leadsConverted:     integer("leadsConverted").default(0).notNull(),
+  avgFirstResponseSec: integer("avgFirstResponseSec").default(0).notNull(),
+  valueSoldCents:     bigint("valueSoldCents", { mode: "number" }).default(0).notNull(),
+  leadsNoReply:       integer("leadsNoReply").default(0).notNull(),  // recebidos sem nenhuma resposta do vendedor
+  // Parecer da IA
+  summary:            text("summary"),
+  strengths:          jsonb("strengths").$type<string[]>(),
+  improvements:       jsonb("improvements").$type<string[]>(),
+  tips:               jsonb("tips").$type<string[]>(),
+  createdAt:          timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type SellerEvaluation = typeof sellerEvaluations.$inferSelect;
+export type InsertSellerEvaluation = typeof sellerEvaluations.$inferInsert;

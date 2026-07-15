@@ -23,6 +23,7 @@ import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
 import Sellers from "./pages/Sellers";
+import Performance from "./pages/Performance";
 import EvolutionInstances from "./pages/EvolutionInstances";
 import { useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -121,6 +122,11 @@ function Router() {
       <Route path="/sellers">
         <AppLayout>
           <Sellers />
+        </AppLayout>
+      </Route>
+      <Route path="/performance">
+        <AppLayout>
+          <Performance />
         </AppLayout>
       </Route>
       <Route path="/evolution-instances">
