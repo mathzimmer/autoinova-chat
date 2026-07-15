@@ -1547,11 +1547,11 @@ const leadRouter = router({
       return { success: true };
     }),
 
-  /** Situação de crédito (com/sem crédito, valor, condições, banco) */
+  /** Situação de crédito (com/sem crédito, valor, condições, banco) — ou "limpar" */
   setCredit: protectedProcedure
     .input(z.object({
       leadId: z.number(),
-      approved: z.enum(["sim", "nao"]),
+      approved: z.enum(["sim", "nao", "limpar"]),
       amount: z.string().max(50).optional(),
       conditions: z.string().max(255).optional(),
       bank: z.string().max(40).optional(),
@@ -1562,8 +1562,9 @@ const leadRouter = router({
       const { leads: leadsT } = await import("../drizzle/schema");
       const lead = (await db.select().from(leadsT).where(eq(leadsT.id, input.leadId)).limit(1))[0];
       if (!lead) throw new Error("Lead não encontrado");
+      const clear = input.approved === "limpar";
       await db.update(leadsT).set({
-        creditApproved: input.approved,
+        creditApproved: clear ? null : input.approved,
         creditAmount: input.approved === "sim" ? (input.amount ?? null) : null,
         creditConditions: input.approved === "sim" ? (input.conditions ?? null) : null,
         creditBank: input.approved === "sim" ? (input.bank ?? null) : null,
@@ -1572,8 +1573,8 @@ const leadRouter = router({
       const { logTimeline } = await import("./db");
       await logTimeline({
         conversationId: lead.conversationId, leadId: input.leadId, userId: ctx.user.id,
-        action: "credito",
-        details: { aprovado: input.approved, valor: input.amount, condicoes: input.conditions, banco: input.bank },
+        action: clear ? "credito_removido" : "credito",
+        details: clear ? {} : { aprovado: input.approved, valor: input.amount, condicoes: input.conditions, banco: input.bank },
       });
       return { success: true };
     }),

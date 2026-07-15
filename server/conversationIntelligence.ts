@@ -19,6 +19,8 @@ export type InsightResult = {
   creditStatus: string;
   nextAction: string;
   vehicleInterest: string;
+  hasTrade: boolean | null;
+  tradeVehicle: string;
   funnelStage: "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando";
 };
 
@@ -33,6 +35,8 @@ Sua tarefa é avaliar friamente o potencial de fechamento e retornar um JSON EXA
   "creditStatus": "<situação de pagamento/crédito mencionada: entrada, financiamento, à vista, restrição, ou 'não mencionado'>",
   "nextAction": "<a próxima ação mais eficaz para o vendedor fazer AGORA>",
   "vehicleInterest": "<veículo(s) de interesse ou 'não definido'>",
+  "hasTrade": true | false | null,
+  "tradeVehicle": "<se tem carro na troca, qual (marca/modelo/ano); senão vazio>",
   "funnelStage": "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando"
 }
 Critérios do funnelStage (escolha o mais avançado que a conversa JÁ atingiu de fato):
@@ -117,6 +121,8 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       creditStatus: String(json.creditStatus || "não mencionado").slice(0, 200),
       nextAction: String(json.nextAction || "").slice(0, 500),
       vehicleInterest: String(json.vehicleInterest || "não definido").slice(0, 300),
+      hasTrade: typeof json.hasTrade === "boolean" ? json.hasTrade : null,
+      tradeVehicle: String(json.tradeVehicle || "").slice(0, 200),
       funnelStage: (["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "negociando"].includes(json.funnelStage) ? json.funnelStage : "novo"),
     };
   } catch (err) {
@@ -151,9 +157,17 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
     const { updateLeadFunnelStatus } = await import("./db");
     void updateLeadFunnelStatus; // no-op guard
     const { leads } = await import("../drizzle/schema");
-    const lead = (await db.select({ id: leads.id }).from(leads).where(eq(leads.conversationId, conversationId)).limit(1))[0];
+    const { getCanonicalLead } = await import("./db");
+    const conv0 = (await db.select({ phone: convTable.phone }).from(convTable).where(eq(convTable.id, conversationId)).limit(1))[0];
+    const lead = (conv0?.phone ? await getCanonicalLead(conv0.phone) : undefined)
+      || (await db.select().from(leads).where(eq(leads.conversationId, conversationId)).limit(1))[0];
     if (lead) {
-      await db.update(leads).set({ temperature: parsed.temperature as any, score: parsed.score }).where(eq(leads.id, lead.id));
+      const upd: Record<string, unknown> = { temperature: parsed.temperature as any, score: parsed.score };
+      // Preenche o que a IA detectou SEM sobrescrever cadastro manual existente
+      if ((!lead.vehicleInterest || lead.vehicleInterest === "não definido") && parsed.vehicleInterest && parsed.vehicleInterest !== "não definido") upd.vehicleInterest = parsed.vehicleInterest;
+      if (lead.hasTrade == null && parsed.hasTrade != null) upd.hasTrade = parsed.hasTrade;
+      if (!lead.tradeVehicle && parsed.tradeVehicle) upd.tradeVehicle = parsed.tradeVehicle;
+      await db.update(leads).set(upd as any).where(eq(leads.id, lead.id));
     }
   } catch { /* opcional */ }
 

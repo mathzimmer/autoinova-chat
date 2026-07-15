@@ -177,6 +177,7 @@ export default function Leads() {
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [attendantFilter, setAttendantFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
+  const [creditFilter, setCreditFilter] = useState("all");
   // Filtros por coluna (estilo Excel)
   const [colName, setColName] = useState("");
   const [colPhone, setColPhone] = useState("");
@@ -268,6 +269,16 @@ export default function Leads() {
       filtered = filtered.filter((l) => ((l as any).ownerId ?? null) === aid);
     }
 
+    // Crédito
+    if (creditFilter !== "all") {
+      filtered = filtered.filter((l) => {
+        const c = (l as any).creditApproved;
+        if (creditFilter === "sim") return c === "sim";
+        if (creditFilter === "nao") return c === "nao";
+        return !c; // "naoavaliado"
+      });
+    }
+
     // Data de entrada
     if (dateFilter !== "all") {
       const days = dateFilter === "today" ? 1 : parseInt(dateFilter);
@@ -317,7 +328,7 @@ export default function Leads() {
     }
 
     return filtered;
-  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, colName, colPhone, colVehicle, sortField, sortDir]);
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, creditFilter, colName, colPhone, colVehicle, sortField, sortDir]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -452,7 +463,7 @@ export default function Leads() {
     })),
   ];
 
-  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all" || instanceFilter !== "all" || attendantFilter !== "all" || dateFilter !== "all";
+  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all" || instanceFilter !== "all" || attendantFilter !== "all" || dateFilter !== "all" || creditFilter !== "all";
 
   if (view === "kanban") {
     return (
@@ -575,6 +586,18 @@ export default function Leads() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="min-w-[150px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Crédito</label>
+                <Select value={creditFilter} onValueChange={setCreditFilter}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todos" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    <SelectItem value="sim">💳 Com crédito</SelectItem>
+                    <SelectItem value="nao">✗ Sem crédito</SelectItem>
+                    <SelectItem value="naoavaliado">Não avaliado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
               <div className="min-w-[130px]">
                 <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Entrada</label>
                 <Select value={dateFilter} onValueChange={setDateFilter}>
@@ -592,7 +615,7 @@ export default function Leads() {
                   variant="ghost"
                   size="sm"
                   className="h-8 text-xs text-muted-foreground"
-                  onClick={() => { setFunnelFilter("all"); setTempFilter("all"); setInstanceFilter("all"); setAttendantFilter("all"); setDateFilter("all"); }}
+                  onClick={() => { setFunnelFilter("all"); setTempFilter("all"); setInstanceFilter("all"); setAttendantFilter("all"); setDateFilter("all"); setCreditFilter("all"); }}
                 >
                   <X className="h-3 w-3 mr-1" />
                   Limpar filtros
@@ -684,6 +707,7 @@ export default function Leads() {
                   <span className="font-semibold truncate flex items-center gap-1" title={displayName}>
                     {(lead as any).creditApproved === "sim" && <span title={`Crédito aprovado${(lead as any).creditBank ? ` · ${(lead as any).creditBank}` : ""}`}>💳</span>}
                     {(lead as any).creditApproved === "nao" && <span title="Sem crédito" className="grayscale opacity-60">💳</span>}
+                    {lead.hasTrade && <span title={`Troca: ${lead.tradeVehicle || "veículo não informado"}`}>🔄</span>}
                     <span className="truncate">{displayName}</span>
                   </span>
                   <span className="text-[11px] text-muted-foreground truncate">{displayPhone}</span>
@@ -1197,9 +1221,12 @@ function LeadActions({ lead, onChanged }: { lead: any; onChanged: () => void }) 
 
       {tab === "credit" && (
         <div className="space-y-2 border border-border rounded-md p-2">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
             <button onClick={() => { setCredApproved("sim"); }} className={`px-3 py-1 rounded text-xs font-medium ${credApproved === "sim" ? "bg-green-600 text-white" : "bg-green-500/10 text-green-700"}`}>Com crédito</button>
             <button onClick={() => { setCredApproved("nao"); setCredit.mutate({ leadId: lead.id, approved: "nao" }); }} className={`px-3 py-1 rounded text-xs font-medium ${credApproved === "nao" ? "bg-red-600 text-white" : "bg-red-500/10 text-red-700"}`}>Sem crédito</button>
+            {(lead.creditApproved || credApproved) && (
+              <button onClick={() => { setCredApproved(null); setAmount(""); setConditions(""); setBank(""); setCredit.mutate({ leadId: lead.id, approved: "limpar" }); }} className="px-2 py-1 rounded text-[11px] text-muted-foreground hover:text-red-600 underline">Limpar / removi por engano</button>
+            )}
           </div>
           {credApproved === "sim" && (
             <div className="space-y-2">
