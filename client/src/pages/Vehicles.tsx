@@ -202,6 +202,14 @@ export default function Vehicles() {
                       {v.condition}
                     </Badge>
                   )}
+                  {/* ID do carro — usado para criar o anúncio. Clique para copiar. */}
+                  <button
+                    onClick={() => { navigator.clipboard?.writeText(String(v.id)); toast.success(`ID ${v.id} copiado`); }}
+                    title="ID do veículo (use ao criar o anúncio). Clique para copiar."
+                    className="absolute bottom-2 left-2 bg-black/70 hover:bg-black/85 text-white text-[11px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1"
+                  >
+                    <Tag className="h-2.5 w-2.5" /> ID {v.id}
+                  </button>
                 </div>
 
                 <CardContent className="p-3.5">
