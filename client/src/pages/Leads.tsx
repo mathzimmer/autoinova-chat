@@ -705,6 +705,11 @@ export default function Leads() {
                     {(lead as any).createdAt ? new Date((lead as any).createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" }) : "—"}
                   </span>
                   <span className="font-semibold truncate flex items-center gap-1" title={displayName}>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(String(lead.id)); toast.success(`Lead #${lead.id} copiado`); }}
+                      title="ID do lead (aparece no log do CAPI). Clique para copiar."
+                      className="font-mono text-[9px] text-muted-foreground bg-muted px-1 rounded shrink-0 hover:bg-accent"
+                    >#{lead.id}</button>
                     {(lead as any).creditApproved === "sim" && <span title={`Crédito aprovado${(lead as any).creditBank ? ` · ${(lead as any).creditBank}` : ""}`}>💳</span>}
                     {(lead as any).creditApproved === "nao" && <span title="Sem crédito" className="grayscale opacity-60">💳</span>}
                     {lead.hasTrade && <span title={`Troca: ${lead.tradeVehicle || "veículo não informado"}`}>🔄</span>}
