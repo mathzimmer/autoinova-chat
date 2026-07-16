@@ -582,11 +582,32 @@ async function startServer() {
           emitNewMessage(result.conversationId, result.message);
           emitConversationUpdate(result.conversationId, {});
           await updateLastCustomerMessageAt(result.conversationId, m.timestamp).catch(() => {});
+
+          // CTWA: se a conversa veio de anúncio Click-to-WhatsApp, captura a
+          // atribuição (ctwa_clid) → lead marcado como "anúncio" + Meta CAPI.
+          console.log(`[Zernio][CTWA] referral? ctwa_clid=${m.ctwaId || "não"} | ad=${m.adHeadline || "-"}`);
+          if (m.ctwaId) {
+            try {
+              const { upsertLead } = await import("../db");
+              await upsertLead({
+                conversationId: result.conversationId,
+                phone: m.phone,
+                ctwaId: m.ctwaId,
+                utmSource: "meta_ctwa",
+                utmCampaign: m.adHeadline || undefined,
+                landingPage: m.adSourceUrl || undefined,
+              } as any);
+              console.log(`[Zernio] CTWA capturado: ctwa_clid=${m.ctwaId} (conversa ${result.conversationId})`);
+            } catch (err) {
+              console.error("[Zernio] Erro ao salvar atribuição CTWA:", err);
+            }
+          }
+
           // Dispara IA + fluxos (assíncrono, para responder rápido ao webhook)
           const { runZernioAI } = await import("../zernioAI");
-          runZernioAI(result.conversationId, content).catch((e) =>
-            console.error("[Zernio] runZernioAI falhou:", e)
-          );
+          try { runZernioAI(result.conversationId, content); } catch (e) {
+            console.error("[Zernio] runZernioAI falhou:", e);
+          }
         }
         return;
       }

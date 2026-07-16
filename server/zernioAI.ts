@@ -12,10 +12,38 @@ import { processFlowMessage } from "./flowEngine";
 import { processAIMessage } from "./ai";
 import { zernioReply, zernioSendMedia, zernioSendButtons, zernioSendList } from "./zernioService";
 import { emitNewMessage, emitTypingIndicator } from "./socket";
+import { getDebounceDelay } from "./messageDebounce";
 
 const BOT_NAME = "Auto Inova - IA";
 
-export async function runZernioAI(conversationId: number, customerMessage: string): Promise<void> {
+// ─── Debounce por conversa ────────────────────────────────────────────────────
+// Cliente que manda 3 mensagens em rajada (ex.: "id", "Valor", "Vamor") acionava
+// o fluxo 3x → saudação/carro/imagens repetidos. Agrupamos as mensagens numa
+// janela curta e disparamos o processamento UMA vez com o texto combinado.
+const zernioBuffers = new Map<number, { timer: ReturnType<typeof setTimeout>; parts: string[] }>();
+
+export function runZernioAI(conversationId: number, customerMessage: string): void {
+  const delay = getDebounceDelay();
+  const existing = zernioBuffers.get(conversationId);
+  if (existing) {
+    clearTimeout(existing.timer);
+    existing.parts.push(customerMessage);
+    console.log(`[ZernioAI] Conversa ${conversationId}: ${existing.parts.length} mensagens agrupadas, resetando timer (${delay}ms)`);
+  } else {
+    zernioBuffers.set(conversationId, { timer: null as any, parts: [customerMessage] });
+    console.log(`[ZernioAI] Conversa ${conversationId}: iniciando debounce (${delay}ms)`);
+  }
+  const entry = zernioBuffers.get(conversationId)!;
+  entry.timer = setTimeout(() => {
+    const grouped = entry.parts.join("\n").trim();
+    zernioBuffers.delete(conversationId);
+    processZernioConversation(conversationId, grouped).catch((e) =>
+      console.error(`[ZernioAI] Conversa ${conversationId}: erro no processamento:`, e)
+    );
+  }, delay);
+}
+
+async function processZernioConversation(conversationId: number, customerMessage: string): Promise<void> {
   const conv = await getConversationById(conversationId);
   if (!conv || conv.channel !== "zernio") return;
   if (!conv.aiActive) {

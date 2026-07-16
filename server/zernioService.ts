@@ -249,6 +249,10 @@ export interface ZernioParsedMessage {
   externalId?: string;      // id da mensagem no Zernio / plataforma
   direction: "inbound" | "outbound";
   timestamp: number;        // epoch ms
+  // CTWA (Click-to-WhatsApp): atribuição de anúncio, quando a conversa começou por anúncio
+  ctwaId?: string;          // ctwa_clid
+  adHeadline?: string;      // título/id do anúncio
+  adSourceUrl?: string;     // url de origem
 }
 
 function firstDefined<T>(...vals: (T | undefined | null)[]): T | undefined {
@@ -323,6 +327,15 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     : (directionRaw === "outgoing" || directionRaw === "outbound" || directionRaw === "out") ? "outbound"
     : "inbound";
 
+  // Referral/CTWA — a mensagem inicial de um anúncio Click-to-WhatsApp traz esses
+  // campos. O shape exato do Zernio pode variar; buscamos nos lugares prováveis.
+  const referral: any = msg?.referral || conv?.referral || payload?.referral || msg?.context?.referral || {};
+  const ctwaId = firstDefined<string>(
+    referral?.ctwa_clid, referral?.ctwaClid, msg?.ctwa_clid, conv?.ctwaClid, conv?.ctwa_clid,
+  );
+  const adHeadline = firstDefined<string>(referral?.headline, referral?.source_id, referral?.sourceId, referral?.body);
+  const adSourceUrl = firstDefined<string>(referral?.source_url, referral?.sourceUrl);
+
   return {
     eventId: payload?.id,
     conversationId: firstDefined<string>(conv?.id, conv?._id, conv?.conversationId, msg?.conversationId),
@@ -338,5 +351,8 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     externalId: firstDefined<string>(msg?.id, msg?._id, msg?.platformMessageId, msg?.messageId),
     direction,
     timestamp: toEpochMs(firstDefined(msg?.sentAt, msg?.receivedAt, msg?.createdAt, msg?.timestamp, payload?.timestamp)),
+    ctwaId,
+    adHeadline,
+    adSourceUrl,
   };
 }
