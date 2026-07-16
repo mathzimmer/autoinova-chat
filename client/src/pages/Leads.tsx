@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useState, useMemo } from "react";
+import { keepPreviousData } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -209,10 +210,16 @@ export default function Leads() {
   const [showFilters, setShowFilters] = useState(false);
   const [, setLocation] = useLocation();
 
+  const [scope, setScope] = useState<"leads" | "notlead">("leads");
   const { data: leadsRaw, refetch } = trpc.lead.listWithDetails.useQuery(
-    { status: statusFilter },
-    { refetchInterval: 10000 }
+    { status: statusFilter, discarded: scope === "notlead" },
+    { refetchInterval: 10000, placeholderData: keepPreviousData }
   );
+
+  const setIsLead = trpc.lead.setIsLead.useMutation({
+    onSuccess: () => { toast.success("Voltou a ser lead"); refetch(); },
+    onError: (err: any) => toast.error(`Erro: ${err.message}`),
+  });
 
   const updateLead = trpc.lead.update.useMutation({
     onSuccess: () => {
@@ -500,9 +507,20 @@ export default function Leads() {
             Leads
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">
-            {leads.length} lead{leads.length !== 1 ? "s" : ""} encontrado{leads.length !== 1 ? "s" : ""}
+            {leads.length} {scope === "notlead" ? "descartado" : "lead"}{leads.length !== 1 ? "s" : ""} encontrado{leads.length !== 1 ? "s" : ""}
             {hasActiveFilters && <span className="text-primary ml-1">(filtrado)</span>}
           </p>
+          {/* Aba Leads / Não é lead */}
+          <div className="flex rounded-lg overflow-hidden border border-border w-fit mt-2">
+            <button onClick={() => setScope("leads")}
+              className={`px-3 py-1 text-xs ${scope === "leads" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}>
+              Leads
+            </button>
+            <button onClick={() => setScope("notlead")}
+              className={`px-3 py-1 text-xs ${scope === "notlead" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/70"}`}>
+              Não é lead
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative w-full sm:w-64">
@@ -725,7 +743,12 @@ export default function Leads() {
                   <span>{funnel && <span className={`text-[9px] px-1 rounded ${funnel.bg} ${funnel.color} whitespace-nowrap`}>{funnel.label}</span>}</span>
                   <span>{temp && <span className={`text-[9px] px-1 rounded ${temp.bg} ${temp.color} whitespace-nowrap`}>{temp.icon} {temp.label}</span>}</span>
                   <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
-                    <button title="Vincular estoque / editar" className="p-1 rounded hover:bg-accent" onClick={() => openEditDialog(lead)}>🚗</button>
+                    {scope === "notlead" ? (
+                      <button title="Voltar a ser lead" className="text-[10px] px-1.5 py-1 rounded bg-green-600/10 text-green-700 hover:bg-green-600/20 whitespace-nowrap"
+                        onClick={() => setIsLead.mutate({ leadId: lead.id })}>↩ Voltar a ser lead</button>
+                    ) : (
+                      <button title="Vincular estoque / editar" className="p-1 rounded hover:bg-accent" onClick={() => openEditDialog(lead)}>🚗</button>
+                    )}
                     <GoToConversation lead={lead} compact />
                     {isExpanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
                   </div>

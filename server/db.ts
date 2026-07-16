@@ -504,11 +504,16 @@ export async function mirrorZernioMessage(params: {
         )).limit(1))[0]
     : undefined;
   if (!conv && bestPhone) {
+    // Escopo por INSTÂNCIA (accountId): o mesmo cliente pode falar com números
+    // Zernio diferentes (bianca, deivid). Sem filtrar por instância, a mensagem
+    // de um número "colaria" na conversa do outro.
+    const phoneConds = [
+      eq(conversations.channel, "zernio" as any),
+      eq(conversations.phone, bestPhone),
+    ];
+    if (params.accountId) phoneConds.push(eq(conversations.instanceName, params.accountId));
     conv = (await db.select().from(conversations)
-      .where(and(
-        eq(conversations.channel, "zernio" as any),
-        eq(conversations.phone, bestPhone),
-      )).limit(1))[0];
+      .where(and(...phoneConds)).limit(1))[0];
   }
 
   const preview = (params.content || `[${params.messageType}]`).substring(0, 500);

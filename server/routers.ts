@@ -1673,20 +1673,20 @@ const leadRouter = router({
 
   /** List leads with conversation data, vehicle, agent, and latest summary preview */
   listWithDetails: protectedProcedure
-    .input(z.object({ status: z.string().optional() }).optional())
+    .input(z.object({ status: z.string().optional(), discarded: z.boolean().optional() }).optional())
     .query(async ({ input }) => {
       const db = await getDb();
       if (!db) return [];
       const { leads: leadsTable, conversations: convsTable, leadSummaries: summariesTable, vehicles: vehiclesTable, teamMembers: membersTable, sellerAssignments: assignmentsTable, sellers: sellersTable, rescueAttempts: rescueTable } = await import("../drizzle/schema");
       const { eq, desc, inArray, and: andOp } = await import("drizzle-orm");
 
-      // Get all leads (esconde os descartados / "não é lead")
-      const notDiscarded = eq(leadsTable.isLead, true);
+      // discarded=true → aba "Não é lead" (isLead=false); senão só os leads reais
+      const leadScope = eq(leadsTable.isLead, input?.discarded ? false : true);
       let allLeads;
-      if (input?.status && input.status !== "all") {
-        allLeads = await db.select().from(leadsTable).where(andOp(eq(leadsTable.status, input.status as any), notDiscarded)).orderBy(desc(leadsTable.updatedAt));
+      if (input?.status && input.status !== "all" && !input?.discarded) {
+        allLeads = await db.select().from(leadsTable).where(andOp(eq(leadsTable.status, input.status as any), leadScope)).orderBy(desc(leadsTable.updatedAt));
       } else {
-        allLeads = await db.select().from(leadsTable).where(notDiscarded).orderBy(desc(leadsTable.updatedAt));
+        allLeads = await db.select().from(leadsTable).where(leadScope).orderBy(desc(leadsTable.updatedAt));
       }
       if (allLeads.length === 0) return [];
 
