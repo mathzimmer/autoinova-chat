@@ -181,6 +181,37 @@ function AutoQualifySettings() {
   );
 }
 
+function IaCommentStyleSettings() {
+  const { data, refetch } = trpc.settings.getIaCommentStyle.useQuery();
+  const save = trpc.settings.saveIaCommentStyle.useMutation({ onSuccess: () => refetch() });
+  const opts: { v: "objetivo" | "equilibrado" | "detalhado"; label: string; desc: string }[] = [
+    { v: "objetivo", label: "Curto e objetivo", desc: "3-4 pontos-chave em tópicos" },
+    { v: "equilibrado", label: "Equilibrado", desc: "2 frases curtas" },
+    { v: "detalhado", label: "Detalhado", desc: "resumo completo com contexto" },
+  ];
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-primary" /> Comentários da IA nos leads</CardTitle>
+        <CardDescription className="mt-0.5">Como a IA resume a negociação na linha do tempo do lead (considera o que o cliente e o vendedor dizem).</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {!data ? <p className="text-sm text-muted-foreground">Carregando…</p> : (
+          <div className="flex flex-wrap gap-2">
+            {opts.map((o) => (
+              <button key={o.v} onClick={() => save.mutate({ style: o.v })}
+                className={`text-left px-3 py-2 rounded-lg border text-xs ${data.style === o.v ? "border-primary bg-primary/10 ring-1 ring-primary/30" : "border-border bg-background hover:bg-accent"}`}>
+                <div className="font-medium">{o.label}</div>
+                <div className="text-muted-foreground text-[11px]">{o.desc}</div>
+              </button>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data: promptData, refetch, isLoading } = trpc.settings.getPrompt.useQuery();
 
@@ -275,14 +306,19 @@ export default function Settings() {
             <SettingsIcon className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Configurações da IA</h1>
-            <p className="text-sm text-muted-foreground">Arquitetura de prompt em 4 camadas — todas editáveis</p>
+            <h1 className="text-2xl font-bold text-foreground">Configurações</h1>
+            <p className="text-sm text-muted-foreground">Qualificação, comentários da IA, rastreamento e personalização. (Edição do prompt fica em Agentes IA.)</p>
           </div>
         </div>
 
         {/* Auto-qualificação de leads */}
         <AutoQualifySettings />
 
+        {/* Estilo dos comentários da IA nos leads */}
+        <IaCommentStyleSettings />
+
+        {/* Editor de prompt removido das Configurações — disponível em Agentes IA */}
+        {false && (<>
         {/* Architecture Overview */}
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
@@ -466,6 +502,7 @@ export default function Settings() {
             </Card>
           );
         })}
+        </>)}
 
         {/* Debounce / Agrupamento de mensagens */}
         <Card className="bg-card border-border ring-1 ring-primary/20">
@@ -486,7 +523,8 @@ export default function Settings() {
           </CardContent>
         </Card>
 
-        {/* Layer 4: Context (Info only) */}
+        {/* Layer 4: Context (Info only) — removido das Configurações */}
+        {false && (
         <Card className="bg-card border-border">
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2.5">
@@ -525,6 +563,7 @@ export default function Settings() {
             </div>
           </CardContent>
         </Card>
+        )}
 
         {/* WhatsApp Embedded Signup */}
         <WhatsAppConnectCard />

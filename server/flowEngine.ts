@@ -990,12 +990,29 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
         };
         const defaultLinkText = `Olá ${seller.name}, vim pelo atendimento da ${storeLocation}.\nMeu nome é ${linkVars.nome}.\nVeículo de interesse: ${linkVars.veiculo}`;
         let linkText = config.waLinkMessage || defaultLinkText;
-        // Replace {var} placeholders in the link message
+        // Substitui {{var}} (duplas) PRIMEIRO e depois {var} (simples). Se fizer o
+        // simples antes, ele come o miolo de {{var}} e sobra "{valor}".
+        Object.entries(linkVars).forEach(([key, val]) => {
+          linkText = linkText.replace(new RegExp(`\\{\\{${key}\\}\\}`, "gi"), val);
+        });
         Object.entries(linkVars).forEach(([key, val]) => {
           linkText = linkText.replace(new RegExp(`\\{${key}\\}`, "gi"), val);
         });
-        // Also replace {{var}} template variables
         linkText = replaceVariables(linkText, ctx);
+        // Remove linhas de campo vazio ("Cidade:", "E-mail:") e excesso de linhas.
+        linkText = linkText
+          .split("\n")
+          .filter((l: string) => !/^\s*[^:\n]{1,40}:\s*$/.test(l))
+          .join("\n")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim();
+        // WhatsApp corta a parte clicável de URLs muito longas → mantém a mensagem
+        // curta (o vendedor recebe o cadastro completo no CRM, não precisa no link).
+        if (linkText.length > 350) {
+          const cut = linkText.slice(0, 350);
+          const nl = cut.lastIndexOf("\n");
+          linkText = (nl > 150 ? cut.slice(0, nl) : cut).trim();
+        }
         const cleanPhone = seller.phone.replace(/\D/g, "");
         waLink = `https://wa.me/${cleanPhone}?text=${encodeURIComponent(linkText)}`;
       }

@@ -1333,7 +1333,9 @@ function LeadTimeline({ leadId }: { leadId: number }) {
               <span className="shrink-0">{m.icon}</span>
               <div className="min-w-0">
                 <span className={`font-medium ${m.color}`}>{m.label}</span>
-                {extra && <span className="text-muted-foreground"> — {extra}</span>}
+                {extra && (ev.action === "ia_comentario"
+                  ? <div className="text-muted-foreground mt-0.5 whitespace-pre-line leading-relaxed">{extra}</div>
+                  : <span className="text-muted-foreground"> — {extra}</span>)}
                 {ev.action === "ia_comentario" && d.proximaAcao && (
                   <div className="text-[11px] text-fuchsia-700/80 mt-0.5">➡️ {d.proximaAcao}</div>
                 )}

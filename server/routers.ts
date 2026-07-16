@@ -2348,6 +2348,17 @@ const settingsRouter = router({
       return { success: true };
     }),
 
+  /** Estilo dos comentários da IA nos leads (curto/objetivo x detalhado) */
+  getIaCommentStyle: protectedProcedure.query(async () => {
+    return { style: (await getSetting("ia_comment_style")) || "objetivo" };
+  }),
+  saveIaCommentStyle: adminProcedure
+    .input(z.object({ style: z.enum(["objetivo", "equilibrado", "detalhado"]) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ia_comment_style", input.style, ctx.user.id);
+      return { success: true };
+    }),
+
   /** Nomes customizados das etapas do funil (ex.: renomear "Dados pessoais" → "Documentação") */
   getFunnelLabels: protectedProcedure.query(async () => {
     const raw = await getSetting("funnel_stage_labels");

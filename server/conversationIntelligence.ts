@@ -7,8 +7,19 @@
  */
 import { eq, desc, and, gte, inArray } from "drizzle-orm";
 import { conversationInsights, messages as messagesTable, conversations as convTable } from "../drizzle/schema";
-import { getDb } from "./db";
+import { getDb, getSetting } from "./db";
 import { invokeLLM } from "./_core/llm";
+
+/** Diretriz de formato do resumo (comentário da IA no lead), configurável. */
+async function commentStyleDirective(): Promise<string> {
+  const style = (await getSetting("ia_comment_style")) || "objetivo";
+  if (style === "detalhado")
+    return `\n\nESTILO DO "summary": resumo completo (3 a 5 frases) com contexto e nuances da negociação, considerando o que o CLIENTE e o VENDEDOR disseram.`;
+  if (style === "equilibrado")
+    return `\n\nESTILO DO "summary": 2 frases curtas e objetivas sobre em que pé está a negociação (cliente + vendedor).`;
+  // objetivo (padrão)
+  return `\n\nESTILO DO "summary": 3 a 4 PONTOS-CHAVE curtos, um por linha, cada um começando com "• " e no máximo ~8 palavras. Sem texto corrido. Foque no que o cliente quer, na objeção principal e no próximo passo. Considere o que o CLIENTE e o VENDEDOR disseram.`;
+}
 
 export type InsightResult = {
   temperature: "frio" | "morno" | "quente" | "muito_quente";
@@ -100,9 +111,10 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
 
   let parsed: InsightResult;
   try {
+    const styleDirective = await commentStyleDirective();
     const resp = await invokeLLM({
       messages: [
-        { role: "system", content: SYSTEM },
+        { role: "system", content: SYSTEM + styleDirective },
         { role: "user", content: `Conversa (${ordered.length} mensagens):\n\n${transcript}\n\nRetorne o JSON de análise:` },
       ],
     });
