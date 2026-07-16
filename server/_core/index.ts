@@ -532,6 +532,8 @@ async function startServer() {
       // ── Mensagem recebida do cliente ──
       if (event === "message.received") {
         const m = parseZernioMessage(payload);
+        // DIAGNÓSTICO de roteamento: mostra qual instância (accountId) foi lida.
+        console.log(`[Zernio][ROTA] recebida → accountId=${m.accountId || "?"} | phone=${m.phone || "?"} | zernioConvId=${m.conversationId || "?"} | texto="${(m.content || "").slice(0, 30)}"`);
         if (!m.phone && !m.conversationId) {
           console.warn("[Zernio] message.received sem telefone/conversa — payload logado acima.");
           return;
