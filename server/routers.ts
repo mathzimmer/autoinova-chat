@@ -6285,6 +6285,14 @@ const performanceRouter = router({
       return computeTeamPerformance(input);
     }),
 
+  /** Ranking POR INSTÂNCIA/número (em vez de por atendente). */
+  overviewByInstance: protectedProcedure
+    .input(z.object({ sinceDays: z.number().min(1).max(365).default(30) }))
+    .query(async ({ input }) => {
+      const { computeInstancePerformance } = await import("./sellerPerformance");
+      return computeInstancePerformance(input);
+    }),
+
   /** Roda a avaliação qualitativa por IA de um vendedor e salva. */
   evaluate: protectedProcedure
     .input(z.object({
@@ -6297,6 +6305,30 @@ const performanceRouter = router({
       const r = await evaluateSeller(input);
       if (!r) throw new Error("Não foi possível avaliar este vendedor.");
       return r;
+    }),
+
+  /** Avaliação por IA de uma instância/número. */
+  evaluateInstance: protectedProcedure
+    .input(z.object({ instanceName: z.string(), sinceDays: z.number().min(1).max(365).default(30) }))
+    .mutation(async ({ input }) => {
+      const { evaluateInstance } = await import("./sellerPerformance");
+      const r = await evaluateInstance(input);
+      if (!r) throw new Error("Não foi possível avaliar esta instância.");
+      return r;
+    }),
+
+  /** Última avaliação de IA salva de uma instância. */
+  lastInstanceEvaluation: protectedProcedure
+    .input(z.object({ instanceName: z.string() }))
+    .query(async ({ input }) => {
+      const db = await getDb();
+      if (!db) return null;
+      const { sellerEvaluations } = await import("../drizzle/schema");
+      const { desc, and } = await import("drizzle-orm");
+      const row = (await db.select().from(sellerEvaluations)
+        .where(and(eq(sellerEvaluations.memberId, 0), eq(sellerEvaluations.instanceName, input.instanceName)))
+        .orderBy(desc(sellerEvaluations.createdAt)).limit(1))[0];
+      return row || null;
     }),
 
   /** Última avaliação salva de um vendedor (parecer da IA). */
@@ -6319,6 +6351,7 @@ const performanceRouter = router({
       history: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string() })).max(30),
       sinceDays: z.number().min(1).max(365).default(30),
       instanceName: z.string().optional(),
+      groupBy: z.enum(["member", "instance"]).optional(),
     }))
     .mutation(async ({ input }) => {
       const { performanceChat } = await import("./sellerPerformance");

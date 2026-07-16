@@ -23,4 +23,4 @@ CREATE TABLE IF NOT EXISTS "sellerEvaluations" (
   "createdAt"           timestamp NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS "sellerEvaluations_member_idx" ON "sellerEvaluations" ("memberId", "createdAt");
-ALTER TABLE "sellerEvaluations" OWNER TO autoinova;
+-- Obs.: no Supabase o papel que cria já é dono; não é preciso ALTER ... OWNER.

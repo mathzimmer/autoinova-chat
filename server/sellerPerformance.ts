@@ -173,12 +173,18 @@ export async function computeTeamPerformance(opts: {
   const maxValue = Math.max(1, ...Array.from(perMember.values()).map(a => a.valueCents));
 
   const result: SellerMetrics[] = [];
-  // Última avaliação de IA salva (p/ reaproveitar a nota de condução no ranking)
-  const lastEvals = await db.select().from(sellerEvaluations)
-    .where(inArray(sellerEvaluations.memberId, memberIds))
-    .orderBy(desc(sellerEvaluations.createdAt));
-  const lastEvalByMember = new Map<number, typeof lastEvals[number]>();
-  for (const e of lastEvals) if (!lastEvalByMember.has(e.memberId)) lastEvalByMember.set(e.memberId, e);
+  // Última avaliação de IA salva (p/ reaproveitar a nota de condução no ranking).
+  // Resiliente: se a tabela ainda não existe (migração pendente), segue sem ela.
+  type EvalRow = typeof sellerEvaluations.$inferSelect;
+  const lastEvalByMember = new Map<number, EvalRow>();
+  try {
+    const lastEvals = await db.select().from(sellerEvaluations)
+      .where(inArray(sellerEvaluations.memberId, memberIds))
+      .orderBy(desc(sellerEvaluations.createdAt));
+    for (const e of lastEvals) if (!lastEvalByMember.has(e.memberId)) lastEvalByMember.set(e.memberId, e);
+  } catch (err) {
+    console.warn("[Perf] sellerEvaluations indisponível (rode a migração):", err instanceof Error ? err.message : err);
+  }
 
   for (const m of members) {
     const agg = perMember.get(m.id)!;
@@ -231,6 +237,147 @@ export async function computeTeamPerformance(opts: {
     });
   }
 
+  result.sort((a, b) => b.score - a.score);
+  return result;
+}
+
+// ── Performance por INSTÂNCIA / número (em vez de por atendente) ────────────────
+
+export type InstanceMetrics = {
+  instanceName: string;
+  label: string;
+  leadsReceived: number;
+  leadsConverted: number;
+  conversionRate: number;
+  avgFirstResponseSec: number;
+  valueSoldCents: number;
+  leadsNoReply: number;
+  messagesSent: number;
+  conversionScore: number;
+  speedScore: number;
+  valueScore: number;
+  activityScore: number;
+  conductScore: number;
+  score: number;
+  lastEvaluatedAt: Date | null;
+};
+
+/** Sentinela usada em sellerEvaluations.memberId para avaliações por instância. */
+const INSTANCE_MEMBER_SENTINEL = 0;
+
+export async function computeInstancePerformance(opts: { sinceDays: number }): Promise<InstanceMetrics[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const since = new Date(Date.now() - opts.sinceDays * 24 * 60 * 60 * 1000);
+  const { isNotNull } = await import("drizzle-orm");
+
+  // Conversas do período que têm instância definida
+  const convs = await db.select({
+    id: convTable.id, instanceName: convTable.instanceName, leadId: convTable.leadId,
+  }).from(convTable).where(and(gte(convTable.lastMessageAt, since.getTime()), isNotNull(convTable.instanceName)));
+  if (convs.length === 0) return [];
+
+  const convsByInstance = new Map<string, number[]>();
+  const leadsByInstance = new Map<string, Set<number>>();
+  const allConvIds: number[] = [];
+  for (const c of convs) {
+    const inst = c.instanceName as string;
+    if (!inst) continue;
+    allConvIds.push(c.id);
+    (convsByInstance.get(inst) || convsByInstance.set(inst, []).get(inst)!).push(c.id);
+    if (c.leadId != null) (leadsByInstance.get(inst) || leadsByInstance.set(inst, new Set()).get(inst)!).add(c.leadId);
+  }
+
+  // Mensagens (tempo de resposta + atividade)
+  const msgs = allConvIds.length
+    ? await db.select({ conversationId: messagesTable.conversationId, senderType: messagesTable.senderType, createdAt: messagesTable.createdAt })
+        .from(messagesTable).where(and(inArray(messagesTable.conversationId, allConvIds), gte(messagesTable.createdAt, since)))
+        .orderBy(messagesTable.createdAt)
+    : [];
+  const msgsByConv = new Map<number, { senderType: string; t: number }[]>();
+  for (const m of msgs) {
+    (msgsByConv.get(m.conversationId) || msgsByConv.set(m.conversationId, []).get(m.conversationId)!)
+      .push({ senderType: m.senderType as string, t: new Date(m.createdAt as any).getTime() });
+  }
+
+  // Leads envolvidos (recebidos/convertidos) + valor
+  const allLeadIds = Array.from(new Set(convs.map(c => c.leadId).filter((x): x is number => x != null)));
+  const leadRows = allLeadIds.length
+    ? await db.select({ id: leadsTable.id, funnelStatus: leadsTable.funnelStatus, isLead: leadsTable.isLead })
+        .from(leadsTable).where(inArray(leadsTable.id, allLeadIds))
+    : [];
+  const leadInfo = new Map<number, { fechado: boolean; isLead: boolean }>();
+  for (const l of leadRows) leadInfo.set(l.id, { fechado: l.funnelStatus === "fechado", isLead: l.isLead });
+  const wonOpps = allLeadIds.length
+    ? await db.select({ leadId: leadOpportunities.leadId, valueCents: leadOpportunities.valueCents })
+        .from(leadOpportunities).where(and(eq(leadOpportunities.status, "won"), gte(leadOpportunities.closedAt, since)))
+    : [];
+  const wonValueByLead = new Map<number, number>();
+  for (const o of wonOpps) wonValueByLead.set(o.leadId, (o.valueCents && o.valueCents > 0) ? o.valueCents : 0);
+
+  // Última avaliação de IA por instância (resiliente)
+  const lastEvalByInstance = new Map<string, typeof sellerEvaluations.$inferSelect>();
+  try {
+    const evals = await db.select().from(sellerEvaluations)
+      .where(eq(sellerEvaluations.memberId, INSTANCE_MEMBER_SENTINEL))
+      .orderBy(desc(sellerEvaluations.createdAt));
+    for (const e of evals) if (e.instanceName && !lastEvalByInstance.has(e.instanceName)) lastEvalByInstance.set(e.instanceName, e);
+  } catch { /* migração pendente */ }
+
+  // Agrega por instância
+  const instValue = new Map<string, number>();
+  for (const [inst, leadSet] of Array.from(leadsByInstance)) {
+    let v = 0;
+    for (const lid of Array.from(leadSet)) v += wonValueByLead.get(lid) || 0;
+    instValue.set(inst, v);
+  }
+  const maxValue = Math.max(1, ...Array.from(instValue.values()));
+
+  const result: InstanceMetrics[] = [];
+  for (const [inst, convIds] of Array.from(convsByInstance)) {
+    let respSum = 0, respCount = 0, messagesSent = 0, leadsNoReply = 0;
+    for (const cid of convIds) {
+      const list = msgsByConv.get(cid) || [];
+      let firstCustomer = -1, firstAgentAfter = -1, hasAgent = false;
+      for (const ev of list) {
+        if (ev.senderType === "agent") { hasAgent = true; messagesSent++; }
+        if (firstCustomer < 0 && ev.senderType === "customer") firstCustomer = ev.t;
+        if (firstCustomer >= 0 && firstAgentAfter < 0 && ev.senderType === "agent" && ev.t >= firstCustomer) firstAgentAfter = ev.t;
+      }
+      if (firstCustomer >= 0 && firstAgentAfter >= 0) { respSum += (firstAgentAfter - firstCustomer) / 1000; respCount++; }
+      if (list.some(e => e.senderType === "customer") && !hasAgent) leadsNoReply++;
+    }
+    const avgResp = respCount ? Math.round(respSum / respCount) : 0;
+
+    const leadSet = leadsByInstance.get(inst) || new Set<number>();
+    let received = 0, converted = 0;
+    for (const lid of Array.from(leadSet)) {
+      const info = leadInfo.get(lid);
+      if (!info || !info.isLead) continue;
+      received++;
+      if (info.fechado) converted++;
+    }
+    const conversionRate = received ? converted / received : 0;
+    const conversionScore = Math.round(clamp((conversionRate / TARGET_CONVERSION) * 100));
+    const speedScore = Math.round(speedToScore(avgResp));
+    const valueCents = instValue.get(inst) || 0;
+    const valueScore = Math.round(clamp((valueCents / maxValue) * 100));
+    const activityScore = Math.round(clamp(100 * (1 - leadsNoReply / (convIds.length || 1))));
+
+    const lastEval = lastEvalByInstance.get(inst) || null;
+    const hasConduct = !!lastEval;
+    const conductScore = lastEval?.conductScore ?? 0;
+    const score = combineScore({ conversionScore, speedScore, valueScore, activityScore, conductScore: hasConduct ? conductScore : null });
+
+    result.push({
+      instanceName: inst, label: inst,
+      leadsReceived: received, leadsConverted: converted, conversionRate,
+      avgFirstResponseSec: avgResp, valueSoldCents: valueCents, leadsNoReply, messagesSent,
+      conversionScore, speedScore, valueScore, activityScore,
+      conductScore: hasConduct ? conductScore : 0, score,
+      lastEvaluatedAt: lastEval?.createdAt ?? null,
+    });
+  }
   result.sort((a, b) => b.score - a.score);
   return result;
 }
@@ -357,6 +504,77 @@ export async function evaluateSeller(opts: {
   return { metrics, analysis };
 }
 
+/** Avaliação qualitativa por IA de uma INSTÂNCIA (número), salva com sentinela. */
+export async function evaluateInstance(opts: { instanceName: string; sinceDays: number }): Promise<{ metrics: InstanceMetrics; analysis: SellerAnalysis } | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const all = await computeInstancePerformance({ sinceDays: opts.sinceDays });
+  const metrics = all.find(i => i.instanceName === opts.instanceName);
+  if (!metrics) return null;
+  const since = new Date(Date.now() - opts.sinceDays * 24 * 60 * 60 * 1000);
+
+  const sampleConvs = await db.select({ id: convTable.id, name: convTable.contactName, phone: convTable.phone })
+    .from(convTable).where(and(gte(convTable.lastMessageAt, since.getTime()), eq(convTable.instanceName, opts.instanceName)))
+    .orderBy(desc(convTable.lastMessageAt)).limit(8);
+
+  let transcripts = "";
+  for (const c of sampleConvs) {
+    const rows = await db.select().from(messagesTable).where(eq(messagesTable.conversationId, c.id)).orderBy(desc(messagesTable.createdAt)).limit(30);
+    const ordered = [...rows].reverse().filter(m => m.senderType !== "internal");
+    if (ordered.length < 2) continue;
+    const t = ordered.map(m => {
+      const meta = m.metadata as Record<string, unknown> | null;
+      const text = (meta?.transcribedText as string) || m.content || `[${m.messageType}]`;
+      const role = m.senderType === "customer" ? "Cliente" : m.senderType === "bot" ? "IA" : "Atendente";
+      return `${role}: ${text}`;
+    }).join("\n");
+    transcripts += `\n--- Conversa com ${c.name || c.phone} ---\n${t}\n`;
+  }
+
+  let analysis: SellerAnalysis = { conductScore: 0, summary: "Sem conversas suficientes para avaliar a condução.", strengths: [], improvements: [], tips: [] };
+  if (transcripts.trim()) {
+    const metricLine = `Métricas da instância "${opts.instanceName}" (${opts.sinceDays} dias): leads recebidos ${metrics.leadsReceived}, convertidos ${metrics.leadsConverted} (${(metrics.conversionRate * 100).toFixed(0)}%), 1ª resposta ${fmtDuration(metrics.avgFirstResponseSec)}, leads sem resposta ${metrics.leadsNoReply}, vendido R$ ${(metrics.valueSoldCents / 100).toLocaleString("pt-BR")}.`;
+    try {
+      const resp = await invokeLLM({
+        messages: [
+          { role: "system", content: COACH_SYSTEM.replace(/vendedor/g, "atendimento da instância") },
+          { role: "user", content: `Instância/número: ${opts.instanceName}\n${metricLine}\n\nAmostras de conversas:\n${transcripts}\n\nRetorne o JSON da avaliação:` },
+        ],
+      });
+      const rawContent = resp.choices?.[0]?.message?.content;
+      let raw = (typeof rawContent === "string" ? rawContent : "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
+      const j = JSON.parse(raw);
+      analysis = {
+        conductScore: clamp(Number(j.conductScore) || 0),
+        summary: String(j.summary || "").slice(0, 800),
+        strengths: Array.isArray(j.strengths) ? j.strengths.slice(0, 6).map(String) : [],
+        improvements: Array.isArray(j.improvements) ? j.improvements.slice(0, 6).map(String) : [],
+        tips: Array.isArray(j.tips) ? j.tips.slice(0, 6).map(String) : [],
+      };
+    } catch (err) {
+      console.error(`[Perf] Falha ao avaliar instância ${opts.instanceName}:`, err);
+    }
+  }
+
+  const finalScore = combineScore({ conversionScore: metrics.conversionScore, speedScore: metrics.speedScore, conductScore: analysis.conductScore, valueScore: metrics.valueScore, activityScore: metrics.activityScore });
+  metrics.conductScore = analysis.conductScore;
+  metrics.score = finalScore;
+
+  await db.insert(sellerEvaluations).values({
+    memberId: INSTANCE_MEMBER_SENTINEL,
+    instanceName: opts.instanceName,
+    periodDays: opts.sinceDays,
+    score: finalScore,
+    conversionScore: metrics.conversionScore, speedScore: metrics.speedScore, conductScore: analysis.conductScore,
+    valueScore: metrics.valueScore, activityScore: metrics.activityScore,
+    leadsReceived: metrics.leadsReceived, leadsConverted: metrics.leadsConverted,
+    avgFirstResponseSec: metrics.avgFirstResponseSec, valueSoldCents: metrics.valueSoldCents, leadsNoReply: metrics.leadsNoReply,
+    summary: analysis.summary, strengths: analysis.strengths, improvements: analysis.improvements, tips: analysis.tips,
+  });
+
+  return { metrics, analysis };
+}
+
 // ── Chat interno de performance (gestor conversa com a IA) ─────────────────────
 
 const CHAT_SYSTEM = `Você é o braço-direito do gerente de vendas de uma concessionária: um analista de performance comercial.
@@ -367,13 +585,23 @@ Você tem acesso às métricas atuais da equipe (abaixo). Responda às perguntas
 
 export async function performanceChat(opts: {
   history: { role: "user" | "assistant"; content: string }[];
-  sinceDays: number; instanceName?: string;
+  sinceDays: number; instanceName?: string; groupBy?: "member" | "instance";
 }): Promise<string> {
-  const team = await computeTeamPerformance({ sinceDays: opts.sinceDays, instanceName: opts.instanceName });
-  const table = team.map(m =>
-    `${m.name} (${m.cargo}) — nota ${m.score}/100 | conversão ${(m.conversionRate * 100).toFixed(0)}% (${m.leadsConverted}/${m.leadsReceived}) | 1ª resp ${fmtDuration(m.avgFirstResponseSec)} | condução ${m.conductScore || "s/ IA"} | vendido R$ ${(m.valueSoldCents / 100).toLocaleString("pt-BR")} | s/ resposta ${m.leadsNoReply}`,
-  ).join("\n");
-  const context = `Período: últimos ${opts.sinceDays} dias${opts.instanceName ? ` | instância ${opts.instanceName}` : " | todas as instâncias"}.\nEquipe (ordenada por nota):\n${table || "Sem dados no período."}`;
+  let table: string; let unitLabel: string;
+  if (opts.groupBy === "instance") {
+    const rows = await computeInstancePerformance({ sinceDays: opts.sinceDays });
+    unitLabel = "Instâncias/números (ordenados por nota)";
+    table = rows.map(m =>
+      `${m.label} — nota ${m.score}/100 | conversão ${(m.conversionRate * 100).toFixed(0)}% (${m.leadsConverted}/${m.leadsReceived}) | 1ª resp ${fmtDuration(m.avgFirstResponseSec)} | condução ${m.conductScore || "s/ IA"} | vendido R$ ${(m.valueSoldCents / 100).toLocaleString("pt-BR")} | s/ resposta ${m.leadsNoReply}`,
+    ).join("\n");
+  } else {
+    const team = await computeTeamPerformance({ sinceDays: opts.sinceDays, instanceName: opts.instanceName });
+    unitLabel = "Equipe (ordenada por nota)";
+    table = team.map(m =>
+      `${m.name} (${m.cargo}) — nota ${m.score}/100 | conversão ${(m.conversionRate * 100).toFixed(0)}% (${m.leadsConverted}/${m.leadsReceived}) | 1ª resp ${fmtDuration(m.avgFirstResponseSec)} | condução ${m.conductScore || "s/ IA"} | vendido R$ ${(m.valueSoldCents / 100).toLocaleString("pt-BR")} | s/ resposta ${m.leadsNoReply}`,
+    ).join("\n");
+  }
+  const context = `Período: últimos ${opts.sinceDays} dias${opts.instanceName ? ` | instância ${opts.instanceName}` : ""}.\n${unitLabel}:\n${table || "Sem dados no período."}`;
 
   const resp = await invokeLLM({
     messages: [
