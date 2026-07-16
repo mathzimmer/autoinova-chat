@@ -66,7 +66,7 @@ async function zernioFetch(path: string, init?: RequestInit, apiKey?: string): P
 }
 
 /** Resolve a chave de API de uma conta: chave da instância cadastrada ou a global. */
-async function resolveApiKey(accountId?: string): Promise<string | undefined> {
+export async function resolveApiKey(accountId?: string): Promise<string | undefined> {
   if (accountId) {
     try {
       const { getZernioInstanceByAccount } = await import("./db");

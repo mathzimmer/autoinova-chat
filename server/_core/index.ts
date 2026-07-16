@@ -468,6 +468,34 @@ async function startServer() {
   // (message.received / message.sent / message.delivered|read|failed).
   // Docs: https://docs.zernio.com/webhooks
   const zernioSeenEvents = new Set<string>(); // dedupe simples em memória por payload.id
+  // Proxy autenticado de mídia do Zernio: baixa com o Bearer token e devolve os
+  // bytes, para o inbox renderizar imagem/áudio/vídeo (as URLs do Zernio exigem
+  // token e não podem ir direto no <img>/<audio>). Reconstrói a URL a partir do
+  // mid + accountId (sem parâmetro de URL livre → sem risco de SSRF).
+  app.get("/api/zernio/media", async (req, res) => {
+    try {
+      const mid = String(req.query.mid || "");
+      const accountId = String(req.query.accountId || "");
+      if (!/^[A-Za-z0-9_-]+$/.test(mid) || !/^[A-Za-z0-9_-]+$/.test(accountId)) return res.sendStatus(400);
+      const { resolveApiKey } = await import("../zernioService");
+      const key = await resolveApiKey(accountId);
+      if (!key) return res.sendStatus(404);
+      const url = `https://zernio.com/api/v1/whatsapp/media/${mid}?accountId=${encodeURIComponent(accountId)}`;
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${key}` } });
+      if (!r.ok) {
+        console.error(`[Zernio] proxy de mídia falhou ${r.status}: ${mid}`);
+        return res.sendStatus(r.status);
+      }
+      const buf = Buffer.from(await r.arrayBuffer());
+      res.setHeader("Content-Type", r.headers.get("content-type") || "application/octet-stream");
+      res.setHeader("Cache-Control", "private, max-age=86400");
+      return res.send(buf);
+    } catch (err) {
+      console.error("[Zernio] proxy de mídia erro:", err);
+      return res.sendStatus(502);
+    }
+  });
+
   app.post("/api/webhook/zernio", async (req, res) => {
     // Assinatura HMAC-SHA256 hex do corpo cru
     const signature = (req.headers["x-zernio-signature"] || req.headers["x-late-signature"]) as string | undefined;

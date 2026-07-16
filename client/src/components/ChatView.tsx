@@ -51,6 +51,19 @@ function horaBR(date: Date | string | number): string {
   });
 }
 
+/**
+ * Mídia do Zernio precisa de Bearer token → não renderiza direto no navegador.
+ * Reescreve a URL crua do Zernio para o proxy autenticado do CRM, que baixa com
+ * o token e devolve os bytes. Corrige áudio/imagem/vídeo (inclusive mensagens já
+ * salvas com a URL crua).
+ */
+function resolveMediaUrl(url?: string): string | undefined {
+  if (!url) return url;
+  const m = url.match(/zernio\.com\/api\/v1\/whatsapp\/media\/([^/?]+)[^]*?accountId=([^&]+)/);
+  if (m) return `/api/zernio/media?mid=${encodeURIComponent(m[1])}&accountId=${encodeURIComponent(m[2])}`;
+  return url;
+}
+
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 const EMOJI_LIST = [
@@ -1466,7 +1479,7 @@ function MessageBubble({ message, isFirstInGroup, reactions, showReactionPicker,
   const meta = message.metadata as Record<string, unknown> | null;
   const isTemplate = !!(meta?.isTemplate);
   const isSystem = message.senderType === "bot" && message.senderName === "Sistema" && !isTemplate;
-  const mediaUrl = meta?.mediaUrl as string | undefined;
+  const mediaUrl = resolveMediaUrl(meta?.mediaUrl as string | undefined);
   const transcribedText = meta?.transcribedText as string | undefined;
 
   const interactiveType = meta?.interactiveType as string | undefined;
