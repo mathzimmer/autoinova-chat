@@ -495,13 +495,17 @@ export async function mirrorZernioMessage(params: {
     } catch { /* noop */ }
   }
 
-  // Localiza conversa: pelo zernioConversationId no metadata, senão pelo phone+canal
+  // Localiza conversa: pelo zernioConversationId no metadata, senão pelo phone+canal.
+  // AMBAS as buscas são escopadas pela INSTÂNCIA (accountId) — sem isso, uma
+  // conversa poluída de outra instância (bianca ↔ deivid) pode ser encontrada.
+  const convScope = (extra: any) => {
+    const conds = [eq(conversations.channel, "zernio" as any), extra];
+    if (params.accountId) conds.push(eq(conversations.instanceName, params.accountId));
+    return and(...conds);
+  };
   let conv = params.zernioConversationId
     ? (await db.select().from(conversations)
-        .where(and(
-          eq(conversations.channel, "zernio" as any),
-          sql`metadata->>'zernioConversationId' = ${params.zernioConversationId}`,
-        )).limit(1))[0]
+        .where(convScope(sql`metadata->>'zernioConversationId' = ${params.zernioConversationId}`)).limit(1))[0]
     : undefined;
   if (!conv && bestPhone) {
     // Escopo por INSTÂNCIA (accountId): o mesmo cliente pode falar com números
