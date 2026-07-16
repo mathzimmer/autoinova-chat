@@ -1390,6 +1390,22 @@ const messageRouter = router({
 
       emitNewMessage(input.conversationId, message);
 
+      // Transcreve o ÁUDIO que o atendente envia (assíncrono) → a IA usa no contexto
+      if (input.mediaType === "audio") {
+        const audioForTranscript = whatsappAudioUrl || mediaUrl;
+        (async () => {
+          try {
+            const t = await transcribeAudio({ audioUrl: audioForTranscript, language: "pt", prompt: "Transcrever mensagem de voz do vendedor sobre veículos e automóveis" });
+            if ("text" in t && t.text) {
+              const { updateMessageMetadata } = await import("./db");
+              await updateMessageMetadata(message.id, { transcribedText: t.text });
+              try { emitConversationUpdate(input.conversationId, {}); } catch { /* opcional */ }
+              console.log(`[SendMedia] áudio do atendente transcrito: "${t.text.slice(0, 60)}"`);
+            }
+          } catch (e) { console.error("[SendMedia] transcrição outbound falhou:", e); }
+        })();
+      }
+
       // === ENVIO PARA INSTÂNCIA EVOLUTION ===
       const convForSend = await getConversationById(input.conversationId);
       if (convForSend?.channel === "evolution" && (convForSend as any).instanceName && convForSend.phone) {

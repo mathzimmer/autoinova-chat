@@ -577,12 +577,16 @@ export async function mirrorZernioMessage(params: {
         inArray(messages.senderType, ["agent", "bot"] as any),
       ))
       .orderBy(desc(messages.id)).limit(8);
-    // Só considera eco se a mensagem existente ainda NÃO tem o externalId deste eco
-    // (evita suprimir um reenvio intencional que já foi ecoado antes).
-    const dup = recent.find(r =>
-      (r.content || "") === (params.content || "") &&
-      (!r.externalId || r.externalId !== params.externalId)
-    );
+    // Só considera eco a mensagem local que AINDA não tem externalId (aguardando
+    // o eco). Para MÍDIA, o texto não bate ("[Mensagem de voz]" no CRM vs "[Áudio]"
+    // no eco), então casamos pelo TIPO; para texto, casamos pelo conteúdo.
+    const isMedia = !!params.messageType && params.messageType !== "text";
+    const dup = recent.find(r => {
+      if (r.externalId) return false; // já ecoada → não é este eco
+      return isMedia
+        ? r.messageType === params.messageType
+        : (r.content || "") === (params.content || "");
+    });
     if (dup) {
       if (params.externalId && !dup.externalId) {
         try { await updateMessageExternalId(dup.id, params.externalId); } catch { /* noop */ }
@@ -774,6 +778,15 @@ export async function updateMessageExternalId(messageId: number, externalId: str
   const db = await getDb();
   if (!db) return;
   await db.update(messages).set({ externalId }).where(eq(messages.id, messageId));
+}
+
+/** Mescla chaves no metadata de uma mensagem (preserva o que já existe). */
+export async function updateMessageMetadata(messageId: number, patch: Record<string, unknown>) {
+  const db = await getDb();
+  if (!db) return;
+  const row = (await db.select({ metadata: messages.metadata }).from(messages).where(eq(messages.id, messageId)).limit(1))[0];
+  const merged = { ...((row?.metadata as Record<string, unknown>) || {}), ...patch };
+  await db.update(messages).set({ metadata: merged as any }).where(eq(messages.id, messageId));
 }
 
 export async function updateLastCustomerMessageAt(conversationId: number, timestamp: number) {
