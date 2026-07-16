@@ -481,6 +481,20 @@ export async function mirrorZernioMessage(params: {
   const bestPhone = params.phone;
   const bestName = params.contactName && params.contactName !== bestPhone ? params.contactName : undefined;
 
+  // Se o Zernio não mandou nome, reaproveita o nome já cadastrado desse telefone
+  // (contato existente ou lead canônico) — evita conversa/lead ficarem só com o número.
+  let resolvedName = bestName;
+  if (!resolvedName && bestPhone) {
+    try {
+      const c = await getContactByPhone(bestPhone);
+      if (c?.name && c.name !== c.phone && c.name !== "Cliente") resolvedName = c.name;
+      if (!resolvedName) {
+        const l = await getCanonicalLead(bestPhone);
+        if (l?.name && l.name !== bestPhone) resolvedName = l.name;
+      }
+    } catch { /* noop */ }
+  }
+
   // Localiza conversa: pelo zernioConversationId no metadata, senão pelo phone+canal
   let conv = params.zernioConversationId
     ? (await db.select().from(conversations)
@@ -502,7 +516,7 @@ export async function mirrorZernioMessage(params: {
   if (!conv) {
     const inserted = await db.insert(conversations).values({
       phone: bestPhone,
-      contactName: bestName || null,
+      contactName: resolvedName || null,
       channel: "zernio" as any,
       instanceName: params.accountId || null, // cada conta Zernio = uma instância separada
       metadata: {
@@ -534,7 +548,7 @@ export async function mirrorZernioMessage(params: {
       },
       ...(needsPhone ? { phone: bestPhone } : {}),
       ...(needsInstance ? { instanceName: params.accountId } : {}),
-      ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
+      ...(resolvedName && nameIsPlaceholder ? { contactName: resolvedName } : {}),
       ...(isInbound ? {
         unreadCount: (conv.unreadCount || 0) + 1,
         lastCustomerMessageAt: params.timestamp,
@@ -605,7 +619,7 @@ export async function mirrorZernioMessage(params: {
   }
 
   if (isInbound && bestPhone) {
-    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: bestName }); } catch (err) { console.error("[Lead] ensure (zernio):", err); }
+    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: resolvedName }); } catch (err) { console.error("[Lead] ensure (zernio):", err); }
   }
 
   return { conversationId: conv.id, message };

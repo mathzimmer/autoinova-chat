@@ -294,7 +294,9 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
 
   const name = firstDefined<string>(
     conv?.participantName, conv?.name, conv?.title,
-    conv?.contact?.name,
+    conv?.participant?.name, conv?.participant?.pushName,
+    conv?.contact?.name, conv?.contact?.pushName, conv?.contact?.profileName,
+    payload?.contact?.name, payload?.contact?.pushName,
   );
 
   // Nome de quem enviou (para outbound = o negócio; inbound = o cliente)

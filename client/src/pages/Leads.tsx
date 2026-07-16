@@ -691,7 +691,7 @@ export default function Leads() {
             const displayPhone = formatPhone(lead.phone);
             const funnel = FUNNEL_CONFIG[lead.funnelStatus || "novo"];
             const temp = TEMP_CONFIG[lead.temperature || "frio"];
-            const instLabel = (lead.conversation as any)?.instanceName || (lead.conversation?.channel === "zernio" ? "Recepção" : "Matriz");
+            const instLabel = (lead.conversation as any)?.instanceLabel || (lead.conversation as any)?.instanceName || (lead.conversation?.channel === "zernio" ? "Recepção" : "Matriz");
 
             return (
               <div key={lead.id} className={`border-b border-border ${isExpanded ? "bg-accent/30" : "hover:bg-accent/20"}`}>

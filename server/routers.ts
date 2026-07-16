@@ -1516,12 +1516,19 @@ const leadRouter = router({
         .where(input.phone ? orOp(where, eq(convTable.phone, input.phone))! : where)
         .orderBy(descOp(convTable.lastMessageAt))
         .limit(20);
+      // Nome cadastrado das instâncias Zernio (accountId → Deivid, etc.)
+      let zernioNameByAccount = new Map<string, string>();
+      try {
+        const { zernioInstances } = await import("../drizzle/schema");
+        const zi = await db.select().from(zernioInstances);
+        zernioNameByAccount = new Map(zi.map(z => [z.accountId, z.displayName || z.phone || z.accountId]));
+      } catch { /* tabela pode não existir */ }
       return rows.map((c: any) => ({
         conversationId: c.id,
         source: conversationSourceValue(c),
         channel: c.channel,
         instanceName: c.instanceName,
-        label: c.channel === "zernio" ? `Zernio ${c.instanceName || ""}`
+        label: c.channel === "zernio" ? `Zernio: ${zernioNameByAccount.get(c.instanceName || "") || "Recepção"}`
           : c.channel === "evolution" ? `Vendedor: ${c.instanceName || ""}`
           : c.channel === "whatsapp" && c.instanceName ? `Oficial ${c.instanceName}`
           : "Matriz (oficial)",
@@ -1688,6 +1695,26 @@ const leadRouter = router({
       const convs = await db.select().from(convsTable).where(inArray(convsTable.id, convIds));
       const convMap = new Map(convs.map(c => [c.id, c]));
 
+      // Conversa MAIS RECENTE de cada lead — a pessoa pode ter falado em vários
+      // números/instâncias; a lista deve mostrar a última conversa, não a original.
+      const leadIdsForConv = allLeads.map(l => l.id);
+      const leadConvs = leadIdsForConv.length
+        ? await db.select().from(convsTable).where(inArray(convsTable.leadId, leadIdsForConv))
+        : [];
+      const recentConvByLead = new Map<number, any>();
+      for (const c of leadConvs) {
+        if (c.leadId == null) continue;
+        const cur = recentConvByLead.get(c.leadId);
+        if (!cur || (Number(c.lastMessageAt) || 0) > (Number(cur.lastMessageAt) || 0)) recentConvByLead.set(c.leadId, c);
+      }
+      // Mapa accountId (instanceName cru do Zernio) → nome cadastrado (Deivid, etc.)
+      let zernioNameByAccount = new Map<string, string>();
+      try {
+        const { zernioInstances } = await import("../drizzle/schema");
+        const zi = await db.select().from(zernioInstances);
+        zernioNameByAccount = new Map(zi.map(z => [z.accountId, z.displayName || z.phone || z.accountId]));
+      } catch { /* tabela pode não existir */ }
+
       const leadIds = allLeads.map(l => l.id);
       const summaries = await db.select().from(summariesTable).where(inArray(summariesTable.leadId, leadIds)).orderBy(desc(summariesTable.summaryDate));
       const summaryMap = new Map<number, typeof summaries>();
@@ -1738,7 +1765,8 @@ const leadRouter = router({
       });
 
       return allLeads.map(lead => {
-        const conv = convMap.get(lead.conversationId);
+        // Prefere a conversa MAIS RECENTE do lead; cai pra original se não houver.
+        const conv = recentConvByLead.get(lead.id) || convMap.get(lead.conversationId);
         const sums = summaryMap.get(lead.id) || [];
         const vehicle = lead.vehicleId ? vehicleMap.get(lead.vehicleId) : null;
         const agent = conv?.assignedTo ? agentMap.get(conv.assignedTo) : null;
@@ -1761,6 +1789,10 @@ const leadRouter = router({
             contactPhoto: conv.contactPhoto,
             channel: conv.channel,
             instanceName: conv.instanceName,
+            // Rótulo amigável da instância (Zernio: accountId → nome cadastrado)
+            instanceLabel: conv.channel === "zernio"
+              ? (zernioNameByAccount.get(conv.instanceName || "") || "Recepção")
+              : (conv.instanceName || null),
             source: conversationSourceValue(conv as any),
             status: conv.status,
             aiActive: conv.aiActive,
