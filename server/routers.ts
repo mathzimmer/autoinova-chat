@@ -1728,7 +1728,7 @@ const leadRouter = router({
   /** List leads with conversation data, vehicle, agent, and latest summary preview */
   listWithDetails: protectedProcedure
     .input(z.object({ status: z.string().optional(), discarded: z.boolean().optional() }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const db = await getDb();
       if (!db) return [];
       const { leads: leadsTable, conversations: convsTable, leadSummaries: summariesTable, vehicles: vehiclesTable, teamMembers: membersTable, sellerAssignments: assignmentsTable, sellers: sellersTable, rescueAttempts: rescueTable } = await import("../drizzle/schema");
@@ -1760,6 +1760,24 @@ const leadRouter = router({
         if (c.leadId == null) continue;
         const cur = recentConvByLead.get(c.leadId);
         if (!cur || (Number(c.lastMessageAt) || 0) > (Number(cur.lastMessageAt) || 0)) recentConvByLead.set(c.leadId, c);
+      }
+
+      // ESCOPO POR VENDEDOR: só vê leads que falaram na instância dele OU que ele é dono.
+      const memberL = await currentTeamMember(ctx);
+      if (memberL && memberL.cargo === "vendedor") {
+        const { allowedInboxSourcesForMember } = await import("./db");
+        const allowedSet = new Set(await allowedInboxSourcesForMember(memberL.id));
+        const leadSources = new Map<number, Set<string>>();
+        for (const c of leadConvs) {
+          if (c.leadId == null) continue;
+          const s = conversationSourceValue(c as any);
+          (leadSources.get(c.leadId) || leadSources.set(c.leadId, new Set<string>()).get(c.leadId)!).add(s);
+        }
+        allLeads = allLeads.filter((l: any) =>
+          (l.ownerId != null && l.ownerId === memberL.id) ||
+          Array.from(leadSources.get(l.id) || []).some((s) => allowedSet.has(s))
+        );
+        if (allLeads.length === 0) return [];
       }
       // Mapa accountId (instanceName cru do Zernio) → nome cadastrado (Deivid, etc.)
       let zernioNameByAccount = new Map<string, string>();
