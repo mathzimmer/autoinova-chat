@@ -780,6 +780,25 @@ export async function updateMessageExternalId(messageId: number, externalId: str
   await db.update(messages).set({ externalId }).where(eq(messages.id, messageId));
 }
 
+/** Fontes de inbox (abas) que um vendedor pode ver: instâncias Zernio/Evolution
+ *  atribuídas a ele. Retorna os valores no formato usado no filtro do inbox
+ *  ("zernio:<accountId>" e o instanceName da Evolution). */
+export async function allowedInboxSourcesForMember(memberId: number): Promise<string[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const { zernioInstances, evolutionInstances } = await import("../drizzle/schema");
+  const sources: string[] = [];
+  try {
+    const z = await db.select().from(zernioInstances).where(eq((zernioInstances as any).assignedUserId, memberId));
+    for (const i of z) if ((i as any).accountId) sources.push(`zernio:${(i as any).accountId}`);
+  } catch { /* coluna pode não existir ainda */ }
+  try {
+    const e = await db.select().from(evolutionInstances).where(eq(evolutionInstances.assignedUserId, memberId));
+    for (const i of e) if (i.instanceName) sources.push(i.instanceName);
+  } catch { /* opcional */ }
+  return sources;
+}
+
 /** Acha a conversa Zernio de um telefone numa instância (accountId) e devolve o
  *  zernioConversationId — usado para enviar texto livre ao vendedor pela bianca. */
 export async function findZernioConversationByPhone(phone: string, accountId?: string): Promise<string | undefined> {

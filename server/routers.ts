@@ -624,6 +624,19 @@ async function sendPlatformVehicleImages(platform: "instagram" | "facebook", rec
   }
 }
 
+// Identifica o membro da equipe logado (via openId "team_member_<id>").
+// Retorna { id, cargo } ou null (usuário base/admin do sistema).
+async function currentTeamMember(ctx: any): Promise<{ id: number; cargo: string } | null> {
+  const openId = ctx?.user?.openId as string | undefined;
+  if (!openId || !openId.startsWith("team_member_")) return null;
+  const id = parseInt(openId.replace("team_member_", ""));
+  if (!id) return null;
+  try {
+    const m = await getTeamMemberById(id);
+    return m ? { id: m.id, cargo: m.cargo as string } : null;
+  } catch { return null; }
+}
+
 // Deriva o valor da "fonte" (aba do inbox) de uma conversa
 function conversationSourceValue(conv: { channel?: string | null; instanceName?: string | null }): string {
   if (conv.channel === "evolution" && conv.instanceName) return conv.instanceName;
@@ -651,15 +664,40 @@ const conversationRouter = router({
       limit: z.number().min(1).max(300).optional(),
       offset: z.number().min(0).optional(),
     }).optional())
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
+      // Vendedor só vê as conversas das instâncias atribuídas a ele.
+      const member = await currentTeamMember(ctx);
+      if (member && member.cargo === "vendedor") {
+        const { allowedInboxSourcesForMember } = await import("./db");
+        const allowed = await allowedInboxSourcesForMember(member.id);
+        if (allowed.length === 0) return [];
+        const requested = input?.instance;
+        if (requested && requested !== "matriz") {
+          // Pediu uma aba específica: só devolve se for dele
+          return allowed.includes(requested) ? listConversations(input) : [];
+        }
+        // Sem aba específica (ou "matriz"): junta as conversas das instâncias dele
+        const merged: any[] = [];
+        for (const src of allowed) merged.push(...await listConversations({ ...(input || {}), instance: src }));
+        merged.sort((a, b) => (Number(b.lastMessageAt) || 0) - (Number(a.lastMessageAt) || 0));
+        return merged.slice(0, input?.limit ?? 100);
+      }
       return listConversations(input);
     }),
 
   getById: protectedProcedure
     .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
+    .query(async ({ input, ctx }) => {
       const conv = await getConversationById(input.id);
       if (!conv) throw new Error("Conversation not found");
+      // Vendedor não pode abrir conversa de instância que não é dele
+      const member = await currentTeamMember(ctx);
+      if (member && member.cargo === "vendedor") {
+        const { allowedInboxSourcesForMember } = await import("./db");
+        const allowed = await allowedInboxSourcesForMember(member.id);
+        const src = conversationSourceValue(conv as any);
+        if (!allowed.includes(src)) throw new Error("Sem permissão para esta conversa");
+      }
       return conv;
     }),
 
@@ -5225,9 +5263,14 @@ const contactsRouter = router({
 
 // ─── Evolution Router ─────────────────────────────────────────────────────────
 const evolutionRouter = router({
-  // List all instances stored in DB
-  listInstances: protectedProcedure.query(async () => {
-    return listEvolutionInstances();
+  // List all instances stored in DB (vendedor vê só as dele)
+  listInstances: protectedProcedure.query(async ({ ctx }) => {
+    const rows = await listEvolutionInstances();
+    const member = await currentTeamMember(ctx);
+    if (member && member.cargo === "vendedor") {
+      return (rows as any[]).filter((r) => r.assignedUserId === member.id);
+    }
+    return rows;
   }),
 
   /** Vincula um vendedor (usuário da equipe) a uma instância (número dele) */
@@ -6214,19 +6257,36 @@ const capiRouter = router({
 const zernioRouter = router({
   // Instâncias Zernio CADASTRADAS (uma aba por conta). Lê da tabela dedicada —
   // nada a ver com Evolution.
-  listInstances: protectedProcedure.query(async () => {
+  listInstances: protectedProcedure.query(async ({ ctx }) => {
     const { listZernioInstances } = await import("./db");
-    const rows = await listZernioInstances();
+    let rows = await listZernioInstances();
+    // Vendedor só vê as instâncias atribuídas a ele
+    const member = await currentTeamMember(ctx);
+    if (member && member.cargo === "vendedor") {
+      rows = rows.filter((r: any) => r.assignedUserId === member.id);
+    }
     return rows.map((r: any) => ({
       id: r.id,
       instanceName: `zernio:${r.accountId}`, // valor da aba/fonte no inbox
       accountId: r.accountId,
       displayName: r.displayName || r.phone || "WhatsApp (Zernio)",
       phone: r.phone,
+      assignedUserId: r.assignedUserId ?? null,
       status: r.active ? "connected" : "disconnected",
       channel: "zernio" as const,
     }));
   }),
+
+  /** Define o vendedor dono da instância Zernio (vê só ela no inbox). */
+  assignUser: adminProcedure
+    .input(z.object({ id: z.number(), userId: z.number().nullable() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB indisponível");
+      const { zernioInstances } = await import("../drizzle/schema");
+      await db.update(zernioInstances).set({ assignedUserId: input.userId } as any).where(eq(zernioInstances.id, input.id));
+      return { success: true };
+    }),
 
   // Lista as contas disponíveis na conta Zernio (via API) para o usuário escolher
   // qual cadastrar. Aceita uma apiKey opcional (se ainda não estiver no .env).
@@ -6274,7 +6334,10 @@ const zernioRouter = router({
 // ─── WhatsApp API Oficial (multi-número) Router ───────────────────────────────
 const whatsappNumberRouter = router({
   // Lista números oficiais adicionais como "instâncias" (abas no inbox)
-  listInstances: protectedProcedure.query(async () => {
+  listInstances: protectedProcedure.query(async ({ ctx }) => {
+    // Vendedor não vê os números oficiais (só a instância dele)
+    const member = await currentTeamMember(ctx);
+    if (member && member.cargo === "vendedor") return [];
     const { listWhatsappNumbers } = await import("./whatsappMultiNumber");
     const rows = await listWhatsappNumbers();
     return (rows || []).map((r: any) => ({

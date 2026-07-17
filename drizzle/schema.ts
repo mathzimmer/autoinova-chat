@@ -789,6 +789,7 @@ export const zernioInstances = pgTable("zernioInstances", {
   displayName:   varchar("displayName", { length: 255 }),
   phone:         varchar("phone", { length: 32 }),
   apiKey:        text("apiKey"),        // opcional; fallback para ZERNIO_API_KEY
+  assignedUserId: integer("assignedUserId"), // vendedor dono (vê só esta instância no inbox)
   active:        boolean("active").default(true).notNull(),
   createdAt:     timestamp("createdAt").defaultNow().notNull(),
   updatedAt:     timestamp("updatedAt").defaultNow().notNull(),

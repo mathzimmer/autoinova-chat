@@ -131,6 +131,10 @@ export default function EvolutionInstances() {
     },
     onError: (e) => toast.error("Erro ao cadastrar Zernio: " + e.message),
   });
+  const zAssignUserMutation = trpc.zernio.assignUser.useMutation({
+    onSuccess: () => { zernioQuery.refetch(); toast.success("Vendedor vinculado à instância Zernio"); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
   const zDeleteMutation = trpc.zernio.deleteInstance.useMutation({
     onSuccess: () => { zernioQuery.refetch(); toast.success("Instância Zernio removida"); },
     onError: (e) => toast.error("Erro ao remover: " + e.message),
@@ -450,6 +454,20 @@ export default function EvolutionInstances() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {/* Vendedor dono desta instância (vê só ela no inbox) */}
+                  <div className="mb-3">
+                    <label className="text-[10px] text-muted-foreground uppercase block mb-1">Vendedor desta instância</label>
+                    <select
+                      className="w-full text-xs rounded-md border border-border bg-background h-8 px-2"
+                      value={(inst as any).assignedUserId ?? ""}
+                      onChange={(e) => zAssignUserMutation.mutate({ id: inst.id, userId: e.target.value ? parseInt(e.target.value) : null })}
+                    >
+                      <option value="">Todos (sem restrição)</option>
+                      {(teamMembers || []).map((m: any) => (
+                        <option key={m.id} value={m.id}>{m.name}{m.cargo ? ` · ${m.cargo}` : ""}</option>
+                      ))}
+                    </select>
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     <Link href={`/inbox?instance=${encodeURIComponent(inst.instanceName)}`}>
                       <Button size="sm" variant="outline" className="flex-1">
