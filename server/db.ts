@@ -780,6 +780,20 @@ export async function updateMessageExternalId(messageId: number, externalId: str
   await db.update(messages).set({ externalId }).where(eq(messages.id, messageId));
 }
 
+/** Acha a conversa Zernio de um telefone numa instância (accountId) e devolve o
+ *  zernioConversationId — usado para enviar texto livre ao vendedor pela bianca. */
+export async function findZernioConversationByPhone(phone: string, accountId?: string): Promise<string | undefined> {
+  const db = await getDb();
+  if (!db || !phone) return undefined;
+  const digits = phone.replace(/\D/g, "");
+  const conds = [eq(conversations.channel, "zernio" as any)];
+  if (accountId) conds.push(eq(conversations.instanceName, accountId));
+  const rows = await db.select({ phone: conversations.phone, metadata: conversations.metadata })
+    .from(conversations).where(and(...conds));
+  const hit = rows.find(r => (r.phone || "").replace(/\D/g, "").endsWith(digits.slice(-10)));
+  return (hit?.metadata as any)?.zernioConversationId as string | undefined;
+}
+
 /** Mescla chaves no metadata de uma mensagem (preserva o que já existe). */
 export async function updateMessageMetadata(messageId: number, patch: Record<string, unknown>) {
   const db = await getDb();

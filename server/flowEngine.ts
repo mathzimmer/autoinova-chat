@@ -1067,15 +1067,60 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
         const vehicleInterest = leadForAssignment?.vehicleInterest || ctx.leadData?.vehicleInterest || "N\u00e3o informado";
         const conversationSummary = leadForAssignment?.notes || "Novo lead atribu\u00eddo via fluxo autom\u00e1tico.";
 
-        await sendSellerNotification(seller.phone, {
-          sellerName: seller.name,
-          customerName,
-          customerPhone,
-          vehicleInterest,
-          conversationSummary,
-          storeLocation,
-          customMessage: config.sellerMessage || undefined,
-        });
+        // Texto da notifica\u00e7\u00e3o (custom ou padr\u00e3o)
+        const notifyText = (config.sellerMessage
+          ? config.sellerMessage
+              .replace(/\{vendedor\}/gi, seller.name)
+              .replace(/\{cliente\}/gi, customerName)
+              .replace(/\{telefone\}/gi, customerPhone)
+              .replace(/\{veiculo\}/gi, vehicleInterest)
+              .replace(/\{resumo\}/gi, conversationSummary)
+              .replace(/\{loja\}/gi, storeLocation)
+          : `\ud83d\udd14 Novo lead para voc\u00ea, ${seller.name}!\n\nCliente: ${customerName}\nTelefone: ${customerPhone}\nVe\u00edculo: ${vehicleInterest}\nLoja: ${storeLocation}\n\nResumo: ${conversationSummary}\n\nChame o cliente o quanto antes!`);
+
+        let notified = false;
+        let zernioAcc: string | undefined;
+        // 1) TEXTO LIVRE pela MESMA inst\u00e2ncia Zernio da conversa (ex.: bianca) \u2014
+        // s\u00f3 funciona se o vendedor j\u00e1 tem conversa aberta nessa inst\u00e2ncia (24h).
+        try {
+          const convNow = await getConversationById(ctx.conversationId);
+          if (convNow?.channel === "zernio") {
+            zernioAcc = ((convNow.metadata as any)?.zernioAccountId as string | undefined) || (convNow as any).instanceName || undefined;
+            const { findZernioConversationByPhone } = await import("./db");
+            const sellerZConv = await findZernioConversationByPhone(seller.phone, zernioAcc);
+            if (sellerZConv) {
+              const { zernioReply } = await import("./zernioService");
+              const r = await zernioReply(sellerZConv, notifyText, zernioAcc);
+              notified = !!r.success;
+              console.log(`[FlowEngine] assign_seller: texto livre via Zernio (${zernioAcc}) ${notified ? "OK" : "falhou"}`);
+            }
+          }
+        } catch (e) { console.error("[FlowEngine] notifica\u00e7\u00e3o Zernio (texto) ao vendedor falhou:", e); }
+
+        // 2) TEMPLATE pela bianca (Zernio) \u2014 garante entrega mesmo com vendedor "frio".
+        if (!notified && zernioAcc) {
+          try {
+            const { getSetting } = await import("./db");
+            const tplName = (await getSetting("seller_notify_template_name")) || "novo_lead_vendedor";
+            const { zernioSendTemplate } = await import("./zernioService");
+            const r = await zernioSendTemplate(
+              seller.phone, tplName,
+              [seller.name, customerName, customerPhone, vehicleInterest, storeLocation, conversationSummary],
+              "pt_BR", zernioAcc,
+            );
+            notified = !!r.success;
+            console.log(`[FlowEngine] assign_seller: template via Zernio (${zernioAcc}) ${notified ? "OK" : "falhou"} ${r.error || ""}`);
+          } catch (e) { console.error("[FlowEngine] template Zernio ao vendedor falhou:", e); }
+        }
+
+        // 3) Fallback final: n\u00famero OFICIAL (texto livre \u2192 template)
+        if (!notified) {
+          await sendSellerNotification(seller.phone, {
+            sellerName: seller.name,
+            customerName, customerPhone, vehicleInterest, conversationSummary, storeLocation,
+            customMessage: config.sellerMessage || undefined,
+          });
+        }
         console.log(`[FlowEngine] assign_seller: notification sent to seller ${seller.name} (${seller.phone})`);
       }
 

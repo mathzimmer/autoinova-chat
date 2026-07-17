@@ -108,6 +108,58 @@ export async function zernioReply(
 }
 
 /**
+ * Envia um TEMPLATE do WhatsApp por um número Zernio para um telefone "frio"
+ * (ex.: notificar o vendedor pela bianca fora da janela de 24h).
+ *
+ * O caminho e o formato exatos do endpoint do Zernio variam; por isso deixamos
+ * configuráveis por env (sem mexer no código):
+ *   ZERNIO_TEMPLATE_PATH  (padrão: /whatsapp/messages)
+ *   ZERNIO_TEMPLATE_SHAPE = "meta" (padrão, formato Meta) | "simple"
+ * O nome do template e o idioma vêm por parâmetro. Loga a resposta p/ ajuste.
+ */
+export async function zernioSendTemplate(
+  toPhone: string,
+  templateName: string,
+  variables: string[],
+  language = "pt_BR",
+  accountId?: string,
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  try {
+    const acc = accountId || zernioAccountId();
+    if (!acc) return { success: false, error: "accountId da conta Zernio não informado" };
+    const apiKey = await resolveApiKey(acc);
+    const to = toPhone.replace(/\D/g, "");
+    const path = process.env.ZERNIO_TEMPLATE_PATH || "/whatsapp/messages";
+    const shape = process.env.ZERNIO_TEMPLATE_SHAPE || "meta";
+
+    let body: Record<string, unknown>;
+    if (shape === "simple") {
+      // Formato simplificado: nome + variáveis planas
+      body = { accountId: acc, to, template: templateName, language, variables };
+    } else {
+      // Formato Meta (padrão dos BSPs): components/body/parameters
+      const components = variables.length
+        ? [{ type: "body", parameters: variables.map((v) => ({ type: "text", text: String(v ?? "") })) }]
+        : [];
+      body = {
+        accountId: acc, to, type: "template",
+        template: { name: templateName, language: { code: language }, components },
+      };
+    }
+
+    console.log(`[Zernio] enviando template "${templateName}" → ${to} (${acc}) via ${path} [${shape}]`);
+    const data = await zernioFetch(path, { method: "POST", body: JSON.stringify(body) }, apiKey);
+    const msgId = data?.data?.messageId || data?.message?._id || data?.message?.id || data?._id || data?.id;
+    console.log(`[Zernio] template OK →`, JSON.stringify(data).slice(0, 300));
+    return { success: true, messageId: msgId ? String(msgId) : undefined };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Falha no template Zernio";
+    console.error(`[Zernio] template FALHOU:`, msg);
+    return { success: false, error: msg };
+  }
+}
+
+/**
  * Baixa uma mídia do Zernio (URL autenticada) e sobe no S3/MinIO, retornando a
  * URL pública. As URLs de mídia do Zernio exigem Bearer token, então não dá
  * para renderizá-las direto no inbox — precisam ser re-hospedadas.

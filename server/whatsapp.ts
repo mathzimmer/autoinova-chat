@@ -747,7 +747,15 @@ async function sendSellerNotification(
           .replace(/\{loja\}/gi, data.storeLocation)
       : defaultMessage;
 
-    // Try sending via template first (works outside 24h window)
+    // 1) TEXTO LIVRE primeiro (funciona dentro da janela de 24h, sem template)
+    const textResult = await sendTextMessage(sellerPhone, message);
+    if (textResult.success) {
+      console.log(`[WhatsApp] Seller notification enviada por TEXTO a ${sellerPhone}, ID: ${textResult.messageId}`);
+      return textResult;
+    }
+
+    // 2) Fallback: TEMPLATE (funciona fora das 24h, requer aprovação na Meta)
+    console.log(`[WhatsApp] Texto falhou p/ ${sellerPhone} (${textResult.error}), tentando template.`);
     const { sendWhatsAppTemplate } = await import("./whatsappTemplates");
     const templateResult = await sendWhatsAppTemplate(
       sellerPhone,
@@ -762,16 +770,10 @@ async function sendSellerNotification(
       ],
       "pt_BR"
     );
-
     if (templateResult.success) {
-      console.log(`[WhatsApp] Seller notification sent via template to ${sellerPhone}, ID: ${templateResult.messageId}`);
-      return templateResult;
+      console.log(`[WhatsApp] Seller notification enviada por TEMPLATE a ${sellerPhone}, ID: ${templateResult.messageId}`);
     }
-
-    // Fallback: try regular text message (only works within 24h window)
-    console.log(`[WhatsApp] Template failed for seller ${sellerPhone}, trying text message. Error: ${templateResult.error}`);
-    const textResult = await sendTextMessage(sellerPhone, message);
-    return textResult;
+    return templateResult;
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;
     console.error(`[WhatsApp] Failed to send seller notification to ${sellerPhone}:`, errMsg);
