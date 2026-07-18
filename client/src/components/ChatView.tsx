@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { useConversationSocket } from "@/hooks/useSocket";
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo, Fragment } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -48,6 +48,29 @@ type MessageData = {
 function horaBR(date: Date | string | number): string {
   return new Date(date).toLocaleTimeString("pt-BR", {
     hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+  });
+}
+
+/** Chave do dia (UTC, igual ao horaBR — o banco guarda horário de Brasília naive). */
+function diaKey(date: Date | string | number): string {
+  const d = new Date(date);
+  return `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+}
+function mesmoDia(a: Date | string | number, b: Date | string | number): boolean {
+  return diaKey(a) === diaKey(b);
+}
+/** Rótulo do divisor de dia: Hoje / Ontem / 15/07/2026 (igual WhatsApp). */
+function rotuloDia(date: Date | string | number): string {
+  const hoje = new Date();
+  const ontem = new Date(hoje.getTime() - 24 * 60 * 60 * 1000);
+  // Compara em UTC para casar com o armazenamento naive
+  const key = diaKey(date);
+  const kHoje = `${hoje.getFullYear()}-${hoje.getMonth()}-${hoje.getDate()}`;
+  const kOntem = `${ontem.getFullYear()}-${ontem.getMonth()}-${ontem.getDate()}`;
+  if (key === kHoje) return "Hoje";
+  if (key === kOntem) return "Ontem";
+  return new Date(date).toLocaleDateString("pt-BR", {
+    day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC",
   });
 }
 
@@ -469,9 +492,12 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const handleSend = () => {
     if (!newMessage.trim()) return;
     let content = newMessage.trim();
+    // Mantém o cursor no campo depois de enviar (igual WhatsApp)
+    const keepFocus = () => setTimeout(() => inputRef.current?.focus(), 0);
     if (noteMode) {
       sendMutation.mutate({ conversationId, content, senderType: "internal" });
       setNoteMode(false);
+      keepFocus();
       return;
     }
     if (replyToMessage) {
@@ -485,6 +511,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     }
     sendMutation.mutate({ conversationId, content, senderType: "agent" });
     setReplyToMessage(null);
+    keepFocus();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -907,7 +934,17 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 const prevMsg = idx > 0 ? msgs[idx - 1] : null;
                 const isFirstInGroup = !prevMsg || prevMsg.senderType !== msg.senderType ||
                   (new Date(msg.createdAt).getTime() - new Date(prevMsg.createdAt).getTime()) > 5 * 60 * 1000;
+                // Divisor de dia (igual WhatsApp): Hoje / Ontem / data
+                const showDaySeparator = !prevMsg || !mesmoDia(prevMsg.createdAt, msg.createdAt);
                 return (
+                  <Fragment key={`g-${msg.id}`}>
+                  {showDaySeparator && (
+                    <div className="flex justify-center my-3">
+                      <span className="bg-white text-[#54656f] text-[11px] font-medium px-3 py-1 rounded-lg shadow-sm">
+                        {rotuloDia(msg.createdAt)}
+                      </span>
+                    </div>
+                  )}
                   <MessageBubble
                     key={msg.id}
                     message={msg}
@@ -921,6 +958,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                     onReply={() => handleReply(msg)}
                     onForward={() => handleForward(msg)}
                   />
+                  </Fragment>
                 );
               })}
             </div>
@@ -1196,7 +1234,7 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                   conversationId,
                   vehicleId: photoVehicle.id,
                   imageUrls: selectedPhotos,
-                  caption: `${photoVehicle.title || `${photoVehicle.brand} ${photoVehicle.model}`} ${photoVehicle.year} — R$ ${Number(photoVehicle.price).toLocaleString("pt-BR")}`,
+                  // Só as fotos — sem nome/valor do carro na legenda
                 });
               }}
             >
