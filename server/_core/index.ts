@@ -500,7 +500,7 @@ async function startServer() {
     // Assinatura HMAC-SHA256 hex do corpo cru
     const signature = (req.headers["x-zernio-signature"] || req.headers["x-late-signature"]) as string | undefined;
     const rawBody = (req as any).rawBody as Buffer | undefined;
-    if (!verifyZernioSignature(rawBody ?? JSON.stringify(req.body), signature)) {
+    if (!(await verifyZernioSignature(rawBody ?? JSON.stringify(req.body), signature))) {
       console.warn(`[Zernio] Assinatura inválida rejeitada (ip: ${req.ip})`);
       return res.sendStatus(401);
     }

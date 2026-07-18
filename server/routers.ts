@@ -6334,6 +6334,7 @@ const zernioRouter = router({
       displayName: z.string().optional(),
       phone: z.string().optional(),
       apiKey: z.string().optional(),
+      webhookSecret: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { createZernioInstance } = await import("./db");

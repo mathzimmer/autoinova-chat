@@ -25,23 +25,34 @@ export function zernioAccountId(): string | undefined {
 
 // ─── Assinatura de webhook (HMAC-SHA256 hex do corpo cru) ─────────────────────
 // https://docs.zernio.com/webhooks#signature-verification
-export function verifyZernioSignature(rawBody: Buffer | string, signatureHeader: string | undefined): boolean {
-  const secret = process.env.ZERNIO_WEBHOOK_SECRET;
-  if (!secret) {
-    // Sem secret configurado não dá para validar — permite mas avisa (igual ao
-    // fallback do webhook Meta). Configure ZERNIO_WEBHOOK_SECRET em produção.
-    console.warn("[Zernio] ZERNIO_WEBHOOK_SECRET não configurado — assinatura NÃO verificada");
+export async function verifyZernioSignature(rawBody: Buffer | string, signatureHeader: string | undefined): Promise<boolean> {
+  // Aceita VÁRIAS contas Zernio: o secret pode vir do .env (podendo ser uma lista
+  // separada por vírgula) e/ou estar cadastrado por instância no banco.
+  const secrets: string[] = [];
+  const envSecret = process.env.ZERNIO_WEBHOOK_SECRET;
+  if (envSecret) secrets.push(...envSecret.split(",").map(s => s.trim()).filter(Boolean));
+  try {
+    const { listZernioInstances } = await import("./db");
+    const rows = await listZernioInstances();
+    for (const r of rows as any[]) if (r?.webhookSecret) secrets.push(String(r.webhookSecret).trim());
+  } catch { /* tabela/coluna pode não existir ainda */ }
+
+  if (secrets.length === 0) {
+    console.warn("[Zernio] Nenhum webhook secret configurado — assinatura NÃO verificada");
     return true;
   }
   if (!signatureHeader) return false;
   const body = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");
-  const expected = createHmac("sha256", secret).update(body).digest("hex");
-  try {
+  const sig = signatureHeader.trim();
+  for (const secret of secrets) {
     // Zernio manda o hex puro (sem prefixo "sha256=")
-    return timingSafeEqual(Buffer.from(signatureHeader.trim()), Buffer.from(expected));
-  } catch {
-    return false;
+    const expected = createHmac("sha256", secret).update(body).digest("hex");
+    try {
+      if (sig.length === expected.length && timingSafeEqual(Buffer.from(sig), Buffer.from(expected))) return true;
+    } catch { /* tenta o próximo */ }
   }
+  console.warn("[Zernio] Assinatura não bateu com nenhum secret cadastrado");
+  return false;
 }
 
 // ─── Chamada genérica à API do Zernio ─────────────────────────────────────────

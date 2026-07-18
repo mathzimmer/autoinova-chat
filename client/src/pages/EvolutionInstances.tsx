@@ -117,6 +117,7 @@ export default function EvolutionInstances() {
   const [zAccountId, setZAccountId] = useState("");
   const [zDisplay, setZDisplay] = useState("");
   const [zApiKey, setZApiKey] = useState("");
+  const [zWebhookSecret, setZWebhookSecret] = useState("");
 
   const zernioQuery = trpc.zernio.listInstances.useQuery(undefined, { refetchInterval: 60000 });
   const zAvailableQuery = trpc.zernio.availableAccounts.useQuery(
@@ -526,11 +527,16 @@ export default function EvolutionInstances() {
               <Input placeholder="deixe vazio para usar a chave global do servidor" value={zApiKey} onChange={e => setZApiKey(e.target.value.trim())} className="mt-1" />
               <p className="text-xs text-muted-foreground mt-1">Só preencha se esta conta usa uma chave Zernio diferente da configurada no servidor.</p>
             </div>
+            <div>
+              <Label>Webhook Secret (opcional)</Label>
+              <Input placeholder="secret do webhook desta conta Zernio" value={zWebhookSecret} onChange={e => setZWebhookSecret(e.target.value.trim())} className="mt-1" />
+              <p className="text-xs text-muted-foreground mt-1">Obrigatório se esta é uma conta Zernio <b>diferente</b> (outro login). Sem ele, os webhooks dela são rejeitados.</p>
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setZCreateOpen(false)}>Cancelar</Button>
             <Button
-              onClick={() => zCreateMutation.mutate({ accountId: zAccountId, displayName: zDisplay || undefined, apiKey: zApiKey || undefined })}
+              onClick={() => zCreateMutation.mutate({ accountId: zAccountId, displayName: zDisplay || undefined, apiKey: zApiKey || undefined, webhookSecret: zWebhookSecret || undefined })}
               disabled={!zAccountId || zCreateMutation.isPending}
             >
               {zCreateMutation.isPending ? "Cadastrando..." : "Cadastrar"}

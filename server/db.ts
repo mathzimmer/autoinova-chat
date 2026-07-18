@@ -312,7 +312,7 @@ export async function listZernioInstances() {
 }
 
 export async function createZernioInstance(data: {
-  accountId: string; displayName?: string; phone?: string; apiKey?: string;
+  accountId: string; displayName?: string; phone?: string; apiKey?: string; webhookSecret?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("DB indisponível");
@@ -322,10 +322,11 @@ export async function createZernioInstance(data: {
     displayName: data.displayName || null,
     phone: data.phone || null,
     apiKey: data.apiKey || null,
+    webhookSecret: data.webhookSecret || null,
     active: true,
-  }).onConflictDoUpdate({
+  } as any).onConflictDoUpdate({
     target: zernioInstances.accountId,
-    set: { displayName: data.displayName || null, phone: data.phone || null, ...(data.apiKey ? { apiKey: data.apiKey } : {}), active: true, updatedAt: new Date() },
+    set: { displayName: data.displayName || null, phone: data.phone || null, ...(data.apiKey ? { apiKey: data.apiKey } : {}), ...(data.webhookSecret ? { webhookSecret: data.webhookSecret } : {}), active: true, updatedAt: new Date() } as any,
   }).returning();
   return inserted[0];
 }
