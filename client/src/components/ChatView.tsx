@@ -232,7 +232,11 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     onSuccess: (data: any) => {
       setNewMessage("");
       refetchMessages();
-      inputRef.current?.focus();
+      // Foco de volta no campo APÓS o re-render (o textarea não é mais desabilitado)
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (el) { el.style.height = "auto"; el.focus(); }
+      });
       if (data?.windowExpired) {
         toast.error("Janela de 24h expirada. Use um template aprovado para reabrir a conversa.");
       }
@@ -1467,7 +1471,6 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               rows={1}
               placeholder={noteMode ? "Escreva uma nota interna..." : "Digite uma mensagem ou / para respostas rápidas"}
               className={`flex-1 border-0 text-sm text-[#111b21] placeholder:text-[#54656f] rounded-lg px-3 py-2.5 outline-none resize-none leading-5 max-h-40 overflow-y-auto ${noteMode ? "bg-[#fde68a]" : "bg-[#e9edef]"}`}
-              disabled={isSending}
               style={{ scrollbarWidth: "thin" }}
             />
             {!noteMode && (
