@@ -502,12 +502,13 @@ export default function Leads() {
     });
   }
 
+  // Abas por ETAPA DO FUNIL (novo, interesse, pagamento, negociando, fechado, perdido…)
   const statusTabs = [
     { value: "all", label: "Todos", count: leadsRaw?.length || 0 },
-    ...STATUS_OPTIONS.map((s) => ({
-      value: s.value,
-      label: s.label,
-      count: (leadsRaw as unknown as LeadWithDetails[] | undefined)?.filter((l) => l.status === s.value).length || 0,
+    ...Object.entries(FUNNEL_CONFIG).map(([value, cfg]: [string, any]) => ({
+      value,
+      label: `${cfg.icon} ${cfg.label}`,
+      count: (leadsRaw as unknown as LeadWithDetails[] | undefined)?.filter((l) => (l.funnelStatus || "novo") === value).length || 0,
     })),
   ];
 
@@ -685,20 +686,20 @@ export default function Leads() {
         </Card>
       )}
 
-      {/* Status Tabs */}
+      {/* Abas por etapa do FUNIL */}
       <div className="flex gap-1 flex-wrap">
         {statusTabs.map((tab) => (
           <button
             key={tab.value}
-            onClick={() => setStatusFilter(tab.value)}
+            onClick={() => setFunnelFilter(tab.value)}
             className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors flex items-center gap-1.5 ${
-              statusFilter === tab.value
+              funnelFilter === tab.value
                 ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground hover:bg-accent"
             }`}
           >
             {tab.label}
-            <span className={`text-[10px] ${statusFilter === tab.value ? "opacity-80" : "opacity-50"}`}>
+            <span className={`text-[10px] ${funnelFilter === tab.value ? "opacity-80" : "opacity-50"}`}>
               {tab.count}
             </span>
           </button>
