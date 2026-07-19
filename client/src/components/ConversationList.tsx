@@ -22,18 +22,19 @@ const PAGE_SIZE = 100;
 
 export default function ConversationList({ selectedId, onSelect, instance = "matriz" }: Props) {
   const [search, setSearch] = useState("");
+  const [searchContent, setSearchContent] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
   const [agentFilter, setAgentFilter] = useState<"all" | "mine" | "unassigned" | "ai">("all");
   const [labelFilter, setLabelFilter] = useState<number | null>(null);
   const [limit, setLimit] = useState(PAGE_SIZE);
   const [showArchived, setShowArchived] = useState(false);
   const { data: conversations, refetch } = trpc.conversation.list.useQuery(
-    { status: statusFilter, search: search || undefined, instance, limit, archived: showArchived },
+    { status: statusFilter, search: search || undefined, searchContent: searchContent || undefined, instance, limit, archived: showArchived },
     { refetchInterval: 10000 }
   );
 
   // Reseta a paginação ao trocar de fonte/filtro
-  useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search, showArchived]);
+  useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search, searchContent, showArchived]);
 
   // ── Seleção múltipla ──
   const [selectionMode, setSelectionMode] = useState(false);
@@ -350,12 +351,22 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar conversa..."
+            placeholder="Buscar por nome ou telefone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9 bg-input border-border text-sm h-9"
           />
         </div>
+        {/* Também procurar dentro das mensagens da conversa */}
+        <label className="flex items-center gap-1.5 mt-1.5 text-[11px] text-muted-foreground cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={searchContent}
+            onChange={(e) => setSearchContent(e.target.checked)}
+            className="h-3 w-3"
+          />
+          Buscar também no conteúdo das mensagens
+        </label>
       </div>
 
       {/* Filters - fixed height, no wrapping */}

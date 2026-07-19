@@ -1,4 +1,4 @@
-import { eq, ne, desc, and, sql, like, or, inArray, notInArray, lt, isNotNull, isNull } from "drizzle-orm";
+import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -94,6 +94,8 @@ export async function getUserByOpenId(openId: string) {
 export async function listConversations(filters?: {
   status?: string;
   search?: string;
+  /** true = também procura dentro do TEXTO das mensagens da conversa */
+  searchContent?: boolean;
   /** "matriz" (padrão) = canais oficiais; ou nome de instância Evolution */
   instance?: string;
   archived?: boolean;
@@ -109,12 +111,21 @@ export async function listConversations(filters?: {
     conditions.push(eq(conversations.status, filters.status as any));
   }
   if (filters?.search) {
-    conditions.push(
-      or(
-        like(conversations.contactName, `%${filters.search}%`),
-        like(conversations.phone, `%${filters.search}%`)
-      )!
-    );
+    const q = filters.search.trim();
+    const digits = q.replace(/\D/g, "");
+    // ilike = case-insensitive (o "like" puro do Postgres não achava "Dela" ao digitar "dela")
+    const ors: any[] = [ilike(conversations.contactName, `%${q}%`)];
+    // Telefone: compara só dígitos, aceitando parte ou número inteiro (com ou sem máscara)
+    if (digits.length >= 3) {
+      ors.push(sql`regexp_replace(${conversations.phone}, '[^0-9]', '', 'g') LIKE ${"%" + digits + "%"}`);
+    } else {
+      ors.push(ilike(conversations.phone, `%${q}%`));
+    }
+    // Opcional: procura no conteúdo das mensagens (inclui áudio transcrito)
+    if (filters.searchContent && q.length >= 2) {
+      ors.push(sql`EXISTS (SELECT 1 FROM ${messages} m WHERE m."conversationId" = ${conversations.id} AND m.content ILIKE ${"%" + q + "%"})`);
+    }
+    conditions.push(or(...ors)!);
   }
   // Filtro de fonte:
   //  • "matriz" (padrão) = canais oficiais (exclui Evolution E Zernio, que têm abas próprias)

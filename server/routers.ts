@@ -659,6 +659,7 @@ const conversationRouter = router({
     .input(z.object({
       status: z.string().optional(),
       search: z.string().optional(),
+      searchContent: z.boolean().optional(), // procurar também no texto das mensagens
       instance: z.string().optional(), // "matriz" (padrão) ou nome da instância Evolution
       archived: z.boolean().optional(),
       limit: z.number().min(1).max(300).optional(),
