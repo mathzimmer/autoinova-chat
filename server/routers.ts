@@ -1780,6 +1780,59 @@ const leadRouter = router({
         );
         if (allLeads.length === 0) return [];
       }
+      // ── Não respondidos + tempo de resposta ──────────────────────────────────
+      // "Não respondido" = a ÚLTIMA mensagem da conversa é do cliente (ninguém
+      // respondeu depois). Usa as colunas já existentes (sem varrer mensagens).
+      const waitingByLead = new Map<number, number>();   // leadId → desde quando aguarda (epoch ms)
+      for (const c of leadConvs) {
+        if (c.leadId == null) continue;
+        const lastCust = Number((c as any).lastCustomerMessageAt || 0);
+        const lastAny = Number(c.lastMessageAt || 0);
+        if (lastCust > 0 && lastCust >= lastAny) {
+          const cur = waitingByLead.get(c.leadId) || 0;
+          // guarda a espera MAIS ANTIGA da pessoa (maior tempo aguardando)
+          if (!cur || lastCust < cur) waitingByLead.set(c.leadId, lastCust);
+        }
+      }
+
+      // Tempo médio de resposta por lead (cliente → 1ª resposta humana), últimos 30 dias
+      const avgRespByLead = new Map<number, number>();
+      try {
+        const { messages: msgsT } = await import("../drizzle/schema");
+        const { gte: gteM } = await import("drizzle-orm");
+        const convIdsForResp = leadConvs.map(c => c.id);
+        if (convIdsForResp.length) {
+          const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          const rows = await db.select({
+            conversationId: msgsT.conversationId, senderType: msgsT.senderType, createdAt: msgsT.createdAt,
+          }).from(msgsT)
+            .where(andOp(inArray(msgsT.conversationId, convIdsForResp), gteM(msgsT.createdAt, since30)))
+            .orderBy(msgsT.createdAt);
+          const convToLead = new Map<number, number>();
+          for (const c of leadConvs) if (c.leadId != null) convToLead.set(c.id, c.leadId);
+          // acumula pares (cliente → próxima resposta do atendente) por lead
+          const acc = new Map<number, { sum: number; n: number }>();
+          const pendingByConv = new Map<number, number>(); // conversa → hora da msg do cliente sem resposta
+          for (const m of rows) {
+            const leadId = convToLead.get(m.conversationId);
+            if (leadId == null) continue;
+            const t = new Date(m.createdAt as any).getTime();
+            if (m.senderType === "customer") {
+              if (!pendingByConv.has(m.conversationId)) pendingByConv.set(m.conversationId, t);
+            } else if (m.senderType === "agent") {
+              const started = pendingByConv.get(m.conversationId);
+              if (started != null) {
+                const a = acc.get(leadId) || { sum: 0, n: 0 };
+                a.sum += (t - started) / 1000; a.n += 1;
+                acc.set(leadId, a);
+                pendingByConv.delete(m.conversationId);
+              }
+            }
+          }
+          for (const [leadId, a] of Array.from(acc)) if (a.n > 0) avgRespByLead.set(leadId, Math.round(a.sum / a.n));
+        }
+      } catch (e) { console.error("[Leads] tempo de resposta:", e); }
+
       // Mapa accountId (instanceName cru do Zernio) → nome cadastrado (Deivid, etc.)
       let zernioNameByAccount = new Map<string, string>();
       try {
@@ -1854,8 +1907,15 @@ const leadRouter = router({
         // Rescue attempts info
         const rescues = rescueMap.get(lead.id) || [];
 
+        // Aguardando resposta? (não conta lead fechado/perdido)
+        const finalizado = lead.funnelStatus === "fechado" || lead.funnelStatus === "perdido";
+        const waitingSince = finalizado ? null : (waitingByLead.get(lead.id) ?? null);
+
         return {
           ...lead,
+          unanswered: waitingSince != null,
+          waitingSince,                                   // epoch ms desde a msg do cliente
+          avgResponseSec: avgRespByLead.get(lead.id) ?? null,
           conversation: conv ? {
             id: conv.id,
             contactName: conv.contactName,

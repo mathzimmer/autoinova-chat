@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -210,11 +210,34 @@ export default function Leads() {
   const [showFilters, setShowFilters] = useState(false);
   const [, setLocation] = useLocation();
 
+  const [answeredFilter, setAnsweredFilter] = useState("all"); // all | unanswered | answered
+  const [pendingOpenLead, setPendingOpenLead] = useState<{ id?: number; phone?: string } | null>(() => {
+    // Vindo do inbox: /leads?lead=123 ou /leads?phone=5551...
+    const p = new URLSearchParams(window.location.search);
+    const id = p.get("lead"); const phone = p.get("phone");
+    return id ? { id: parseInt(id) } : phone ? { phone } : null;
+  });
   const [scope, setScope] = useState<"leads" | "notlead">("leads");
   const { data: leadsRaw, refetch } = trpc.lead.listWithDetails.useQuery(
     { status: statusFilter, discarded: scope === "notlead" },
     { refetchInterval: 10000, placeholderData: keepPreviousData }
   );
+
+  // Abre automaticamente o lead vindo do inbox (?lead= ou ?phone=)
+  useEffect(() => {
+    if (!pendingOpenLead || !leadsRaw) return;
+    const list = leadsRaw as any[];
+    const alvo = pendingOpenLead.id
+      ? list.find((l) => l.id === pendingOpenLead.id)
+      : list.find((l) => (l.phone || "").replace(/\D/g, "").endsWith((pendingOpenLead.phone || "").replace(/\D/g, "").slice(-10)));
+    if (alvo) {
+      setExpandedLeadId(alvo.id);
+      setPendingOpenLead(null);
+      setTimeout(() => {
+        document.getElementById(`lead-${alvo.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 150);
+    }
+  }, [pendingOpenLead, leadsRaw]);
 
   const setIsLead = trpc.lead.setIsLead.useMutation({
     onSuccess: () => { toast.success("Voltou a ser lead"); refetch(); },
@@ -326,16 +349,34 @@ export default function Leads() {
       });
     }
 
+    // Não respondidos / respondidos
+    if (answeredFilter !== "all") {
+      filtered = filtered.filter((l) =>
+        answeredFilter === "unanswered" ? !!(l as any).unanswered : !(l as any).unanswered
+      );
+    }
+
     // Ordenação por coluna (clique no título)
     if (sortField) {
       const val = (l: any) => sortField === "entrada"
         ? (l.createdAt ? new Date(l.createdAt).getTime() : 0)
         : (l.conversation?.lastMessageAt || 0);
       filtered = [...filtered].sort((a, b) => sortDir === "asc" ? val(a) - val(b) : val(b) - val(a));
+    } else {
+      // PADRÃO: não respondidos primeiro, do que espera há MAIS tempo para o menor.
+      // (fechado/perdido já não entram como "não respondido" — vem do servidor)
+      filtered = [...filtered].sort((a: any, b: any) => {
+        const aw = a.unanswered ? Number(a.waitingSince || 0) : 0;
+        const bw = b.unanswered ? Number(b.waitingSince || 0) : 0;
+        if (aw && bw) return aw - bw;          // mais antigo (espera maior) primeiro
+        if (aw) return -1;
+        if (bw) return 1;
+        return (b.conversation?.lastMessageAt || 0) - (a.conversation?.lastMessageAt || 0);
+      });
     }
 
     return filtered;
-  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, creditFilter, colName, colPhone, colVehicle, sortField, sortDir]);
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, creditFilter, answeredFilter, colName, colPhone, colVehicle, sortField, sortDir]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -693,6 +734,11 @@ export default function Leads() {
               <button onClick={() => toggleSort("lastmsg")} className="text-muted-foreground font-semibold uppercase text-center hover:text-foreground">
                 Últ. {sortField === "lastmsg" ? (sortDir === "asc" ? "↑" : "↓") : "⇅"}
               </button>
+              <select value={answeredFilter} onChange={(e) => setAnsweredFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
+                <option value="all">Espera</option>
+                <option value="unanswered">⚠️ Não respondidos</option>
+                <option value="answered">Respondidos</option>
+              </select>
               <select value={funnelFilter} onChange={(e) => setFunnelFilter(e.target.value)} className="h-6 px-1 rounded border border-border bg-background text-[11px]">
                 <option value="all">Estágio</option>
                 {FUNNEL_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -712,7 +758,7 @@ export default function Leads() {
             const instLabel = (lead.conversation as any)?.instanceLabel || (lead.conversation as any)?.instanceName || (lead.conversation?.channel === "zernio" ? "Recepção" : "Matriz");
 
             return (
-              <div key={lead.id} className={`border-b border-border ${isExpanded ? "bg-accent/30" : "hover:bg-accent/20"}`}>
+              <div key={lead.id} id={`lead-${lead.id}`} className={`border-b border-border ${isExpanded ? "bg-accent/30" : (lead as any).unanswered ? "bg-red-500/[0.07] border-l-2 border-l-red-500 hover:bg-red-500/[0.12]" : "hover:bg-accent/20"}`}>
                 {/* Linha (grid) */}
                 <div
                   className="grid items-center gap-2 px-2 py-1.5 cursor-pointer select-none text-xs"
@@ -740,6 +786,18 @@ export default function Leads() {
                   <span className="text-[10px] text-muted-foreground truncate">{lead.assignedAgent?.name?.split(" ")[0] || "—"}</span>
                   <span className="text-[10px] text-muted-foreground truncate" title={instLabel}>{instLabel}</span>
                   <span className="text-[10px] text-muted-foreground text-center">{lead.conversation?.lastMessageAt ? timeAgo(lead.conversation.lastMessageAt) : "—"}</span>
+                  {/* Espera: se não respondido mostra há quanto tempo o cliente aguarda */}
+                  <span className="text-[10px] text-center">
+                    {(lead as any).unanswered && (lead as any).waitingSince ? (
+                      <span className="font-semibold text-red-600" title="Cliente aguardando resposta">
+                        ⏳ {dur(Date.now() - Number((lead as any).waitingSince))}
+                      </span>
+                    ) : (lead as any).avgResponseSec != null ? (
+                      <span className="text-muted-foreground" title="Tempo médio de resposta">
+                        ⌀ {dur(Number((lead as any).avgResponseSec) * 1000)}
+                      </span>
+                    ) : <span className="text-muted-foreground/40">—</span>}
+                  </span>
                   <span>{funnel && <span className={`text-[9px] px-1 rounded ${funnel.bg} ${funnel.color} whitespace-nowrap`}>{funnel.label}</span>}</span>
                   <span>{temp && <span className={`text-[9px] px-1 rounded ${temp.bg} ${temp.color} whitespace-nowrap`}>{temp.icon} {temp.label}</span>}</span>
                   <div className="flex items-center gap-0.5 justify-end" onClick={(e) => e.stopPropagation()}>
@@ -1097,7 +1155,16 @@ export default function Leads() {
 }
 
 // Grid da tabela de leads (mesmo template no cabeçalho e nas linhas)
-const LEAD_GRID = "60px minmax(130px,1.3fr) 112px minmax(120px,1.3fr) 110px 110px 52px 120px 84px 78px";
+const LEAD_GRID = "60px minmax(130px,1.3fr) 112px minmax(120px,1.3fr) 110px 110px 52px 96px 120px 84px 78px";
+
+/** Formata segundos/duração em texto curto (2min, 1.5h, 3d). */
+function dur(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.round(s / 60)}min`;
+  if (s < 86400) return `${(s / 3600).toFixed(1)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
 
 // ─── Kanban do funil (por lead) ───────────────────────────────────────────────
 const KANBAN_STAGES: { key: string; label: string; color: string }[] = [

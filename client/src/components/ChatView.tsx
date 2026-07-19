@@ -7,7 +7,7 @@ import {
   Send, Bot, User, Phone, ArrowLeft, Image, Volume2, FileText,
   Play, Pause, Mic, X, ImagePlus, Loader2, Clock, AlertTriangle,
   MessageSquareText, GitBranch, PauseCircle, List, Video, Smile,
-  CornerUpLeft, Share2, Tag, AlarmClock, CalendarClock, StickyNote,
+  CornerUpLeft, Share2, Tag, AlarmClock, CalendarClock, StickyNote, UserSquare,
   Plus, Trash2, Zap, Car, Sparkles,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -805,6 +805,19 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             )}
           </div>
         </div>
+
+        {/* ── Ir para o lead ── */}
+        <Button
+          variant="ghost" size="icon"
+          className="h-8 w-8 text-[#54656f] hover:text-[#111b21] hover:bg-[#e9edef]"
+          title="Ir para o lead"
+          onClick={() => {
+            const leadId = (conversation as any)?.leadId;
+            window.location.href = leadId ? `/leads?lead=${leadId}` : `/leads?phone=${encodeURIComponent(conversation?.phone || "")}`;
+          }}
+        >
+          <UserSquare className="h-4 w-4" />
+        </Button>
 
         {/* ── Etiquetas ── */}
         <Popover open={labelPopoverOpen} onOpenChange={setLabelPopoverOpen}>
