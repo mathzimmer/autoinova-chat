@@ -1781,55 +1781,72 @@ const leadRouter = router({
         if (allLeads.length === 0) return [];
       }
       // ── Não respondidos + tempo de resposta ──────────────────────────────────
-      // "Não respondido" = a ÚLTIMA mensagem da conversa é do cliente (ninguém
-      // respondeu depois). Usa as colunas já existentes (sem varrer mensagens).
+      // Decidido pela ORDEM REAL das mensagens (não por colunas de timestamp, que
+      // podem vir de fusos/fontes diferentes): se a última mensagem da conversa é
+      // do CLIENTE e não houve resposta depois → está aguardando.
       const waitingByLead = new Map<number, number>();   // leadId → desde quando aguarda (epoch ms)
-      for (const c of leadConvs) {
-        if (c.leadId == null) continue;
-        const lastCust = Number((c as any).lastCustomerMessageAt || 0);
-        const lastAny = Number(c.lastMessageAt || 0);
-        if (lastCust > 0 && lastCust >= lastAny) {
-          const cur = waitingByLead.get(c.leadId) || 0;
-          // guarda a espera MAIS ANTIGA da pessoa (maior tempo aguardando)
-          if (!cur || lastCust < cur) waitingByLead.set(c.leadId, lastCust);
-        }
-      }
-
-      // Tempo médio de resposta por lead (cliente → 1ª resposta humana), últimos 30 dias
       const avgRespByLead = new Map<number, number>();
       try {
         const { messages: msgsT } = await import("../drizzle/schema");
         const { gte: gteM } = await import("drizzle-orm");
-        const convIdsForResp = leadConvs.map(c => c.id);
+        // Só conversas com atividade recente (limita o peso da consulta)
+        const since30ms = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const activeConvs = leadConvs.filter(c => Number(c.lastMessageAt || 0) >= since30ms).slice(0, 800);
+        const convIdsForResp = activeConvs.map(c => c.id);
         if (convIdsForResp.length) {
-          const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          const since30 = new Date(since30ms);
           const rows = await db.select({
             conversationId: msgsT.conversationId, senderType: msgsT.senderType, createdAt: msgsT.createdAt,
           }).from(msgsT)
             .where(andOp(inArray(msgsT.conversationId, convIdsForResp), gteM(msgsT.createdAt, since30)))
             .orderBy(msgsT.createdAt);
+
           const convToLead = new Map<number, number>();
-          for (const c of leadConvs) if (c.leadId != null) convToLead.set(c.id, c.leadId);
-          // acumula pares (cliente → próxima resposta do atendente) por lead
+          for (const c of activeConvs) if (c.leadId != null) convToLead.set(c.id, c.leadId);
+
+          // Última do cliente x última resposta (atendente OU IA) por conversa
+          const lastCustAt = new Map<number, number>();
+          const lastReplyAt = new Map<number, number>();
+          // Tempo de resposta: pares (cliente → próxima resposta humana)
           const acc = new Map<number, { sum: number; n: number }>();
-          const pendingByConv = new Map<number, number>(); // conversa → hora da msg do cliente sem resposta
+          const pendingByConv = new Map<number, number>();
+
           for (const m of rows) {
             const leadId = convToLead.get(m.conversationId);
             if (leadId == null) continue;
             const t = new Date(m.createdAt as any).getTime();
             if (m.senderType === "customer") {
+              lastCustAt.set(m.conversationId, t);
               if (!pendingByConv.has(m.conversationId)) pendingByConv.set(m.conversationId, t);
-            } else if (m.senderType === "agent") {
-              const started = pendingByConv.get(m.conversationId);
-              if (started != null) {
-                const a = acc.get(leadId) || { sum: 0, n: 0 };
-                a.sum += (t - started) / 1000; a.n += 1;
-                acc.set(leadId, a);
-                pendingByConv.delete(m.conversationId);
+            } else if (m.senderType === "agent" || m.senderType === "bot") {
+              lastReplyAt.set(m.conversationId, t);
+              if (m.senderType === "agent") {
+                const started = pendingByConv.get(m.conversationId);
+                if (started != null) {
+                  const a = acc.get(leadId) || { sum: 0, n: 0 };
+                  a.sum += (t - started) / 1000; a.n += 1;
+                  acc.set(leadId, a);
+                }
               }
+              pendingByConv.delete(m.conversationId);
             }
           }
           for (const [leadId, a] of Array.from(acc)) if (a.n > 0) avgRespByLead.set(leadId, Math.round(a.sum / a.n));
+
+          // Marca quem está aguardando. waitingSince usa lastCustomerMessageAt
+          // (epoch absoluto) para a conta de "há quanto tempo" ficar correta.
+          for (const c of activeConvs) {
+            if (c.leadId == null) continue;
+            const lc = lastCustAt.get(c.id);
+            if (!lc) continue;
+            const lr = lastReplyAt.get(c.id) || 0;
+            if (lc > lr) {
+              const since = Number((c as any).lastCustomerMessageAt || 0) || Number(c.lastMessageAt || 0);
+              if (!since) continue;
+              const cur = waitingByLead.get(c.leadId) || 0;
+              if (!cur || since < cur) waitingByLead.set(c.leadId, since); // espera mais antiga
+            }
+          }
         }
       } catch (e) { console.error("[Leads] tempo de resposta:", e); }
 

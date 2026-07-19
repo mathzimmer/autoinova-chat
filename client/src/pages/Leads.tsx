@@ -710,7 +710,20 @@ export default function Leads() {
         <div className="text-center py-16">
           <Target className="h-16 w-16 mx-auto text-muted-foreground/20 mb-4" />
           <p className="text-muted-foreground">Nenhum lead encontrado</p>
-          <p className="text-xs text-muted-foreground mt-1">Os leads são criados automaticamente pela IA durante o atendimento.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {hasActiveFilters || searchQuery || colName || colPhone || colVehicle || answeredFilter !== "all"
+              ? "Nenhum resultado para a busca/filtros atuais."
+              : "Os leads são criados automaticamente pela IA durante o atendimento."}
+          </p>
+          <Button size="sm" variant="outline" className="mt-4"
+            onClick={() => {
+              setSearchQuery(""); setColName(""); setColPhone(""); setColVehicle("");
+              setFunnelFilter("all"); setTempFilter("all"); setInstanceFilter("all");
+              setAttendantFilter("all"); setDateFilter("all"); setCreditFilter("all");
+              setAnsweredFilter("all"); setSortField(null);
+            }}>
+            Limpar busca e filtros
+          </Button>
         </div>
       ) : (
         <div className="border border-border rounded-lg overflow-x-auto bg-card">
