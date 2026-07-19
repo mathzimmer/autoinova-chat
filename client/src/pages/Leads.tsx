@@ -791,6 +791,9 @@ export default function Leads() {
                     {(lead as any).creditApproved === "sim" && <span title={`Crédito aprovado${(lead as any).creditBank ? ` · ${(lead as any).creditBank}` : ""}`}>💳</span>}
                     {(lead as any).creditApproved === "nao" && <span title="Sem crédito" className="grayscale opacity-60">💳</span>}
                     {lead.hasTrade && <span title={`Troca: ${lead.tradeVehicle || "veículo não informado"}`}>🔄</span>}
+                    {(lead as any).visitedStore && <span title="Visitou a loja">🏪</span>}
+                    {(lead as any).quality === "bom" && <span title={`Cliente bom${(lead as any).qualityReason ? ` — ${(lead as any).qualityReason}` : ""}`}>👍</span>}
+                    {(lead as any).quality === "ruim" && <span title={`Cliente ruim${(lead as any).qualityReason ? ` — ${(lead as any).qualityReason}` : ""}`}>👎</span>}
                     <span className="truncate">{displayName}</span>
                   </span>
                   <span className="text-[11px] text-muted-foreground truncate">{displayPhone}</span>
@@ -1306,6 +1309,7 @@ function LeadActions({ lead, onChanged }: { lead: any; onChanged: () => void }) 
   const [vSearch, setVSearch] = useState("");
   const addNote = trpc.activity.addNote.useMutation({ onSuccess: () => { toast.success("Comentário adicionado"); setComment(""); setTab(null); onChanged(); }, onError: (e: any) => toast.error(e.message) });
   const setCredit = trpc.lead.setCredit.useMutation({ onSuccess: () => { toast.success("Crédito atualizado"); onChanged(); }, onError: (e: any) => toast.error(e.message) });
+  const setQuality = trpc.lead.setQuality.useMutation({ onSuccess: () => { toast.success("Qualidade do lead atualizada — a Meta vai aprender com isso"); onChanged(); }, onError: (e: any) => toast.error(e.message) });
   const linkVehicle = trpc.lead.linkVehicle.useMutation({ onSuccess: () => { toast.success("Veículo vinculado"); setTab(null); onChanged(); }, onError: (e: any) => toast.error(e.message) });
   const { data: vehicles } = trpc.vehicle.list.useQuery(undefined, { enabled: tab === "vehicle" });
   const vList = (vehicles || []).filter((v: any) => v.available && `${v.brand} ${v.model} ${v.year}`.toLowerCase().includes(vSearch.toLowerCase())).slice(0, 30);
@@ -1319,6 +1323,33 @@ function LeadActions({ lead, onChanged }: { lead: any; onChanged: () => void }) 
         <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setTab(tab === "vehicle" ? null : "vehicle")}>🚗 Vincular carro</Button>
         {lead.creditApproved === "sim" && <span className="text-[11px] text-green-600 self-center">✓ Crédito aprovado{lead.creditAmount ? `: ${lead.creditAmount}` : ""}{lead.creditBank ? ` (${lead.creditBank})` : ""}</span>}
         {lead.creditApproved === "nao" && <span className="text-[11px] text-red-600 self-center">✗ Sem crédito</span>}
+      </div>
+
+      {/* Qualidade do lead — é isso que ensina a Meta que cliente buscar */}
+      <div className="flex flex-wrap gap-2 items-center border-t border-border pt-2">
+        <span className="text-[11px] text-muted-foreground">Para os anúncios:</span>
+        <button
+          onClick={() => setQuality.mutate({ leadId: lead.id, quality: "bom", reason: window.prompt("Por que é um bom cliente? (ex.: visitou a loja, tem troca, paga à vista)", "visitou a loja") || undefined })}
+          className={`px-3 py-1 rounded text-xs font-medium ${lead.quality === "bom" ? "bg-green-600 text-white" : "bg-green-500/10 text-green-700 hover:bg-green-500/20"}`}
+          title="Quero mais clientes assim — envia sinal forte para a Meta"
+        >👍 Cliente bom</button>
+        <button
+          onClick={() => setQuality.mutate({ leadId: lead.id, quality: "ruim", reason: window.prompt("Por que não é um bom cliente? (ex.: sem crédito, só pesquisando)", "sem crédito") || undefined })}
+          className={`px-3 py-1 rounded text-xs font-medium ${lead.quality === "ruim" ? "bg-red-600 text-white" : "bg-red-500/10 text-red-700 hover:bg-red-500/20"}`}
+          title="Não quero mais clientes assim — bloqueia o sinal para a Meta"
+        >👎 Cliente ruim</button>
+        <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer">
+          <input type="checkbox" className="h-3 w-3" checked={!!lead.visitedStore}
+            onChange={(e) => setQuality.mutate({ leadId: lead.id, quality: lead.quality || "bom", visitedStore: e.target.checked })} />
+          🏪 Visitou a loja
+        </label>
+        {lead.quality && (
+          <span className="text-[11px] text-muted-foreground self-center">
+            {lead.qualitySource === "vendedor" ? "definido pelo vendedor" : lead.qualitySource === "ia" ? "sugerido pela IA" : "pelo crédito"}
+            {lead.qualityReason ? ` — ${lead.qualityReason}` : ""}
+            <button onClick={() => setQuality.mutate({ leadId: lead.id, quality: "limpar" })} className="ml-1 underline hover:text-red-600">limpar</button>
+          </span>
+        )}
       </div>
 
       {tab === "comment" && (

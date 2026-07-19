@@ -1638,6 +1638,60 @@ const leadRouter = router({
         action: clear ? "credito_removido" : "credito",
         details: clear ? {} : { aprovado: input.approved, valor: input.amount, condicoes: input.conditions, banco: input.bank },
       });
+
+      // CRÉDITO APROVADO = sinal FORTE para a Meta ("SubmitApplication").
+      // É esse evento que ensina o algoritmo a buscar gente que CONSEGUE crédito.
+      if (input.approved === "sim") {
+        try {
+          const { trackLeadProgress } = await import("./metaConversions");
+          void trackLeadProgress(input.leadId, { funnelStatus: "pagamento_definido" });
+        } catch (e) { console.error("[CAPI] evento de crédito aprovado:", e); }
+      }
+      return { success: true };
+    }),
+
+  /**
+   * Qualidade do lead — o vendedor diz "quero mais clientes assim" (bom) ou
+   * "cliente ruim". É o sinal de MAIOR prioridade: manda mais que crédito e IA.
+   * "bom" dispara o evento forte na Meta; "ruim" bloqueia os eventos profundos.
+   */
+  setQuality: protectedProcedure
+    .input(z.object({
+      leadId: z.number(),
+      quality: z.enum(["bom", "ruim", "limpar"]),
+      reason: z.string().max(200).optional(),
+      visitedStore: z.boolean().optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("DB indisponível");
+      const { leads: leadsT } = await import("../drizzle/schema");
+      const lead = (await db.select().from(leadsT).where(eq(leadsT.id, input.leadId)).limit(1))[0];
+      if (!lead) throw new Error("Lead não encontrado");
+      const clear = input.quality === "limpar";
+
+      await db.update(leadsT).set({
+        quality: clear ? null : input.quality,
+        qualitySource: clear ? null : "vendedor",
+        qualityReason: clear ? null : (input.reason || null),
+        ...(input.visitedStore != null ? { visitedStore: input.visitedStore } : {}),
+        updatedAt: new Date(),
+      } as any).where(eq(leadsT.id, input.leadId));
+
+      const { logTimeline } = await import("./db");
+      await logTimeline({
+        conversationId: lead.conversationId, leadId: input.leadId, userId: ctx.user.id,
+        action: clear ? "qualidade_removida" : "qualidade",
+        details: clear ? {} : { qualidade: input.quality, motivo: input.reason, visitou: input.visitedStore },
+      });
+
+      // Cliente BOM = sinal forte pra Meta ("quero mais assim"), mesmo sem crédito
+      if (input.quality === "bom") {
+        try {
+          const { trackLeadProgress } = await import("./metaConversions");
+          void trackLeadProgress(input.leadId, { funnelStatus: "pagamento_definido" });
+        } catch (e) { console.error("[CAPI] evento de lead bom:", e); }
+      }
       return { success: true };
     }),
 

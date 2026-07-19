@@ -151,6 +151,11 @@ export const leads = pgTable("leads", {
   isLead:          boolean("isLead").default(true).notNull(), // false = não é lead (fornecedor/colega...)
   discardReason:   varchar("discardReason", { length: 100 }),  // motivo/tipo quando não é lead
   creditApproved:  varchar("creditApproved", { length: 10 }),   // "sim" | "nao" | null (não avaliado)
+  // ── Qualidade do lead: é isso que decide o que reportamos à Meta ────────────
+  quality:         varchar("quality", { length: 10 }),          // "bom" | "ruim" | null
+  qualitySource:   varchar("qualitySource", { length: 20 }),    // "vendedor" | "credito" | "ia"
+  qualityReason:   text("qualityReason"),                        // por que é bom/ruim
+  visitedStore:    boolean("visitedStore"),                      // visitou a loja (sinal forte)
   creditAmount:    varchar("creditAmount", { length: 50 }),     // valor liberado
   creditConditions: varchar("creditConditions", { length: 255 }), // condições de parcela
   creditBank:      varchar("creditBank", { length: 40 }),        // banco

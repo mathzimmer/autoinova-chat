@@ -32,6 +32,9 @@ export type InsightResult = {
   vehicleInterest: string;
   hasTrade: boolean | null;
   tradeVehicle: string;
+  visitedStore: boolean | null;
+  leadQuality: "bom" | "ruim" | null;
+  qualityReason: string;
   funnelStage: "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando";
 };
 
@@ -48,6 +51,9 @@ Sua tarefa é avaliar friamente o potencial de fechamento e retornar um JSON EXA
   "vehicleInterest": "<veículo(s) de interesse ou 'não definido'>",
   "hasTrade": true | false | null,
   "tradeVehicle": "<se tem carro na troca, qual (marca/modelo/ano); senão vazio>",
+  "visitedStore": true | false | null,
+  "leadQuality": "bom" | "ruim" | null,
+  "qualityReason": "<1 frase curta: por que é bom ou ruim>",
   "funnelStage": "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando"
 }
 Critérios do funnelStage (escolha o mais avançado que a conversa JÁ atingiu de fato):
@@ -63,7 +69,19 @@ Critérios de temperatura:
 - quente: interesse claro num veículo específico, discutindo preço/troca/financiamento.
 - morno: pesquisando, comparando, sem veículo definido, mas engajado.
 - frio: só perguntou preço e sumiu, resposta vaga, ou muito no início.
-Seja realista. Cliente que não responde há tempo ou só fez uma pergunta genérica é frio. Score deve refletir a chance REAL.`;
+Seja realista. Cliente que não responde há tempo ou só fez uma pergunta genérica é frio. Score deve refletir a chance REAL.
+
+QUALIDADE DO LEAD (leadQuality) — isso define quais clientes vamos buscar em anúncios, então seja criterioso:
+Marque "bom" quando houver SINAL CONCRETO de capacidade e intenção real de compra, por exemplo:
+- Visitou a loja ou agendou visita/test-drive (sinal MUITO forte → visitedStore: true).
+- Tem veículo na troca com valor real, ou vai dar entrada relevante.
+- Vai pagar à vista, tem financiamento aprovado, ou já falou com banco.
+- Está negociando valores/condições finais, pediu proposta, definiu veículo.
+Marque "ruim" quando houver sinal claro de que NÃO vai comprar, por exemplo:
+- Crédito negado / nome restrito / sem entrada e sem troca.
+- Só pesquisando preço, sem intenção real, ou quer valor muito abaixo.
+- É revenda/concorrente/curioso, ou pede coisa que a loja não trabalha.
+Use null quando a conversa AINDA não dá base — não chute. Prefira null a errar.`;
 
 function tempToScore(t: string): number {
   return t === "muito_quente" ? 85 : t === "quente" ? 65 : t === "morno" ? 40 : 15;
@@ -135,6 +153,9 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       vehicleInterest: String(json.vehicleInterest || "não definido").slice(0, 300),
       hasTrade: typeof json.hasTrade === "boolean" ? json.hasTrade : null,
       tradeVehicle: String(json.tradeVehicle || "").slice(0, 200),
+      visitedStore: typeof json.visitedStore === "boolean" ? json.visitedStore : null,
+      leadQuality: (json.leadQuality === "bom" || json.leadQuality === "ruim") ? json.leadQuality : null,
+      qualityReason: String(json.qualityReason || "").slice(0, 200),
       funnelStage: (["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "negociando"].includes(json.funnelStage) ? json.funnelStage : "novo"),
     };
   } catch (err) {
@@ -179,6 +200,13 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       if ((!lead.vehicleInterest || lead.vehicleInterest === "não definido") && parsed.vehicleInterest && parsed.vehicleInterest !== "não definido") upd.vehicleInterest = parsed.vehicleInterest;
       if (lead.hasTrade == null && parsed.hasTrade != null) upd.hasTrade = parsed.hasTrade;
       if (!lead.tradeVehicle && parsed.tradeVehicle) upd.tradeVehicle = parsed.tradeVehicle;
+      if ((lead as any).visitedStore == null && parsed.visitedStore != null) upd.visitedStore = parsed.visitedStore;
+      // Qualidade: a IA só preenche se o VENDEDOR ainda não julgou (ele manda mais)
+      if ((lead as any).qualitySource !== "vendedor" && parsed.leadQuality) {
+        upd.quality = parsed.leadQuality;
+        upd.qualitySource = "ia";
+        upd.qualityReason = parsed.qualityReason || null;
+      }
       await db.update(leads).set(upd as any).where(eq(leads.id, lead.id));
     }
   } catch { /* opcional */ }

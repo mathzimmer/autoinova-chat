@@ -433,14 +433,53 @@ export async function trackLeadProgress(
     const lead = rows[0];
     if (!lead) return;
 
+    // ── QUALIDADE DO LEAD decide o que a Meta aprende ──────────────────────────
+    // A Meta só aprende com o que reportamos. Prioridade do julgamento:
+    //   1) VENDEDOR (botão "cliente bom / ruim") — manda mais que tudo
+    //   2) CRÉDITO (aprovado = bom, negado = ruim)
+    //   3) IA (sinais da conversa: visita, troca real, condição de compra)
+    // "bom" libera o sinal forte mesmo sem crédito (ex.: visitou a loja, tem troca).
+    // "ruim" bloqueia os eventos profundos — não ensinamos a buscar esse perfil.
+    const q = (lead as any).quality as string | null;          // vendedor ou IA
+    const qSource = (lead as any).qualitySource as string | null;
+    const credito = (lead as any).creditApproved as string | null;
+
+    let bomLead = false, ruimLead = false;
+    if (q === "bom") bomLead = true;
+    else if (q === "ruim") ruimLead = true;
+    // Crédito só decide se o VENDEDOR não tiver julgado manualmente
+    if (qSource !== "vendedor") {
+      if (credito === "sim") bomLead = true;
+      else if (credito === "nao" && q !== "bom") ruimLead = true;
+    }
+
+    const semCredito = ruimLead; // mantém o nome usado abaixo
+    const onlyQualified = (await getSetting("capi_only_credit_approved")) === "true" && !bomLead;
+
     const events = new Map<string, { def: CapiEventDef; funnel: string | null }>();
     if (changes.funnelStatus && FUNNEL_EVENT_MAP[changes.funnelStatus]) {
       const def = FUNNEL_EVENT_MAP[changes.funnelStatus];
-      events.set(def.eventName, { def, funnel: changes.funnelStatus });
+      const isDeepEvent = def.eventName !== "Lead";
+      // Bloqueia eventos profundos de quem está sem crédito
+      const blockedNoCredit = semCredito && isDeepEvent;
+      // Modo estrito (opcional): só reporta evento profundo com crédito APROVADO
+      const blockedStrict = onlyQualified && isDeepEvent && (lead as any).creditApproved !== "sim";
+      if (blockedNoCredit || blockedStrict) {
+        console.log(`[CAPI] lead ${lead.id}: ${def.eventName} BLOQUEADO (crédito=${(lead as any).creditApproved ?? "não avaliado"}) — não vamos ensinar a Meta a buscar esse perfil`);
+      } else {
+        events.set(def.eventName, { def, funnel: changes.funnelStatus });
+      }
     }
     if (changes.leadStatus && LEAD_STATUS_EVENT_MAP[changes.leadStatus]) {
       const def = LEAD_STATUS_EVENT_MAP[changes.leadStatus];
-      if (!events.has(def.eventName)) events.set(def.eventName, { def, funnel: changes.funnelStatus ?? null });
+      // "converted" (venda) SEMPRE vale — venda é venda, mesmo à vista sem financiamento.
+      const isPurchase = def.eventName === "Purchase";
+      const blocked = !isPurchase && (semCredito || (onlyQualified && (lead as any).creditApproved !== "sim"));
+      if (blocked) {
+        console.log(`[CAPI] lead ${lead.id}: ${def.eventName} BLOQUEADO (crédito=${(lead as any).creditApproved ?? "não avaliado"})`);
+      } else if (!events.has(def.eventName)) {
+        events.set(def.eventName, { def, funnel: changes.funnelStatus ?? null });
+      }
     }
 
     for (const { def, funnel } of Array.from(events.values())) {
