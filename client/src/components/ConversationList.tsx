@@ -36,6 +36,14 @@ export default function ConversationList({ selectedId, onSelect, instance = "mat
   // Reseta a paginação ao trocar de fonte/filtro
   useEffect(() => { setLimit(PAGE_SIZE); }, [instance, statusFilter, search, searchContent, showArchived]);
 
+  // Ao entrar numa instância, abre automaticamente a conversa MAIS RECENTE
+  // (a lista já vem ordenada por última mensagem). Só quando nada está selecionado.
+  useEffect(() => {
+    if (selectedId != null) return;
+    const first = (conversations || [])[0] as any;
+    if (first?.id) onSelect(first.id);
+  }, [conversations, selectedId, onSelect]);
+
   // ── Seleção múltipla ──
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());

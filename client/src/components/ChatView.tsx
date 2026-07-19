@@ -436,9 +436,12 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     prevMsgCountRef.current = msgCount;
     if (isInitialLoadRef.current && msgCount > 0) {
       isInitialLoadRef.current = false;
-      requestAnimationFrame(() => {
-        if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-      });
+      // Vai pro fim e REPETE depois que imagens/áudios carregam (mudam a altura),
+      // garantindo que a última mensagem sempre apareça ao abrir a conversa.
+      const toBottom = () => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; };
+      requestAnimationFrame(toBottom);
+      setTimeout(toBottom, 150);
+      setTimeout(toBottom, 600);
       return;
     }
     if (!isNewMessage) return;
@@ -457,6 +460,8 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     prevMsgCountRef.current = 0;
     setHasNewMessages(false);
     setReplyToMessage(null);
+    // Cursor já no campo de mensagem ao abrir a conversa
+    setTimeout(() => inputRef.current?.focus(), 120);
   }, [conversationId]);
 
   useEffect(() => { markAsReadMutation.mutate({ id: conversationId }); }, [conversationId]);

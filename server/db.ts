@@ -589,12 +589,14 @@ export async function mirrorZernioMessage(params: {
         inArray(messages.senderType, ["agent", "bot"] as any),
       ))
       .orderBy(desc(messages.id)).limit(8);
-    // Só considera eco a mensagem local que AINDA não tem externalId (aguardando
-    // o eco). Para MÍDIA, o texto não bate ("[Mensagem de voz]" no CRM vs "[Áudio]"
-    // no eco), então casamos pelo TIPO; para texto, casamos pelo conteúdo.
+    // Casa o eco com a mensagem que o CRM acabou de enviar. Para MÍDIA o texto não
+    // bate ("[Mensagem de voz]" no CRM vs "[Áudio]" no eco) → casamos pelo TIPO;
+    // para texto, pelo conteúdo. Só NÃO casa se for exatamente a mesma mensagem já
+    // registrada (mesmo externalId) — algumas rotas (fotos do estoque) já salvam um
+    // externalId próprio no envio, e mesmo assim o Zernio devolve um eco com id novo.
     const isMedia = !!params.messageType && params.messageType !== "text";
     const dup = recent.find(r => {
-      if (r.externalId) return false; // já ecoada → não é este eco
+      if (params.externalId && r.externalId === params.externalId) return false;
       return isMedia
         ? r.messageType === params.messageType
         : (r.content || "") === (params.content || "");
