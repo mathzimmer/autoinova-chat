@@ -200,13 +200,9 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       if ((!lead.vehicleInterest || lead.vehicleInterest === "não definido") && parsed.vehicleInterest && parsed.vehicleInterest !== "não definido") upd.vehicleInterest = parsed.vehicleInterest;
       if (lead.hasTrade == null && parsed.hasTrade != null) upd.hasTrade = parsed.hasTrade;
       if (!lead.tradeVehicle && parsed.tradeVehicle) upd.tradeVehicle = parsed.tradeVehicle;
-      if ((lead as any).visitedStore == null && parsed.visitedStore != null) upd.visitedStore = parsed.visitedStore;
-      // Qualidade: a IA só preenche se o VENDEDOR ainda não julgou (ele manda mais)
-      if ((lead as any).qualitySource !== "vendedor" && parsed.leadQuality) {
-        upd.quality = parsed.leadQuality;
-        upd.qualitySource = "ia";
-        upd.qualityReason = parsed.qualityReason || null;
-      }
+      // A IA NÃO decide qualidade nem visita — quem marca é o VENDEDOR.
+      // Ela continua analisando e o resultado fica disponível como leitura
+      // (temperatura, objeções, próxima ação), mas não grava julgamento no lead.
       await db.update(leads).set(upd as any).where(eq(leads.id, lead.id));
     }
   } catch { /* opcional */ }

@@ -445,12 +445,12 @@ export async function trackLeadProgress(
     const credito = (lead as any).creditApproved as string | null;
 
     let bomLead = false, ruimLead = false;
-    if (q === "bom") bomLead = true;
-    else if (q === "ruim") ruimLead = true;
+    if (q === "alta") bomLead = true;
+    else if (q === "baixa") ruimLead = true;
     // Crédito só decide se o VENDEDOR não tiver julgado manualmente
     if (qSource !== "vendedor") {
       if (credito === "sim") bomLead = true;
-      else if (credito === "nao" && q !== "bom") ruimLead = true;
+      else if (credito === "nao" && q !== "alta") ruimLead = true;
     }
 
     const semCredito = ruimLead; // mantém o nome usado abaixo

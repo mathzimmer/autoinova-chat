@@ -1658,7 +1658,7 @@ const leadRouter = router({
   setQuality: protectedProcedure
     .input(z.object({
       leadId: z.number(),
-      quality: z.enum(["bom", "ruim", "limpar"]),
+      quality: z.enum(["alta", "baixa", "limpar"]),
       reason: z.string().max(200).optional(),
       visitedStore: z.boolean().optional(),
     }))
@@ -1685,8 +1685,8 @@ const leadRouter = router({
         details: clear ? {} : { qualidade: input.quality, motivo: input.reason, visitou: input.visitedStore },
       });
 
-      // Cliente BOM = sinal forte pra Meta ("quero mais assim"), mesmo sem crédito
-      if (input.quality === "bom") {
+      // Qualidade ALTA = sinal forte pra Meta ("quero mais assim"), mesmo sem crédito
+      if (input.quality === "alta") {
         try {
           const { trackLeadProgress } = await import("./metaConversions");
           void trackLeadProgress(input.leadId, { funnelStatus: "pagamento_definido" });
@@ -1982,11 +1982,43 @@ const leadRouter = router({
         const finalizado = lead.funnelStatus === "fechado" || lead.funnelStatus === "perdido";
         const waitingSince = finalizado ? null : (waitingByLead.get(lead.id) ?? null);
 
+        // ── PONTUAÇÃO DO LEAD (0–100) ──────────────────────────────────────────
+        // Soma de sinais objetivos. Serve para priorizar atendimento e, no futuro,
+        // para alimentar público/otimização. Tudo transparente e auditável.
+        const L: any = lead;
+        let pts = 0;
+        if (L.creditApproved === "sim") pts += 30;           // crédito aprovado
+        if (L.creditApproved === "nao") pts -= 25;           // sem crédito
+        if (L.visitedStore) pts += 25;                        // visitou a loja
+        if (L.hasTrade) pts += 12;                            // tem troca
+        if (L.vehicleId) pts += 10;                           // veículo definido do estoque
+        else if (L.vehicleInterest && L.vehicleInterest !== "não definido") pts += 5;
+        // Etapa do funil
+        const etapaPts: Record<string, number> = {
+          negociando: 15, encaminhado_vendedor: 12, dados_troca: 10,
+          dados_pessoais: 10, pagamento_definido: 10, interesse_definido: 5, novo: 0,
+        };
+        pts += etapaPts[String(L.funnelStatus)] ?? 0;
+        // Temperatura da IA (leitura da conversa)
+        const tempPts: Record<string, number> = { muito_quente: 10, quente: 7, morno: 3, frio: 0 };
+        pts += tempPts[String(L.temperature)] ?? 0;
+        // Penaliza quem está largado sem resposta
+        if (waitingSince) {
+          const diasEsperando = (Date.now() - Number(waitingSince)) / 86400000;
+          if (diasEsperando > 3) pts -= 10;
+          else if (diasEsperando > 1) pts -= 5;
+        }
+        // Qualidade marcada pelo VENDEDOR pesa forte (é quem viu o cliente)
+        if (L.quality === "alta") pts += 20;
+        if (L.quality === "baixa") pts -= 20;
+        const qualityScore = Math.max(0, Math.min(100, pts));
+
         return {
           ...lead,
           unanswered: waitingSince != null,
           waitingSince,                                   // epoch ms desde a msg do cliente
           avgResponseSec: avgRespByLead.get(lead.id) ?? null,
+          qualityScore,                                   // pontuação 0–100 do lead
           conversation: conv ? {
             id: conv.id,
             contactName: conv.contactName,

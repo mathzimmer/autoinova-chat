@@ -150,6 +150,11 @@ async function startServer() {
   setInterval(() => {
     import("../autoQualify").then(m => m.runAutoQualify().catch(e => console.error("[AutoQualify] erro:", e)));
   }, 120000);
+
+  // Encerra leads parados (sem resposta há X dias → "perdido"), 1x por hora
+  setInterval(() => {
+    import("../staleLeads").then(m => m.runStaleLeadCheck().catch(e => console.error("[StaleLeads] erro:", e)));
+  }, 60 * 60 * 1000);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

@@ -792,8 +792,8 @@ export default function Leads() {
                     {(lead as any).creditApproved === "nao" && <span title="Sem crédito" className="grayscale opacity-60">💳</span>}
                     {lead.hasTrade && <span title={`Troca: ${lead.tradeVehicle || "veículo não informado"}`}>🔄</span>}
                     {(lead as any).visitedStore && <span title="Visitou a loja">🏪</span>}
-                    {(lead as any).quality === "bom" && <span title={`Cliente bom${(lead as any).qualityReason ? ` — ${(lead as any).qualityReason}` : ""}`}>👍</span>}
-                    {(lead as any).quality === "ruim" && <span title={`Cliente ruim${(lead as any).qualityReason ? ` — ${(lead as any).qualityReason}` : ""}`}>👎</span>}
+                    {(lead as any).quality === "alta" && <span title="Qualidade alta (definida pelo vendedor)">🟢</span>}
+                    {(lead as any).quality === "baixa" && <span title="Qualidade baixa (definida pelo vendedor)">🟡</span>}
                     <span className="truncate">{displayName}</span>
                   </span>
                   <span className="text-[11px] text-muted-foreground truncate">{displayPhone}</span>
@@ -1325,31 +1325,61 @@ function LeadActions({ lead, onChanged }: { lead: any; onChanged: () => void }) 
         {lead.creditApproved === "nao" && <span className="text-[11px] text-red-600 self-center">✗ Sem crédito</span>}
       </div>
 
-      {/* Qualidade do lead — é isso que ensina a Meta que cliente buscar */}
-      <div className="flex flex-wrap gap-2 items-center border-t border-border pt-2">
-        <span className="text-[11px] text-muted-foreground">Para os anúncios:</span>
-        <button
-          onClick={() => setQuality.mutate({ leadId: lead.id, quality: "bom", reason: window.prompt("Por que é um bom cliente? (ex.: visitou a loja, tem troca, paga à vista)", "visitou a loja") || undefined })}
-          className={`px-3 py-1 rounded text-xs font-medium ${lead.quality === "bom" ? "bg-green-600 text-white" : "bg-green-500/10 text-green-700 hover:bg-green-500/20"}`}
-          title="Quero mais clientes assim — envia sinal forte para a Meta"
-        >👍 Cliente bom</button>
-        <button
-          onClick={() => setQuality.mutate({ leadId: lead.id, quality: "ruim", reason: window.prompt("Por que não é um bom cliente? (ex.: sem crédito, só pesquisando)", "sem crédito") || undefined })}
-          className={`px-3 py-1 rounded text-xs font-medium ${lead.quality === "ruim" ? "bg-red-600 text-white" : "bg-red-500/10 text-red-700 hover:bg-red-500/20"}`}
-          title="Não quero mais clientes assim — bloqueia o sinal para a Meta"
-        >👎 Cliente ruim</button>
-        <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer">
-          <input type="checkbox" className="h-3 w-3" checked={!!lead.visitedStore}
-            onChange={(e) => setQuality.mutate({ leadId: lead.id, quality: lead.quality || "bom", visitedStore: e.target.checked })} />
-          🏪 Visitou a loja
-        </label>
-        {lead.quality && (
-          <span className="text-[11px] text-muted-foreground self-center">
-            {lead.qualitySource === "vendedor" ? "definido pelo vendedor" : lead.qualitySource === "ia" ? "sugerido pela IA" : "pelo crédito"}
-            {lead.qualityReason ? ` — ${lead.qualityReason}` : ""}
-            <button onClick={() => setQuality.mutate({ leadId: lead.id, quality: "limpar" })} className="ml-1 underline hover:text-red-600">limpar</button>
+      {/* ── QUALIDADE DO LEAD (só o vendedor decide) ───────────────────────── */}
+      <div className="border border-border rounded-lg p-3 space-y-2.5 bg-muted/20">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Qualidade do lead</span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+            (lead.qualityScore ?? 0) >= 70 ? "bg-green-500/15 text-green-700"
+            : (lead.qualityScore ?? 0) >= 40 ? "bg-yellow-500/15 text-yellow-700"
+            : "bg-muted text-muted-foreground"
+          }`} title="Pontuação calculada: crédito, visita, troca, etapa e engajamento">
+            {lead.qualityScore ?? 0} pts
           </span>
-        )}
+        </div>
+
+        {/* Classificação — quem marca é o vendedor */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-[11px] text-muted-foreground w-20">Classificação</span>
+          <button
+            onClick={() => setQuality.mutate({ leadId: lead.id, quality: "alta" })}
+            className={`px-3 py-1 rounded text-xs font-medium ${lead.quality === "alta" ? "bg-green-600 text-white" : "bg-green-500/10 text-green-700 hover:bg-green-500/20"}`}
+            title="Cliente com real potencial de compra"
+          >🟢 Alta</button>
+          <button
+            onClick={() => setQuality.mutate({ leadId: lead.id, quality: "baixa" })}
+            className={`px-3 py-1 rounded text-xs font-medium ${lead.quality === "baixa" ? "bg-yellow-500 text-white" : "bg-yellow-500/10 text-yellow-700 hover:bg-yellow-500/20"}`}
+            title="Pouco potencial — não buscar mais clientes assim"
+          >🟡 Baixa</button>
+          {lead.quality && (
+            <button onClick={() => setQuality.mutate({ leadId: lead.id, quality: "limpar" })} className="text-[11px] text-muted-foreground underline hover:text-red-600">limpar</button>
+          )}
+        </div>
+
+        {/* Visita à loja */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-[11px] text-muted-foreground w-20">Visita</span>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+            <input type="checkbox" className="h-3.5 w-3.5" checked={!!lead.visitedStore}
+              onChange={(e) => setQuality.mutate({ leadId: lead.id, quality: lead.quality || "limpar", visitedStore: e.target.checked })} />
+            🏪 Visitou a loja
+          </label>
+        </div>
+
+        {/* Crédito */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-[11px] text-muted-foreground w-20">Crédito</span>
+          <button onClick={() => { setCredApproved("sim"); setTab(tab === "credit" ? null : "credit"); }}
+            className={`px-3 py-1 rounded text-xs font-medium ${lead.creditApproved === "sim" ? "bg-green-600 text-white" : "bg-green-500/10 text-green-700 hover:bg-green-500/20"}`}>✓ Com crédito</button>
+          <button onClick={() => { setCredApproved("nao"); setCredit.mutate({ leadId: lead.id, approved: "nao" }); }}
+            className={`px-3 py-1 rounded text-xs font-medium ${lead.creditApproved === "nao" ? "bg-red-600 text-white" : "bg-red-500/10 text-red-700 hover:bg-red-500/20"}`}>✗ Sem crédito</button>
+          {lead.creditApproved && (
+            <button onClick={() => setCredit.mutate({ leadId: lead.id, approved: "limpar" })} className="text-[11px] text-muted-foreground underline hover:text-red-600">limpar</button>
+          )}
+          {lead.creditApproved === "sim" && (
+            <span className="text-[11px] text-green-700">{lead.creditAmount || ""}{lead.creditBank ? ` · ${lead.creditBank}` : ""}</span>
+          )}
+        </div>
       </div>
 
       {tab === "comment" && (

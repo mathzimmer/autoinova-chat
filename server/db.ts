@@ -1007,11 +1007,25 @@ export async function getOrCreateLeadByPhone(params: {
     if (finalized) {
       await closeOpenOpportunity(existing.id, existing.funnelStatus === "fechado" ? "won" : "lost");
       await openOpportunity(existing.id, { funnelStatus: "novo", vehicleInterest: existing.vehicleInterest || undefined, isReactivation: true });
+      // Ciclo NOVO = dados de crédito do ciclo anterior não valem mais (banco
+      // reavalia). Se ficassem, bloqueariam o envio à Meta neste novo ciclo.
+      // A qualidade definida pelo VENDEDOR é preservada (julgamento humano);
+      // a que veio do crédito ou da IA é limpa para ser reavaliada.
+      const qualidadeDoVendedor = (existing as any).qualitySource === "vendedor";
       await db.update(leads).set({
         funnelStatus: "novo" as any, temperature: "morno" as any, status: "new" as any,
+        creditApproved: null, creditAmount: null, creditConditions: null, creditBank: null,
+        ...(qualidadeDoVendedor ? {} : { quality: null, qualitySource: null, qualityReason: null }),
         reactivations: (existing.reactivations || 0) + 1, reopenedAt: new Date(), updatedAt: new Date(),
-      }).where(eq(leads.id, existing.id));
-      await logTimeline({ conversationId: params.conversationId, leadId: existing.id, action: "lead_reativado", details: { de: existing.funnelStatus } });
+      } as any).where(eq(leads.id, existing.id));
+      await logTimeline({
+        conversationId: params.conversationId, leadId: existing.id, action: "lead_reativado",
+        details: {
+          de: existing.funnelStatus,
+          creditoAnterior: (existing as any).creditApproved || "não avaliado",
+          obs: "crédito zerado para reavaliação neste novo ciclo",
+        },
+      });
       return { lead: { ...existing, funnelStatus: "novo", reactivated: true }, created: false, reactivated: true };
     }
     return { lead: existing, created: false, reactivated: false };
