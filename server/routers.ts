@@ -1904,6 +1904,17 @@ const leadRouter = router({
         }
       } catch (e) { console.error("[Leads] tempo de resposta:", e); }
 
+      // JÁ É CLIENTE? Quantas compras a pessoa já fez (oportunidades ganhas).
+      // Serve para o vendedor ver de cara que aquele contato já comprou antes.
+      const comprasPorLead = new Map<number, number>();
+      try {
+        const { leadOpportunities } = await import("../drizzle/schema");
+        const won = await db.select({ leadId: leadOpportunities.leadId })
+          .from(leadOpportunities)
+          .where(andOp(inArray(leadOpportunities.leadId, allLeads.map(l => l.id)), eq(leadOpportunities.status, "won")));
+        for (const w of won) comprasPorLead.set(w.leadId, (comprasPorLead.get(w.leadId) || 0) + 1);
+      } catch { /* opcional */ }
+
       // Mapa accountId (instanceName cru do Zernio) → nome cadastrado (Deivid, etc.)
       let zernioNameByAccount = new Map<string, string>();
       try {
@@ -2019,6 +2030,9 @@ const leadRouter = router({
           waitingSince,                                   // epoch ms desde a msg do cliente
           avgResponseSec: avgRespByLead.get(lead.id) ?? null,
           qualityScore,                                   // pontuação 0–100 do lead
+          // Já comprou antes? (oportunidades ganhas, ou está fechado agora)
+          purchases: (comprasPorLead.get(lead.id) || 0) + (lead.funnelStatus === "fechado" ? 1 : 0),
+          isCustomer: (comprasPorLead.get(lead.id) || 0) > 0 || lead.funnelStatus === "fechado",
           conversation: conv ? {
             id: conv.id,
             contactName: conv.contactName,
@@ -2074,7 +2088,22 @@ const leadRouter = router({
   getByConversation: protectedProcedure
     .input(z.object({ conversationId: z.number() }))
     .query(async ({ input }) => {
-      return getLeadByConversationId(input.conversationId);
+      const lead: any = await getLeadByConversationId(input.conversationId);
+      if (!lead) return lead;
+      // "Já é cliente": nº de compras (oportunidades ganhas) — o vendedor precisa
+      // ver isso de cara ao abrir a conversa.
+      let purchases = lead.funnelStatus === "fechado" ? 1 : 0;
+      try {
+        const db = await getDb();
+        if (db) {
+          const { leadOpportunities } = await import("../drizzle/schema");
+          const { and: andO } = await import("drizzle-orm");
+          const won = await db.select({ id: leadOpportunities.id }).from(leadOpportunities)
+            .where(andO(eq(leadOpportunities.leadId, lead.id), eq(leadOpportunities.status, "won")));
+          purchases += won.length;
+        }
+      } catch { /* opcional */ }
+      return { ...lead, purchases, isCustomer: purchases > 0 };
     }),
 
   /** Get summaries for a specific lead */

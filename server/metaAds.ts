@@ -70,12 +70,30 @@ export async function metaPost(
 
   const data = await res.json() as any;
   if (!res.ok || data.error) {
-    const msg = data.error?.message || `HTTP ${res.status}`;
-    console.error(`[MetaAds] POST ${endpoint} falhou:`, msg);
-    console.error(`[MetaAds] Error details:`, data.error ? JSON.stringify(data.error, null, 2) : "No error details");
-    throw new Error(msg);
+    console.error(`[MetaAds] POST ${endpoint} falhou:`, data.error ? JSON.stringify(data.error, null, 2) : `HTTP ${res.status}`);
+    throw new Error(formatMetaError(data.error, res.status));
   }
   return data;
+}
+
+/**
+ * A Meta quase sempre devolve "Invalid parameter" no campo `message`. O motivo
+ * REAL vem em error_user_title/error_user_msg e o campo problemático em
+ * error_data.blame_field_specs. Junta tudo para o erro ser útil na tela.
+ */
+export function formatMetaError(err: any, httpStatus?: number): string {
+  if (!err) return `HTTP ${httpStatus ?? "?"}`;
+  const humano = [err.error_user_title, err.error_user_msg].filter(Boolean).join(" — ");
+  const base = humano || err.message || `HTTP ${httpStatus ?? "?"}`;
+  const partes: string[] = [base];
+  if (err.error_subcode) partes.push(`(subcode ${err.error_subcode})`);
+  let blame = err.error_data?.blame_field_specs ?? err.error_data;
+  if (blame) {
+    if (typeof blame === "string") { try { blame = JSON.parse(blame); } catch { /* texto puro */ } }
+    const campos = Array.isArray(blame) ? blame.flat().filter(Boolean).join(", ") : (blame?.blame_field_specs ? String(blame.blame_field_specs) : "");
+    if (campos) partes.push(`— campo: ${campos}`);
+  }
+  return partes.join(" ");
 }
 
 export async function metaGet(
@@ -86,7 +104,10 @@ export async function metaGet(
   const qs = new URLSearchParams({ ...params, access_token: accessToken }).toString();
   const res = await fetch(`${META_BASE}/${endpoint}?${qs}`);
   const data = await res.json() as any;
-  if (!res.ok || data.error) throw new Error(data.error?.message || `HTTP ${res.status}`);
+  if (!res.ok || data.error) {
+    console.error(`[MetaAds] GET ${endpoint} falhou:`, data.error ? JSON.stringify(data.error, null, 2) : `HTTP ${res.status}`);
+    throw new Error(formatMetaError(data.error, res.status));
+  }
   return data;
 }
 
@@ -559,18 +580,33 @@ export async function listCampaigns(
 export async function listAdSets(
   accessToken: string,
   campaignId: string
-): Promise<Array<{ id: string; name: string; status: string; dailyBudget: string }>> {
+): Promise<Array<{ id: string; name: string; status: string; dailyBudget: string; effectiveStatus?: string; destinationType?: string }>> {
+  // Por padrão a Meta esconde conjuntos ARQUIVADOS/EXCLUÍDOS. Pedimos todos os
+  // status explicitamente para o conjunto aparecer mesmo pausado/arquivado.
   const data = await metaGet(
     `${campaignId}/adsets`,
-    { fields: "id,name,status,daily_budget", limit: "100" },
+    {
+      fields: "id,name,status,effective_status,daily_budget,destination_type",
+      limit: "200",
+      date_preset: "maximum",
+      filtering: JSON.stringify([{
+        field: "effective_status",
+        operator: "IN",
+        value: ["ACTIVE", "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "PENDING_REVIEW", "IN_PROCESS", "WITH_ISSUES", "ARCHIVED"],
+      }]),
+    },
     accessToken
   ) as any;
-  return (data.data || []).map((a: any) => ({
+  const list = (data.data || []).map((a: any) => ({
     id: a.id,
     name: a.name || "Sem nome",
     status: a.status || "UNKNOWN",
+    effectiveStatus: a.effective_status || undefined,
+    destinationType: a.destination_type || undefined,
     dailyBudget: a.daily_budget || "0",
   }));
+  console.log(`[MetaAds] campanha ${campaignId}: ${list.length} conjunto(s) encontrado(s)`);
+  return list;
 }
 
 // ─── Criar anúncio em adset existente ────────────────────────────────────────

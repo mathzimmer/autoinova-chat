@@ -791,6 +791,12 @@ export default function Leads() {
                     {(lead as any).creditApproved === "sim" && <span title={`Crédito aprovado${(lead as any).creditBank ? ` · ${(lead as any).creditBank}` : ""}`}>💳</span>}
                     {(lead as any).creditApproved === "nao" && <span title="Sem crédito" className="grayscale opacity-60">💳</span>}
                     {lead.hasTrade && <span title={`Troca: ${lead.tradeVehicle || "veículo não informado"}`}>🔄</span>}
+                    {(lead as any).isCustomer && (
+                      <span className="text-[9px] font-bold px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-700 whitespace-nowrap"
+                        title={`Já é cliente — ${(lead as any).purchases || 1} compra(s)`}>
+                        ⭐ CLIENTE
+                      </span>
+                    )}
                     {(lead as any).visitedStore && <span title="Visitou a loja">🏪</span>}
                     {(lead as any).quality === "alta" && <span title="Qualidade alta (definida pelo vendedor)">🟢</span>}
                     {(lead as any).quality === "baixa" && <span title="Qualidade baixa (definida pelo vendedor)">🟡</span>}

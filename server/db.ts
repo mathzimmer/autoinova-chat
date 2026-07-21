@@ -1003,7 +1003,36 @@ export async function getOrCreateLeadByPhone(params: {
   const existing = await getCanonicalLead(params.phone);
   if (existing) {
     await db.update(conversations).set({ leadId: existing.id }).where(eq(conversations.id, params.conversationId)).catch(() => {});
-    const finalized = existing.funnelStatus === "fechado" || existing.funnelStatus === "perdido";
+    const vendido = existing.funnelStatus === "fechado";
+    const perdido = existing.funnelStatus === "perdido";
+    const finalized = vendido || perdido;
+
+    // CARÊNCIA PÓS-FECHAMENTO: depois de uma VENDA, mensagens nas semanas
+    // seguintes são pós-venda (documentação, dúvidas, garantia) — NÃO é negócio
+    // novo. Só reabre um ciclo depois do prazo. Para "perdido" a carência é
+    // curta (se voltou, pode ser oportunidade real: conseguiu crédito, etc.).
+    let dentroDaCarencia = false;
+    if (finalized) {
+      const diasCarencia = vendido
+        ? (Number(await getSetting("reactivation_grace_days_sold")) || 90)
+        : (Number(await getSetting("reactivation_grace_days_lost")) || 0);
+      if (diasCarencia > 0) {
+        const fechadoEm = new Date((existing as any).updatedAt || existing.createdAt).getTime();
+        const diasDesde = (Date.now() - fechadoEm) / 86400000;
+        dentroDaCarencia = diasDesde < diasCarencia;
+      }
+    }
+
+    if (dentroDaCarencia) {
+      // Mantém FECHADO/PERDIDO — só registra o contato pós-venda na linha do tempo
+      await logTimeline({
+        conversationId: params.conversationId, leadId: existing.id,
+        action: "contato_pos_venda",
+        details: { situacao: existing.funnelStatus, obs: "mensagem dentro da carência — não abriu novo ciclo" },
+      }).catch(() => {});
+      return { lead: existing, created: false, reactivated: false };
+    }
+
     if (finalized) {
       await closeOpenOpportunity(existing.id, existing.funnelStatus === "fechado" ? "won" : "lost");
       await openOpportunity(existing.id, { funnelStatus: "novo", vehicleInterest: existing.vehicleInterest || undefined, isReactivation: true });

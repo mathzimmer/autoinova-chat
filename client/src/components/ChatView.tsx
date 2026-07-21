@@ -786,6 +786,13 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 <Phone className="h-3 w-3" />{conversation.phone}
               </span>
             )}
+            {/* Já é cliente — o vendedor vê de cara que essa pessoa já comprou */}
+            {(lead as any)?.isCustomer && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-700 border border-emerald-500/30"
+                title={`Já comprou ${(lead as any).purchases} vez(es) — cliente da casa`}>
+                ⭐ JÁ É CLIENTE{(lead as any).purchases > 1 ? ` (${(lead as any).purchases}x)` : ""}
+              </span>
+            )}
             {conversation?.aiActive ? (
               <span className="text-xs text-[#00a884] flex items-center gap-1">
                 <Bot className="h-3 w-3" /> IA Ativa
