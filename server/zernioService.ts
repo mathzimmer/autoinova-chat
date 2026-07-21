@@ -383,7 +383,8 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
   );
 
   // Nome de quem enviou (para outbound = o negócio; inbound = o cliente)
-  const senderName = firstDefined<string>(msg?.sender?.name, msg?.sender?.username);
+  // No GET /messages o remetente vem em senderName; no webhook em sender.name
+  const senderName = firstDefined<string>(msg?.sender?.name, msg?.sender?.username, msg?.senderName);
 
   // mídia: attachments[0].url + type
   const attachments: any[] = msg?.attachments || msg?.media || [];
@@ -393,7 +394,10 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
   const rawType = firstDefined<string>(att?.type, att?.payload?.mimeType, msg?.type, msg?.messageType);
   const messageType: ZernioParsedMessage["messageType"] = mediaUrl ? mapMediaType(rawType) : "text";
 
-  const text = firstDefined<string>(msg?.text, msg?.body, msg?.content, msg?.caption) || "";
+  // O texto pode vir em vários campos. No GET /messages ele vem em "message"
+  // (string direta); no webhook em text/body/content/caption.
+  const msgAsText = typeof msg?.message === "string" ? msg.message : undefined;
+  const text = firstDefined<string>(msg?.text, msg?.body, msg?.content, msg?.caption, msgAsText) || "";
   const content = text || (mediaUrl
     ? (messageType === "audio" ? "[Áudio]" : messageType === "image" ? "[Imagem]" : messageType === "video" ? "[Vídeo]" : "[Documento]")
     : "");
