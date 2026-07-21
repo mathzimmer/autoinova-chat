@@ -28,6 +28,8 @@ export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerCo
   let instances: any[] = [];
   try { instances = await listZernioInstances(); } catch { return { inserted: 0 }; }
   if (!instances.length) return { inserted: 0 };
+  console.log(`[ZernioSync] iniciando (${instances.length} instância(s))`);
+  let debugged = false;
 
   for (const inst of instances) {
     const accountId = (inst as any).accountId as string;
@@ -55,9 +57,14 @@ export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerCo
 
       for (const m of msgs) {
         try {
+          // DIAGNÓSTICO: mostra o formato cru da 1ª mensagem (para ajustar o parser)
+          if (!debugged) { debugged = true; console.log(`[ZernioSync] amostra de mensagem crua:`, JSON.stringify(m).slice(0, 900)); }
+
           // Reaproveita o MESMO parser do webhook, montando um "payload" equivalente.
           const parsed = parseZernioMessage({ message: m, conversation: conv, account: { id: accountId } });
           if (!parsed.phone && !parsed.conversationId) continue;
+          // Não grava mensagem de texto vazia (evita poluir o inbox com "[text]")
+          if (parsed.messageType === "text" && !(parsed.content || "").trim()) continue;
 
           // Mídia: re-hospeda no S3 (mesma lógica do webhook); se falhar, guarda a
           // URL crua — o proxy do inbox resolve na renderização.
