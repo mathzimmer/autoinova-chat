@@ -6488,6 +6488,12 @@ const zernioRouter = router({
     }));
   }),
 
+  /** Dispara manualmente o sincronizador (recupera mensagens perdidas). */
+  sync: adminProcedure.mutation(async () => {
+    const { runZernioSync } = await import("./zernioSync");
+    return runZernioSync();
+  }),
+
   /** Define o vendedor dono da instância Zernio (vê só ela no inbox). */
   assignUser: adminProcedure
     .input(z.object({ id: z.number(), userId: z.number().nullable() }))

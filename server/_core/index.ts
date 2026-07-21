@@ -155,6 +155,15 @@ async function startServer() {
   setInterval(() => {
     import("../staleLeads").then(m => m.runStaleLeadCheck().catch(e => console.error("[StaleLeads] erro:", e)));
   }, 60 * 60 * 1000);
+
+  // Sincronizador Zernio: recupera mensagens que chegaram enquanto o CRM estava
+  // fora do ar (ex.: durante o deploy). Roda ~30s após o boot e a cada 15 min.
+  setTimeout(() => {
+    import("../zernioSync").then(m => m.runZernioSyncLocked()).catch(e => console.error("[ZernioSync] boot:", e));
+  }, 30 * 1000);
+  setInterval(() => {
+    import("../zernioSync").then(m => m.runZernioSyncLocked()).catch(e => console.error("[ZernioSync] erro:", e));
+  }, 15 * 60 * 1000);
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

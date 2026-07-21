@@ -88,6 +88,22 @@ export async function resolveApiKey(accountId?: string): Promise<string | undefi
   return process.env.ZERNIO_API_KEY;
 }
 
+/** Lista conversas recentes de uma conta (para o sincronizador de recuperação). */
+export async function zernioListConversations(accountId: string, limit = 40): Promise<any[]> {
+  const apiKey = await resolveApiKey(accountId);
+  const path = `/inbox/conversations?accountId=${encodeURIComponent(accountId)}&limit=${limit}`;
+  const data = await zernioFetch(path, undefined, apiKey);
+  return (data?.data || data?.conversations || (Array.isArray(data) ? data : [])) as any[];
+}
+
+/** Busca as mensagens recentes de uma conversa. */
+export async function zernioFetchMessages(conversationId: string, accountId: string, limit = 20): Promise<any[]> {
+  const apiKey = await resolveApiKey(accountId);
+  const path = `/inbox/conversations/${encodeURIComponent(conversationId)}/messages?accountId=${encodeURIComponent(accountId)}&limit=${limit}`;
+  const data = await zernioFetch(path, undefined, apiKey);
+  return (data?.data || data?.messages || (Array.isArray(data) ? data : [])) as any[];
+}
+
 /** Lista as contas conectadas no Zernio (para descobrir/validar o accountId). */
 export async function zernioListAccounts(apiKey?: string): Promise<any[]> {
   const data = await zernioFetch("/accounts", undefined, apiKey);
