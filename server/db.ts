@@ -479,6 +479,7 @@ export async function mirrorZernioMessage(params: {
   mediaUrl?: string;
   externalId?: string;
   timestamp: number; // epoch ms
+  dedupeContent?: boolean; // sincronizador: deduplica por conteúdo (ids diferem entre webhook e GET)
 }): Promise<{ conversationId: number; message: any; isDuplicate?: boolean } | null> {
   const db = await getDb();
   if (!db) return null;
@@ -611,11 +612,27 @@ export async function mirrorZernioMessage(params: {
 
   const typeMap: Record<string, string> = { sticker: "image", reaction: "text" };
   const mappedType = typeMap[params.messageType] || params.messageType;
+  const finalContent = params.content || `[${params.messageType}]`;
+  const finalSenderType = isInbound ? "customer" : "agent";
+
+  // Sincronizador: o id da mensagem no GET difere do id do webhook, então o dedupe
+  // por externalId não pega. Se já existe nesta conversa uma mensagem com o MESMO
+  // remetente e MESMO conteúdo, tratamos como a mesma → não recria. (Trade-off:
+  // uma mensagem idêntica repetida de verdade não é recuperada, o que é aceitável.)
+  if (params.dedupeContent && conv) {
+    const jaExiste = (await db.select({ id: messages.id }).from(messages)
+      .where(and(
+        eq(messages.conversationId, conv.id),
+        eq(messages.senderType, finalSenderType as any),
+        eq(messages.content, finalContent),
+      )).limit(1))[0];
+    if (jaExiste) return { conversationId: conv.id, message: jaExiste, isDuplicate: true };
+  }
 
   const message = await createMessage({
     conversationId: conv.id,
-    content: params.content || `[${params.messageType}]`,
-    senderType: isInbound ? "customer" : "agent",
+    content: finalContent,
+    senderType: finalSenderType,
     senderName: params.senderName,
     messageType: mappedType as any,
     metadata: (params.mediaUrl || params.transcript)

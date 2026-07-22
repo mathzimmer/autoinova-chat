@@ -89,6 +89,7 @@ export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerCo
             mediaUrl,
             externalId: parsed.externalId,
             timestamp: parsed.timestamp,
+            dedupeContent: true,   // evita duplicar o que o webhook já gravou
           });
           // mirror retorna null quando é duplicada (externalId já existe)
           if (result && !result.isDuplicate) inserted++;
