@@ -1171,6 +1171,13 @@ function MetaCapiCard() {
                     <div key={ev.id} className="flex items-center gap-2 text-xs bg-secondary/40 rounded-md px-2.5 py-1.5">
                       <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${ev.status === "sent" ? "bg-green-500" : ev.status === "failed" ? "bg-red-500" : "bg-yellow-500"}`} />
                       <span className="font-medium">{eventLabels[ev.eventName] || ev.eventName}</span>
+                      {ev.actionSource === "zernio" ? (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0" title="Atribuído ao anúncio via Zernio (Click-to-WhatsApp)">📢 Zernio</span>
+                      ) : ev.actionSource === "business_messaging" ? (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0" title="Anúncio Click-to-WhatsApp">CTWA</span>
+                      ) : ev.actionSource ? (
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-secondary text-muted-foreground shrink-0" title="Pixel principal (site/CRM)">pixel</span>
+                      ) : null}
                       <span className="text-muted-foreground">lead #{ev.leadId}</span>
                       {ev.value && <span className="text-green-500 font-medium">R$ {Number(ev.value).toLocaleString("pt-BR")}</span>}
                       <span className="text-muted-foreground ml-auto shrink-0">{new Date(ev.createdAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>

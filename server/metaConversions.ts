@@ -523,15 +523,30 @@ export async function trackLeadProgress(
       // A atribuição fica ancorada na conversa ORIGINAL da bianca, então mesmo
       // que o vendedor feche em outro número Zernio, a venda credita o anúncio dela.
       if (isZernio && zName) {
+        // dedupe: cada (leadId, eventName) enviado no máx. 1 vez
+        if (await alreadySent(lead.id, def.eventName)) continue;
         try {
           let value: number | undefined;
           if (def.eventName === "Purchase") value = (await resolveConversionValue(lead)) ?? undefined;
           const { zernioSendConversion } = await import("./zernioService");
-          await zernioSendConversion({
+          const r = await zernioSendConversion({
             accountId: zConv!.accountId!, conversationId: zConv!.zConvId!,
             eventName: zName, eventId: `lead_${lead.id}_${def.eventName}`,
             value, currency: value != null ? "BRL" : undefined,
           });
+          if (r.success) {
+            // registra no MESMO log do painel, marcado como "zernio"
+            await logEvent({
+              leadId: lead.id, conversationId: lead.conversationId, eventName: def.eventName,
+              funnelStatus: funnel, actionSource: "zernio", value: value ?? null,
+              currency: value != null ? "BRL" : null, status: "sent",
+              payload: { via: "zernio", zEvent: zName, accountId: zConv!.accountId, conversationId: zConv!.zConvId },
+            });
+            console.log(`[CAPI/Zernio] ${def.eventName} → ${zName} enviado (lead ${lead.id}, conv Zernio ${zConv!.zConvId})`);
+          } else {
+            console.error("[Zernio][Conv] falhou — fallback p/ CAPI direto:", r.error);
+            await sendCapiEvent(lead, def, funnel); // não perde o evento se o Zernio falhar
+          }
         } catch (e) {
           console.error("[Zernio][Conv] erro — fallback p/ CAPI direto:", e);
           await sendCapiEvent(lead, def, funnel); // não perde o evento se o Zernio falhar
