@@ -526,8 +526,14 @@ export async function trackLeadProgress(
         // dedupe: cada (leadId, eventName) enviado no máx. 1 vez
         if (await alreadySent(lead.id, def.eventName)) continue;
         try {
+          // Otimização por valor: manda o valor do veículo também nos eventos
+          // fundos (negociação/qualificado), não só na venda. Assim a Meta busca
+          // quem fecha carro CARO, não qualquer lead. O endpoint do Zernio só
+          // aceita value+currency (não há custom_data/content).
           let value: number | undefined;
-          if (def.eventName === "Purchase") value = (await resolveConversionValue(lead)) ?? undefined;
+          if (["Purchase", "InitiateCheckout", "SubmitApplication"].includes(def.eventName)) {
+            value = (await resolveConversionValue(lead)) ?? undefined;
+          }
           const { zernioSendConversion } = await import("./zernioService");
           const r = await zernioSendConversion({
             accountId: zConv!.accountId!, conversationId: zConv!.zConvId!,
