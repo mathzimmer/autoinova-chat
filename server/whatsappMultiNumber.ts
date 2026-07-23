@@ -62,27 +62,80 @@ export async function createWhatsappNumber(data: {
   displayName: string;
   phoneDisplay?: string;
   accessToken?: string;
+  wabaId?: string;
   sellerId?: number;
   assignedUserId?: number;
   notes?: string;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not configured");
+  // Upsert por phoneNumberId (reconectar o mesmo número não duplica)
+  const existing = await getWhatsappNumberByPhoneNumberId(data.phoneNumberId);
+  if (existing) {
+    await db.update(whatsappNumbers).set({
+      displayName: data.displayName,
+      phoneDisplay: data.phoneDisplay ?? existing.phoneDisplay,
+      accessToken: data.accessToken ?? existing.accessToken,
+      wabaId: data.wabaId ?? (existing as any).wabaId,
+      isActive: true, updatedAt: new Date(),
+    } as any).where(eq(whatsappNumbers.id, existing.id));
+    return getWhatsappNumberById(existing.id);
+  }
   await db.insert(whatsappNumbers).values({
     phoneNumberId: data.phoneNumberId,
     displayName: data.displayName,
     phoneDisplay: data.phoneDisplay,
     accessToken: data.accessToken || null,
+    wabaId: data.wabaId || null,
     sellerId: data.sellerId || null,
     assignedUserId: data.assignedUserId || null,
     notes: data.notes || null,
     isActive: true,
-  });
+  } as any);
   const rows = await db
     .select()
     .from(whatsappNumbers)
     .where(eq(whatsappNumbers.phoneNumberId, data.phoneNumberId));
   return rows[0];
+}
+
+/**
+ * Assina o app do provedor à WABA para que os webhooks (mensagens) cheguem.
+ * Usa o token do provedor (System User). Idempotente do lado da Meta.
+ */
+export async function subscribeWabaToApp(wabaId: string, token?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const t = token || getGlobalToken();
+    await axios.post(`${WHATSAPP_API_URL}/${wabaId}/subscribed_apps`, {}, {
+      headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" },
+    });
+    console.log(`[WA-Multi] WABA ${wabaId} assinada ao app do provedor`);
+    return { success: true };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WA-Multi] Falha ao assinar WABA ${wabaId}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
+ * Conexão completa via Embedded Signup: assina a WABA no app + salva o número.
+ * O token de envio é o do provedor (System User) por padrão — não precisa token
+ * por número. Retorna o registro salvo.
+ */
+export async function connectNumberFromSignup(data: {
+  wabaId: string; phoneNumberId: string; displayName?: string; phoneDisplay?: string;
+}) {
+  // 1) Garante que as mensagens vão chegar (assina a WABA no app)
+  const sub = await subscribeWabaToApp(data.wabaId);
+  // 2) Salva/atualiza o número (token do provedor por padrão)
+  const record = await createWhatsappNumber({
+    phoneNumberId: data.phoneNumberId,
+    wabaId: data.wabaId,
+    displayName: data.displayName || data.phoneDisplay || `WhatsApp ${data.phoneNumberId.slice(-4)}`,
+    phoneDisplay: data.phoneDisplay,
+  });
+  return { record, subscribed: sub.success, subscribeError: sub.error };
 }
 
 export async function updateWhatsappNumber(

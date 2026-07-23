@@ -6575,10 +6575,27 @@ const whatsappNumberRouter = router({
       displayName: z.string().min(1),
       phoneDisplay: z.string().optional(),
       accessToken: z.string().optional(),
+      wabaId: z.string().optional(),
     }))
     .mutation(async ({ input }) => {
       const { createWhatsappNumber } = await import("./whatsappMultiNumber");
       return createWhatsappNumber(input);
+    }),
+
+  // Conexão de 1 clique a partir do Embedded Signup: assina a WABA no app do
+  // provedor + salva o número (usa o token do provedor). Só admin.
+  connectFromSignup: protectedProcedure
+    .input(z.object({
+      wabaId: z.string().min(4),
+      phoneNumberId: z.string().min(4),
+      displayName: z.string().optional(),
+      phoneDisplay: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const member = await currentTeamMember(ctx);
+      if (member && member.cargo === "vendedor") throw new Error("Apenas administradores");
+      const { connectNumberFromSignup } = await import("./whatsappMultiNumber");
+      return connectNumberFromSignup(input);
     }),
 
   deleteInstance: protectedProcedure

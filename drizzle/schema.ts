@@ -861,6 +861,7 @@ export type InsertEvolutionMessage = typeof evolutionMessages.$inferInsert;
 export const whatsappNumbers = pgTable("whatsappNumbers", {
   id:             serial("id").primaryKey(),
   phoneNumberId:  varchar("phoneNumberId", { length: 64 }).notNull().unique(),
+  wabaId:         varchar("wabaId", { length: 64 }),
   displayName:    varchar("displayName", { length: 255 }).notNull(),
   phoneDisplay:   varchar("phoneDisplay", { length: 32 }),
   accessToken:    text("accessToken"),

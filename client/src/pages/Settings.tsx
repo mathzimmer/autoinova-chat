@@ -603,6 +603,22 @@ function WhatsAppConnectCard() {
     token?: string;
   } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  const [connectState, setConnectState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const utils = trpc.useUtils();
+
+  // Auto-conexão: assina a WABA no app + salva o número (token do provedor).
+  const connectMutation = trpc.whatsappNumber.connectFromSignup.useMutation({
+    onSuccess: (res: any) => {
+      setConnectState("saved");
+      if (res?.subscribed === false) {
+        toast.warning("Número salvo, mas a assinatura do webhook falhou: " + (res?.subscribeError || "verifique o token do provedor"));
+      } else {
+        toast.success("Número conectado e ativo no inbox!");
+      }
+      utils.whatsappNumber.listInstances.invalidate();
+    },
+    onError: (err: any) => { setConnectState("error"); toast.error("Falha ao salvar número: " + err.message); },
+  });
 
   // Load Facebook SDK — robusto: init por fbAsyncInit E por onload (redundância),
   // detecta bloqueio (onerror / timeout) e mostra o motivo em vez de girar infinito.
@@ -651,11 +667,14 @@ function WhatsAppConnectCard() {
             data.event === "FINISH" ||
             data.event === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"
           ) {
-            setResult(prev => ({
-              ...prev,
-              wabaId: data.data?.waba_id,
-              phoneNumberId: data.data?.phone_number_id,
-            }));
+            const wabaId = data.data?.waba_id;
+            const phoneNumberId = data.data?.phone_number_id;
+            setResult(prev => ({ ...prev, wabaId, phoneNumberId }));
+            // 1 clique: assina a WABA no app + salva o número (token do provedor).
+            if (wabaId && phoneNumberId) {
+              setConnectState("saving");
+              connectMutation.mutate({ wabaId, phoneNumberId });
+            }
           }
           if (data.event === "CANCEL" || data.event === "ERROR") {
             setLoading(false);
@@ -814,23 +833,34 @@ function WhatsAppConnectCard() {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm text-green-500 font-medium">
-              <CheckCircle2 className="h-4 w-4" />
-              Integração concluída! Copie as credenciais abaixo.
-            </div>
+            {connectState === "saving" && (
+              <div className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+                <Loader2 className="h-4 w-4 animate-spin" /> Conectando o número ao inbox...
+              </div>
+            )}
+            {connectState === "saved" && (
+              <div className="flex items-center gap-2 text-sm text-green-600 font-medium">
+                <CheckCircle2 className="h-4 w-4" /> Número conectado e ativo no inbox! Já aparece como uma aba.
+              </div>
+            )}
+            {connectState === "error" && (
+              <div className="flex items-center gap-2 text-sm text-red-500 font-medium">
+                <CheckCircle2 className="h-4 w-4" /> Não consegui salvar automaticamente — use as credenciais abaixo.
+              </div>
+            )}
             <div className="space-y-2">
-              {credentialRow("WABA ID (WHATSAPP_WABA_ID)", result?.wabaId, "waba")}
-              {credentialRow("Phone Number ID (WHATSAPP_PHONE_NUMBER_ID)", result?.phoneNumberId, "phone")}
-              {credentialRow("Access Token (WHATSAPP_SYSTEM_USER_TOKEN)", result?.token, "token")}
+              {credentialRow("WABA ID", result?.wabaId, "waba")}
+              {credentialRow("Phone Number ID", result?.phoneNumberId, "phone")}
             </div>
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-xs text-yellow-600 dark:text-yellow-400">
-              <strong>Próximo passo:</strong> Adicione essas credenciais no arquivo <code>.env</code> do VPS e reinicie o container:<br />
-              <code className="mt-1 block">docker restart autoinova</code>
-            </div>
+            {connectState !== "saved" && (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-xs text-yellow-600 dark:text-yellow-400">
+                Se não salvar sozinho, verifique se o token do provedor (<code>WHATSAPP_SYSTEM_USER_TOKEN</code>) está no <code>.env</code> do VPS. Ele é o que autoriza o envio e a assinatura do webhook.
+              </div>
+            )}
             <Button
               variant="outline"
               size="sm"
-              onClick={() => { setResult(null); setLoading(false); }}
+              onClick={() => { setResult(null); setLoading(false); setConnectState("idle"); }}
               className="text-xs"
             >
               Conectar outro número
