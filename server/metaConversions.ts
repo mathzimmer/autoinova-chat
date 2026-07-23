@@ -512,8 +512,13 @@ export async function trackLeadProgress(
       Lead: "LeadSubmitted", SubmitApplication: "AddToCart", InitiateCheckout: "InitiateCheckout", Purchase: "Purchase",
     };
 
-    // A conversa é do Zernio (tem a origem do anúncio CTWA)?
-    const isZernio = !!(zConv?.zConvId && zConv.accountId);
+    // A conversa é do Zernio E veio de anúncio? O Zernio resolve o ctwa_clid pelo
+    // conversationId no lado DELE (não depende da nossa cópia). Então basta sabermos
+    // que veio de anúncio: ctwaId OU utmSource=meta_ctwa (nossa marca de origem).
+    // Assim não bloqueamos leads onde a nossa captura do ctwaId falhou mas o Zernio
+    // tem o click id. Lead orgânico (sem nenhuma marca) vai direto pro pixel.
+    const hasAdOrigin = !!((lead as any).ctwaId || (lead as any).utmSource === "meta_ctwa");
+    const isZernio = !!(zConv?.zConvId && zConv.accountId && hasAdOrigin);
 
     for (const { def, funnel } of Array.from(events.values())) {
       const zName = zEventMap[def.eventName];

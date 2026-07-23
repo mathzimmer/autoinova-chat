@@ -484,9 +484,20 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
   // Nome legível do anúncio: a 1ª linha do corpo (geralmente o veículo) é bem mais
   // útil que o headline ("Converse conosco"). Ex.: "🚗 Chevrolet Cruze LTZ 2014".
   const adBody = firstDefined<string>(referral?.body, referral?.text);
-  const firstBodyLine = adBody
+  let firstBodyLine = adBody
     ? String(adBody).split("\n").map((l) => l.trim()).find((l) => l.length > 0)
     : undefined;
+  // Alguns anúncios não têm quebra de linha (o corpo inteiro numa linha só). Corta
+  // no fim da 1ª frase (. ! ?) e limita a ~60 chars num limite de palavra.
+  if (firstBodyLine) {
+    const sentenceEnd = firstBodyLine.search(/[.!?]\s/);
+    if (sentenceEnd > 0 && sentenceEnd < 70) firstBodyLine = firstBodyLine.slice(0, sentenceEnd + 1);
+    if (firstBodyLine.length > 60) {
+      const cut = firstBodyLine.slice(0, 60);
+      const lastSpace = cut.lastIndexOf(" ");
+      firstBodyLine = (lastSpace > 30 ? cut.slice(0, lastSpace) : cut) + "…";
+    }
+  }
   const adHeadline = firstDefined<string>(
     firstBodyLine, referral?.headline, adId,
   );
