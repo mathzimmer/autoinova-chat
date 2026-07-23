@@ -676,31 +676,35 @@ function WhatsAppConnectCard() {
     setLoading(true);
     setResult(null);
 
-    // FB.login must be called synchronously in a user click handler
+    // IMPORTANTE: o FB.login exige um callback SÍNCRONO (função comum). Passar uma
+    // função `async` faz o SDK lançar "Expression is of type asyncfunction, not
+    // function". Por isso o callback é normal e a parte assíncrona roda dentro.
     window.FB.login(
-      async (response: any) => {
-        if (response?.authResponse?.code) {
-          const code = response.authResponse.code;
-          try {
-            const r = await fetch("/api/whatsapp/exchange-token", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code }),
-            });
-            const data = await r.json();
-            if (data.token) {
-              setResult(prev => ({ ...prev, token: data.token }));
-              toast.success("WhatsApp conectado com sucesso!");
-            } else {
-              toast.error("Erro ao trocar token: " + (data.error || "desconhecido"));
+      (response: any) => {
+        void (async () => {
+          if (response?.authResponse?.code) {
+            const code = response.authResponse.code;
+            try {
+              const r = await fetch("/api/whatsapp/exchange-token", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ code }),
+              });
+              const data = await r.json();
+              if (data.token) {
+                setResult(prev => ({ ...prev, token: data.token }));
+                toast.success("WhatsApp conectado com sucesso!");
+              } else {
+                toast.error("Erro ao trocar token: " + (data.error || "desconhecido"));
+              }
+            } catch {
+              toast.error("Erro de conexão ao trocar token.");
             }
-          } catch {
-            toast.error("Erro de conexão ao trocar token.");
+          } else {
+            toast.error("Fluxo cancelado ou sem autorização.");
           }
-        } else {
-          toast.error("Fluxo cancelado ou sem autorização.");
-        }
-        setLoading(false);
+          setLoading(false);
+        })();
       },
       {
         config_id: META_CONFIG_ID,
