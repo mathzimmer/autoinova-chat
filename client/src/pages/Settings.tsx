@@ -595,6 +595,7 @@ const META_CONFIG_ID = "1294053642801963";
 
 function WhatsAppConnectCard() {
   const [sdkReady, setSdkReady] = useState(false);
+  const [sdkError, setSdkError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{
     wabaId?: string;
@@ -603,20 +604,39 @@ function WhatsAppConnectCard() {
   } | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
 
-  // Load Facebook SDK
+  // Load Facebook SDK — robusto: init por fbAsyncInit E por onload (redundância),
+  // detecta bloqueio (onerror / timeout) e mostra o motivo em vez de girar infinito.
   useEffect(() => {
-    if (window.FB) { setSdkReady(true); return; }
-    window.fbAsyncInit = function () {
-      window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: true, version: "v25.0" });
+    let done = false;
+    const markReady = () => {
+      if (done) return;
+      if (!window.FB) return;
+      done = true;
+      try { window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: true, version: "v25.0" }); } catch { /* já iniciado */ }
       setSdkReady(true);
+      setSdkError(null);
     };
-    if (!document.getElementById("fb-sdk")) {
-      const script = document.createElement("script");
+
+    if (window.FB) { markReady(); return; }
+    window.fbAsyncInit = markReady;
+
+    let script = document.getElementById("fb-sdk") as HTMLScriptElement | null;
+    if (!script) {
+      script = document.createElement("script");
       script.id = "fb-sdk";
       script.src = "https://connect.facebook.net/pt_BR/sdk.js";
       script.async = true;
+      script.crossOrigin = "anonymous";
+      script.onload = markReady; // caso o fbAsyncInit não dispare
+      script.onerror = () => setSdkError("blocked");
       document.body.appendChild(script);
+    } else {
+      script.addEventListener("load", markReady);
     }
+
+    // Se em 8s o SDK não subiu, quase sempre é bloqueador de anúncio/rastreamento.
+    const timer = setTimeout(() => { if (!done) setSdkError("timeout"); }, 8000);
+    return () => clearTimeout(timer);
   }, []);
 
   // Listen for session info from Meta popup
@@ -758,20 +778,35 @@ function WhatsAppConnectCard() {
             </p>
             <Button
               onClick={launchSignup}
-              disabled={loading}
+              disabled={loading || !sdkReady}
               className="bg-[#25D366] hover:bg-[#25D366]/90 text-white gap-2"
             >
               {loading ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Aguardando fluxo Meta...</>
+              ) : sdkError ? (
+                <><Smartphone className="h-4 w-4" /> SDK bloqueado</>
               ) : !sdkReady ? (
                 <><Loader2 className="h-4 w-4 animate-spin" /> Carregando SDK...</>
               ) : (
                 <><Smartphone className="h-4 w-4" /> Conectar WhatsApp</>
               )}
             </Button>
-            <p className="text-[11px] text-muted-foreground/60">
-              Uma janela popup da Meta será aberta. Certifique-se de que popups estão permitidos neste site.
-            </p>
+            {sdkError ? (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-xs text-red-600 dark:text-red-400 space-y-1.5">
+                <p className="font-semibold">O SDK do Facebook não carregou.</p>
+                <p>Quase sempre é um <strong>bloqueador de anúncios</strong> ou a <strong>proteção de rastreamento</strong> do navegador barrando o <code>connect.facebook.net</code>. Para resolver:</p>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  <li>Desative o bloqueador (uBlock, AdBlock) neste site e recarregue.</li>
+                  <li>No Brave, baixe os "Escudos" (ícone do leão) para este site.</li>
+                  <li>Ou tente em uma aba anônima / outro navegador (Chrome).</li>
+                </ul>
+                <button onClick={() => window.location.reload()} className="underline font-medium">Recarregar a página</button>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground/60">
+                Uma janela popup da Meta será aberta. Certifique-se de que popups estão permitidos neste site.
+              </p>
+            )}
           </div>
         ) : (
           <div className="space-y-3">
