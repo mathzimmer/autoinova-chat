@@ -17,12 +17,15 @@ import { listZernioInstances, mirrorZernioMessage } from "./db";
 import { zernioListConversations, zernioFetchMessages, parseZernioMessage, hostZernioMedia } from "./zernioService";
 import { withJobLock } from "./jobLock";
 
-export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerConv?: number }): Promise<{ inserted: number }> {
+export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerConv?: number; paceMs?: number }): Promise<{ inserted: number }> {
   const db = await getDb();
   if (!db) return { inserted: 0 };
 
-  const convsPerAccount = opts?.convsPerAccount ?? 40;
+  const convsPerAccount = opts?.convsPerAccount ?? 25;
   const msgsPerConv = opts?.msgsPerConv ?? 15;
+  // Rate limit do Zernio: 60 req/min. Paceia ~1.1s entre conversas p/ ficar abaixo.
+  const paceMs = opts?.paceMs ?? 1100;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
   let inserted = 0;
 
   let instances: any[] = [];
@@ -47,6 +50,7 @@ export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerCo
       const zConvId = String(conv?.id || conv?._id || conv?.conversationId || "");
       if (!zConvId) continue;
 
+      await sleep(paceMs); // respeita o rate limit do Zernio (60 req/min)
       let msgs: any[] = [];
       try {
         msgs = await zernioFetchMessages(zConvId, accountId, msgsPerConv);
@@ -105,7 +109,7 @@ export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerCo
 }
 
 /** Versão com lock (evita duas execuções simultâneas). */
-export async function runZernioSyncLocked(opts?: { convsPerAccount?: number; msgsPerConv?: number }): Promise<void> {
+export async function runZernioSyncLocked(opts?: { convsPerAccount?: number; msgsPerConv?: number; paceMs?: number }): Promise<void> {
   await withJobLock("zernio_sync", async () => { await runZernioSync(opts); }).catch((e) =>
     console.error("[ZernioSync] erro:", e),
   );

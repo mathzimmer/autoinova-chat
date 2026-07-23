@@ -56,24 +56,40 @@ export async function verifyZernioSignature(rawBody: Buffer | string, signatureH
 }
 
 // ─── Chamada genérica à API do Zernio ─────────────────────────────────────────
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function zernioFetch(path: string, init?: RequestInit, apiKey?: string): Promise<any> {
   const key = apiKey || process.env.ZERNIO_API_KEY;
   if (!key) throw new Error("ZERNIO_API_KEY não configurado (nem chave por instância)");
-  const res = await fetch(`${ZERNIO_API_BASE}${path}`, {
-    ...init,
-    headers: {
-      "Authorization": `Bearer ${key}`,
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
-  const text = await res.text();
-  let json: any = undefined;
-  try { json = text ? JSON.parse(text) : undefined; } catch { json = text; }
-  if (!res.ok) {
-    throw new Error(`Zernio API ${res.status}: ${typeof json === "string" ? json : JSON.stringify(json)}`);
+
+  // Rate limit do Zernio é 60 req/min. Em caso de 429, respeita o retryAfterSeconds
+  // e tenta de novo (até 2 vezes). Assim o sincronizador não falha em rajada.
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(`${ZERNIO_API_BASE}${path}`, {
+      ...init,
+      headers: {
+        "Authorization": `Bearer ${key}`,
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+    });
+    const text = await res.text();
+    let json: any = undefined;
+    try { json = text ? JSON.parse(text) : undefined; } catch { json = text; }
+
+    if (res.status === 429 && attempt < 2) {
+      const retryHeader = Number(res.headers.get("retry-after"));
+      const retrySecs = (json && json.details && Number(json.details.retryAfterSeconds)) || retryHeader || 5;
+      const waitMs = Math.min(retrySecs * 1000 + 500, 60_000);
+      console.warn(`[Zernio] 429 rate limit — aguardando ${Math.round(waitMs / 1000)}s e tentando de novo (${path})`);
+      await sleep(waitMs);
+      continue;
+    }
+    if (!res.ok) {
+      throw new Error(`Zernio API ${res.status}: ${typeof json === "string" ? json : JSON.stringify(json)}`);
+    }
+    return json;
   }
-  return json;
 }
 
 /** Resolve a chave de API de uma conta: chave da instância cadastrada ou a global. */
