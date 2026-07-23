@@ -370,8 +370,10 @@ export interface ZernioParsedMessage {
   timestamp: number;        // epoch ms
   // CTWA (Click-to-WhatsApp): atribuição de anúncio, quando a conversa começou por anúncio
   ctwaId?: string;          // ctwa_clid
-  adHeadline?: string;      // título/id do anúncio
-  adSourceUrl?: string;     // url de origem
+  adHeadline?: string;      // nome legível do anúncio (1ª linha do corpo)
+  adSourceUrl?: string;     // url de origem (fb.me/...)
+  adId?: string;            // source_id — ID do anúncio no Meta (p/ casar com campanhas)
+  adImageUrl?: string;      // imagem do criativo
 }
 
 function firstDefined<T>(...vals: (T | undefined | null)[]): T | undefined {
@@ -451,13 +453,27 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     : "inbound";
 
   // Referral/CTWA — a mensagem inicial de um anúncio Click-to-WhatsApp traz esses
-  // campos. O shape exato do Zernio pode variar; buscamos nos lugares prováveis.
-  const referral: any = msg?.referral || conv?.referral || payload?.referral || msg?.context?.referral || {};
+  // campos. No Zernio o referral vem em payload.metadata.referral (confirmado):
+  //   { source_url, source_id (ID do anúncio), source_type:"ad", body (texto do
+  //     anúncio), headline (CTA genérico), image_url, ctwa_clid, welcome_message }
+  const referral: any =
+    payload?.metadata?.referral || msg?.metadata?.referral ||
+    msg?.referral || conv?.referral || payload?.referral || msg?.context?.referral || {};
   const ctwaId = firstDefined<string>(
     referral?.ctwa_clid, referral?.ctwaClid, msg?.ctwa_clid, conv?.ctwaClid, conv?.ctwa_clid,
   );
-  const adHeadline = firstDefined<string>(referral?.headline, referral?.source_id, referral?.sourceId, referral?.body);
+  const adId = firstDefined<string>(referral?.source_id, referral?.sourceId, referral?.ad_id);
   const adSourceUrl = firstDefined<string>(referral?.source_url, referral?.sourceUrl);
+  const adImageUrl = firstDefined<string>(referral?.image_url, referral?.imageUrl);
+  // Nome legível do anúncio: a 1ª linha do corpo (geralmente o veículo) é bem mais
+  // útil que o headline ("Converse conosco"). Ex.: "🚗 Chevrolet Cruze LTZ 2014".
+  const adBody = firstDefined<string>(referral?.body, referral?.text);
+  const firstBodyLine = adBody
+    ? String(adBody).split("\n").map((l) => l.trim()).find((l) => l.length > 0)
+    : undefined;
+  const adHeadline = firstDefined<string>(
+    firstBodyLine, referral?.headline, adId,
+  );
 
   return {
     eventId: payload?.id,
@@ -477,5 +493,7 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     ctwaId,
     adHeadline,
     adSourceUrl,
+    adId,
+    adImageUrl,
   };
 }

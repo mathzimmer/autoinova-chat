@@ -607,19 +607,20 @@ async function startServer() {
 
           // CTWA: se a conversa veio de anúncio Click-to-WhatsApp, captura a
           // atribuição (ctwa_clid) → lead marcado como "anúncio" + Meta CAPI.
-          console.log(`[Zernio][CTWA] referral? ctwa_clid=${m.ctwaId || "não"} | ad=${m.adHeadline || "-"}`);
-          if (m.ctwaId) {
+          console.log(`[Zernio][CTWA] referral? ctwa_clid=${m.ctwaId || "não"} | ad=${m.adHeadline || "-"} | adId=${m.adId || "-"}`);
+          if (m.ctwaId || m.adId) {
             try {
               const { upsertLead } = await import("../db");
               await upsertLead({
                 conversationId: result.conversationId,
                 phone: m.phone,
-                ctwaId: m.ctwaId,
+                ctwaId: m.ctwaId || undefined,
                 utmSource: "meta_ctwa",
-                utmCampaign: m.adHeadline || undefined,
+                utmMedium: m.adId || undefined,        // ID do anúncio (casar com campanha no Meta)
+                utmCampaign: m.adHeadline || undefined, // nome legível (veículo)
                 landingPage: m.adSourceUrl || undefined,
               } as any);
-              console.log(`[Zernio] CTWA capturado: ctwa_clid=${m.ctwaId} (conversa ${result.conversationId})`);
+              console.log(`[Zernio] CTWA capturado: ad="${m.adHeadline || "?"}" adId=${m.adId || "-"} (conversa ${result.conversationId})`);
             } catch (err) {
               console.error("[Zernio] Erro ao salvar atribuição CTWA:", err);
             }
