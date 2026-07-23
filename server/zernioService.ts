@@ -232,11 +232,18 @@ export async function hostZernioMedia(
 ): Promise<string | undefined> {
   try {
     const apiKey = await resolveApiKey(accountId);
-    const res = await fetch(mediaUrl, {
+    // A URL da mídia pode vir RELATIVA (ex.: "/api/v1/whatsapp/media/123?...").
+    // O fetch do Node só aceita URL absoluta — prefixa a origem do Zernio.
+    let absUrl = mediaUrl;
+    if (mediaUrl.startsWith("/")) {
+      const origin = ZERNIO_API_BASE.replace(/\/api\/v1\/?$/, "").replace(/\/$/, "");
+      absUrl = `${origin}${mediaUrl}`;
+    }
+    const res = await fetch(absUrl, {
       headers: apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
     });
     if (!res.ok) {
-      console.error(`[Zernio] download de mídia falhou ${res.status}: ${mediaUrl}`);
+      console.error(`[Zernio] download de mídia falhou ${res.status}: ${absUrl}`);
       return undefined;
     }
     const buf = Buffer.from(await res.arrayBuffer());
