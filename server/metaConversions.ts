@@ -482,15 +482,27 @@ export async function trackLeadProgress(
       }
     }
 
-    // Descobre se a conversa é do Zernio (para atribuição CTWA nativa do Zernio)
+    // Atribuição CTWA: os eventos do funil devem ser reportados na conversa
+    // ORIGINAL do Zernio (onde o anúncio caiu — a recepção/bianca), mesmo que o
+    // lead já tenha sido passado para o vendedor em outra instância. É essa
+    // conversa que o Zernio consegue atribuir ao anúncio.
     let zConv: { zConvId?: string; accountId?: string } | null = null;
     try {
       const { conversations } = await import("../drizzle/schema");
-      const conv = (await db.select().from(conversations).where(eq(conversations.id, lead.conversationId)).limit(1))[0];
-      if (conv?.channel === "zernio") {
+      // Todas as conversas Zernio DESTE lead (pessoa), da mais antiga p/ a nova
+      const zerConvs = (await db.select().from(conversations)
+        .where(and(eq(conversations.leadId, lead.id), eq(conversations.channel, "zernio" as any))))
+        .sort((a: any, b: any) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      // Fallback: a conversa registrada no lead (se não achou por leadId)
+      let primary: any = zerConvs[0];
+      if (!primary) {
+        const c = (await db.select().from(conversations).where(eq(conversations.id, lead.conversationId)).limit(1))[0];
+        if (c?.channel === "zernio") primary = c;
+      }
+      if (primary) {
         zConv = {
-          zConvId: (conv.metadata as any)?.zernioConversationId,
-          accountId: (conv.metadata as any)?.zernioAccountId || (conv as any).instanceName,
+          zConvId: (primary.metadata as any)?.zernioConversationId,
+          accountId: (primary.metadata as any)?.zernioAccountId || primary.instanceName,
         };
       }
     } catch { /* opcional */ }
@@ -500,22 +512,36 @@ export async function trackLeadProgress(
       Lead: "LeadSubmitted", SubmitApplication: "AddToCart", InitiateCheckout: "InitiateCheckout", Purchase: "Purchase",
     };
 
+    // A conversa é do Zernio (tem a origem do anúncio CTWA)?
+    const isZernio = !!(zConv?.zConvId && zConv.accountId);
+
     for (const { def, funnel } of Array.from(events.values())) {
-      // 1) CAPI direto (dataset principal) — matching por PII
-      await sendCapiEvent(lead, def, funnel);
-      // 2) Conversão pelo Zernio (dataset da instância) — ATRIBUI ao anúncio CTWA
-      if (zConv?.zConvId && zConv.accountId && zEventMap[def.eventName]) {
+      const zName = zEventMap[def.eventName];
+
+      // Conversa do Zernio: envia SÓ pelo Zernio (dataset da instância, já
+      // atribuído ao anúncio). Evita contagem dupla com o pixel principal.
+      // A atribuição fica ancorada na conversa ORIGINAL da bianca, então mesmo
+      // que o vendedor feche em outro número Zernio, a venda credita o anúncio dela.
+      if (isZernio && zName) {
         try {
           let value: number | undefined;
           if (def.eventName === "Purchase") value = (await resolveConversionValue(lead)) ?? undefined;
           const { zernioSendConversion } = await import("./zernioService");
           await zernioSendConversion({
-            accountId: zConv.accountId, conversationId: zConv.zConvId,
-            eventName: zEventMap[def.eventName], eventId: `lead_${lead.id}_${def.eventName}`,
+            accountId: zConv!.accountId!, conversationId: zConv!.zConvId!,
+            eventName: zName, eventId: `lead_${lead.id}_${def.eventName}`,
             value, currency: value != null ? "BRL" : undefined,
           });
-        } catch (e) { console.error("[Zernio][Conv] erro:", e); }
+        } catch (e) {
+          console.error("[Zernio][Conv] erro — fallback p/ CAPI direto:", e);
+          await sendCapiEvent(lead, def, funnel); // não perde o evento se o Zernio falhar
+        }
+        continue;
       }
+
+      // Demais conversas (site / Evolution / API oficial) OU evento sem mapa no
+      // Zernio: CAPI direto no dataset principal, matching por PII hasheada.
+      await sendCapiEvent(lead, def, funnel);
     }
   } catch (err) {
     console.error("[CAPI] trackLeadProgress erro (ignorado):", err);
