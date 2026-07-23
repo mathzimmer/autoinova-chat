@@ -700,30 +700,15 @@ function WhatsAppConnectCard() {
     // function". Por isso o callback é normal e a parte assíncrona roda dentro.
     window.FB.login(
       (response: any) => {
-        void (async () => {
-          if (response?.authResponse?.code) {
-            const code = response.authResponse.code;
-            try {
-              const r = await fetch("/api/whatsapp/exchange-token", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ code }),
-              });
-              const data = await r.json();
-              if (data.token) {
-                setResult(prev => ({ ...prev, token: data.token }));
-                toast.success("WhatsApp conectado com sucesso!");
-              } else {
-                toast.error("Erro ao trocar token: " + (data.error || "desconhecido"));
-              }
-            } catch {
-              toast.error("Erro de conexão ao trocar token.");
-            }
-          } else {
-            toast.error("Fluxo cancelado ou sem autorização.");
-          }
-          setLoading(false);
-        })();
+        // No modelo de PROVEDOR não usamos o token da troca de código — o envio
+        // usa o token de System User (WHATSAPP_SYSTEM_USER_TOKEN). A WABA + Phone
+        // ID chegam pelo evento WA_EMBEDDED_SIGNUP e o número é salvo por ali.
+        // Então aqui só encerramos o loading; não trocamos o code (evita o erro
+        // de redirect_uri, que era inofensivo mas assustava).
+        if (!response?.authResponse?.code) {
+          toast.error("Fluxo cancelado ou sem autorização.");
+        }
+        setLoading(false);
       },
       {
         config_id: META_CONFIG_ID,
