@@ -482,8 +482,40 @@ export async function trackLeadProgress(
       }
     }
 
+    // Descobre se a conversa é do Zernio (para atribuição CTWA nativa do Zernio)
+    let zConv: { zConvId?: string; accountId?: string } | null = null;
+    try {
+      const { conversations } = await import("../drizzle/schema");
+      const conv = (await db.select().from(conversations).where(eq(conversations.id, lead.conversationId)).limit(1))[0];
+      if (conv?.channel === "zernio") {
+        zConv = {
+          zConvId: (conv.metadata as any)?.zernioConversationId,
+          accountId: (conv.metadata as any)?.zernioAccountId || (conv as any).instanceName,
+        };
+      }
+    } catch { /* opcional */ }
+
+    // Mapa evento Meta → nome aceito pelo Zernio
+    const zEventMap: Record<string, "LeadSubmitted" | "Purchase" | "AddToCart" | "InitiateCheckout" | "ViewContent"> = {
+      Lead: "LeadSubmitted", SubmitApplication: "AddToCart", InitiateCheckout: "InitiateCheckout", Purchase: "Purchase",
+    };
+
     for (const { def, funnel } of Array.from(events.values())) {
+      // 1) CAPI direto (dataset principal) — matching por PII
       await sendCapiEvent(lead, def, funnel);
+      // 2) Conversão pelo Zernio (dataset da instância) — ATRIBUI ao anúncio CTWA
+      if (zConv?.zConvId && zConv.accountId && zEventMap[def.eventName]) {
+        try {
+          let value: number | undefined;
+          if (def.eventName === "Purchase") value = (await resolveConversionValue(lead)) ?? undefined;
+          const { zernioSendConversion } = await import("./zernioService");
+          await zernioSendConversion({
+            accountId: zConv.accountId, conversationId: zConv.zConvId,
+            eventName: zEventMap[def.eventName], eventId: `lead_${lead.id}_${def.eventName}`,
+            value, currency: value != null ? "BRL" : undefined,
+          });
+        } catch (e) { console.error("[Zernio][Conv] erro:", e); }
+      }
     }
   } catch (err) {
     console.error("[CAPI] trackLeadProgress erro (ignorado):", err);

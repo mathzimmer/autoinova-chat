@@ -88,6 +88,39 @@ export async function resolveApiKey(accountId?: string): Promise<string | undefi
   return process.env.ZERNIO_API_KEY;
 }
 
+/**
+ * Envia um evento de CONVERSÃO pelo Zernio, que o atribui ao anúncio Click-to-
+ * WhatsApp automaticamente (o Zernio já sabe de qual anúncio a conversa veio).
+ * Cada conta Zernio tem seu próprio dataset da Meta.
+ * eventName aceito pelo Zernio: LeadSubmitted | Purchase | AddToCart | InitiateCheckout | ViewContent
+ */
+export async function zernioSendConversion(opts: {
+  accountId: string;
+  conversationId: string;
+  eventName: "LeadSubmitted" | "Purchase" | "AddToCart" | "InitiateCheckout" | "ViewContent";
+  eventId?: string;
+  value?: number;
+  currency?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const apiKey = await resolveApiKey(opts.accountId);
+    const body: Record<string, unknown> = {
+      accountId: opts.accountId,
+      conversationId: opts.conversationId,
+      eventName: opts.eventName,
+    };
+    if (opts.eventId) body.eventId = opts.eventId;
+    if (opts.value != null) { body.value = opts.value; body.currency = opts.currency || "BRL"; }
+    const data = await zernioFetch("/whatsapp/conversions", { method: "POST", body: JSON.stringify(body) }, apiKey);
+    console.log(`[Zernio][Conv] ${opts.eventName} enviado (conv ${opts.conversationId}) →`, JSON.stringify(data).slice(0, 200));
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Falha na conversão Zernio";
+    console.error(`[Zernio][Conv] ${opts.eventName} FALHOU:`, msg);
+    return { success: false, error: msg };
+  }
+}
+
 /** Lista conversas recentes de uma conta (para o sincronizador de recuperação). */
 export async function zernioListConversations(accountId: string, limit = 40): Promise<any[]> {
   const apiKey = await resolveApiKey(accountId);

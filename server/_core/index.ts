@@ -538,6 +538,14 @@ async function startServer() {
       // enxugar o parser depois — ver comentários em zernioService.ts)
       console.log(`[Zernio] Evento "${event}" recebido:`, JSON.stringify(payload).substring(0, 1500));
 
+      // DETECÇÃO DE CTWA (anúncio): se o payload tiver qualquer sinal de referral/
+      // anúncio, loga o payload INTEIRO (sem truncar) para acharmos onde está o
+      // ctwa_clid e ligar a atribuição. Grep: "[Zernio][CTWA-RAW]".
+      const raw = JSON.stringify(payload);
+      if (/ctwa|referral|source_id|source_url|ad_id|"ads?"|welcome/i.test(raw)) {
+        console.log(`[Zernio][CTWA-RAW] possível anúncio →`, raw);
+      }
+
       if (event === "webhook.test") {
         console.log("[Zernio] webhook.test OK — endpoint validado.");
         return;
