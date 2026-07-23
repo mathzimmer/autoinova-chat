@@ -533,6 +533,18 @@ export async function mirrorZernioMessage(params: {
       .where(and(...phoneConds)).limit(1))[0];
   }
 
+  // Sincronizador: se a conversa já existe e já tem uma mensagem com o mesmo
+  // remetente e conteúdo, é a mesma → sai ANTES de tocar em não-lida/última msg
+  // (senão o backfill de histórico inflava o contador de não lidas).
+  if (params.dedupeContent && conv) {
+    const st = isInbound ? "customer" : "agent";
+    const finalC = params.content || `[${params.messageType}]`;
+    const ja = (await db.select({ id: messages.id }).from(messages)
+      .where(and(eq(messages.conversationId, conv.id), eq(messages.senderType, st as any), eq(messages.content, finalC)))
+      .limit(1))[0];
+    if (ja) return { conversationId: conv.id, message: ja, isDuplicate: true };
+  }
+
   const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
 
   if (!conv) {
@@ -560,9 +572,18 @@ export async function mirrorZernioMessage(params: {
     // sem phone/instanceName — regrava quando vier um valor melhor.
     const needsPhone = (!conv.phone || conv.phone.trim() === "") && !!bestPhone;
     const needsInstance = (!(conv as any).instanceName) && !!params.accountId;
-    await db.update(conversations).set({
+    // Sincronizador (backfill de histórico): NÃO mexe em não-lida/última mensagem —
+    // essas refletem a atividade AO VIVO, não a recuperação de mensagens antigas.
+    const recency = params.dedupeContent ? {} : {
       lastMessageAt: params.timestamp,
       lastMessagePreview: preview,
+      ...(isInbound ? {
+        unreadCount: (conv.unreadCount || 0) + 1,
+        lastCustomerMessageAt: params.timestamp,
+      } : {}),
+    };
+    await db.update(conversations).set({
+      ...recency,
       metadata: {
         ...existingMeta,
         ...(params.zernioConversationId ? { zernioConversationId: params.zernioConversationId } : {}),
@@ -571,10 +592,6 @@ export async function mirrorZernioMessage(params: {
       ...(needsPhone ? { phone: bestPhone } : {}),
       ...(needsInstance ? { instanceName: params.accountId } : {}),
       ...(resolvedName && nameIsPlaceholder ? { contactName: resolvedName } : {}),
-      ...(isInbound ? {
-        unreadCount: (conv.unreadCount || 0) + 1,
-        lastCustomerMessageAt: params.timestamp,
-      } : {}),
       updatedAt: new Date(),
     }).where(eq(conversations.id, conv.id));
   }
@@ -614,20 +631,6 @@ export async function mirrorZernioMessage(params: {
   const mappedType = typeMap[params.messageType] || params.messageType;
   const finalContent = params.content || `[${params.messageType}]`;
   const finalSenderType = isInbound ? "customer" : "agent";
-
-  // Sincronizador: o id da mensagem no GET difere do id do webhook, então o dedupe
-  // por externalId não pega. Se já existe nesta conversa uma mensagem com o MESMO
-  // remetente e MESMO conteúdo, tratamos como a mesma → não recria. (Trade-off:
-  // uma mensagem idêntica repetida de verdade não é recuperada, o que é aceitável.)
-  if (params.dedupeContent && conv) {
-    const jaExiste = (await db.select({ id: messages.id }).from(messages)
-      .where(and(
-        eq(messages.conversationId, conv.id),
-        eq(messages.senderType, finalSenderType as any),
-        eq(messages.content, finalContent),
-      )).limit(1))[0];
-    if (jaExiste) return { conversationId: conv.id, message: jaExiste, isDuplicate: true };
-  }
 
   const message = await createMessage({
     conversationId: conv.id,
