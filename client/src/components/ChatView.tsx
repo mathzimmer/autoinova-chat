@@ -793,6 +793,13 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
                 ⭐ JÁ É CLIENTE{(lead as any).purchases > 1 ? ` (${(lead as any).purchases}x)` : ""}
               </span>
             )}
+            {/* Veio de anúncio (Click-to-WhatsApp) — o vendedor sabe a origem do lead */}
+            {((lead as any)?.ctwaId || (lead as any)?.utmSource === "meta_ctwa") && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-700 border border-blue-500/30"
+                title={`Lead veio de anúncio Click-to-WhatsApp${(lead as any).utmCampaign ? `: ${(lead as any).utmCampaign}` : ""}${(lead as any).landingPage ? ` — ${(lead as any).landingPage}` : ""}`}>
+                📢 Anúncio{(lead as any).utmCampaign ? `: ${String((lead as any).utmCampaign).slice(0, 40)}` : ""}
+              </span>
+            )}
             {conversation?.aiActive ? (
               <span className="text-xs text-[#00a884] flex items-center gap-1">
                 <Bot className="h-3 w-3" /> IA Ativa
