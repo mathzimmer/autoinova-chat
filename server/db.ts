@@ -480,6 +480,7 @@ export async function mirrorZernioMessage(params: {
   externalId?: string;
   timestamp: number; // epoch ms
   dedupeContent?: boolean; // sincronizador: deduplica por conteúdo (ids diferem entre webhook e GET)
+  ctwaId?: string; // atribuição do anúncio (ctwa_clid) — grava JÁ na criação do lead
 }): Promise<{ conversationId: number; message: any; isDuplicate?: boolean } | null> {
   const db = await getDb();
   if (!db) return null;
@@ -666,7 +667,9 @@ export async function mirrorZernioMessage(params: {
   }
 
   if (isInbound && bestPhone) {
-    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: resolvedName }); } catch (err) { console.error("[Lead] ensure (zernio):", err); }
+    // Passa o ctwaId JÁ na criação: assim o lead nasce atribuído ao anúncio e os
+    // primeiros eventos do funil já vão pro Zernio (sem corrida com a captura tardia).
+    try { await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: resolvedName, ctwaId: params.ctwaId }); } catch (err) { console.error("[Lead] ensure (zernio):", err); }
   }
 
   return { conversationId: conv.id, message };
@@ -1023,6 +1026,12 @@ export async function getOrCreateLeadByPhone(params: {
   const existing = await getCanonicalLead(params.phone);
   if (existing) {
     await db.update(conversations).set({ leadId: existing.id }).where(eq(conversations.id, params.conversationId)).catch(() => {});
+    // Backfill da atribuição: se o lead ainda não tem ctwaId e o anúncio chega
+    // agora (1ª msg com referral), grava — assim os eventos do funil já atribuem.
+    if (params.ctwaId && !(existing as any).ctwaId) {
+      await db.update(leads).set({ ctwaId: params.ctwaId, updatedAt: new Date() } as any).where(eq(leads.id, existing.id)).catch(() => {});
+      (existing as any).ctwaId = params.ctwaId;
+    }
     const vendido = existing.funnelStatus === "fechado";
     const perdido = existing.funnelStatus === "perdido";
     const finalized = vendido || perdido;

@@ -598,6 +598,7 @@ async function startServer() {
           mediaUrl: hostedMediaUrl,
           externalId: m.externalId,
           timestamp: m.timestamp,
+          ctwaId: m.ctwaId, // grava a atribuição JÁ na criação do lead (sem corrida)
         });
 
         if (result) {
