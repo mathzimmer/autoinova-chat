@@ -13,8 +13,8 @@ const SUGESTOES = [
 ];
 
 /**
- * Editor de criativos: preview 9:16 ao vivo (2 fotos empilhadas + faixa de preço),
- * selos arrastáveis e personalizáveis, e geração das 3 proporções no servidor.
+ * Editor de criativos: preview 9:16 ao vivo (2 fotos + faixa), selos arrastáveis,
+ * e campos editáveis (preço, descrição, cores). Gera as 3 proporções no servidor.
  */
 export function CreativeEditor({
   vehicleId, photos, price, specs,
@@ -28,6 +28,10 @@ export function CreativeEditor({
 }) {
   const [selos, setSelos] = useState<Selo[]>([]);
   const [novo, setNovo] = useState("");
+  const [priceEdit, setPriceEdit] = useState(price);
+  const [specsEdit, setSpecsEdit] = useState(specs);
+  const [bandColor, setBandColor] = useState("#141416");
+  const [accentColor, setAccentColor] = useState("#c81420");
   const [generated, setGenerated] = useState<Record<string, string> | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const dragId = useRef<string | null>(null);
@@ -63,6 +67,9 @@ export function CreativeEditor({
       const res = await gen.mutateAsync({
         vehicleId,
         selos: selos.map(({ text, x, y }) => ({ text, x, y })),
+        priceOverride: priceEdit,
+        specsOverride: specsEdit,
+        style: { bandColor, accentColor },
       });
       setGenerated(res.creatives);
       onGenerated?.(res.creatives, selos);
@@ -81,19 +88,18 @@ export function CreativeEditor({
           ref={boxRef}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
-          className="relative mx-auto rounded-xl overflow-hidden bg-[#141416] select-none touch-none"
-          style={{ width: 240, height: 427 }}
+          className="relative mx-auto rounded-xl overflow-hidden select-none touch-none"
+          style={{ width: 240, height: 427, background: bandColor }}
         >
-          {/* duas fotos empilhadas */}
           <div className="absolute inset-x-0 top-0" style={{ height: "42.5%", backgroundImage: `url(${top})`, backgroundSize: "cover", backgroundPosition: "center" }} />
           <div className="absolute inset-x-0" style={{ top: "42.5%", height: "42.5%", backgroundImage: `url(${bot})`, backgroundSize: "cover", backgroundPosition: "center" }} />
           <div className="absolute inset-x-0 bg-white" style={{ top: "42.5%", height: 2 }} />
           {/* faixa inferior */}
-          <div className="absolute inset-x-0 bottom-0 bg-[#141416]" style={{ height: "15%" }}>
-            <div className="absolute inset-x-0 top-0 bg-[#c81420]" style={{ height: 3 }} />
+          <div className="absolute inset-x-0 bottom-0" style={{ height: "16%", background: bandColor }}>
+            <div className="absolute inset-x-0 top-0" style={{ height: 3, background: accentColor }} />
             <div className="px-3 pt-2">
-              <div className="text-white font-bold text-lg leading-none">{price}</div>
-              <div className="text-[9px] text-gray-300 mt-1 truncate">{specs}</div>
+              <div className="text-white font-bold text-lg leading-none">{priceEdit}</div>
+              <div className="text-[8px] text-gray-300 mt-1 leading-tight">{specsEdit}</div>
             </div>
           </div>
           {/* selos */}
@@ -101,18 +107,40 @@ export function CreativeEditor({
             <div
               key={s.id}
               onPointerDown={(e) => onPointerDown(e, s.id)}
-              className="absolute flex items-center gap-1 px-2 py-1 rounded-full bg-[#141416]/90 text-white text-[10px] font-semibold cursor-move whitespace-nowrap"
-              style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%` }}
+              className="absolute flex items-center gap-1 px-2 py-1 rounded-full text-white text-[10px] font-semibold cursor-move whitespace-nowrap"
+              style={{ left: `${s.x * 100}%`, top: `${s.y * 100}%`, background: `${bandColor}e6` }}
             >
-              <span className="flex items-center justify-center h-3 w-3 rounded-full bg-[#25d366]"><Check className="h-2 w-2 text-white" strokeWidth={4} /></span>
+              <span className="flex items-center justify-center h-3 w-3 rounded-full" style={{ background: "#25d366" }}><Check className="h-2 w-2 text-white" strokeWidth={4} /></span>
               {s.text}
             </div>
           ))}
         </div>
       </div>
 
-      {/* Controles: selos + gerar */}
+      {/* Controles */}
       <div className="space-y-3">
+        {/* Preço + descrição editáveis */}
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <p className="text-[11px] text-muted-foreground mb-1">Preço</p>
+            <Input value={priceEdit} onChange={(e) => setPriceEdit(e.target.value)} className="h-8 text-sm" />
+          </div>
+          <div className="flex gap-2 items-end">
+            <div>
+              <p className="text-[11px] text-muted-foreground mb-1">Faixa</p>
+              <input type="color" value={bandColor} onChange={(e) => setBandColor(e.target.value)} className="h-8 w-9 rounded border border-border bg-transparent" />
+            </div>
+            <div>
+              <p className="text-[11px] text-muted-foreground mb-1">Detalhe</p>
+              <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} className="h-8 w-9 rounded border border-border bg-transparent" />
+            </div>
+          </div>
+        </div>
+        <div>
+          <p className="text-[11px] text-muted-foreground mb-1">Descrição (modelo · ano · km) — edite para caber</p>
+          <Input value={specsEdit} onChange={(e) => setSpecsEdit(e.target.value)} className="h-8 text-sm" />
+        </div>
+
         <div>
           <p className="text-xs text-muted-foreground mb-1.5">Adicionar selo</p>
           <div className="flex gap-2">
@@ -133,7 +161,6 @@ export function CreativeEditor({
 
         {selos.length > 0 && (
           <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">Selos adicionados</p>
             {selos.map((s) => (
               <div key={s.id} className="flex items-center justify-between text-sm bg-secondary/40 rounded px-2 py-1">
                 <span>{s.text}</span>

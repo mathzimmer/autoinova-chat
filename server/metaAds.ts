@@ -809,15 +809,19 @@ export async function createAdInExistingAdSet(
   // Rastreamento do dataset/pixel — ANTES só era anexado em anúncio que NÃO era de
   // mensagem, por isso os CTWA ficavam "sem pixel". Agora anexa em qualquer tipo:
   // a Meta usa o dataset para atribuir as conversões da conversa ao anúncio.
-  const trackingPixelId = pixelId || process.env.META_ADS_PIXEL_ID;
+  // Rastreamento no nível do anúncio.
+  // - Se pixelId vier vazio ("automático"): NÃO forçamos nada — a Meta usa o
+  //   dataset PADRÃO da conta (ex.: a bianca/offline nos anúncios de mensagem).
+  //   Forçar um pixel aqui SUBSTITUÍA esse padrão (era o bug que desmarcava a bianca).
+  // - Se pixelId vier preenchido: anexa aquele dataset (chave "action.type" com ponto).
+  const trackingPixelId = (pixelId && pixelId.trim()) ? pixelId.trim() : "";
   if (trackingPixelId) {
-    // A Meta exige a chave literal "action.type" (com ponto), NÃO "action_type".
     adPayload.tracking_specs = [
       { "action.type": ["offsite_conversion"], "fb_pixel": [trackingPixelId] },
     ];
-    console.log(`[MetaAds] Rastreamento dataset/pixel configurado: ${trackingPixelId} (msg=${isEngagementOrMessaging})`);
+    console.log(`[MetaAds] Rastreamento forçado: ${trackingPixelId} (msg=${isEngagementOrMessaging})`);
   } else {
-    console.log(`[MetaAds] Sem dataset/pixel selecionado para este anúncio`);
+    console.log(`[MetaAds] Rastreamento automático (dataset padrão da conta)`);
   }
 
   console.log(`[MetaAds] Payload anúncio:`, JSON.stringify(adPayload, null, 2));

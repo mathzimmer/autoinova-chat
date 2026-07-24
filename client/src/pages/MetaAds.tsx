@@ -108,7 +108,7 @@ function CreateAdModal({
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null); // imagem própria (stories)
   const [uploading, setUploading] = useState(false);
   // Pixel/dataset por anúncio (antes era fixo em 587...) + criativos gerados
-  const [pixelId, setPixelId] = useState<string>("587774608991001");
+  const [pixelId, setPixelId] = useState<string>(""); // "" = automático (dataset padrão da conta)
   const [genCreatives, setGenCreatives] = useState<Record<string, string> | null>(null);
   const [titleVariations, setTitleVariations] = useState<string[]>([]); // títulos extras → 1 anúncio por título
   const uploadCreative = trpc.metaAds.uploadCreativeImage.useMutation();
@@ -748,11 +748,11 @@ function CreateAdModal({
                   onChange={(e) => setPixelId(e.target.value)}
                   className="mt-1 w-full h-9 rounded-lg border border-border bg-background px-2 text-sm"
                 >
-                  <option value="587774608991001">Pixel principal (587774608991001)</option>
-                  <option value="3967148386923935">Zernio bianca — CTWA (3967148386923935)</option>
-                  <option value="">Nenhum (sem rastreamento no anúncio)</option>
+                  <option value="">Automático — dataset padrão da conta (recomendado p/ mensagem)</option>
+                  <option value="587774608991001">Forçar pixel do site (587774608991001)</option>
+                  <option value="3967148386923935">Forçar Zernio bianca — CTWA (3967148386923935)</option>
                 </select>
-                <p className="text-[11px] text-muted-foreground mt-1">Para anúncios de mensagem (CTWA), a atribuição principal vem do dataset do número; este é o rastreamento no nível do anúncio.</p>
+                <p className="text-[11px] text-muted-foreground mt-1">No <strong>Automático</strong>, a Meta usa o dataset padrão da conta — que nos anúncios de mensagem é a <strong>bianca (offline)</strong>. Só force um pixel se tiver um motivo específico.</p>
               </div>
 
               {/* Editable fields */}
