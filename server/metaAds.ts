@@ -811,8 +811,9 @@ export async function createAdInExistingAdSet(
   // a Meta usa o dataset para atribuir as conversões da conversa ao anúncio.
   const trackingPixelId = pixelId || process.env.META_ADS_PIXEL_ID;
   if (trackingPixelId) {
+    // A Meta exige a chave literal "action.type" (com ponto), NÃO "action_type".
     adPayload.tracking_specs = [
-      { action_type: ["offsite_conversion"], fb_pixel: [trackingPixelId] },
+      { "action.type": ["offsite_conversion"], "fb_pixel": [trackingPixelId] },
     ];
     console.log(`[MetaAds] Rastreamento dataset/pixel configurado: ${trackingPixelId} (msg=${isEngagementOrMessaging})`);
   } else {
