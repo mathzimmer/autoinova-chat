@@ -806,12 +806,17 @@ export async function createAdInExistingAdSet(
     status: "PAUSED",
   };
 
+  // Rastreamento do dataset/pixel — ANTES só era anexado em anúncio que NÃO era de
+  // mensagem, por isso os CTWA ficavam "sem pixel". Agora anexa em qualquer tipo:
+  // a Meta usa o dataset para atribuir as conversões da conversa ao anúncio.
   const trackingPixelId = pixelId || process.env.META_ADS_PIXEL_ID;
-  if (trackingPixelId && !isEngagementOrMessaging) {
+  if (trackingPixelId) {
     adPayload.tracking_specs = [
       { action_type: ["offsite_conversion"], fb_pixel: [trackingPixelId] },
     ];
-    console.log(`[MetaAds] Rastreamento Pixel configurado: ${trackingPixelId}`);
+    console.log(`[MetaAds] Rastreamento dataset/pixel configurado: ${trackingPixelId} (msg=${isEngagementOrMessaging})`);
+  } else {
+    console.log(`[MetaAds] Sem dataset/pixel selecionado para este anúncio`);
   }
 
   console.log(`[MetaAds] Payload anúncio:`, JSON.stringify(adPayload, null, 2));

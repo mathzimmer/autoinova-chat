@@ -3563,6 +3563,55 @@ const metaAdsRouter = router({
       return { url };
     }),
 
+  // Gera os 3 criativos (1:1, 4:5, 9:16) do veículo com os selos posicionados e
+  // devolve as URLs (S3) para o preview "ver antes de aplicar".
+  generateCreativesPreview: protectedProcedure
+    .input(z.object({
+      vehicleId: z.number(),
+      selos: z.array(z.object({ text: z.string(), x: z.number(), y: z.number() })).default([]),
+      style: z.object({
+        bandColor: z.string().optional(),
+        accentColor: z.string().optional(),
+        checkColor: z.string().optional(),
+      }).optional(),
+      priceOverride: z.string().optional(),
+      specsOverride: z.string().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database indisponível");
+      const { vehicles: vehiclesTable } = await import("../drizzle/schema");
+      const v = (await db.select().from(vehiclesTable).where(eq(vehiclesTable.id, input.vehicleId)).limit(1))[0];
+      if (!v) throw new Error("Veículo não encontrado");
+
+      // Fotos na ordem do estoque (foto 1 = externa). Aceita images como array de
+      // strings ou de objetos {url}. Cai para imageUrl se não houver array.
+      const rawImgs = (v as any).images;
+      let photoUrls: string[] = [];
+      if (Array.isArray(rawImgs)) {
+        photoUrls = rawImgs.map((it: any) => (typeof it === "string" ? it : it?.url)).filter(Boolean);
+      }
+      if (photoUrls.length === 0 && v.imageUrl) photoUrls = [v.imageUrl];
+      if (photoUrls.length === 0) throw new Error("Veículo sem fotos");
+
+      const price = input.priceOverride
+        || `R$ ${Number(v.price || 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })}`;
+      const versionTxt = (v as any).version ? ` ${(v as any).version}` : "";
+      const kmTxt = v.mileage ? ` · ${Number(v.mileage).toLocaleString("pt-BR")} km` : "";
+      const specs = input.specsOverride || `${v.brand} ${v.model}${versionTxt} · ${v.year}${kmTxt}`;
+
+      const { generateAllCreatives } = await import("./creativeGenerator");
+      const { uploadMediaToS3 } = await import("./media");
+      const gen = await generateAllCreatives({ photoUrls, price, specs, selos: input.selos, style: input.style });
+
+      const out: Record<string, string> = {};
+      for (const { aspect, buffer } of gen) {
+        const up = await uploadMediaToS3(buffer, "image", "image/jpeg");
+        if (up) out[aspect] = up.url;
+      }
+      return { creatives: out, photoCount: photoUrls.length };
+    }),
+
   createAdInAdSet: protectedProcedure
     .input(z.object({
       vehicleId:    z.number(),
