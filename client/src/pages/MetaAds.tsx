@@ -7,6 +7,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { CreativeEditor } from "@/components/CreativeEditor";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -106,6 +107,9 @@ function CreateAdModal({
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [uploadedImageUrl, setUploadedImageUrl] = useState<string | null>(null); // imagem própria (stories)
   const [uploading, setUploading] = useState(false);
+  // Pixel/dataset por anúncio (antes era fixo em 587...) + criativos gerados
+  const [pixelId, setPixelId] = useState<string>("587774608991001");
+  const [genCreatives, setGenCreatives] = useState<Record<string, string> | null>(null);
   const [titleVariations, setTitleVariations] = useState<string[]>([]); // títulos extras → 1 anúncio por título
   const uploadCreative = trpc.metaAds.uploadCreativeImage.useMutation();
   const [vehicleSearch, setVehicleSearch] = useState("");
@@ -240,9 +244,9 @@ function CreateAdModal({
     if (!selectedVehicleId || !selectedCampaignId || !selectedAdSetId) return;
     setStep("publishing");
     try {
-      // Imagem própria (stories) tem prioridade e força formato único
-      const imageUrl = uploadedImageUrl || selectedImageUrl || undefined;
-      const isCarousel = !uploadedImageUrl && adFormat === "carousel" && carouselSelectedImages.length >= 2;
+      // Prioridade da imagem: criativo gerado (com moldura/selos) > imagem própria > foto do estoque
+      const imageUrl = genCreatives?.["4x5"] || genCreatives?.["1x1"] || uploadedImageUrl || selectedImageUrl || undefined;
+      const isCarousel = !genCreatives && !uploadedImageUrl && adFormat === "carousel" && carouselSelectedImages.length >= 2;
       // 1 anúncio por título (título principal + variações preenchidas)
       const titles = [editedTexts.headline, ...titleVariations.map(t => t.trim()).filter(Boolean)];
       let created = 0;
@@ -258,7 +262,7 @@ function CreateAdModal({
           campaignObjective: selectedCampaignObjective || undefined,
           carouselImageUrls: isCarousel ? carouselSelectedImages : undefined,
           carouselCaptions: isCarousel ? carouselCaptions : undefined,
-          pixelId: "587774608991001",
+          pixelId: pixelId || undefined,
         });
         created++;
       }
@@ -719,6 +723,36 @@ function CreateAdModal({
                     <><ImageSingle size={10} className="mr-1" /> Imagem única</>
                   )}
                 </Badge>
+              </div>
+
+              {/* Editor de criativos (moldura + selos posicionáveis) */}
+              <div className="p-3 rounded-xl border border-border bg-card/50">
+                <p className="text-sm font-semibold mb-2 flex items-center gap-1.5"><ImageSingle size={14} /> Criativo do anúncio</p>
+                <CreativeEditor
+                  vehicleId={vehicleInfo.id}
+                  photos={vehicleImages.length ? vehicleImages : (selectedImageUrl ? [selectedImageUrl] : [])}
+                  price={fmtPrice(vehicleInfo.price)}
+                  specs={`${vehicleInfo.brand} ${vehicleInfo.model} ${vehicleInfo.year}`}
+                  onGenerated={(creatives) => setGenCreatives(creatives)}
+                />
+                {genCreatives && (
+                  <p className="text-[11px] text-green-600 mt-2">✓ Criativo gerado será usado no anúncio (com moldura e selos).</p>
+                )}
+              </div>
+
+              {/* Seletor de pixel/dataset */}
+              <div>
+                <label className="text-xs text-muted-foreground uppercase tracking-wider">Pixel / Dataset de conversão</label>
+                <select
+                  value={pixelId}
+                  onChange={(e) => setPixelId(e.target.value)}
+                  className="mt-1 w-full h-9 rounded-lg border border-border bg-background px-2 text-sm"
+                >
+                  <option value="587774608991001">Pixel principal (587774608991001)</option>
+                  <option value="3967148386923935">Zernio bianca — CTWA (3967148386923935)</option>
+                  <option value="">Nenhum (sem rastreamento no anúncio)</option>
+                </select>
+                <p className="text-[11px] text-muted-foreground mt-1">Para anúncios de mensagem (CTWA), a atribuição principal vem do dataset do número; este é o rastreamento no nível do anúncio.</p>
               </div>
 
               {/* Editable fields */}
