@@ -854,11 +854,29 @@ export async function createAdWithPlacementCreatives(
   const feedHash = await uploadAdImage(config, creatives.feedUrl);
   const storyHash = await uploadAdImage(config, creatives.storyUrl);
 
+  // Mensagem pré-preenchida do WhatsApp (precisa terminar com "ID<n>" — o fluxo do
+  // CRM usa isso pra identificar o veículo).
+  const welcomeContent = `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`;
+  const pageWelcomeMessage = {
+    type: "VISUAL_EDITOR", version: 2, landing_screen_type: "welcome_message", media_type: "text",
+    text_format: {
+      customer_action_type: "autofill_message",
+      message: { autofill_message: { content: welcomeContent }, text: "Olá! Bem-vindo à Auto Inova! 👋" },
+    },
+  };
+
   const creativePayload: any = {
     name: `Criativo multi-formato — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
     object_story_spec: {
       page_id: config.pageId,
       ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
+      // link_data SEM imagem (as imagens vêm do asset_feed_spec) só para carregar
+      // a mensagem de boas-vindas + o CTA de WhatsApp.
+      link_data: {
+        link: "https://api.whatsapp.com/send",
+        call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } },
+        page_welcome_message: pageWelcomeMessage,
+      },
     },
     asset_feed_spec: {
       images: [
