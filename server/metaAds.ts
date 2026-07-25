@@ -854,17 +854,6 @@ export async function createAdWithPlacementCreatives(
   const feedHash = await uploadAdImage(config, creatives.feedUrl);
   const storyHash = await uploadAdImage(config, creatives.storyUrl);
 
-  // Mensagem pré-preenchida do WhatsApp (precisa terminar com "ID<n>" — o fluxo do
-  // CRM usa isso pra identificar o veículo).
-  const welcomeContent = `Olá, tenho interesse no veículo: ${vehicle.brand} ${vehicle.model} ID${vehicle.id}`;
-  const pageWelcomeMessage = {
-    type: "VISUAL_EDITOR", version: 2, landing_screen_type: "welcome_message", media_type: "text",
-    text_format: {
-      customer_action_type: "autofill_message",
-      message: { autofill_message: { content: welcomeContent }, text: "Olá! Bem-vindo à Auto Inova! 👋" },
-    },
-  };
-
   const creativePayload: any = {
     name: `Criativo multi-formato — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
     object_story_spec: {
@@ -881,11 +870,9 @@ export async function createAdWithPlacementCreatives(
       descriptions: [{ text: texts.description }],
       ad_formats: ["SINGLE_IMAGE"],
       call_to_action_types: ["WHATSAPP_MESSAGE"],
-      // Mensagem de boas-vindas (com ID do veículo) dentro do asset_feed, via link_urls.
-      link_urls: [{
-        website_url: "https://api.whatsapp.com/send",
-        page_welcome_message: JSON.stringify(pageWelcomeMessage),
-      }],
+      // NB: a mensagem pré-preenchida (page_welcome_message) NÃO é aceita junto com
+      // asset_feed_spec no CTWA (testado: recusa no link_data e no link_urls).
+      // A identificação do veículo passa a vir da ATRIBUIÇÃO do anúncio (Zernio).
       asset_customization_rules: [
         {
           customization_spec: {
