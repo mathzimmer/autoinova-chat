@@ -870,13 +870,6 @@ export async function createAdWithPlacementCreatives(
     object_story_spec: {
       page_id: config.pageId,
       ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
-      // link_data SEM imagem (as imagens vêm do asset_feed_spec) só para carregar
-      // a mensagem de boas-vindas + o CTA de WhatsApp.
-      link_data: {
-        link: "https://api.whatsapp.com/send",
-        call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP" } },
-        page_welcome_message: pageWelcomeMessage,
-      },
     },
     asset_feed_spec: {
       images: [
@@ -888,8 +881,11 @@ export async function createAdWithPlacementCreatives(
       descriptions: [{ text: texts.description }],
       ad_formats: ["SINGLE_IMAGE"],
       call_to_action_types: ["WHATSAPP_MESSAGE"],
-      // Obs: removidos message_extensions e link_urls (recurso restrito → erro #3).
-      // Para anúncio de MENSAGEM, o destino WhatsApp vem do conjunto de anúncios.
+      // Mensagem de boas-vindas (com ID do veículo) dentro do asset_feed, via link_urls.
+      link_urls: [{
+        website_url: "https://api.whatsapp.com/send",
+        page_welcome_message: JSON.stringify(pageWelcomeMessage),
+      }],
       asset_customization_rules: [
         {
           customization_spec: {
