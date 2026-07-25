@@ -263,6 +263,10 @@ function CreateAdModal({
           carouselImageUrls: isCarousel ? carouselSelectedImages : undefined,
           carouselCaptions: isCarousel ? carouselCaptions : undefined,
           pixelId: pixelId || undefined,
+          // Imagem por posicionamento: 4:5 no feed, 9:16 no story/reels
+          placementCreatives: (genCreatives?.["4x5"] && genCreatives?.["9x16"])
+            ? { feedUrl: genCreatives["4x5"], storyUrl: genCreatives["9x16"] }
+            : undefined,
         });
         created++;
       }

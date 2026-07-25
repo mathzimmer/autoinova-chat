@@ -3625,6 +3625,8 @@ const metaAdsRouter = router({
       carouselImageUrls: z.array(z.string()).optional(),
       carouselCaptions: z.array(z.string()).optional(),
       pixelId: z.string().optional(),
+      // Criativos por posicionamento (asset_feed_spec): 4:5 no feed, 9:16 no story
+      placementCreatives: z.object({ feedUrl: z.string(), storyUrl: z.string() }).optional(),
     }))
     .mutation(async ({ input }) => {
       const config = await getMetaConfig();
@@ -3638,6 +3640,24 @@ const metaAdsRouter = router({
       if (!vehicleRows.length) throw new Error("Veículo não encontrado");
       const v = vehicleRows[0];
       if (!v.imageUrl) throw new Error("Veículo sem imagem");
+
+      // Caminho NOVO: imagem por posicionamento (asset_feed_spec)
+      if (input.placementCreatives?.feedUrl && input.placementCreatives?.storyUrl) {
+        const { createAdWithPlacementCreatives } = await import("./metaAds");
+        const r = await createAdWithPlacementCreatives(
+          config, input.adSetId,
+          { brand: v.brand, model: v.model, year: v.year, id: v.id },
+          { headline: input.headline, description: input.description, primaryText: input.primaryText },
+          input.placementCreatives,
+          input.pixelId,
+        );
+        await db.insert(metaAdsTable).values({
+          vehicleId: input.vehicleId, campaignId: input.campaignId, adSetId: input.adSetId,
+          adCreativeId: r.adCreativeId, adId: r.adId, imageHash: "",
+          status: "paused", dailyBudgetCents: 0, createdAt: new Date(), updatedAt: new Date(),
+        });
+        return { success: true, adId: r.adId, campaignId: input.campaignId, adSetId: input.adSetId };
+      }
 
       const result = await createAdInExistingAdSet(
         config,

@@ -836,6 +836,92 @@ export async function createAdInExistingAdSet(
   return { adId, adCreativeId, imageHash };
 }
 
+/**
+ * Cria anúncio CTWA com IMAGEM POR POSICIONAMENTO (asset_feed_spec):
+ *  - feed (FB/IG feed): imagem 4:5
+ *  - stories/reels: imagem 9:16
+ * Assim cada lugar recebe o tamanho certo (em vez de uma imagem só pra tudo).
+ * É a parte mais sensível da API — ajustamos iterando com o log de erro real.
+ */
+export async function createAdWithPlacementCreatives(
+  config: MetaAdsConfig,
+  adSetId: string,
+  vehicle: { brand: string; model: string; year: number; id: number },
+  texts: { headline: string; description: string; primaryText: string },
+  creatives: { feedUrl: string; storyUrl: string },
+  pixelId?: string,
+): Promise<{ adId: string; adCreativeId: string }> {
+  const feedHash = await uploadAdImage(config, creatives.feedUrl);
+  const storyHash = await uploadAdImage(config, creatives.storyUrl);
+  const wa = "https://api.whatsapp.com/send";
+
+  const creativePayload: any = {
+    name: `Criativo multi-formato — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
+    object_story_spec: {
+      page_id: config.pageId,
+      ...(config.instagramActorId ? { instagram_user_id: config.instagramActorId } : {}),
+    },
+    asset_feed_spec: {
+      images: [
+        { hash: feedHash, adlabels: [{ name: "feed" }] },
+        { hash: storyHash, adlabels: [{ name: "story" }] },
+      ],
+      bodies: [{ text: texts.primaryText }],
+      titles: [{ text: texts.headline }],
+      descriptions: [{ text: texts.description }],
+      ad_formats: ["SINGLE_IMAGE"],
+      call_to_action_types: ["WHATSAPP_MESSAGE"],
+      link_urls: [{ website_url: wa }],
+      // CTWA via asset_feed_spec: botão de WhatsApp
+      message_extensions: [{ type: "whatsapp" }],
+      asset_customization_rules: [
+        {
+          customization_spec: {
+            publisher_platforms: ["facebook", "instagram"],
+            facebook_positions: ["feed", "marketplace", "video_feeds", "search"],
+            instagram_positions: ["stream", "explore", "explore_home"],
+          },
+          image_label: { name: "feed" },
+          priority: 1,
+        },
+        {
+          customization_spec: {
+            publisher_platforms: ["facebook", "instagram"],
+            facebook_positions: ["story", "facebook_reels"],
+            instagram_positions: ["story", "reels"],
+          },
+          image_label: { name: "story" },
+          priority: 2,
+        },
+      ],
+    },
+    degrees_of_freedom_spec: {
+      creative_features_spec: {
+        image_enhancement: { enroll_status: "OPT_IN" },
+        text_optimizations: { enroll_status: "OPT_IN" },
+      },
+    },
+  };
+
+  console.log(`[MetaAds][AssetFeed] Payload criativo:`, JSON.stringify(creativePayload).slice(0, 1500));
+  const creativeResult = await metaPost(`act_${config.adAccountId}/adcreatives`, creativePayload, config.accessToken);
+  const adCreativeId = creativeResult.id as string;
+
+  const adPayload: any = {
+    name: `Anúncio (multi-formato) — ${vehicle.brand} ${vehicle.model} ${vehicle.year} #${vehicle.id}`,
+    adset_id: adSetId,
+    creative: { creative_id: adCreativeId },
+    status: "PAUSED",
+  };
+  if (pixelId && pixelId.trim()) {
+    adPayload.tracking_specs = [{ "action.type": ["offsite_conversion"], "fb_pixel": [pixelId.trim()] }];
+  }
+
+  const adResult = await metaPost(`act_${config.adAccountId}/ads`, adPayload, config.accessToken);
+  console.log(`[MetaAds][AssetFeed] ✅ Anúncio multi-formato criado: adId=${adResult.id}`);
+  return { adId: adResult.id as string, adCreativeId };
+}
+
 // ─── Config padrão — Serra Gaúcha ─────────────────────────────────────────────
 
 export function buildMetaConfig(overrides?: Partial<MetaAdsConfig>): MetaAdsConfig {
