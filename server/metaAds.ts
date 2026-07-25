@@ -853,7 +853,6 @@ export async function createAdWithPlacementCreatives(
 ): Promise<{ adId: string; adCreativeId: string }> {
   const feedHash = await uploadAdImage(config, creatives.feedUrl);
   const storyHash = await uploadAdImage(config, creatives.storyUrl);
-  const wa = "https://api.whatsapp.com/send";
 
   const creativePayload: any = {
     name: `Criativo multi-formato — ${vehicle.brand} ${vehicle.model} #${vehicle.id}`,
@@ -871,9 +870,8 @@ export async function createAdWithPlacementCreatives(
       descriptions: [{ text: texts.description }],
       ad_formats: ["SINGLE_IMAGE"],
       call_to_action_types: ["WHATSAPP_MESSAGE"],
-      link_urls: [{ website_url: wa }],
-      // CTWA via asset_feed_spec: botão de WhatsApp
-      message_extensions: [{ type: "whatsapp" }],
+      // Obs: removidos message_extensions e link_urls (recurso restrito → erro #3).
+      // Para anúncio de MENSAGEM, o destino WhatsApp vem do conjunto de anúncios.
       asset_customization_rules: [
         {
           customization_spec: {
