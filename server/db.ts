@@ -176,6 +176,7 @@ export async function mirrorEvolutionMessage(params: {
   mediaUrl?: string;
   externalId?: string;
   timestamp: number; // epoch ms
+  rawPayload?: any;
 }): Promise<{ conversationId: number; message: any } | null> {
   const db = await getDb();
   if (!db) return null;
@@ -190,6 +191,13 @@ export async function mirrorEvolutionMessage(params: {
   // pushName acumulado) — usa como fallback, especialmente em JIDs @lid
   let bestName = params.contactName;
   let bestPhone = params.phone;
+  let evoInstanceId: number | null = null;
+  try {
+    const inst = (await db.select({ id: evolutionInstances.id }).from(evolutionInstances)
+      .where(eq(evolutionInstances.instanceName, params.instanceName)).limit(1))[0];
+    if (inst) evoInstanceId = inst.id;
+  } catch { /* fallback opcional */ }
+
   try {
     const evoConv = (await db.select().from(evolutionConversations)
       .where(and(
@@ -247,6 +255,10 @@ export async function mirrorEvolutionMessage(params: {
       lastMessageAt: params.timestamp,
       lastCustomerMessageAt: isInbound ? params.timestamp : null,
       lastMessagePreview: preview,
+      // Novos campos unificados
+      remoteJid: params.remoteJid,
+      connectionType: "evolution",
+      connectionId: evoInstanceId,
     }).returning();
     conv = inserted[0];
   } else {
@@ -259,6 +271,10 @@ export async function mirrorEvolutionMessage(params: {
       lastMessageAt: params.timestamp,
       lastMessagePreview: preview,
       metadata: { ...existingMeta, evolutionRemoteJid: params.remoteJid, ...(lidJid ? { evolutionLidJid: lidJid } : {}) },
+      // Novos campos unificados
+      remoteJid: conv.remoteJid || params.remoteJid,
+      connectionType: conv.connectionType || "evolution",
+      connectionId: conv.connectionId || evoInstanceId,
       ...(phoneUpgrade ? { phone: bestPhone } : {}),
       ...(bestName && nameIsPlaceholder ? { contactName: bestName } : {}),
       ...(isInbound ? {
@@ -283,6 +299,11 @@ export async function mirrorEvolutionMessage(params: {
       ? { ...(params.mediaUrl ? { mediaUrl: params.mediaUrl } : {}), ...(params.transcript ? { transcribedText: params.transcript } : {}) }
       : undefined,
     externalId: params.externalId,
+    // Novos campos unificados
+    direction: params.direction,
+    instanceId: evoInstanceId || undefined,
+    instanceName: params.instanceName,
+    rawPayload: params.rawPayload,
   });
 
   // Sincroniza a agenda de contatos: cria (marcando a instância) ou atualiza o
@@ -312,6 +333,128 @@ export async function mirrorEvolutionMessage(params: {
   }
 
   return { conversationId: conv.id, message };
+}
+
+export async function mirrorWNMessage(params: {
+  whatsappNumberId: number;
+  phoneNumberId: string;
+  customerPhone: string;
+  contactName?: string;
+  content: string;
+  messageType: string;
+  direction: "inbound" | "outbound";
+  senderName: string;
+  mediaUrl?: string;
+  externalId?: string;
+  timestamp: number;
+  rawPayload?: any;
+}): Promise<{ conversationId: number; message: any } | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  // Dedupe por externalId
+  if (params.externalId) {
+    const existing = await getMessageByExternalId(params.externalId);
+    if (existing) return null;
+  }
+
+  let bestName = params.contactName;
+  let bestPhone = params.customerPhone;
+
+  // Localiza a conversa pelo phoneNumberId e pelo phone do cliente
+  let conv = (await db.select().from(conversations)
+    .where(and(
+      eq(conversations.channel, "whatsapp" as any),
+      eq(conversations.phoneNumberId, params.phoneNumberId),
+      eq(conversations.phone, bestPhone),
+    )).limit(1))[0];
+
+  const preview = (params.content || `[${params.messageType}]`).substring(0, 500);
+  const isInbound = params.direction === "inbound";
+
+  if (!conv) {
+    const inserted = await db.insert(conversations).values({
+      phone: bestPhone,
+      contactName: bestName || null,
+      channel: "whatsapp" as any,
+      instanceName: params.phoneNumberId, // usaremos phoneNumberId como identificador da aba
+      status: "open",
+      aiActive: false, // sem IA nos números adicionais por padrão
+      unreadCount: isInbound ? 1 : 0,
+      lastMessageAt: params.timestamp,
+      lastCustomerMessageAt: isInbound ? params.timestamp : null,
+      lastMessagePreview: preview,
+      // Novos campos unificados
+      phoneNumberId: params.phoneNumberId,
+      connectionType: "tech_provider",
+      connectionId: params.whatsappNumberId,
+    }).returning();
+    conv = inserted[0];
+  } else {
+    await db.update(conversations).set({
+      lastMessageAt: params.timestamp,
+      lastCustomerMessageAt: isInbound ? params.timestamp : conv.lastCustomerMessageAt,
+      lastMessagePreview: preview,
+      unreadCount: isInbound ? sql`${conversations.unreadCount} + 1` : conversations.unreadCount,
+      // Atualiza metadados se não estiverem configurados
+      phoneNumberId: conv.phoneNumberId || params.phoneNumberId,
+      connectionType: conv.connectionType || "tech_provider",
+      connectionId: conv.connectionId || params.whatsappNumberId,
+      contactName: (isInbound && bestName && bestName !== bestPhone) ? bestName : conv.contactName,
+    }).where(eq(conversations.id, conv.id));
+  }
+
+  // Sincroniza contatos
+  try {
+    const realName = (isInbound && bestName && bestName !== bestPhone) ? bestName : null;
+    const { getContactByPhone, createContact, updateContact } = await import("./db");
+    const existing = await getContactByPhone(bestPhone);
+    if (!existing) {
+      await createContact({
+        name: realName || bestPhone,
+        phone: bestPhone,
+        conversationId: conv.id,
+        source: "whatsapp",
+        createdByInstance: params.phoneNumberId,
+        isActive: true,
+      } as any);
+    } else if (realName && (!existing.name || existing.name === existing.phone || existing.name === "Cliente")) {
+      await updateContact(existing.id, { name: realName });
+    }
+  } catch (err) {
+    console.error("[WA-Multi] sync contato falhou:", err);
+  }
+
+  // Ensure Lead
+  if (isInbound && bestPhone) {
+    try {
+      const { getOrCreateLeadByPhone } = await import("./db");
+      await getOrCreateLeadByPhone({ phone: bestPhone, conversationId: conv.id, name: bestName });
+    } catch (err) {
+      console.error("[Lead] ensure (wn):", err);
+    }
+  }
+
+  const typeMap: Record<string, string> = { sticker: "image", reaction: "text" };
+  const mappedType = typeMap[params.messageType] || params.messageType;
+
+  const result = await db.insert(messages).values({
+    conversationId: conv.id,
+    content: params.content || "",
+    senderType: isInbound ? "customer" : "agent",
+    senderName: params.senderName,
+    messageType: mappedType as any,
+    metadata: params.mediaUrl ? { mediaUrl: params.mediaUrl } : undefined,
+    externalId: params.externalId,
+    status: "delivered",
+    // Novos campos
+    direction: params.direction,
+    instanceId: params.whatsappNumberId,
+    instanceName: params.phoneNumberId,
+    rawPayload: params.rawPayload,
+  }).returning();
+
+  return { conversationId: conv.id, message: result[0] };
 }
 
 // ─── CRUD de instâncias Zernio ────────────────────────────────────────────────
@@ -756,7 +899,21 @@ export async function listMessages(conversationId: number, limit = 500) {
 export async function createMessage(data: InsertMessage) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const result = await db.insert(messages).values(data).returning({ id: messages.id });
+
+  const insertData = { ...data };
+  if (!insertData.direction) {
+    try {
+      const conv = (await db.select({ channel: conversations.channel, instanceName: conversations.instanceName, connectionId: conversations.connectionId })
+        .from(conversations).where(eq(conversations.id, data.conversationId)).limit(1))[0];
+      if (conv) {
+        insertData.direction = data.senderType === "customer" ? "inbound" : "outbound";
+        insertData.instanceName = conv.instanceName || undefined;
+        insertData.instanceId = conv.connectionId || undefined;
+      }
+    } catch { /* ignore fallback */ }
+  }
+
+  const result = await db.insert(messages).values(insertData).returning({ id: messages.id });
   const id = result[0].id;
   const msg = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
   // Update conversation's last message
@@ -823,7 +980,7 @@ export async function updateMessageExternalId(messageId: number, externalId: str
 export async function allowedInboxSourcesForMember(memberId: number): Promise<string[]> {
   const db = await getDb();
   if (!db) return [];
-  const { zernioInstances, evolutionInstances } = await import("../drizzle/schema");
+  const { zernioInstances, evolutionInstances, whatsappNumbers } = await import("../drizzle/schema");
   const sources: string[] = [];
   try {
     const z = await db.select().from(zernioInstances).where(eq((zernioInstances as any).assignedUserId, memberId));
@@ -832,6 +989,10 @@ export async function allowedInboxSourcesForMember(memberId: number): Promise<st
   try {
     const e = await db.select().from(evolutionInstances).where(eq(evolutionInstances.assignedUserId, memberId));
     for (const i of e) if (i.instanceName) sources.push(i.instanceName);
+  } catch { /* opcional */ }
+  try {
+    const o = await db.select().from(whatsappNumbers).where(eq(whatsappNumbers.assignedUserId, memberId));
+    for (const i of o) if (i.phoneNumberId) sources.push(`official:${i.phoneNumberId}`);
   } catch { /* opcional */ }
   return sources;
 }

@@ -46,3 +46,4 @@ memória rápida — o detalhe fino está no código e no MANUAL-AUTOINOVA-CRM.m
 - Verificação Meta aprovada (whatsapp_business_messaging + management).
 - Cadastro Incorporado (Embedded Signup) funcionando: conecta número próprio em
   coexistência, com auto-salvar + auto-assinar webhook (modelo de provedor).
+- **Unificação das Tabelas de Canais**: Normalização do banco de dados unificando o histórico de conversas/mensagens do Evolution e WhatsApp Multi-Number nas tabelas principais. Criada rede de segurança com escrita dupla e isolamento de falhas para zerar o risco de perda de mensagens em produção.

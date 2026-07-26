@@ -665,6 +665,7 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           mediaUrl: finalMediaUrl || undefined,
           externalId: parsed.messageId ? `evo_${parsed.messageId}` : undefined,
           timestamp: parsed.timestamp,
+          rawPayload: parsed.rawPayload,
         });
         if (mirrored) {
           console.log(`[Evolution] ✅ Espelhada no inbox unificado: conv=${mirrored.conversationId} (${instanceName})`);

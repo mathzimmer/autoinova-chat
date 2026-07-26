@@ -41,6 +41,16 @@ como "root" e falha. Nomes de colunas no banco às vezes diferem do Drizzle
 - Editar `.env` na VPS via `nano`, nunca por aqui.
 - Segredos ficam só no `.env` do servidor.
 
+## Colaboração entre IAs (Claude/Gemini/Cursor) — Regras de Git
+
+Para evitar perda de código ou perda de contexto ao alternar entre diferentes ferramentas de IA:
+1. **Pasta Única**: Use sempre o diretório principal do projeto (`~/Documents/autoinova-chat-main`). Evite criar pastas paralelas (como `-experimental`). Se for fazer testes arriscados, crie uma branch Git (`git checkout -b feat/nome-do-teste`).
+2. **Sincronização Obrigatória**:
+   - **Antes de iniciar** o trabalho em qualquer IA: execute sempre `git pull` para trazer a versão mais recente.
+   - **Ao terminar** o trabalho em qualquer IA: execute `git add -A && git commit -m "feat: descrição"` e depois `git push` (ou `./ship.sh`).
+3. **Edições Isoladas**: Nunca edite o mesmo arquivo em duas IAs diferentes ao mesmo tempo sem dar commit/push no meio do processo.
+4. **Memória Compartilhada**: Mantenha a pasta `_contexto/` atualizada. É ela quem reconstrói o contexto da sessão para a próxima IA.
+
 ## IDs importantes (não são segredos)
 
 - Pixel principal (site/CRM): `587774608991001`

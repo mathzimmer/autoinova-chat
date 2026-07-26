@@ -615,6 +615,32 @@ export async function handleWNWebhook(payload: any): Promise<boolean> {
         rawPayload: msg,
       });
 
+      // ─── Escrita Dupla: Espelhar no inbox unificado (tabela conversations/messages principal) ───
+      try {
+        const { mirrorWNMessage } = await import("./db");
+        const mirrored = await mirrorWNMessage({
+          whatsappNumberId: numRecord.id,
+          phoneNumberId,
+          customerPhone,
+          contactName: pushName,
+          content,
+          messageType,
+          direction: "inbound",
+          senderName: pushName || customerPhone,
+          externalId: msg.id,
+          timestamp,
+          rawPayload: msg,
+        });
+        if (mirrored) {
+          console.log(`[WA-Multi] ✅ Espelhada no inbox unificado: conv=${mirrored.conversationId} (${phoneNumberId})`);
+          const { emitNewMessage, emitConversationUpdate } = await import("./socket");
+          emitNewMessage(mirrored.conversationId, mirrored.message);
+          emitConversationUpdate(mirrored.conversationId, {});
+        }
+      } catch (err) {
+        console.error("[WA-Multi] Erro ao espelhar no inbox unificado:", err);
+      }
+
       await markAsReadFromNumber(phoneNumberId, msg.id);
     }
 

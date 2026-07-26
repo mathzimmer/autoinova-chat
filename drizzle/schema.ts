@@ -95,6 +95,11 @@ export const conversations = pgTable("conversations", {
   windowExpired:           smallint("windowExpired").default(0),
   lastMessagePreview:      varchar("lastMessagePreview", { length: 500 }),
   metadata:                jsonb("metadata"),           // CTWAid e outros metadados ficam aqui
+  remoteJid:               varchar("remoteJid", { length: 100 }),
+  phoneNumberId:           varchar("phoneNumberId", { length: 64 }),
+  connectionType:          varchar("connectionType"),
+  connectionId:            integer("connectionId"),
+  tags:                    jsonb("tags"),
   createdAt:               timestamp("createdAt").defaultNow().notNull(),
   updatedAt:               timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -117,6 +122,10 @@ export const messages = pgTable("messages", {
   metadata:       jsonb("metadata"),
   externalId:     varchar("externalId", { length: 255 }),
   deliveryError:  text("deliveryError"),
+  direction:      varchar("direction"),
+  instanceId:     integer("instanceId"),
+  instanceName:   varchar("instanceName", { length: 100 }),
+  rawPayload:     jsonb("rawPayload"),
   createdAt:      timestamp("createdAt").defaultNow().notNull(),
 });
 
