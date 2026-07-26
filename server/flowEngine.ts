@@ -114,7 +114,16 @@ export async function findMatchingFlow(
   isFirstContact: boolean,
   hasVehicleId: boolean,
 ): Promise<number | null> {
-  const activeFlows = await getActiveChatFlows();
+  const conv = await getConversationById(conversationId);
+  if (!conv) return null;
+
+  const { getActiveFlowsForConnection } = await import("./db");
+  const activeFlows = await getActiveFlowsForConnection({
+    connectionType: conv.connectionType,
+    connectionId: conv.connectionId,
+    instanceName: conv.instanceName,
+  });
+
   if (activeFlows.length === 0) return null;
 
   for (const flow of activeFlows) {
@@ -153,6 +162,15 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     waitingForInput: false,
     flowCompleted: false,
   };
+
+  if (!ctx.sender) {
+    try {
+      const { resolveChannelSender } = await import("./channelAdapter");
+      ctx.sender = await resolveChannelSender(ctx.conversationId);
+    } catch (err) {
+      console.error("[FlowEngine] Failed to resolve channel sender in processFlowMessage:", err);
+    }
+  }
 
   // Always load lead data so variables work in all nodes
   try {
@@ -572,6 +590,15 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
     waitingForInput: false,
     flowCompleted: false,
   };
+
+  if (!ctx.sender) {
+    try {
+      const { resolveChannelSender } = await import("./channelAdapter");
+      ctx.sender = await resolveChannelSender(conversationId);
+    } catch (err) {
+      console.error("[FlowEngine] Failed to resolve channel sender in continueFlowAfterAI:", err);
+    }
+  }
 
   // Load lead data so variables work
   try {

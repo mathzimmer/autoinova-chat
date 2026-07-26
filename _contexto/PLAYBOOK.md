@@ -14,7 +14,12 @@ Na **VPS** (`/root/autoinova`):
 
 ## Migração de banco (quando há schema novo)
 
-Só quando criamos coluna/tabela nova. Na VPS:
+Só quando criamos coluna/tabela nova. Na VPS (Opção 1 - recomendada):
+```bash
+cd /root/autoinova
+npx tsx scripts/apply-migration.ts ARQUIVO.sql
+```
+Ou via `psql` (Opção 2):
 ```bash
 cd /root/autoinova
 set -a; source .env; set +a

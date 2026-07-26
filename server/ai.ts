@@ -1,6 +1,6 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById } from "./db";
+import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 
@@ -571,6 +571,62 @@ export interface InteractiveMessage {
   caption?: string; // for image type
 }
 
+export async function interpolateSystemVariables(prompt: string, conversation: Conversation): Promise<string> {
+  if (!prompt) return prompt;
+
+  const clientName = conversation.contactName || "Cliente";
+  const clientPhone = conversation.phone || "";
+
+  let sellerName = "Atendente";
+  if (conversation.assignedTo) {
+    try {
+      const { getUserById } = await import("./db");
+      const user = await getUserById(conversation.assignedTo);
+      if (user && user.name) sellerName = user.name;
+    } catch { /* ignore */ }
+  }
+
+  // Configurações da concessionária
+  const storeName = (await getSetting("store_name")) || "Auto Inova";
+  const storeAddress = (await getSetting("store_address")) || "";
+  const businessHours = (await getSetting("business_hours")) || "Segunda a Sexta, das 8h às 18h";
+
+  return prompt
+    .replace(/\{\{cliente_nome\}\}/gi, clientName)
+    .replace(/\{\{cliente_telefone\}\}/gi, clientPhone)
+    .replace(/\{\{vendedor_nome\}\}/gi, sellerName)
+    .replace(/\{\{atendente_nome\}\}/gi, sellerName)
+    .replace(/\{\{loja_nome\}\}/gi, storeName)
+    .replace(/\{\{loja_endereco\}\}/gi, storeAddress)
+    .replace(/\{\{horario_funcionamento\}\}/gi, businessHours);
+}
+
+export async function getKnowledgeBaseContext(customerMessage: string): Promise<string> {
+  try {
+    const db = await getDb();
+    if (!db) return "";
+
+    const { eq } = await import("drizzle-orm");
+    const { knowledgeBase } = await import("../drizzle/schema");
+    const faqList = await db.select().from(knowledgeBase).where(eq(knowledgeBase.isActive, true));
+    if (faqList.length === 0) return "";
+
+    const lowerMsg = customerMessage.toLowerCase();
+    const matchedFaqs = faqList.filter(faq => {
+      const titleMatch = faq.title.toLowerCase().split(" ").some(word => word.length > 3 && lowerMsg.includes(word));
+      const contentMatch = faq.content.toLowerCase().split(" ").some(word => word.length > 4 && lowerMsg.includes(word));
+      return titleMatch || contentMatch;
+    });
+
+    if (matchedFaqs.length === 0) return "";
+
+    return `\n\n=== INFORMAÇÕES ADICIONAIS (BASE DE CONHECIMENTO) ===\n${matchedFaqs.map(faq => `Pergunta/Tópico: ${faq.title}\nResposta: ${faq.content}`).join("\n\n")}`;
+  } catch (err) {
+    console.error("[AI-KB] Erro ao buscar base de conhecimento:", err);
+    return "";
+  }
+}
+
 export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
@@ -732,9 +788,14 @@ export async function processAIMessage(
   }
 
   // === ASSEMBLE FULL PROMPT (4 layers in order + ad vehicle context) ===
-  const fullSystemPrompt = `${corePrompt}\n\n${commercialPrompt}\n\n${personalityPrompt}\n\n${contextBlock}${adVehicleContext}`;
+  const finalCore = await interpolateSystemVariables(corePrompt, conversation);
+  const finalCommercial = await interpolateSystemVariables(commercialPrompt, conversation);
+  const finalPersonality = await interpolateSystemVariables(personalityPrompt, conversation);
+  const kbContext = await getKnowledgeBaseContext(customerMessage);
 
-  console.log(`[AI] Prompt assembled: CORE(${corePrompt.length}ch) + COMMERCIAL(${commercialPrompt.length}ch) + PERSONALITY(${personalityPrompt.length}ch) + CONTEXT(${contextBlock.length}ch) + AD_VEHICLE(${adVehicleContext.length}ch) = ${fullSystemPrompt.length}ch total`);
+  const fullSystemPrompt = `${finalCore}\n\n${finalCommercial}\n\n${finalPersonality}\n\n${contextBlock}${adVehicleContext}${kbContext}`;
+
+  console.log(`[AI] Prompt assembled: CORE(${finalCore.length}ch) + COMMERCIAL(${finalCommercial.length}ch) + PERSONALITY(${finalPersonality.length}ch) + CONTEXT(${contextBlock.length}ch) + AD_VEHICLE(${adVehicleContext.length}ch) + KB(${kbContext.length}ch) = ${fullSystemPrompt.length}ch total`);
 
   // Build message history for context
   const llmMessages: LLMMessage[] = [

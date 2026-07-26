@@ -90,6 +90,13 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
+export async function getUserById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
+}
+
 // ─── Conversation Queries ──────────────────────────────────────
 export async function listConversations(filters?: {
   status?: string;
@@ -1790,6 +1797,53 @@ export async function getActiveChatFlows() {
   if (!db) return [];
   return db.select().from(chatFlows)
     .where(eq(chatFlows.active, true))
+    .orderBy(desc(chatFlows.priority));
+}
+
+export async function getActiveFlowsForConnection(params: {
+  connectionType?: string | null;
+  connectionId?: number | null;
+  instanceName?: string | null;
+}) {
+  const db = await getDb();
+  if (!db) return [];
+
+  const conditions = [];
+
+  // 1. Condição específica por tipo e ID de conexão (Zernio/Tech Provider)
+  if (params.connectionType && params.connectionId) {
+    conditions.push(
+      and(
+        eq(chatFlows.connectionType, params.connectionType),
+        eq(chatFlows.connectionId, params.connectionId)
+      )
+    );
+  }
+
+  // 2. Condição para Evolution (por nome de instância)
+  if (params.connectionType === "evolution" && params.instanceName) {
+    conditions.push(
+      and(
+        eq(chatFlows.connectionType, "evolution"),
+        eq(chatFlows.instanceName, params.instanceName)
+      )
+    );
+  }
+
+  // 3. Condição global (remetente nulo)
+  conditions.push(
+    and(
+      isNull(chatFlows.connectionType),
+      isNull(chatFlows.connectionId),
+      isNull(chatFlows.instanceName)
+    )
+  );
+
+  return db.select().from(chatFlows)
+    .where(and(
+      eq(chatFlows.active, true),
+      or(...conditions)
+    ))
     .orderBy(desc(chatFlows.priority));
 }
 

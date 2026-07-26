@@ -134,7 +134,7 @@ async function executeRescueForLead(
 ): Promise<boolean> {
   // Dynamically import to avoid circular dependencies
   const { listChatFlowNodes, listChatFlowEdges } = await import("./db");
-  const { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage } = await import("./whatsapp");
+  const { resolveChannelSender } = await import("./channelAdapter");
 
   const nodes = await listChatFlowNodes(flowId);
   const edges = await listChatFlowEdges(flowId);
@@ -150,19 +150,15 @@ async function executeRescueForLead(
     return false;
   }
 
-  // Build context with lead data for variable replacement
-  const leadData = {
-    ...lead,
-    _rescueAttemptNumber: attemptNumber,
-  };
+  const channelSender = await resolveChannelSender(conversation.id);
 
-  // Simple variable replacement function (same as flowEngine)
+  // Helper function to replace variables in text nodes
   function replaceVars(text: string): string {
-    if (!text) return text;
+    if (!text) return "";
     return text
-      .replace(/\{\{nome\}\}/gi, conversation.contactName || lead.name || "cliente")
+      .replace(/\{\{nome\}\}/gi, lead.name || conversation.contactName || "cliente")
       .replace(/\{\{nome_completo\}\}/gi, lead.fullName || lead.name || conversation.contactName || "")
-      .replace(/\{\{telefone\}\}/gi, conversation.phone)
+      .replace(/\{\{telefone\}\}/gi, conversation.phone || "")
       .replace(/\{\{veiculo\}\}/gi, lead.vehicleInterest || "")
       .replace(/\{\{cidade\}\}/gi, lead.city || "")
       .replace(/\{\{troca\}\}/gi, lead.tradeVehicle || "")
@@ -197,7 +193,7 @@ async function executeRescueForLead(
       case "send_message": {
         const text = replaceVars(data.message || "");
         if (text) {
-          await sendTextMessage(conversation.phone, text);
+          await channelSender.text(text);
           await createMessage({
             conversationId: conversation.id,
             content: text,
@@ -217,7 +213,11 @@ async function executeRescueForLead(
           title: replaceVars(b.title || b.text || ""),
         }));
         if (bodyText && buttons.length > 0) {
-          await sendReplyButtons(conversation.phone, bodyText, buttons);
+          if (channelSender.buttons) {
+            await channelSender.buttons(bodyText, buttons);
+          } else {
+            await channelSender.text(`${bodyText}\n\n${buttons.map((b: any) => `* [${b.title}]`).join("\n")}`);
+          }
           const btnText = `${bodyText}\n\n${buttons.map((b: any) => `[${b.title}]`).join(" ")}`;
           await createMessage({
             conversationId: conversation.id,
@@ -235,7 +235,7 @@ async function executeRescueForLead(
         const imageUrl = data.imageUrl || data.url || "";
         const caption = replaceVars(data.caption || "");
         if (imageUrl) {
-          await sendImageMessage(conversation.phone, imageUrl, caption);
+          await channelSender.image(imageUrl, caption);
           await createMessage({
             conversationId: conversation.id,
             content: caption || "[Imagem]",

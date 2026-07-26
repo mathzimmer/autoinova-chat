@@ -18,7 +18,8 @@ async function run() {
   const sql = postgres(connectionString, { ssl: "require" });
 
   try {
-    const migrationPath = path.resolve(__dirname, "../drizzle/migrations_manual/2026-07-26_unified_columns.sql");
+    const filename = process.argv[2] || "2026-07-26_unified_columns.sql";
+    const migrationPath = path.resolve(__dirname, `../drizzle/migrations_manual/${filename}`);
     console.log(`Lendo arquivo de migração: ${migrationPath}`);
     const query = fs.readFileSync(migrationPath, "utf8");
 

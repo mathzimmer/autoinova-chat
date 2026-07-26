@@ -44,6 +44,7 @@ export const wnMsgStatusEnum            = pgEnum("wn_msg_status",            ["s
 export const reminderStatusEnum         = pgEnum("reminder_status",          ["pending", "fired", "dismissed"]);
 export const scheduledMsgStatusEnum     = pgEnum("scheduled_msg_status",     ["pending", "sent", "failed", "cancelled"]);
 export const capiEventStatusEnum        = pgEnum("capi_event_status",        ["sent", "failed", "skipped"]);
+export const routingStateEnum           = pgEnum("routing_state",            ["flow", "ai_agent", "human"]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TABELAS
@@ -100,6 +101,7 @@ export const conversations = pgTable("conversations", {
   connectionType:          varchar("connectionType"),
   connectionId:            integer("connectionId"),
   tags:                    jsonb("tags"),
+  routingState:            routingStateEnum("routingState").default("flow").notNull(),
   createdAt:               timestamp("createdAt").defaultNow().notNull(),
   updatedAt:               timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -515,6 +517,9 @@ export const chatFlows = pgTable("chatFlows", {
   priority:     integer("priority").default(0).notNull(),
   aiPrompt:     text("aiPrompt"),
   agentId:      integer("agentId"),
+  connectionType: varchar("connectionType"),
+  connectionId:   integer("connectionId"),
+  instanceName:   varchar("instanceName", { length: 100 }),
   createdBy:    integer("createdBy"),
   createdAt:    timestamp("createdAt").defaultNow().notNull(),
   updatedAt:    timestamp("updatedAt").defaultNow().notNull(),
@@ -1110,3 +1115,17 @@ export const sellerEvaluations = pgTable("sellerEvaluations", {
 
 export type SellerEvaluation = typeof sellerEvaluations.$inferSelect;
 export type InsertSellerEvaluation = typeof sellerEvaluations.$inferInsert;
+
+export const knowledgeBase = pgTable("knowledgeBase", {
+  id:          serial("id").primaryKey(),
+  category:    varchar("category", { length: 100 }).notNull(),
+  title:       varchar("title", { length: 255 }).notNull(),
+  content:     text("content").notNull(),
+  isActive:    boolean("isActive").default(true).notNull(),
+  createdAt:   timestamp("createdAt").defaultNow().notNull(),
+  updatedAt:   timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type KnowledgeBase = typeof knowledgeBase.$inferSelect;
+export type InsertKnowledgeBase = typeof knowledgeBase.$inferInsert;
+
