@@ -64,6 +64,8 @@ export default function ConversationPanel({ conversationId }: Props) {
       toast.success(`Fluxo iniciado (${res.messagesSent} mensagem(ns) enviada(s))`);
       refetchFlowSession();
       utils.message.list.invalidate({ conversationId });
+      utils.conversation.getById.invalidate({ id: conversationId });
+      utils.conversation.list.invalidate();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -188,6 +190,22 @@ export default function ConversationPanel({ conversationId }: Props) {
       utils.conversation.list.invalidate();
       toast.success(data?.aiActive ? "IA reativada" : "IA pausada - você assumiu o atendimento");
     },
+  });
+
+  // ── Roteamento unificado (Fluxo / IA / Humano) ──
+  // Modo ativo derivado dos sinais reais (robusto mesmo em conversas antigas)
+  const activeMode: "flow" | "ai_agent" | "human" =
+    activeFlowSession ? "flow" : conversation?.aiActive ? "ai_agent" : "human";
+  const [routingTab, setRoutingTab] = useState<"flow" | "ai_agent" | "human">("ai_agent");
+  useEffect(() => { setRoutingTab(activeMode); }, [activeMode]);
+  const setRouting = trpc.conversation.setRouting.useMutation({
+    onSuccess: (data: any) => {
+      utils.conversation.getById.invalidate({ id: conversationId });
+      utils.conversation.list.invalidate();
+      refetchFlowSession();
+      toast.success(data?.routingState === "ai_agent" ? "IA no comando" : "Você assumiu o atendimento");
+    },
+    onError: (e) => toast.error(e.message),
   });
 
   const updateStatus = trpc.conversation.updateStatus.useMutation({
@@ -338,28 +356,87 @@ ${(lead as any).notes || "N/A"}
       {/* ── ATENDIMENTO (IA + estado + atendente unificados) ── */}
       <div className="p-4 border-b border-border shrink-0 space-y-3">
         <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Atendimento</h4>
-        {conversation.aiActive ? (
-          <Button
-            onClick={() => toggleAI.mutate({ id: conversationId, aiActive: false })}
-            variant="outline"
-            className="w-full justify-start gap-2 h-8 text-sm border-blue-500/30 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
-            disabled={toggleAI.isPending}
-          >
-            <UserCheck className="h-4 w-4" />
-            Assumir Conversa
-          </Button>
-        ) : (
-          <Button
-            onClick={() => toggleAI.mutate({ id: conversationId, aiActive: true })}
-            variant="outline"
-            className="w-full justify-start gap-2 h-8 text-sm border-primary/30 text-primary hover:bg-primary/10"
-            disabled={toggleAI.isPending}
-          >
-            <Bot className="h-4 w-4" />
-            Reativar IA
-          </Button>
+
+        {/* Seletor único de quem conduz a conversa */}
+        <div className="grid grid-cols-3 gap-1 p-1 bg-secondary/50 rounded-lg">
+          {([
+            { key: "flow", label: "Fluxo", icon: GitBranch },
+            { key: "ai_agent", label: "IA", icon: Bot },
+            { key: "human", label: "Humano", icon: UserCheck },
+          ] as const).map((opt) => {
+            const isActive = routingTab === opt.key;
+            const Icon = opt.icon;
+            return (
+              <button
+                key={opt.key}
+                type="button"
+                disabled={setRouting.isPending}
+                onClick={() => {
+                  setRoutingTab(opt.key);
+                  if (opt.key === "ai_agent") setRouting.mutate({ conversationId, mode: "ai_agent" });
+                  else if (opt.key === "human") setRouting.mutate({ conversationId, mode: "human" });
+                  // "flow": apenas revela o seletor de fluxo abaixo; iniciar é o commit
+                }}
+                className={`flex items-center justify-center gap-1.5 h-8 rounded-md text-xs font-medium transition-colors ${
+                  isActive
+                    ? "bg-card text-primary border border-primary/40 shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" /> {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted-foreground">
+          {activeMode === "flow"
+            ? "Um fluxo automatizado está conduzindo esta conversa."
+            : activeMode === "ai_agent"
+            ? "A IA está respondendo automaticamente."
+            : "Você (ou um atendente) está no comando — a IA está pausada."}
+        </p>
+
+        {/* Painel do modo Fluxo */}
+        {routingTab === "flow" && (
+          activeFlowSession ? (
+            <div className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/25 rounded-md px-2.5 py-2">
+              <GitBranch className="h-4 w-4 text-violet-400 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-violet-300 font-medium truncate">{(activeFlowSession as any).flowName}</p>
+                <p className="text-[10px] text-violet-400/70">Ativo nesta conversa</p>
+              </div>
+              <Button
+                variant="ghost" size="sm"
+                className="h-7 px-2 text-xs text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 shrink-0"
+                onClick={() => pauseFlowMutation.mutate({ conversationId })}
+                disabled={pauseFlowMutation.isPending}
+              >
+                <PauseCircle className="h-3.5 w-3.5 mr-1" /> Pausar
+              </Button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Select value={flowToStart?.toString() || ""} onValueChange={v => setFlowToStart(Number(v))}>
+                <SelectTrigger className="h-8 text-sm bg-input border-border flex-1"><SelectValue placeholder="Escolher fluxo salvo..." /></SelectTrigger>
+                <SelectContent>
+                  {((savedFlows as any[]) || []).map(f => (
+                    <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm" className="h-8 shrink-0"
+                disabled={!flowToStart || startFlowMutation.isPending}
+                onClick={() => flowToStart && startFlowMutation.mutate({ conversationId, flowId: flowToStart })}
+              >
+                {startFlowMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><PlayCircle className="h-3.5 w-3.5 mr-1" /> Iniciar</>}
+              </Button>
+            </div>
+          )
         )}
-        {conversation.aiActive && (agentsList || []).length > 0 && (
+
+        {/* Painel do modo IA: escolher agente */}
+        {routingTab === "ai_agent" && (agentsList || []).length > 0 && (
           <div>
             <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block flex items-center gap-1">
               <Bot className="h-3 w-3" /> Agente de IA
@@ -507,47 +584,6 @@ ${(lead as any).notes || "N/A"}
           )}
         </div>
       )}
-
-      {/* ── FLUXO AUTOMATIZADO ── */}
-      <div className="p-4 border-b border-border shrink-0">
-        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Fluxo Automatizado</h4>
-        {activeFlowSession ? (
-          <div className="flex items-center gap-2 bg-violet-500/10 border border-violet-500/25 rounded-md px-2.5 py-2">
-            <GitBranch className="h-4 w-4 text-violet-400 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-sm text-violet-300 font-medium truncate">{(activeFlowSession as any).flowName}</p>
-              <p className="text-[10px] text-violet-400/70">Ativo — rodando nesta conversa</p>
-            </div>
-            <Button
-              variant="ghost" size="sm"
-              className="h-7 px-2 text-xs text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 shrink-0"
-              onClick={() => pauseFlowMutation.mutate({ conversationId })}
-              disabled={pauseFlowMutation.isPending}
-            >
-              <PauseCircle className="h-3.5 w-3.5 mr-1" /> Pausar
-            </Button>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <Select value={flowToStart?.toString() || ""} onValueChange={v => setFlowToStart(Number(v))}>
-              <SelectTrigger className="h-8 text-sm bg-input border-border flex-1"><SelectValue placeholder="Escolher fluxo salvo..." /></SelectTrigger>
-              <SelectContent>
-                {((savedFlows as any[]) || []).map(f => (
-                  <SelectItem key={f.id} value={String(f.id)}>{f.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              size="sm"
-              className="h-8 shrink-0"
-              disabled={!flowToStart || startFlowMutation.isPending}
-              onClick={() => flowToStart && startFlowMutation.mutate({ conversationId, flowId: flowToStart })}
-            >
-              {startFlowMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <><PlayCircle className="h-3.5 w-3.5 mr-1" /> Iniciar</>}
-            </Button>
-          </div>
-        )}
-      </div>
 
       {/* Contact Info - Editable */}
       <div className="p-4 border-b border-border shrink-0">

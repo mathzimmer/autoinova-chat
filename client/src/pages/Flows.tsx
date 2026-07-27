@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import {
   Plus, GitBranch, Play, Pause, Trash2, Copy, Edit3, ArrowRight,
   MessageSquare, List, MousePointerClick, Megaphone, RotateCcw, Tag, Wrench,
-  MoreVertical, LifeBuoy, Zap
+  MoreVertical, LifeBuoy, Zap, Filter, X
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -32,7 +32,15 @@ const TRIGGER_LABELS: Record<string, { label: string; icon: typeof MessageSquare
   reactivation: { label: "Reativação", icon: RotateCcw, color: "bg-yellow-500/10 text-yellow-500" },
   category_interest: { label: "Categoria", icon: List, color: "bg-cyan-500/10 text-cyan-500" },
   rescue: { label: "Resgate (Lead Inativo)", icon: LifeBuoy, color: "bg-red-500/10 text-red-500" },
+  tag_added: { label: "Etiqueta adicionada", icon: Tag, color: "bg-emerald-500/10 text-emerald-500" },
+  tag_removed: { label: "Etiqueta removida", icon: Tag, color: "bg-rose-500/10 text-rose-500" },
+  funnel_stage_entered: { label: "Entrou na etapa", icon: ArrowRight, color: "bg-indigo-500/10 text-indigo-500" },
 };
+
+const FUNNEL_STAGE_OPTIONS = [
+  "novo", "interesse_definido", "pagamento_definido", "dados_pessoais",
+  "dados_troca", "encaminhado_vendedor", "negociando", "fechado", "perdido",
+];
 
 export default function Flows() {
   const [editingFlowId, setEditingFlowId] = useState<number | null>(null);
@@ -46,6 +54,7 @@ export default function Flows() {
 
   const utils = trpc.useUtils();
   const flowsQuery = trpc.flow.list.useQuery();
+  const instancesQuery = trpc.evolution.listInstances.useQuery();
   const createMutation = trpc.flow.create.useMutation({
     onSuccess: () => {
       utils.flow.list.invalidate();
@@ -76,6 +85,25 @@ export default function Flows() {
       toast.success("Fluxo duplicado!");
     },
   });
+
+  // ── Condições "Somente se" (grupos E/OU) ──
+  const [condFlowId, setCondFlowId] = useState<number | null>(null);
+  const [condGroups, setCondGroups] = useState<{ field: string; op: string; value: string }[][]>([]);
+  function openConditions(flow: any) {
+    setCondFlowId(flow.id);
+    const g = Array.isArray(flow.conditions) ? flow.conditions : [];
+    setCondGroups(g.length ? g : [[{ field: "funnel_stage", op: "eq", value: "" }]]);
+  }
+  function saveConditions() {
+    if (condFlowId == null) return;
+    const clean = condGroups
+      .map(group => group.filter(c => c.value.trim()))
+      .filter(group => group.length > 0);
+    updateMutation.mutate(
+      { id: condFlowId, conditions: clean.length ? (clean as any) : null },
+      { onSuccess: () => { setCondFlowId(null); toast.success("Condições salvas!"); } }
+    );
+  }
 
   // If editing a flow, show the editor
   if (editingFlowId !== null) {
@@ -165,6 +193,29 @@ export default function Flows() {
                   />
                 </div>
               )}
+              {(newFlow.trigger === "tag_added" || newFlow.trigger === "tag_removed") && (
+                <div>
+                  <Label>Etiqueta (deixe vazio = qualquer)</Label>
+                  <Input
+                    value={newFlow.triggerValue}
+                    onChange={(e) => setNewFlow({ ...newFlow, triggerValue: e.target.value })}
+                    placeholder="Ex: Lead quente, VIP (separe por vírgula)"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">O fluxo dispara quando essa etiqueta é {newFlow.trigger === "tag_added" ? "adicionada" : "removida"} na conversa.</p>
+                </div>
+              )}
+              {newFlow.trigger === "funnel_stage_entered" && (
+                <div>
+                  <Label>Etapa do funil</Label>
+                  <Select value={newFlow.triggerValue || ""} onValueChange={(v) => setNewFlow({ ...newFlow, triggerValue: v })}>
+                    <SelectTrigger><SelectValue placeholder="Escolha a etapa..." /></SelectTrigger>
+                    <SelectContent>
+                      {FUNNEL_STAGE_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">Dispara quando o lead entra nessa etapa do funil.</p>
+                </div>
+              )}
               <Button
                 className="w-full"
                 onClick={() => createMutation.mutate({
@@ -238,6 +289,9 @@ export default function Flows() {
                         <DropdownMenuItem onClick={(e) => { e.stopPropagation(); duplicateMutation.mutate({ id: flow.id }); }}>
                           <Copy className="h-4 w-4 mr-2" /> Duplicar
                         </DropdownMenuItem>
+                        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openConditions(flow); }}>
+                          <Filter className="h-4 w-4 mr-2" /> Condições (Somente se)
+                        </DropdownMenuItem>
                         <DropdownMenuItem
                           className="text-destructive"
                           onClick={(e) => {
@@ -271,6 +325,31 @@ export default function Flows() {
                       <span className="text-green-500">{flow.activeSessionCount} ativas</span>
                     )}
                   </div>
+                  {/* Vínculo com instância (fallback: global) */}
+                  <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                    <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Aplicar em</label>
+                    <Select
+                      value={(flow as any).instanceName ? `evolution:${(flow as any).instanceName}` : "global"}
+                      onValueChange={(v) => {
+                        if (v === "global") {
+                          updateMutation.mutate({ id: flow.id, connectionType: null, instanceName: null });
+                        } else {
+                          const inst = v.replace(/^evolution:/, "");
+                          updateMutation.mutate({ id: flow.id, connectionType: "evolution", instanceName: inst });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="global">Global (todas as conexões)</SelectItem>
+                        {(instancesQuery.data || []).map((i: any) => (
+                          <SelectItem key={i.id} value={`evolution:${i.instanceName}`}>
+                            {i.displayName || i.instanceName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                   <div className="flex items-center gap-2 mt-3">
                     <Button
                       size="sm"
@@ -298,6 +377,84 @@ export default function Flows() {
           })}
         </div>
       )}
+
+      {/* Diálogo de Condições "Somente se" (grupos E/OU) */}
+      <Dialog open={condFlowId !== null} onOpenChange={(o) => !o && setCondFlowId(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Condições — Somente se</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-2">
+            O fluxo só dispara se as condições baterem. Dentro de um grupo, <b>todas</b> precisam valer (E).
+            Entre grupos, basta <b>um</b> grupo valer (OU). Sem condições, dispara sempre.
+          </p>
+          <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+            {condGroups.map((group, gi) => (
+              <div key={gi} className="rounded-lg border border-border p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Grupo {gi + 1}</span>
+                  {condGroups.length > 1 && (
+                    <button className="text-muted-foreground hover:text-destructive" onClick={() => setCondGroups(condGroups.filter((_, i) => i !== gi))}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+                {group.map((cond, ci) => (
+                  <div key={ci} className="flex items-center gap-1.5">
+                    <Select value={cond.field} onValueChange={(v) => {
+                      const next = [...condGroups]; next[gi] = [...group]; next[gi][ci] = { ...cond, field: v }; setCondGroups(next);
+                    }}>
+                      <SelectTrigger className="h-8 text-xs flex-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="funnel_stage">Etapa do funil</SelectItem>
+                        <SelectItem value="temperature">Temperatura</SelectItem>
+                        <SelectItem value="channel">Canal</SelectItem>
+                        <SelectItem value="tag">Tem etiqueta</SelectItem>
+                        <SelectItem value="quality">Qualidade</SelectItem>
+                        <SelectItem value="payment">Forma de pagamento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Select value={cond.op} onValueChange={(v) => {
+                      const next = [...condGroups]; next[gi] = [...group]; next[gi][ci] = { ...cond, op: v }; setCondGroups(next);
+                    }}>
+                      <SelectTrigger className="h-8 text-xs w-16"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="eq">é</SelectItem>
+                        <SelectItem value="neq">não é</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      className="h-8 text-xs flex-1"
+                      value={cond.value}
+                      placeholder={cond.field === "funnel_stage" ? "negociando" : cond.field === "temperature" ? "quente" : cond.field === "channel" ? "evolution" : cond.field === "tag" ? "Lead quente" : "valor"}
+                      onChange={(e) => { const next = [...condGroups]; next[gi] = [...group]; next[gi][ci] = { ...cond, value: e.target.value }; setCondGroups(next); }}
+                    />
+                    <button className="text-muted-foreground hover:text-destructive shrink-0" onClick={() => {
+                      const next = [...condGroups]; next[gi] = group.filter((_, i) => i !== ci);
+                      if (next[gi].length === 0) next.splice(gi, 1);
+                      setCondGroups(next.length ? next : []);
+                    }}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+                <Button variant="ghost" size="sm" className="h-7 text-xs w-full" onClick={() => {
+                  const next = [...condGroups]; next[gi] = [...group, { field: "funnel_stage", op: "eq", value: "" }]; setCondGroups(next);
+                }}>
+                  <Plus className="h-3 w-3 mr-1" /> E condição
+                </Button>
+              </div>
+            ))}
+            <Button variant="outline" size="sm" className="w-full" onClick={() => setCondGroups([...condGroups, [{ field: "funnel_stage", op: "eq", value: "" }]])}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> OU novo grupo
+            </Button>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setCondFlowId(null)}>Cancelar</Button>
+            <Button onClick={saveConditions} disabled={updateMutation.isPending}>Salvar condições</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

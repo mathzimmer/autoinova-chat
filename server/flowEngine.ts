@@ -107,6 +107,56 @@ function replaceVariables(text: string, ctx: FlowContext): string {
     .replace(/\{\{tentativa_resgate\}\}/gi, String(ctx.leadData?._rescueAttemptNumber || 1));
 }
 
+// ─── Avaliação de condições "Somente se" (grupos E/OU) ───────────────────────
+// flow.conditions = array de grupos. Dentro do grupo, todas as condições precisam
+// valer (E). Entre grupos, basta um valer (OU). Sem condições = sempre passa.
+export async function evaluateFlowConditions(flow: any, conversationId: number): Promise<boolean> {
+  const groups = flow?.conditions;
+  if (!Array.isArray(groups) || groups.length === 0) return true;
+
+  const conv = await getConversationById(conversationId);
+  const lead: any = await getLeadByConversationId(conversationId).catch(() => null);
+
+  let tags: string[] = [];
+  try {
+    const { getDb } = await import("./db");
+    const db = await getDb();
+    if (db) {
+      const { conversationLabels, labels } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await db.select({ name: labels.name }).from(conversationLabels)
+        .innerJoin(labels, eq(conversationLabels.labelId, labels.id))
+        .where(eq(conversationLabels.conversationId, conversationId));
+      tags = rows.map((r: any) => String(r.name).toLowerCase());
+    }
+  } catch { /* sem tags */ }
+
+  const fields: Record<string, string> = {
+    funnel_stage: String(lead?.funnelStatus || "").toLowerCase(),
+    temperature: String(lead?.temperature || "").toLowerCase(),
+    channel: String(conv?.channel || "").toLowerCase(),
+    quality: String(lead?.quality || "").toLowerCase(),
+    payment: String(lead?.paymentMethod || "").toLowerCase(),
+  };
+
+  const evalCond = (c: any): boolean => {
+    const field = String(c?.field || "");
+    const op = String(c?.op || "eq");
+    const val = String(c?.value || "").toLowerCase();
+    if (field === "tag") {
+      const has = tags.includes(val);
+      return op === "neq" ? !has : has;
+    }
+    const cur = fields[field] ?? "";
+    return op === "neq" ? cur !== val : cur === val;
+  };
+
+  for (const group of groups) {
+    if (Array.isArray(group) && group.length > 0 && group.every(evalCond)) return true;
+  }
+  return false;
+}
+
 // ─── Find Matching Flow ──────────────────────────────────────
 export async function findMatchingFlow(
   conversationId: number,
@@ -127,27 +177,29 @@ export async function findMatchingFlow(
   if (activeFlows.length === 0) return null;
 
   for (const flow of activeFlows) {
+    let triggerMatched = false;
     switch (flow.trigger) {
       case "first_contact":
-        if (isFirstContact) return flow.id;
+        triggerMatched = isFirstContact;
         break;
       case "keyword": {
         const keywords = (flow.triggerValue || "").split(",").map(k => k.trim().toLowerCase()).filter(Boolean);
         const msgLower = customerMessage.toLowerCase();
-        if (keywords.some(kw => msgLower.includes(kw))) return flow.id;
+        triggerMatched = keywords.some(kw => msgLower.includes(kw));
         break;
       }
       case "ad_click":
-        if (hasVehicleId) return flow.id;
+        triggerMatched = hasVehicleId;
         break;
       case "category_interest": {
         const categories = (flow.triggerValue || "").split(",").map(c => c.trim().toLowerCase()).filter(Boolean);
         const msgLower = customerMessage.toLowerCase();
-        if (categories.some(cat => msgLower.includes(cat))) return flow.id;
+        triggerMatched = categories.some(cat => msgLower.includes(cat));
         break;
       }
-      // manual and reactivation are triggered differently
+      // manual, reactivation e gatilhos de CRM disparam por outros caminhos
     }
+    if (triggerMatched && await evaluateFlowConditions(flow, conversationId)) return flow.id;
   }
   return null;
 }
@@ -1643,6 +1695,102 @@ export async function startFlowManually(params: {
     customerMessage: "",
     contactName: params.contactName,
   });
+}
+
+// ─── Entrega das mensagens de um FlowResult (persiste + emite no inbox) ────────
+// Usado por disparos que não vêm de uma mensagem do cliente (ex: gatilhos de CRM).
+export async function deliverFlowResult(conversationId: number, result: FlowResult): Promise<number> {
+  const { createMessage } = await import("./db");
+  const { emitNewMessage } = await import("./socket");
+  const senderName = "Auto Inova - Matriz IA";
+  let sent = 0;
+  for (const response of result.responses) {
+    const m = await createMessage({ conversationId, content: response, senderType: "bot", senderName, messageType: "text" });
+    emitNewMessage(conversationId, m); sent++;
+  }
+  for (const img of result.imageMessages) {
+    const m = await createMessage({ conversationId, content: img.caption || "[Imagem]", senderType: "bot", senderName, messageType: "image", metadata: { mediaUrl: img.imageUrl, caption: img.caption } });
+    emitNewMessage(conversationId, m); sent++;
+  }
+  for (const im of result.interactiveMessages) {
+    const meta: any = { interactiveType: im.type, interactiveData: im.data };
+    let content = im.data.body || "";
+    if (im.type === "buttons" && im.data.buttons) {
+      content += `\n\n[Botões: ${im.data.buttons.map((b: any) => b.title).join(" | ")}]`;
+      meta.buttons = im.data.buttons;
+    } else if (im.type === "list" && im.data.sections) {
+      content += `\n\n[Lista: ${im.data.sections.flatMap((s: any) => (s.rows || []).map((r: any) => r.title)).join(" | ")}]`;
+      meta.sections = im.data.sections;
+      meta.buttonText = im.data.buttonText;
+    }
+    const m = await createMessage({ conversationId, content, senderType: "bot", senderName, messageType: "text", metadata: meta });
+    emitNewMessage(conversationId, m); sent++;
+  }
+  return sent;
+}
+
+// ─── Disparo por evento de CRM (etiqueta / etapa do funil) ────────────────────
+// triggerType: "tag_added" | "tag_removed" | "funnel_stage_entered"
+// matchValue: nome da etiqueta ou valor da etapa. Se o fluxo tiver triggerValue,
+// ele precisa bater (lista separada por vírgula); se estiver vazio, vale para qualquer.
+export async function triggerEventFlow(params: {
+  conversationId: number;
+  triggerType: "tag_added" | "tag_removed" | "funnel_stage_entered";
+  matchValue?: string;
+}): Promise<boolean> {
+  try {
+    const { getSetting } = await import("./db");
+    const flowsEnabled = (await getSetting("flows_global_enabled")) !== "false";
+    if (!flowsEnabled) return false;
+
+    const conv = await getConversationById(params.conversationId);
+    if (!conv || !conv.phone) return false;
+
+    // Não interrompe um fluxo já ativo
+    const existing = await getActiveFlowSession(params.conversationId);
+    if (existing) return false;
+
+    const { getActiveFlowsForConnection } = await import("./db");
+    const flows = await getActiveFlowsForConnection({
+      connectionType: conv.connectionType,
+      connectionId: conv.connectionId,
+      instanceName: conv.instanceName,
+    });
+
+    const wanted = params.matchValue?.toLowerCase();
+    const candidates = flows.filter((f: any) => {
+      if (f.trigger !== params.triggerType) return false;
+      const tv = (f.triggerValue || "").trim();
+      if (!tv) return true; // sem filtro = vale para qualquer etiqueta/etapa
+      const opts = tv.split(",").map((s: string) => s.trim().toLowerCase()).filter(Boolean);
+      return wanted ? opts.includes(wanted) : false;
+    });
+    // Primeiro candidato que também passa nas condições "Somente se"
+    let match: any = null;
+    for (const c of candidates) {
+      if (await evaluateFlowConditions(c, params.conversationId)) { match = c; break; }
+    }
+    if (!match) return false;
+
+    const result = await startFlowManually({
+      conversationId: params.conversationId,
+      flowId: match.id,
+      phone: conv.phone,
+      contactName: conv.contactName || undefined,
+    });
+    await deliverFlowResult(params.conversationId, result);
+
+    // Roteamento exclusivo: fluxo assume, IA pausa
+    const { updateConversation } = await import("./db");
+    const { emitConversationUpdate } = await import("./socket");
+    await updateConversation(params.conversationId, { aiActive: false, routingState: "flow" } as any);
+    emitConversationUpdate(params.conversationId, { aiActive: false, routingState: "flow" });
+    console.log(`[FlowEngine] Gatilho de CRM "${params.triggerType}" (${params.matchValue || "*"}) iniciou fluxo ${match.id} na conversa ${params.conversationId}`);
+    return true;
+  } catch (err) {
+    console.error("[FlowEngine] Erro em triggerEventFlow:", err);
+    return false;
+  }
 }
 
 

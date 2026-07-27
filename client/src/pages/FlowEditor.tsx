@@ -408,9 +408,7 @@ function PropertiesPanel({
               rows={4}
               className="text-sm"
             />
-            <p className="text-[10px] text-muted-foreground mt-1">
-              Use {"{{nome}}"} para nome do cliente, {"{{veiculo}}"} para veículo de interesse
-            </p>
+            <VarChips onInsert={(v) => updateConfig("text", (config.text || "") + v)} />
           </div>
         )}
 
@@ -425,6 +423,7 @@ function PropertiesPanel({
                 rows={3}
                 className="text-sm"
               />
+              <VarChips onInsert={(v) => updateConfig("body", (config.body || "") + v)} />
             </div>
             <div>
               <Label className="text-xs">Botões (máx. 3)</Label>
@@ -2007,6 +2006,28 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
             </div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+const FLOW_VARS = ["{{nome}}", "{{telefone}}", "{{veiculo}}", "{{cidade}}", "{{troca}}", "{{pagamento}}", "{{etapa_funil}}", "{{temperatura}}"];
+
+function VarChips({ onInsert }: { onInsert: (v: string) => void }) {
+  return (
+    <div className="mt-1.5">
+      <p className="text-[10px] text-muted-foreground mb-1">Variáveis (clique para inserir):</p>
+      <div className="flex flex-wrap gap-1">
+        {FLOW_VARS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => onInsert(v)}
+            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+          >
+            {v}
+          </button>
+        ))}
       </div>
     </div>
   );

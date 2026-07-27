@@ -22,6 +22,7 @@ import ContactsPage from "./pages/Contacts";
 import VendorApiKeys from "./pages/VendorApiKeys";
 import Flows from "./pages/Flows";
 import Agents from "./pages/Agents";
+import Automation from "./pages/Automation";
 import Sellers from "./pages/Sellers";
 import Performance from "./pages/Performance";
 import EvolutionInstances from "./pages/EvolutionInstances";
@@ -109,6 +110,12 @@ function Router() {
           <VendorApiKeys />
         </AppLayout>
       </Route>
+      <Route path="/automation">
+        <AppLayout>
+          <Automation />
+        </AppLayout>
+      </Route>
+      {/* Rotas antigas mantidas (deep-links) — redirecionam para a área unificada */}
       <Route path="/flows">
         <AppLayout>
           <Flows />

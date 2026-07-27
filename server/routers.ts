@@ -724,8 +724,51 @@ const conversationRouter = router({
       aiActive: z.boolean(),
     }))
     .mutation(async ({ input }) => {
-      const conv = await updateConversation(input.id, { aiActive: input.aiActive });
+      const conv = await updateConversation(input.id, {
+        aiActive: input.aiActive,
+        routingState: input.aiActive ? "ai_agent" : "human",
+      });
       emitConversationUpdate(input.id, conv);
+      return conv;
+    }),
+
+  // Roteamento unificado da conversa: um só condutor por vez (fluxo / IA / humano).
+  // Trocar de modo é exclusivo — sair para IA ou humano pausa qualquer fluxo ativo.
+  // (O modo "flow" é iniciado por flow.startForConversation, que também ajusta o routingState.)
+  setRouting: protectedProcedure
+    .input(z.object({
+      conversationId: z.number(),
+      mode: z.enum(["ai_agent", "human"]),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const before = await getConversationById(input.conversationId);
+      if (!before) throw new Error("Conversa não encontrada");
+      // Sempre pausa fluxo ao entregar para IA ou humano
+      await pauseFlowSessionByConversation(input.conversationId).catch(() => {});
+      if (input.mode === "ai_agent") {
+        const conv = await updateConversation(input.conversationId, {
+          aiActive: true,
+          routingState: "ai_agent",
+        });
+        emitConversationUpdate(input.conversationId, conv);
+        return conv;
+      }
+      // human
+      const conv = await updateConversation(input.conversationId, {
+        aiActive: false,
+        assignedTo: ctx.user.id,
+        routingState: "human",
+      });
+      emitConversationUpdate(input.conversationId, conv);
+      if (before.assignedTo !== ctx.user.id) {
+        const { logTimeline } = await import("./db");
+        logTimeline({
+          conversationId: input.conversationId,
+          userId: ctx.user.id,
+          action: "atribuido_atendente",
+          details: { para: ctx.user.name || null },
+        }).catch(() => {});
+      }
       return conv;
     }),
 
@@ -2191,7 +2234,10 @@ const leadRouter = router({
       const { conversationId, funnelStatus, ...data } = input;
       const conv = await getConversationById(conversationId);
       const updateData: any = { ...data };
+      let stageChanged = false;
       if (funnelStatus) {
+        const prevLead = await getLeadByConversationId(conversationId).catch(() => null);
+        stageChanged = (prevLead?.funnelStatus || null) !== funnelStatus;
         updateData.funnelStatus = funnelStatus;
         // Auto-calculate temperature from funnel status
         const tempMap: Record<string, string> = {
@@ -2202,11 +2248,21 @@ const leadRouter = router({
         };
         updateData.temperature = tempMap[funnelStatus] || "frio";
       }
-      return upsertLead({
+      const saved = await upsertLead({
         conversationId,
         phone: conv?.phone || "",
         ...updateData,
       });
+      // Gatilho de CRM: entrou em etapa do funil (só quando muda de fato)
+      if (stageChanged && funnelStatus) {
+        (async () => {
+          try {
+            const { triggerEventFlow } = await import("./flowEngine");
+            await triggerEventFlow({ conversationId, triggerType: "funnel_stage_entered", matchValue: funnelStatus });
+          } catch (e) { console.error("[CRM trigger] etapa:", e); }
+        })();
+      }
+      return saved;
     }),
 });
 
@@ -4394,7 +4450,7 @@ const flowRouter = router({
     .input(z.object({
       name: z.string().min(1),
       description: z.string().optional(),
-      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue"]),
+      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue", "tag_added", "tag_removed", "funnel_stage_entered"]),
       triggerValue: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
@@ -4424,12 +4480,19 @@ const flowRouter = router({
       id: z.number(),
       name: z.string().optional(),
       description: z.string().optional(),
-      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue"]).optional(),
+      trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue", "tag_added", "tag_removed", "funnel_stage_entered"]).optional(),
       triggerValue: z.string().optional(),
       active: z.boolean().optional(),
       priority: z.number().optional(),
       aiPrompt: z.string().nullable().optional(),
       agentId: z.number().nullable().optional(),
+      connectionType: z.string().nullable().optional(),
+      instanceName: z.string().nullable().optional(),
+      conditions: z.array(z.array(z.object({
+        field: z.string(),
+        op: z.enum(["eq", "neq"]),
+        value: z.string(),
+      }))).nullable().optional(),
     }))
     .mutation(async ({ input }) => {
       const { id, ...data } = input;
@@ -4519,6 +4582,10 @@ const flowRouter = router({
         });
         emitNewMessage(input.conversationId, flowInteractiveMsg);
       }
+
+      // Roteamento exclusivo: fluxo assume, IA pausa
+      const routedConv = await updateConversation(input.conversationId, { aiActive: false, routingState: "flow" });
+      emitConversationUpdate(input.conversationId, routedConv);
 
       return { success: true, messagesSent: flowResult.responses.length + flowResult.imageMessages.length + flowResult.interactiveMessages.length };
     }),
@@ -6371,8 +6438,15 @@ const labelRouter = router({
     .mutation(async ({ input }) => {
       const db = await getDb();
       if (!db) throw new Error("Database not available");
-      const { conversationLabels } = await import("../drizzle/schema");
+      const { conversationLabels, labels } = await import("../drizzle/schema");
       const { eq } = await import("drizzle-orm");
+      // Etiquetas antes (para detectar adicionadas/removidas → gatilhos de CRM)
+      const beforeRows = await db.select({ labelId: conversationLabels.labelId })
+        .from(conversationLabels)
+        .where(eq(conversationLabels.conversationId, input.conversationId));
+      const beforeArr = beforeRows.map(r => r.labelId);
+      const afterArr = input.labelIds;
+
       await db.delete(conversationLabels).where(eq(conversationLabels.conversationId, input.conversationId));
       if (input.labelIds.length > 0) {
         await db.insert(conversationLabels).values(
@@ -6380,6 +6454,25 @@ const labelRouter = router({
         );
       }
       emitConversationUpdate(input.conversationId, { labelIds: input.labelIds });
+
+      // Gatilhos de CRM: etiqueta adicionada / removida
+      const addedIds = afterArr.filter(id => !beforeArr.includes(id));
+      const removedIds = beforeArr.filter(id => !afterArr.includes(id));
+      if (addedIds.length > 0 || removedIds.length > 0) {
+        (async () => {
+          try {
+            const allLabels = await db.select({ id: labels.id, name: labels.name }).from(labels);
+            const nameById = new Map(allLabels.map(l => [l.id, l.name]));
+            const { triggerEventFlow } = await import("./flowEngine");
+            for (const id of addedIds) {
+              await triggerEventFlow({ conversationId: input.conversationId, triggerType: "tag_added", matchValue: nameById.get(id) || undefined });
+            }
+            for (const id of removedIds) {
+              await triggerEventFlow({ conversationId: input.conversationId, triggerType: "tag_removed", matchValue: nameById.get(id) || undefined });
+            }
+          } catch (e) { console.error("[CRM trigger] etiqueta:", e); }
+        })();
+      }
       return { success: true };
     }),
 });
@@ -6786,8 +6879,64 @@ const performanceRouter = router({
     }),
 });
 
+// ─── Base de Conhecimento (FAQ para a IA — RAG leve) ──────────────────────────
+const knowledgeBaseRouter = router({
+  list: protectedProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const { knowledgeBase } = await import("../drizzle/schema");
+    const { desc } = await import("drizzle-orm");
+    return db.select().from(knowledgeBase).orderBy(desc(knowledgeBase.updatedAt));
+  }),
+
+  create: protectedProcedure
+    .input(z.object({
+      category: z.string().min(1).max(100),
+      title: z.string().min(1).max(255),
+      content: z.string().min(1),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { knowledgeBase } = await import("../drizzle/schema");
+      const result = await db.insert(knowledgeBase).values(input).returning();
+      return result[0];
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      id: z.number(),
+      category: z.string().min(1).max(100).optional(),
+      title: z.string().min(1).max(255).optional(),
+      content: z.string().min(1).optional(),
+      isActive: z.boolean().optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { knowledgeBase } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const { id, ...data } = input;
+      await db.update(knowledgeBase).set({ ...data, updatedAt: new Date() }).where(eq(knowledgeBase.id, id));
+      return { success: true };
+    }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { knowledgeBase } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      await db.delete(knowledgeBase).where(eq(knowledgeBase.id, input.id));
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
+  knowledgeBase: knowledgeBaseRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

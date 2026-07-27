@@ -19,7 +19,7 @@ export const funnelStatusEnum           = pgEnum("funnel_status",            ["n
 export const leadTemperatureEnum        = pgEnum("lead_temperature",         ["frio", "morno", "quente", "muito_quente"]);
 export const adStatusEnum               = pgEnum("ad_status",                ["paused", "active", "archived"]);
 export const adSourceEnum               = pgEnum("ad_source",                ["crm", "imported"]);
-export const flowTriggerEnum            = pgEnum("flow_trigger",             ["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue"]);
+export const flowTriggerEnum            = pgEnum("flow_trigger",             ["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue", "tag_added", "tag_removed", "funnel_stage_entered"]);
 export const nodeTypeEnum               = pgEnum("node_type",                ["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number"]);
 export const sessionStatusEnum          = pgEnum("session_status",           ["active", "completed", "paused", "cancelled"]);
 export const memberCargoEnum            = pgEnum("member_cargo",             ["admin", "gerente", "vendedor", "suporte"]);
@@ -520,6 +520,8 @@ export const chatFlows = pgTable("chatFlows", {
   connectionType: varchar("connectionType"),
   connectionId:   integer("connectionId"),
   instanceName:   varchar("instanceName", { length: 100 }),
+  // Condições "Somente se" — grupos E/OU: array de grupos; dentro do grupo tudo E, entre grupos OU.
+  conditions:   jsonb("conditions"),
   createdBy:    integer("createdBy"),
   createdAt:    timestamp("createdAt").defaultNow().notNull(),
   updatedAt:    timestamp("updatedAt").defaultNow().notNull(),

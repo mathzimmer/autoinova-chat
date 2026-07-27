@@ -528,6 +528,30 @@ export default function Agents() {
                 onChange={(e) => setFormData(prev => ({ ...prev, systemPrompt: e.target.value }))}
                 className="min-h-[200px] font-mono text-sm"
               />
+              <div className="mt-2 rounded-md border border-border bg-muted/40 p-2.5">
+                <p className="text-[11px] font-medium text-muted-foreground mb-1.5">
+                  Variáveis (substituídas automaticamente na conversa) — clique para inserir:
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    "{{cliente_nome}}",
+                    "{{cliente_telefone}}",
+                    "{{vendedor_nome}}",
+                    "{{loja_nome}}",
+                    "{{loja_endereco}}",
+                    "{{horario_funcionamento}}",
+                  ].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setFormData(prev => ({ ...prev, systemPrompt: `${prev.systemPrompt}${v}` }))}
+                      className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    >
+                      {v}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Core Layers Toggle */}
