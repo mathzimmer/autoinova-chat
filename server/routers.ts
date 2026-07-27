@@ -2635,6 +2635,85 @@ const webhookRouter = router({
 });
 
 const settingsRouter = router({
+  /** Parametrização Completa da IA do CRM (Temperaturas, Auto-Tags, Linha do Tempo e Estoque) */
+  getAiCrmConfig: protectedProcedure.query(async () => {
+    const raw = await getSetting("ai_crm_config");
+    const defaultConfig = {
+      temperatureMap: {
+        novo: "frio",
+        interesse_definido: "morno",
+        pagamento_definido: "quente",
+        dados_pessoais: "quente",
+        dados_troca: "quente",
+        encaminhado_vendedor: "muito_quente",
+        negociando: "muito_quente",
+        fechado: "muito_quente",
+        perdido: "frio",
+      },
+      autoTags: [
+        { keyword: "financiamento", tag: "Simulação" },
+        { keyword: "troca", tag: "Com Troca" },
+        { keyword: "consórcio", tag: "Consórcio" },
+        { keyword: "visita", tag: "Agendamento" },
+      ],
+      timelineLogging: {
+        logStageChange: true,
+        logDataCollected: true,
+        logOnSellerTransfer: true,
+        noteStyle: "objetivo",
+      },
+      stockRules: {
+        preferSameStore: true,
+        requirePhoto: false,
+        autoSearchOnVehicleInterest: true,
+      },
+      funnelStageInstructions: {
+        interesse_definido: "Pergunte sobre preferências de modelo, ano e uso quando o cliente demonstrar interesse.",
+        pagamento_definido: "Identifique se prefere financiamento, à vista, consórcio ou troca.",
+        dados_pessoais: "Colete o nome do cliente e a cidade onde reside.",
+        dados_troca: "Pergunte modelo, ano e km do carro de troca se aplicável.",
+      },
+    };
+    try {
+      if (!raw) return defaultConfig;
+      const parsed = JSON.parse(raw);
+      return {
+        ...defaultConfig,
+        ...parsed,
+        temperatureMap: { ...defaultConfig.temperatureMap, ...(parsed.temperatureMap || {}) },
+        timelineLogging: { ...defaultConfig.timelineLogging, ...(parsed.timelineLogging || {}) },
+        stockRules: { ...defaultConfig.stockRules, ...(parsed.stockRules || {}) },
+      };
+    } catch {
+      return defaultConfig;
+    }
+  }),
+
+  saveAiCrmConfig: adminProcedure
+    .input(z.object({
+      temperatureMap: z.record(z.string(), z.enum(["frio", "morno", "quente", "muito_quente"])),
+      autoTags: z.array(z.object({
+        keyword: z.string().min(1),
+        tag: z.string().min(1),
+      })),
+      timelineLogging: z.object({
+        logStageChange: z.boolean(),
+        logDataCollected: z.boolean(),
+        logOnSellerTransfer: z.boolean(),
+        noteStyle: z.enum(["objetivo", "detalhado"]),
+      }),
+      stockRules: z.object({
+        preferSameStore: z.boolean(),
+        requirePhoto: z.boolean(),
+        autoSearchOnVehicleInterest: z.boolean(),
+      }),
+      funnelStageInstructions: z.record(z.string(), z.string()).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ai_crm_config", JSON.stringify(input), ctx.user.id);
+      return { success: true };
+    }),
+
   /** Auto-qualificação de leads por IA (liga/desliga + teto de estágio) */
   getAutoQualify: protectedProcedure.query(async () => {
     return {

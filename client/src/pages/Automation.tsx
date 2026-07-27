@@ -1,15 +1,17 @@
 import { useSearch, useLocation } from "wouter";
-import { Cpu, GitBranch, BookOpen } from "lucide-react";
+import { Cpu, GitBranch, BookOpen, BrainCircuit } from "lucide-react";
 import Agents from "./Agents";
 import Flows from "./Flows";
 import KnowledgeBase from "./KnowledgeBase";
+import CrmAiSettings from "./CrmAiSettings";
 
-type TabKey = "agents" | "flows" | "knowledge";
+type TabKey = "agents" | "flows" | "knowledge" | "crm_ai";
 
 const TABS: { key: TabKey; label: string; icon: typeof Cpu }[] = [
   { key: "agents", label: "Agentes de IA", icon: Cpu },
   { key: "flows", label: "Fluxos", icon: GitBranch },
   { key: "knowledge", label: "Base de conhecimento", icon: BookOpen },
+  { key: "crm_ai", label: "Parametrização CRM", icon: BrainCircuit },
 ];
 
 export default function Automation() {
@@ -48,6 +50,7 @@ export default function Automation() {
         {active === "agents" && <Agents />}
         {active === "flows" && <Flows />}
         {active === "knowledge" && <KnowledgeBase />}
+        {active === "crm_ai" && <CrmAiSettings />}
       </div>
     </div>
   );

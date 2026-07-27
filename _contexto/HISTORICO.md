@@ -47,5 +47,6 @@ memória rápida — o detalhe fino está no código e no MANUAL-AUTOINOVA-CRM.m
 - Cadastro Incorporado (Embedded Signup) funcionando: conecta número próprio em
   coexistência, com auto-salvar + auto-assinar webhook (modelo de provedor).
 - **Unificação das Tabelas de Canais**: Normalização do banco de dados unificando o histórico de conversas/mensagens do Evolution e WhatsApp Multi-Number nas tabelas principais. Criada rede de segurança com escrita dupla e isolamento de falhas para zerar o risco de perda de mensagens em produção.
-- **Unificação de Motores e Variáveis Dinâmicas**: Backend do visual flow engine, do motor de IA e do resgate padronizados para rotear outbound usando o `channelAdapter` unificado. Adicionada a tabela `knowledgeBase` (RAG / Base de Conhecimento FAQ integrada à IA) e substituição dinâmica de variáveis de sistema nos prompts do Agente de IA (`{{vendedor_nome}}`, `{{loja_nome}}`, etc.). Mapeamento de fluxos vinculados a instâncias/canais específicos finalizado.
+- **Painel de Parametrização da IA do CRM**: Desenvolvida a quarta aba "Parametrização CRM" em Automações (`CrmAiSettings.tsx`). Agora o gestor pode parametrizar visualmente qual temperatura (`Frio`, `Morno`, `Quente`, `Muito Quente`) cada etapa do funil atribui ao lead, cadastrar regras de auto-etiquetagem por palavra-chave na conversa (disparando eventos de CRM), configurar a gravação de resumos na linha do tempo e definir priorização de fotos/unidades no estoque.
+
 

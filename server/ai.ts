@@ -627,6 +627,70 @@ export async function getKnowledgeBaseContext(customerMessage: string): Promise<
   }
 }
 
+export async function applyAutoTagging(conversationId: number, text: string) {
+  try {
+    const raw = await getSetting("ai_crm_config");
+    if (!raw) return;
+    const config = JSON.parse(raw);
+    const autoTags: Array<{ keyword: string; tag: string }> = config.autoTags || [];
+    if (autoTags.length === 0 || !text) return;
+
+    const lower = text.toLowerCase();
+    const matchedTags = autoTags.filter(item => item.keyword && lower.includes(item.keyword.toLowerCase())).map(item => item.tag.trim());
+    if (matchedTags.length === 0) return;
+
+    const db = await getDb();
+    if (!db) return;
+    const { labels, conversationLabels } = await import("../drizzle/schema");
+    const { eq } = await import("drizzle-orm");
+
+    const existingLabels = await db.select().from(labels);
+    const labelMap = new Map(existingLabels.map(l => [l.name.toLowerCase(), l]));
+
+    const targetLabelIds: number[] = [];
+    for (const tagName of matchedTags) {
+      let label = labelMap.get(tagName.toLowerCase());
+      if (!label) {
+        const [inserted] = await db.insert(labels).values({
+          name: tagName,
+          color: "#3b82f6",
+        }).returning();
+        label = inserted;
+        labelMap.set(tagName.toLowerCase(), label);
+      }
+      if (label) targetLabelIds.push(label.id);
+    }
+
+    if (targetLabelIds.length === 0) return;
+
+    const currentConvLabels = await db.select()
+      .from(conversationLabels)
+      .where(eq(conversationLabels.conversationId, conversationId));
+    const currentIds = new Set(currentConvLabels.map(cl => cl.labelId));
+
+    const toInsert = targetLabelIds.filter(id => !currentIds.has(id));
+    if (toInsert.length > 0) {
+      await db.insert(conversationLabels).values(
+        toInsert.map(labelId => ({ conversationId, labelId }))
+      );
+      const updatedIds = Array.from(new Set(currentConvLabels.map(cl => cl.labelId).concat(toInsert)));
+      const { emitConversationUpdate } = await import("./socket");
+      emitConversationUpdate(conversationId, { labelIds: updatedIds });
+
+      const { triggerEventFlow } = await import("./flowEngine");
+      for (const id of toInsert) {
+        const labelObj = existingLabels.find(l => l.id === id);
+        if (labelObj) {
+          await triggerEventFlow({ conversationId, triggerType: "tag_added", matchValue: labelObj.name });
+        }
+      }
+      console.log(`[AI-AutoTag] Adicionadas etiqueta(s) [${matchedTags.join(", ")}] na conversa ${conversationId}`);
+    }
+  } catch (err) {
+    console.error("[AI-AutoTag] Erro ao aplicar auto-etiquetagem:", err);
+  }
+}
+
 export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
@@ -636,6 +700,11 @@ export async function processAIMessage(
   const startTime = Date.now();
   const isFlowMode = !!(options?.flowPrompt);
   console.log(`[AI] processAIMessage called for conv ${conversation.id}, options: ${JSON.stringify({ flowPrompt: options?.flowPrompt ? `${options.flowPrompt.substring(0, 50)}...` : undefined, flowInstruction: options?.flowInstruction, agentId: options?.agentId })}`);
+
+  // Executa auto-etiquetagem por palavras-chave
+  if (customerMessage) {
+    applyAutoTagging(conversation.id, customerMessage).catch(err => console.error("[AI] Auto-tagging error:", err));
+  }
 
   // Load agent config if agentId is provided
   let agent: AiAgent | null = null;
@@ -998,13 +1067,22 @@ export async function processAIMessage(
             if (args.cidade) leadUpdate.city = args.cidade;
             if (args.etapa_funil) {
               leadUpdate.funnelStatus = args.etapa_funil;
-              // Auto-calculate temperature from funnel status
-              const tempMap: Record<string, string> = {
+              // Carrega o mapeamento dinâmico de temperaturas configurado pelo usuário
+              let tempMap: Record<string, string> = {
                 novo: "frio", perdido: "frio",
                 interesse_definido: "morno",
                 pagamento_definido: "quente", dados_pessoais: "quente", dados_troca: "quente",
                 encaminhado_vendedor: "muito_quente", negociando: "muito_quente", fechado: "muito_quente",
               };
+              try {
+                const rawCrmConfig = await getSetting("ai_crm_config");
+                if (rawCrmConfig) {
+                  const parsedConfig = JSON.parse(rawCrmConfig);
+                  if (parsedConfig.temperatureMap) {
+                    tempMap = { ...tempMap, ...parsedConfig.temperatureMap };
+                  }
+                }
+              } catch { /* fallback padrao */ }
               leadUpdate.temperature = tempMap[args.etapa_funil] || "frio";
             }
 
