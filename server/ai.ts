@@ -592,13 +592,24 @@ export async function interpolateSystemVariables(prompt: string, conversation: C
   const businessHours = (await getSetting("business_hours")) || "Segunda a Sexta, das 8h às 18h";
 
   return prompt
+    // Nome do cliente
     .replace(/\{\{cliente_nome\}\}/gi, clientName)
+    .replace(/\{\{cliente\}\}/gi, clientName)
+    .replace(/\{\{nome\}\}/gi, clientName)
+    // Telefone
     .replace(/\{\{cliente_telefone\}\}/gi, clientPhone)
+    .replace(/\{\{telefone\}\}/gi, clientPhone)
+    // Vendedor / Atendente
     .replace(/\{\{vendedor_nome\}\}/gi, sellerName)
+    .replace(/\{\{vendedor\}\}/gi, sellerName)
     .replace(/\{\{atendente_nome\}\}/gi, sellerName)
+    .replace(/\{\{atendente\}\}/gi, sellerName)
+    // Loja e horários
     .replace(/\{\{loja_nome\}\}/gi, storeName)
+    .replace(/\{\{loja\}\}/gi, storeName)
     .replace(/\{\{loja_endereco\}\}/gi, storeAddress)
-    .replace(/\{\{horario_funcionamento\}\}/gi, businessHours);
+    .replace(/\{\{horario_funcionamento\}\}/gi, businessHours)
+    .replace(/\{\{horario\}\}/gi, businessHours);
 }
 
 export async function getKnowledgeBaseContext(customerMessage: string): Promise<string> {

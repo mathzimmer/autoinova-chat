@@ -86,16 +86,32 @@ function replaceVariables(text: string, ctx: FlowContext): string {
   if (ctx.leadData?.tradeYear) tradeDataParts.push(`Ano: ${ctx.leadData.tradeYear}`);
   if (ctx.leadData?.tradeKm) tradeDataParts.push(`KM: ${ctx.leadData.tradeKm}`);
   const tradeDataConsolidated = tradeDataParts.length > 0 ? tradeDataParts.join(" | ") : "";
+
+  const clientName = ctx.contactName || ctx.leadData?.name || "cliente";
+  const clientFullName = ctx.leadData?.fullName || ctx.leadData?.name || ctx.contactName || "";
+  const clientPhone = ctx.phone || ctx.leadData?.phone || "";
   
   return text
-    .replace(/\{\{nome\}\}/gi, ctx.contactName || ctx.leadData?.name || "cliente")
-    .replace(/\{\{nome_completo\}\}/gi, ctx.leadData?.fullName || ctx.leadData?.name || ctx.contactName || "")
-    .replace(/\{\{telefone\}\}/gi, ctx.phone)
+    // Nome do cliente (Aliases: cliente_nome, cliente, nome)
+    .replace(/\{\{cliente_nome\}\}/gi, clientName)
+    .replace(/\{\{cliente\}\}/gi, clientName)
+    .replace(/\{\{nome\}\}/gi, clientName)
+    .replace(/\{\{nome_completo\}\}/gi, clientFullName)
+    // Telefone (Aliases: cliente_telefone, telefone)
+    .replace(/\{\{cliente_telefone\}\}/gi, clientPhone)
+    .replace(/\{\{telefone\}\}/gi, clientPhone)
+    // Veículo (Aliases: veiculo_interesse, veiculo)
+    .replace(/\{\{veiculo_interesse\}\}/gi, ctx.leadData?.vehicleInterest || "")
     .replace(/\{\{veiculo\}\}/gi, ctx.leadData?.vehicleInterest || "")
-    .replace(/\{\{cidade\}\}/gi, ctx.leadData?.city || "")
+    // Veículo de troca (Aliases: veiculo_troca, troca)
+    .replace(/\{\{veiculo_troca\}\}/gi, ctx.leadData?.tradeVehicle || "")
     .replace(/\{\{troca\}\}/gi, ctx.leadData?.tradeVehicle || "")
     .replace(/\{\{troca_completa\}\}/gi, tradeDataConsolidated)
+    // Forma de pagamento (Aliases: forma_pagamento, pagamento)
+    .replace(/\{\{forma_pagamento\}\}/gi, ctx.leadData?.paymentMethod || "")
     .replace(/\{\{pagamento\}\}/gi, ctx.leadData?.paymentMethod || "")
+    // Demais dados do lead
+    .replace(/\{\{cidade\}\}/gi, ctx.leadData?.city || "")
     .replace(/\{\{entrada\}\}/gi, ctx.leadData?.downPayment || "")
     .replace(/\{\{email\}\}/gi, ctx.leadData?.email || "")
     .replace(/\{\{cpf\}\}/gi, ctx.leadData?.cpf || "")
