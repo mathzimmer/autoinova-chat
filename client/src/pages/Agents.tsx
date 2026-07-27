@@ -532,7 +532,7 @@ export default function Agents() {
                 <p className="text-[11px] font-medium text-muted-foreground mb-1.5">
                   Variáveis (substituídas automaticamente na conversa) — clique para inserir:
                 </p>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1.5 mb-2">
                   {[
                     "{{cliente_nome}}",
                     "{{cliente_telefone}}",
@@ -550,6 +550,10 @@ export default function Agents() {
                       {v}
                     </button>
                   ))}
+                </div>
+                <div className="flex items-center gap-1.5 pt-1.5 border-t border-border/50 text-[11px] text-muted-foreground">
+                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+                  <span><b>Base de Conhecimento (RAG) Ativa:</b> FAQs e informações cadastradas na aba <i>Base de Conhecimento</i> são consultadas automaticamente por este agente durante o atendimento.</span>
                 </div>
               </div>
             </div>

@@ -50,6 +50,7 @@ export default function Flows() {
     description: "",
     trigger: "first_contact" as string,
     triggerValue: "",
+    instanceName: "global",
   });
 
   const utils = trpc.useUtils();
@@ -59,7 +60,7 @@ export default function Flows() {
     onSuccess: () => {
       utils.flow.list.invalidate();
       setCreateOpen(false);
-      setNewFlow({ name: "", description: "", trigger: "first_contact", triggerValue: "" });
+      setNewFlow({ name: "", description: "", trigger: "first_contact", triggerValue: "", instanceName: "global" });
       toast.success("Fluxo criado com sucesso!");
     },
   });
@@ -216,6 +217,25 @@ export default function Flows() {
                   <p className="text-xs text-muted-foreground mt-1">Dispara quando o lead entra nessa etapa do funil.</p>
                 </div>
               )}
+              <div>
+                <Label>Aplicar em (Canal / Instância)</Label>
+                <Select
+                  value={newFlow.instanceName}
+                  onValueChange={(v) => setNewFlow({ ...newFlow, instanceName: v })}
+                >
+                  <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Global (Todas as Conexões / Instâncias)</SelectItem>
+                    {(instancesQuery.data || []).map((i: any) => (
+                      <SelectItem key={i.id} value={`evolution:${i.instanceName}`}>
+                        {i.displayName || i.instanceName} (Evolution)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Selecione uma instância específica para aplicar este fluxo ou mantenha Global.</p>
+              </div>
+
               <Button
                 className="w-full"
                 onClick={() => createMutation.mutate({
@@ -223,6 +243,8 @@ export default function Flows() {
                   description: newFlow.description,
                   trigger: newFlow.trigger as any,
                   triggerValue: newFlow.triggerValue || undefined,
+                  connectionType: newFlow.instanceName === "global" ? undefined : "evolution",
+                  instanceName: newFlow.instanceName === "global" ? undefined : newFlow.instanceName.replace(/^evolution:/, ""),
                 })}
                 disabled={!newFlow.name || createMutation.isPending}
               >

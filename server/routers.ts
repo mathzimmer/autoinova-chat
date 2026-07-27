@@ -4452,6 +4452,8 @@ const flowRouter = router({
       description: z.string().optional(),
       trigger: z.enum(["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue", "tag_added", "tag_removed", "funnel_stage_entered"]),
       triggerValue: z.string().optional(),
+      connectionType: z.string().optional(),
+      instanceName: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const id = await createChatFlow({
@@ -4459,6 +4461,8 @@ const flowRouter = router({
         description: input.description || null,
         trigger: input.trigger,
         triggerValue: input.triggerValue || null,
+        connectionType: input.connectionType || null,
+        instanceName: input.instanceName || null,
         active: false,
         priority: 0,
         createdBy: ctx.user.id,
