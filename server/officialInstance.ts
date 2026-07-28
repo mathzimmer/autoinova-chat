@@ -92,6 +92,8 @@ export async function handleOfficialMessage(body: any, phoneNumberId: string): P
   if (result) {
     emitNewMessage(result.conversationId, result.message);
     emitConversationUpdate(result.conversationId, {});
+    // Detecta origem do lead (portal/anúncio) e etiqueta
+    try { const { applyLeadOrigin } = await import("./db"); applyLeadOrigin(result.conversationId, content).catch(() => {}); } catch { /* noop */ }
     runOfficialAI(result.conversationId, transcript || content, phoneNumberId).catch((e) =>
       console.error("[Official] runOfficialAI falhou:", e)
     );

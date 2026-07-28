@@ -1812,6 +1812,60 @@ export async function getConnectionAiAuto(key: string): Promise<boolean> {
   }
 }
 
+// ─── Detector de origem do lead (portal/anúncio na 1ª mensagem) ───────────────
+// Reconhece o link/nome do portal no texto e devolve a origem. Ordem importa.
+const LEAD_ORIGIN_PATTERNS: { origin: string; test: RegExp }[] = [
+  { origin: "Mercado Livre", test: /mercadolivre\.com|mercado\s*pago|\bMLB[-\s]?\d/i },
+  { origin: "Facebook Marketplace", test: /facebook\.com\/marketplace/i },
+  { origin: "Instagram", test: /instagram\.com/i },
+  { origin: "Webmotors", test: /webmotors\.com/i },
+  { origin: "Carros na Serra", test: /carrosnaserra|carros\s*na\s*serra/i },
+  { origin: "Na Pista", test: /napista\.com|\bna\s*pista\b/i },
+  { origin: "Site", test: /autoinovars\.com/i },
+  { origin: "Autocarro", test: /autocarro/i },
+];
+
+export function detectLeadOrigin(text: string): string | null {
+  if (!text) return null;
+  for (const p of LEAD_ORIGIN_PATTERNS) if (p.test.test(text)) return p.origin;
+  return null;
+}
+
+// Detecta a origem na 1ª mensagem e: grava utmSource no lead (se ainda não tiver)
+// + cria/aplica a etiqueta da origem na conversa. Idempotente (só age uma vez).
+export async function applyLeadOrigin(conversationId: number, text: string): Promise<void> {
+  try {
+    const origin = detectLeadOrigin(text);
+    if (!origin) return;
+    const db = await getDb();
+    if (!db) return;
+
+    // Grava a origem no lead (não sobrescreve anúncio já atribuído por ctwaId)
+    const lead: any = await getLeadByConversationId(conversationId).catch(() => null);
+    if (lead && !lead.utmSource && !lead.ctwaId) {
+      await db.update(leads).set({ utmSource: origin } as any).where(eq(leads.id, lead.id));
+    }
+
+    // Etiqueta: cria se não existir e aplica na conversa (uma vez)
+    const { labels, conversationLabels } = await import("../drizzle/schema");
+    const found = await db.select().from(labels).where(eq(labels.name, origin));
+    let labelId = found[0]?.id;
+    if (!labelId) {
+      const [ins] = await db.insert(labels).values({ name: origin, color: "#6366f1" } as any).returning();
+      labelId = ins.id;
+    }
+    const has = await db.select().from(conversationLabels)
+      .where(and(eq(conversationLabels.conversationId, conversationId), eq(conversationLabels.labelId, labelId)));
+    if (has.length === 0) {
+      await db.insert(conversationLabels).values({ conversationId, labelId } as any);
+      try { const { emitConversationUpdate } = await import("./socket"); emitConversationUpdate(conversationId, {}); } catch { /* noop */ }
+      console.log(`[LeadOrigin] conv ${conversationId} → origem "${origin}"`);
+    }
+  } catch (err) {
+    console.error("[LeadOrigin] erro:", err);
+  }
+}
+
 // Monta a chave de conexão de uma conversa (pra consultar o toggle de IA automática).
 export function connectionKeyForConversation(conv: any): string | null {
   if (!conv) return null;

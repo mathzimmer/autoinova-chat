@@ -627,6 +627,9 @@ async function startServer() {
             }
           }
 
+          // Detecta a origem do lead pela 1ª mensagem (portal/anúncio) e etiqueta
+          try { const { applyLeadOrigin } = await import("../db"); applyLeadOrigin(result.conversationId, content).catch(() => {}); } catch { /* noop */ }
+
           // Dispara IA + fluxos (assíncrono, para responder rápido ao webhook)
           const { runZernioAI } = await import("../zernioAI");
           try { runZernioAI(result.conversationId, content); } catch (e) {

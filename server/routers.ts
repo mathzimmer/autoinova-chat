@@ -2601,6 +2601,9 @@ const webhookRouter = router({
 
       emitNewMessage(conversation.id, customerMsg);
 
+      // Detecta origem do lead (portal/anúncio na 1ª mensagem) e etiqueta
+      try { const { applyLeadOrigin } = await import("./db"); applyLeadOrigin(conversation.id, messageContent).catch(() => {}); } catch { /* noop */ }
+
       // Notify assigned agent if conversation is assigned and AI is off
       if (conversation.assignedTo && !conversation.aiActive) {
         createTeamNotification({
