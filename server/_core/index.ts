@@ -964,8 +964,8 @@ async function startServer() {
             }).catch(err => console.error(`[${channel}] Error creating notification:`, err));
           }
 
-          // AI debounce if active
-          if (conversation.aiActive) {
+          // Sempre agrupa (fluxo pode disparar mesmo com IA desligada; IA livre é gated no callback)
+          {
             let aiContent = content;
             if (messageType === "image" && mediaUrl) {
               aiContent = `[IMAGEM: ${mediaUrl}] ${content}`;

@@ -102,11 +102,11 @@ export async function handleOfficialMessage(body: any, phoneNumberId: string): P
 /** IA + fluxos para uma conversa de número oficial, respondendo pelo token do número. */
 export async function runOfficialAI(conversationId: number, customerMessage: string, phoneNumberId: string): Promise<void> {
   const conv = await getConversationById(conversationId);
-  if (!conv || !conv.aiActive || !conv.phone) return;
+  if (!conv || !conv.phone) return;
 
-  const aiEnabled = (await getSetting("ai_global_enabled")) !== "false";
+  // Fluxos rodam independente do aiActive (freio de emergência flows_global_enabled).
+  // A IA "livre" é liberada mais abaixo, só se a conversa estiver com aiActive.
   const flowsEnabled = (await getSetting("flows_global_enabled")) !== "false";
-  if (!aiEnabled && !flowsEnabled) return;
 
   emitTypingIndicator(conversationId, true, BOT_NAME);
   try {
@@ -140,7 +140,10 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
       } catch (flowErr) { console.error(`[Official] erro no fluxo, fallback IA:`, flowErr); }
     }
 
-    if (!aiEnabled) return;
+    // IA "livre" só entra se a conversa estiver com aiActive (recarrega: um nó de
+    // fluxo pode ter acabado de ligar a IA). Nunca mais entra "globalmente".
+    const freshConv = await getConversationById(conversationId);
+    if (!freshConv?.aiActive) return;
 
     let flowAiOptions: { agentId?: number | null } | undefined;
     if ((conv as any).agentId) {

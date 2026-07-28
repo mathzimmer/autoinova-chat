@@ -152,22 +152,14 @@ async function initDebounce() {
   setDebounceCallback(async (conversationId, groupedContent, messages) => {
     try {
       const conversation = await getConversationById(conversationId);
-      if (!conversation || !conversation.aiActive) {
-        console.log(`[Debounce] Conversa ${conversationId}: IA desativada ou conversa n\u00e3o encontrada, ignorando`);
+      if (!conversation) {
+        console.log(`[Debounce] Conversa ${conversationId}: n\u00e3o encontrada, ignorando`);
         return;
       }
 
-      // === GLOBAL TOGGLE CHECK ===
-      const globalAiSetting = await getSetting("ai_global_enabled");
-      const globalFlowsSetting = await getSetting("flows_global_enabled");
-      const globalAiEnabled = globalAiSetting !== "false";
-      const globalFlowsEnabled = globalFlowsSetting !== "false";
-
-      if (!globalAiEnabled && !globalFlowsEnabled) {
-        console.log(`[Debounce] Conversa ${conversationId}: IA e Fluxos DESATIVADOS globalmente, ignorando`);
-        return;
-      }
-      // === END GLOBAL TOGGLE CHECK ===
+      // Fluxos rodam independente do aiActive (freio de emerg\u00eancia flows_global_enabled).
+      // A IA "livre" \u00e9 liberada mais abaixo, s\u00f3 se a conversa estiver com aiActive.
+      const globalFlowsEnabled = (await getSetting("flows_global_enabled")) !== "false";
 
       console.log(`[Debounce] Conversa ${conversationId}: processando ${messages.length} mensagem(ns) agrupada(s)`);
       emitTypingIndicator(conversationId, true, "Auto Inova - Matriz IA");
@@ -237,9 +229,11 @@ async function initDebounce() {
       }
       // === END FLOW ENGINE ===
 
-      // Check if AI is globally enabled before processing
-      if (!globalAiEnabled) {
-        console.log(`[Debounce] Conversa ${conversationId}: IA DESATIVADA globalmente, ignorando processamento IA`);
+      // IA "livre" só entra se a conversa estiver com aiActive (recarrega, pois um nó
+      // de fluxo pode ter acabado de ligar a IA). Nunca mais entra "globalmente".
+      const freshConv = await getConversationById(conversationId);
+      if (!freshConv?.aiActive) {
+        console.log(`[Debounce] Conversa ${conversationId}: IA não ativa nesta conversa, sem resposta automática`);
         emitTypingIndicator(conversationId, false, "Auto Inova - Matriz IA");
         return;
       }
@@ -2617,9 +2611,10 @@ const webhookRouter = router({
         }).catch(err => console.error("[Webhook] Error creating notification:", err));
       }
 
-      // Check if AI should respond — usa debounce para agrupar mensagens rápidas
-      // (nota de CSAT consumida não aciona a IA)
-      if (conversation.aiActive && !csatHandled) {
+      // Sempre agrupa no debounce (o fluxo pode disparar mesmo com IA desligada;
+      // a IA "livre" é liberada só se aiActive dentro do callback).
+      // (nota de CSAT consumida não aciona nada)
+      if (!csatHandled) {
         // Prepara o conteúdo para o debounce
         let aiMessageContent = messageContent;
         if (input.messageType === "image" && storedMediaUrl) {

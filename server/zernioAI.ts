@@ -46,10 +46,6 @@ export function runZernioAI(conversationId: number, customerMessage: string): vo
 async function processZernioConversation(conversationId: number, customerMessage: string): Promise<void> {
   const conv = await getConversationById(conversationId);
   if (!conv || conv.channel !== "zernio") return;
-  if (!conv.aiActive) {
-    console.log(`[ZernioAI] Conversa ${conversationId}: IA pausada, ignorando`);
-    return;
-  }
 
   const accountId = ((conv.metadata as any)?.zernioAccountId as string | undefined) || (conv as any).instanceName || undefined;
   const zConvId = (conv.metadata as any)?.zernioConversationId as string | undefined;
@@ -58,10 +54,9 @@ async function processZernioConversation(conversationId: number, customerMessage
     return;
   }
 
-  // Toggles globais (mesmos do canal oficial)
-  const aiEnabled = (await getSetting("ai_global_enabled")) !== "false";
+  // Fluxos rodam independente do aiActive (freio de emergência flows_global_enabled).
+  // A IA "livre" é liberada mais abaixo, só se a conversa estiver com aiActive.
   const flowsEnabled = (await getSetting("flows_global_enabled")) !== "false";
-  if (!aiEnabled && !flowsEnabled) return;
 
   emitTypingIndicator(conversationId, true, BOT_NAME);
   try {
@@ -104,7 +99,10 @@ async function processZernioConversation(conversationId: number, customerMessage
       }
     }
 
-    if (!aiEnabled) return;
+    // IA "livre" só entra se a conversa estiver com aiActive (recarrega: um nó de
+    // fluxo pode ter acabado de ligar a IA). Nunca mais entra "globalmente".
+    const freshConv = await getConversationById(conversationId);
+    if (!freshConv?.aiActive) return;
 
     // ── 2) Seleção de agente (fixado → instância → canal → padrão) ──
     let flowAiOptions: { agentId?: number | null } | undefined;

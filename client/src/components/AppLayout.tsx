@@ -203,24 +203,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 <p className="text-xs text-muted-foreground">Ativar/desativar em todas as conversas</p>
               </div>
 
-              {/* AI Toggle */}
-              <DropdownMenuItem
-                onClick={() => setGlobalAI.mutate({ enabled: !aiEnabled })}
-                disabled={setGlobalAI.isPending}
-                className="cursor-pointer"
-              >
-                <div className="flex items-center gap-2 w-full">
-                  <Bot className={`h-4 w-4 ${aiEnabled ? "text-emerald-400" : "text-red-400"}`} />
-                  <span className="flex-1">Robô IA</span>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                    aiEnabled
-                      ? "bg-emerald-500/15 text-emerald-400"
-                      : "bg-red-500/15 text-red-400"
-                  }`}>
-                    {aiEnabled ? "ON" : "OFF"}
-                  </span>
-                </div>
-              </DropdownMenuItem>
+              {/* IA agora é controlada por conexão (aba "IA automática") + fluxo + seleção manual.
+                  O antigo botão global de IA foi removido. */}
 
               {/* Flows Toggle */}
               <DropdownMenuItem

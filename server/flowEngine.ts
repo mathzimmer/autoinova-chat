@@ -258,6 +258,13 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
   let session = await getActiveFlowSession(ctx.conversationId);
 
   if (!session) {
+    // Guarda anti-interrupção: não inicia um fluxo novo se um humano está atendendo
+    // (conversa atribuída a alguém e IA desligada). Sessões já ativas continuam.
+    const convForGuard = await getConversationById(ctx.conversationId);
+    if (convForGuard && convForGuard.assignedTo && !convForGuard.aiActive) {
+      return result;
+    }
+
     // Check if a flow should be triggered
     const lead = await getLeadByConversationId(ctx.conversationId);
     const isFirstContact = !lead;
@@ -890,6 +897,8 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
     case "ai_response": {
       // Let AI handle this message - stop flow execution temporarily
       result.handled = false; // Pass to AI
+      // O fluxo chamou a IA: garante que a IA responda mesmo se aiActive estava desligado
+      try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true } as any); } catch { /* noop */ }
       // Store instruction + pendingNextNodeId + node agentId in session context
       const nextEdge = edges.find(e => e.sourceNodeId === node.id);
       await updateFlowSession(session.id, {

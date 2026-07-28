@@ -81,7 +81,7 @@ export default function Flows() {
   // Lista unificada de conexões para o seletor "Aplicar em".
   // value codifica tipo+id; parseInstanceValue converte para os campos do fluxo.
   const connectionOptions: { value: string; label: string }[] = [
-    { value: "global", label: "Global (todas as conexões / instâncias)" },
+    { value: "global", label: "Nenhuma conexão (não dispara — escolha uma abaixo)" },
     ...((instancesQuery.data || []) as any[]).map((i) => ({
       value: `evolution:${i.instanceName}`,
       label: `${i.displayName || i.instanceName} (Evolution)`,

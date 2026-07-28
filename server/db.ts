@@ -1854,14 +1854,9 @@ export async function getActiveFlowsForConnection(params: {
     );
   }
 
-  // 3. Condição global (remetente nulo)
-  conditions.push(
-    and(
-      isNull(chatFlows.connectionType),
-      isNull(chatFlows.connectionId),
-      isNull(chatFlows.instanceName)
-    )
-  );
+  // Fluxos rodam SOMENTE na conexão selecionada — sem fallback global.
+  // Se a conversa não bate em nenhuma conexão específica, nenhum fluxo dispara.
+  if (conditions.length === 0) return [];
 
   return db.select().from(chatFlows)
     .where(and(
