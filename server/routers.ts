@@ -4533,6 +4533,7 @@ const flowRouter = router({
       triggerValue: z.string().optional(),
       connectionType: z.string().optional(),
       instanceName: z.string().optional(),
+      connectionId: z.number().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const id = await createChatFlow({
@@ -4542,6 +4543,7 @@ const flowRouter = router({
         triggerValue: input.triggerValue || null,
         connectionType: input.connectionType || null,
         instanceName: input.instanceName || null,
+        connectionId: input.connectionId ?? null,
         active: false,
         priority: 0,
         createdBy: ctx.user.id,
@@ -4571,6 +4573,7 @@ const flowRouter = router({
       agentId: z.number().nullable().optional(),
       connectionType: z.string().nullable().optional(),
       instanceName: z.string().nullable().optional(),
+      connectionId: z.number().nullable().optional(),
       conditions: z.array(z.array(z.object({
         field: z.string(),
         op: z.enum(["eq", "neq"]),
@@ -7017,9 +7020,58 @@ const knowledgeBaseRouter = router({
     }),
 });
 
+// ─── IA automática por conexão (canal/instância/número) ──────────────────────
+const automationAiRouter = router({
+  listConnections: protectedProcedure.query(async () => {
+    const { getConnectionAiAuto, listEvolutionInstances, listZernioInstances } = await import("./db");
+    const out: { key: string; type: string; label: string; aiAuto: boolean }[] = [];
+
+    try {
+      const evos = await listEvolutionInstances();
+      for (const e of (evos || []) as any[]) {
+        const key = `evolution:${e.instanceName}`;
+        out.push({ key, type: "Evolution", label: e.displayName || e.instanceName, aiAuto: await getConnectionAiAuto(key) });
+      }
+    } catch { /* noop */ }
+
+    try {
+      const zs = await listZernioInstances();
+      for (const zi of (zs || []) as any[]) {
+        const key = `zernio:${zi.accountId}`;
+        out.push({ key, type: "Zernio", label: zi.displayName || zi.phone || zi.accountId, aiAuto: await getConnectionAiAuto(key) });
+      }
+    } catch { /* noop */ }
+
+    try {
+      const { listWhatsappNumbers } = await import("./whatsappMultiNumber");
+      const ns = await listWhatsappNumbers();
+      for (const n of (ns || []) as any[]) {
+        const key = `official:${n.phoneNumberId}`;
+        out.push({ key, type: "Oficial", label: n.displayName || n.phoneDisplay || n.phoneNumberId, aiAuto: await getConnectionAiAuto(key) });
+      }
+    } catch { /* noop */ }
+
+    for (const ch of ["instagram", "facebook"] as const) {
+      const key = `meta:${ch}`;
+      out.push({ key, type: "Meta", label: ch === "instagram" ? "Instagram" : "Facebook", aiAuto: await getConnectionAiAuto(key) });
+    }
+
+    return out;
+  }),
+
+  setConnectionAiAuto: adminProcedure
+    .input(z.object({ key: z.string().min(1), enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const { upsertSetting } = await import("./db");
+      await upsertSetting(`ai_auto:${input.key}`, String(input.enabled), ctx.user.id);
+      return { success: true };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   knowledgeBase: knowledgeBaseRouter,
+  automationAi: automationAiRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {

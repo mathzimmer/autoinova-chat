@@ -188,6 +188,7 @@ export async function findMatchingFlow(
     connectionType: conv.connectionType,
     connectionId: conv.connectionId,
     instanceName: conv.instanceName,
+    channel: conv.channel,
   });
 
   if (activeFlows.length === 0) return null;
@@ -1771,6 +1772,7 @@ export async function triggerEventFlow(params: {
       connectionType: conv.connectionType,
       connectionId: conv.connectionId,
       instanceName: conv.instanceName,
+      channel: conv.channel,
     });
 
     const wanted = params.matchValue?.toLowerCase();

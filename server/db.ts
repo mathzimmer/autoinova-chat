@@ -257,7 +257,7 @@ export async function mirrorEvolutionMessage(params: {
       instanceName: params.instanceName,
       metadata: { evolutionRemoteJid: params.remoteJid, ...(lidJid ? { evolutionLidJid: lidJid } : {}) },
       status: "open",
-      aiActive: false, // números de vendedores: sem IA por padrão
+      aiActive: await getConnectionAiAuto(`evolution:${params.instanceName}`), // IA automática só se a conexão estiver marcada
       unreadCount: isInbound ? 1 : 0,
       lastMessageAt: params.timestamp,
       lastCustomerMessageAt: isInbound ? params.timestamp : null,
@@ -386,7 +386,7 @@ export async function mirrorWNMessage(params: {
       channel: "whatsapp" as any,
       instanceName: params.phoneNumberId, // usaremos phoneNumberId como identificador da aba
       status: "open",
-      aiActive: false, // sem IA nos números adicionais por padrão
+      aiActive: await getConnectionAiAuto(`official:${params.phoneNumberId}`), // IA automática só se a conexão estiver marcada
       unreadCount: isInbound ? 1 : 0,
       lastMessageAt: params.timestamp,
       lastCustomerMessageAt: isInbound ? params.timestamp : null,
@@ -551,7 +551,7 @@ export async function mirrorOfficialMessage(params: {
       instanceName: params.phoneNumberId,
       metadata: { officialPhoneNumberId: params.phoneNumberId },
       status: "open",
-      aiActive: true,
+      aiActive: await getConnectionAiAuto(`official:${params.phoneNumberId}`), // IA automática só se a conexão estiver marcada
       unreadCount: isInbound ? 1 : 0,
       lastMessageAt: params.timestamp,
       lastCustomerMessageAt: isInbound ? params.timestamp : null,
@@ -709,7 +709,7 @@ export async function mirrorZernioMessage(params: {
         ...(params.accountId ? { zernioAccountId: params.accountId } : {}),
       },
       status: "open",
-      aiActive: true, // IA ligada por padrão (pode pausar por conversa no painel)
+      aiActive: await getConnectionAiAuto(`zernio:${params.accountId}`), // IA automática só se a conexão estiver marcada
       unreadCount: isInbound ? 1 : 0,
       lastMessageAt: params.timestamp,
       lastCustomerMessageAt: isInbound ? params.timestamp : null,
@@ -1800,17 +1800,30 @@ export async function getActiveChatFlows() {
     .orderBy(desc(chatFlows.priority));
 }
 
+// IA automática por conexão: define se conversas novas nessa conexão já nascem
+// com a IA respondendo. Padrão OFF — a IA só entra por fluxo ou manualmente.
+// key ex.: "evolution:rafael", "zernio:<accountId>", "official:<phoneNumberId>", "meta:instagram"
+export async function getConnectionAiAuto(key: string): Promise<boolean> {
+  try {
+    const v = await getSetting(`ai_auto:${key}`);
+    return v === "true";
+  } catch {
+    return false;
+  }
+}
+
 export async function getActiveFlowsForConnection(params: {
   connectionType?: string | null;
   connectionId?: number | null;
   instanceName?: string | null;
+  channel?: string | null;
 }) {
   const db = await getDb();
   if (!db) return [];
 
   const conditions = [];
 
-  // 1. Condição específica por tipo e ID de conexão (Zernio/Tech Provider)
+  // 1. Condição específica por tipo e ID de conexão (Tech Provider / número oficial)
   if (params.connectionType && params.connectionId) {
     conditions.push(
       and(
@@ -1825,6 +1838,17 @@ export async function getActiveFlowsForConnection(params: {
     conditions.push(
       and(
         eq(chatFlows.connectionType, "evolution"),
+        eq(chatFlows.instanceName, params.instanceName)
+      )
+    );
+  }
+
+  // 2b. Condição para Zernio (conversa tem channel=zernio + instanceName=accountId,
+  // com connectionType nulo). O fluxo é salvo com connectionType="zernio".
+  if (params.channel === "zernio" && params.instanceName) {
+    conditions.push(
+      and(
+        eq(chatFlows.connectionType, "zernio"),
         eq(chatFlows.instanceName, params.instanceName)
       )
     );

@@ -42,6 +42,25 @@ const FUNNEL_STAGE_OPTIONS = [
   "dados_troca", "encaminhado_vendedor", "negociando", "fechado", "perdido",
 ];
 
+// Converte o value do seletor ("evolution:x" | "zernio:x" | "tech_provider:12" | "global")
+// nos campos do fluxo. connectionId é numérico (número oficial); os outros usam instanceName.
+function parseInstanceValue(v: string): { connectionType: string | null; instanceName: string | null; connectionId: number | null } {
+  if (!v || v === "global") return { connectionType: null, instanceName: null, connectionId: null };
+  const idx = v.indexOf(":");
+  const type = idx >= 0 ? v.slice(0, idx) : v;
+  const rest = idx >= 0 ? v.slice(idx + 1) : "";
+  if (type === "tech_provider") return { connectionType: "tech_provider", instanceName: null, connectionId: Number(rest) || null };
+  if (type === "evolution" || type === "zernio") return { connectionType: type, instanceName: rest, connectionId: null };
+  return { connectionType: null, instanceName: null, connectionId: null };
+}
+
+// Converte os campos salvos de um fluxo de volta no value do seletor.
+function flowToInstanceValue(flow: any): string {
+  if (flow?.connectionType === "tech_provider" && flow?.connectionId) return `tech_provider:${flow.connectionId}`;
+  if ((flow?.connectionType === "evolution" || flow?.connectionType === "zernio") && flow?.instanceName) return `${flow.connectionType}:${flow.instanceName}`;
+  return "global";
+}
+
 export default function Flows() {
   const [editingFlowId, setEditingFlowId] = useState<number | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
@@ -56,6 +75,28 @@ export default function Flows() {
   const utils = trpc.useUtils();
   const flowsQuery = trpc.flow.list.useQuery();
   const instancesQuery = trpc.evolution.listInstances.useQuery();
+  const zernioInstancesQuery = trpc.zernio.listInstances.useQuery();
+  const officialInstancesQuery = trpc.whatsappNumber.listInstances.useQuery();
+
+  // Lista unificada de conexões para o seletor "Aplicar em".
+  // value codifica tipo+id; parseInstanceValue converte para os campos do fluxo.
+  const connectionOptions: { value: string; label: string }[] = [
+    { value: "global", label: "Global (todas as conexões / instâncias)" },
+    ...((instancesQuery.data || []) as any[]).map((i) => ({
+      value: `evolution:${i.instanceName}`,
+      label: `${i.displayName || i.instanceName} (Evolution)`,
+    })),
+    ...((zernioInstancesQuery.data || []) as any[]).map((i) => ({
+      // zernio.listInstances já retorna instanceName = "zernio:<accountId>"
+      value: `zernio:${i.accountId}`,
+      label: `${i.displayName || i.accountId} (Zernio)`,
+    })),
+    ...((officialInstancesQuery.data || []) as any[]).map((i) => ({
+      value: `tech_provider:${i.id}`,
+      label: `${i.displayName || i.phone || i.phoneNumberId} (Oficial)`,
+    })),
+  ];
+
   const createMutation = trpc.flow.create.useMutation({
     onSuccess: () => {
       utils.flow.list.invalidate();
@@ -63,6 +104,7 @@ export default function Flows() {
       setNewFlow({ name: "", description: "", trigger: "first_contact", triggerValue: "", instanceName: "global" });
       toast.success("Fluxo criado com sucesso!");
     },
+    onError: (e) => toast.error("Erro ao criar fluxo: " + e.message),
   });
   const updateMutation = trpc.flow.update.useMutation({
     onSuccess: () => {
@@ -225,27 +267,28 @@ export default function Flows() {
                 >
                   <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="global">Global (Todas as Conexões / Instâncias)</SelectItem>
-                    {(instancesQuery.data || []).map((i: any) => (
-                      <SelectItem key={i.id} value={`evolution:${i.instanceName}`}>
-                        {i.displayName || i.instanceName} (Evolution)
-                      </SelectItem>
+                    {connectionOptions.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground mt-1">Selecione uma instância específica para aplicar este fluxo ou mantenha Global.</p>
+                <p className="text-xs text-muted-foreground mt-1">Escolha a conexão (Evolution, Zernio ou número oficial) ou mantenha Global.</p>
               </div>
 
               <Button
                 className="w-full"
-                onClick={() => createMutation.mutate({
-                  name: newFlow.name,
-                  description: newFlow.description,
-                  trigger: newFlow.trigger as any,
-                  triggerValue: newFlow.triggerValue || undefined,
-                  connectionType: newFlow.instanceName === "global" ? undefined : "evolution",
-                  instanceName: newFlow.instanceName === "global" ? undefined : newFlow.instanceName.replace(/^evolution:/, ""),
-                })}
+                onClick={() => {
+                  const conn = parseInstanceValue(newFlow.instanceName);
+                  createMutation.mutate({
+                    name: newFlow.name,
+                    description: newFlow.description,
+                    trigger: newFlow.trigger as any,
+                    triggerValue: newFlow.triggerValue || undefined,
+                    connectionType: conn.connectionType || undefined,
+                    instanceName: conn.instanceName || undefined,
+                    connectionId: conn.connectionId || undefined,
+                  });
+                }}
                 disabled={!newFlow.name || createMutation.isPending}
               >
                 {createMutation.isPending ? "Criando..." : "Criar Fluxo"}
@@ -351,23 +394,16 @@ export default function Flows() {
                   <div className="mt-3" onClick={(e) => e.stopPropagation()}>
                     <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Aplicar em</label>
                     <Select
-                      value={(flow as any).instanceName ? `evolution:${(flow as any).instanceName}` : "global"}
+                      value={flowToInstanceValue(flow)}
                       onValueChange={(v) => {
-                        if (v === "global") {
-                          updateMutation.mutate({ id: flow.id, connectionType: null, instanceName: null });
-                        } else {
-                          const inst = v.replace(/^evolution:/, "");
-                          updateMutation.mutate({ id: flow.id, connectionType: "evolution", instanceName: inst });
-                        }
+                        const conn = parseInstanceValue(v);
+                        updateMutation.mutate({ id: flow.id, connectionType: conn.connectionType, instanceName: conn.instanceName, connectionId: conn.connectionId });
                       }}
                     >
                       <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="global">Global (todas as conexões)</SelectItem>
-                        {(instancesQuery.data || []).map((i: any) => (
-                          <SelectItem key={i.id} value={`evolution:${i.instanceName}`}>
-                            {i.displayName || i.instanceName}
-                          </SelectItem>
+                        {connectionOptions.map((o) => (
+                          <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

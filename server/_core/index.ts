@@ -12,7 +12,7 @@ import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 import { processWhatsAppMedia } from "../media";
 import { startAutoSync } from "../stockSync";
-import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, getConversationByPhone, createConversation, updateConversation, createMessage, createTeamNotification } from "../db";
+import { getMessageByExternalId, updateMessageDeliveryStatus, updateMessageExternalId, updateLastCustomerMessageAt, setWindowExpired, getConversationByPlatformUserId, getConversationByPhone, createConversation, updateConversation, createMessage, createTeamNotification, getConnectionAiAuto } from "../db";
 import { startCampaignScheduler, handleCampaignDeliveryStatus, handleCampaignResponse } from "../campaignService";
 import { handleEvolutionWebhook } from "../evolutionService";
 import { handleWNWebhook } from "../whatsappMultiNumber";
@@ -908,7 +908,7 @@ async function startServer() {
               channel,
               platformUserId: senderId,
               status: "open",
-              aiActive: true,
+              aiActive: await getConnectionAiAuto(`meta:${channel}`), // IA automática só se o canal estiver marcado
               lastMessageAt: Date.now(),
             });
             console.log(`[${channel}] New conversation created for ${contactName} (${senderId})`);
@@ -924,7 +924,7 @@ async function startServer() {
             console.log(`[${channel}] REATIVAÇÃO: Conversa ${conversation.id} estava ${conversation.status}. Reabrindo.`);
             conversation = await updateConversation(conversation.id, {
               status: "open",
-              aiActive: true,
+              aiActive: await getConnectionAiAuto(`meta:${channel}`), // respeita o padrão da conexão ao reabrir
               assignedTo: null,
               lastMessageAt: Date.now(),
             }) || conversation;
