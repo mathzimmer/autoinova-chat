@@ -73,6 +73,9 @@ type LeadWithDetails = {
   funnelStatus: string | null;
   temperature: string | null;
   score: number | null;
+  utmSource: string | null;
+  ctwaId: string | null;
+  metaLeadId: string | null;
   city: string | null;
   notes: string | null;
   createdAt: Date | string;
@@ -175,6 +178,7 @@ export default function Leads() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [funnelFilter, setFunnelFilter] = useState("all");
   const [tempFilter, setTempFilter] = useState("all");
+  const [originFilter, setOriginFilter] = useState("all");
   const [instanceFilter, setInstanceFilter] = useState("all");
   const [attendantFilter, setAttendantFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("all");
@@ -288,6 +292,14 @@ export default function Leads() {
       filtered = filtered.filter((l) => l.temperature === tempFilter);
     }
 
+    // Origin filter (campo utmSource / ctwa / lead ads)
+    if (originFilter !== "all") {
+      filtered = filtered.filter((l) => {
+        const o = (l as any).ctwaId ? "Meta Ads" : (l as any).metaLeadId ? "Lead Ads" : ((l as any).utmSource || "Orgânico");
+        return o === originFilter;
+      });
+    }
+
     // Instância (fonte da conversa)
     if (instanceFilter !== "all") {
       filtered = filtered.filter((l) => ((l.conversation as any)?.source || "matriz") === instanceFilter);
@@ -376,7 +388,7 @@ export default function Leads() {
     }
 
     return filtered;
-  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, instanceFilter, attendantFilter, dateFilter, creditFilter, answeredFilter, colName, colPhone, colVehicle, sortField, sortDir]);
+  }, [leadsRaw, searchQuery, funnelFilter, tempFilter, originFilter, instanceFilter, attendantFilter, dateFilter, creditFilter, answeredFilter, colName, colPhone, colVehicle, sortField, sortDir]);
 
   // ─── Copy functions ──────────────────────────────────────────
   function copyLeadInfo(lead: LeadWithDetails) {
@@ -512,7 +524,8 @@ export default function Leads() {
     })),
   ];
 
-  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all" || instanceFilter !== "all" || attendantFilter !== "all" || dateFilter !== "all" || creditFilter !== "all";
+  const hasActiveFilters = funnelFilter !== "all" || tempFilter !== "all" || originFilter !== "all" || instanceFilter !== "all" || attendantFilter !== "all" || dateFilter !== "all" || creditFilter !== "all";
+  const originOptions = Array.from(new Set(((leadsRaw as unknown as LeadWithDetails[] | undefined) || []).map((l) => (l as any).ctwaId ? "Meta Ads" : (l as any).metaLeadId ? "Lead Ads" : ((l as any).utmSource || null)).filter(Boolean))) as string[];
 
   if (view === "kanban") {
     return (
@@ -621,6 +634,18 @@ export default function Leads() {
                     <SelectItem value="all">Todas</SelectItem>
                     {TEMP_OPTIONS.map((o) => (
                       <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[160px]">
+                <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1 block">Origem</label>
+                <Select value={originFilter} onValueChange={setOriginFilter}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Todas" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas as origens</SelectItem>
+                    {originOptions.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -770,6 +795,7 @@ export default function Leads() {
             const funnel = FUNNEL_CONFIG[lead.funnelStatus || "novo"];
             const temp = TEMP_CONFIG[lead.temperature || "frio"];
             const instLabel = (lead.conversation as any)?.instanceLabel || (lead.conversation as any)?.instanceName || (lead.conversation?.channel === "zernio" ? "Recepção" : "Matriz");
+            const origin = lead.ctwaId ? "Meta Ads" : lead.metaLeadId ? "Lead Ads" : (lead.utmSource || null);
 
             return (
               <div key={lead.id} id={`lead-${lead.id}`} className={`border-b border-border ${isExpanded ? "bg-accent/30" : (lead as any).unanswered ? "bg-red-500/[0.07] border-l-2 border-l-red-500 hover:bg-red-500/[0.12]" : "hover:bg-accent/20"}`}>
@@ -801,6 +827,7 @@ export default function Leads() {
                     {(lead as any).quality === "alta" && <span title="Qualidade alta (definida pelo vendedor)">🟢</span>}
                     {(lead as any).quality === "baixa" && <span title="Qualidade baixa (definida pelo vendedor)">🟡</span>}
                     <span className="truncate">{displayName}</span>
+                    {origin && <span className="text-[9px] px-1 rounded bg-violet-500/15 text-violet-600 whitespace-nowrap shrink-0" title={`Origem: ${origin}`}>{origin}</span>}
                   </span>
                   <span className="text-[11px] text-muted-foreground truncate">{displayPhone}</span>
                   <span className="truncate text-[11px]" title={lead.linkedVehicle ? `${lead.linkedVehicle.brand} ${lead.linkedVehicle.model}` : lead.vehicleInterest || ""}>

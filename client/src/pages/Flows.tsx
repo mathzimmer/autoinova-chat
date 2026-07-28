@@ -120,6 +120,10 @@ export default function Flows() {
     onSuccess: (r) => { toast.success(r.message); flowsQuery.refetch(); },
     onError: (e) => toast.error(e.message),
   });
+  const seedPreAtendimento = trpc.flow.seedPreAtendimento.useMutation({
+    onSuccess: (r) => { toast.success(r.message); flowsQuery.refetch(); },
+    onError: (e) => toast.error(e.message),
+  });
   const duplicateMutation = trpc.flow.duplicate.useMutation({
     onSuccess: () => {
       utils.flow.list.invalidate();
@@ -175,6 +179,10 @@ export default function Flows() {
           </p>
         </div>
         <div className="flex gap-2">
+        <Button variant="outline" onClick={() => seedPreAtendimento.mutate()} disabled={seedPreAtendimento.isPending}>
+          <Zap className="h-4 w-4 mr-2" />
+          {seedPreAtendimento.isPending ? "Criando..." : "Modelo: Pré-atendimento"}
+        </Button>
         <Button variant="outline" onClick={() => {
           const num = prompt("Número do WhatsApp de PÓS-VENDA (com DDI, ex: 5551999998888). Deixe vazio se não quiser encaminhar pós-venda:");
           seedMasterMutation.mutate({ postSaleNumber: num?.replace(/\D/g, "") || undefined });

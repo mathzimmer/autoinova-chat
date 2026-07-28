@@ -4497,6 +4497,64 @@ const flowRouter = router({
       return { flowId, message: "Fluxo 'Triagem Automática' criado (inativo). Edite e ative em Fluxos." };
     }),
 
+  // Modelo pronto de pré-atendimento: saudação → pagamento → troca → encaminha ao vendedor.
+  seedPreAtendimento: adminProcedure
+    .mutation(async ({ ctx }) => {
+      const db = await getDb();
+      if (!db) throw new Error("Database not available");
+      const { createChatFlow, createChatFlowNode, createChatFlowEdge } = await import("./db");
+
+      const flowId = await createChatFlow({
+        name: "Pré-atendimento",
+        description: "Saudação → pagamento → troca → encaminha ao vendedor. Amarre à conexão e ative.",
+        trigger: "first_contact",
+        active: false,
+        priority: 50,
+        createdBy: ctx.user.id,
+      } as any);
+
+      const mk = async (nodeType: string, label: string, data: any, x: number, y: number) =>
+        await createChatFlowNode({ flowId, nodeType: nodeType as any, label, data, positionX: x, positionY: y } as any);
+      const link = async (from: any, to: any, handle = "default") =>
+        createChatFlowEdge({ flowId, sourceNodeId: from, targetNodeId: to, sourceHandle: handle } as any);
+
+      const start = await mk("start", "Início", {}, 60, 240);
+      const saud = await mk("send_message", "Saudação", {
+        text: "Olá {{nome}}! 👋 Aqui é da Auto Inova. Vi o seu interesse e já vou te ajudar. 🚗\n\nSó preciso de 2 respostas rápidas pra adiantar seu atendimento:",
+      }, 300, 240);
+      const pag = await mk("send_buttons", "Forma de pagamento", {
+        body: "Como você pretende pagar?",
+        buttons: [{ text: "À vista" }, { text: "Financiamento" }, { text: "Ainda não sei" }],
+        onInvalid: "ai",
+      }, 560, 240);
+      const troca = await mk("send_buttons", "Tem troca?", {
+        body: "Você tem um veículo pra dar na troca?",
+        buttons: [{ text: "Sim, tenho troca" }, { text: "Não" }],
+        onInvalid: "ai",
+      }, 820, 240);
+      const stage = await mk("update_lead_status", "Encaminhado", { funnelStatus: "encaminhado_vendedor" }, 1080, 240);
+      const seller = await mk("assign_seller", "Encaminhar vendedor", {}, 1320, 240);
+      const bye = await mk("send_message", "Passa pro vendedor", {
+        text: "Perfeito, {{nome}}! ✅ Já registrei tudo e um consultor vai te chamar por aqui em instantes pra fechar os detalhes. 🚗✨",
+      }, 1560, 240);
+      const fim = await mk("end", "Fim", {}, 1800, 240);
+
+      await link(start, saud);
+      await link(saud, pag);
+      // qualquer botão de pagamento → pergunta da troca
+      await link(pag, troca, "button_0");
+      await link(pag, troca, "button_1");
+      await link(pag, troca, "button_2");
+      // qualquer botão de troca → encaminhar
+      await link(troca, stage, "button_0");
+      await link(troca, stage, "button_1");
+      await link(stage, seller);
+      await link(seller, bye);
+      await link(bye, fim);
+
+      return { flowId, message: "Fluxo 'Pré-atendimento' criado (inativo). Amarre à conexão da Bianca e ative." };
+    }),
+
   list: protectedProcedure.query(async () => {
     const flows = await listChatFlows();
     // Count nodes per flow
