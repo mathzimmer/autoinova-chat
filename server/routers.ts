@@ -229,11 +229,12 @@ async function initDebounce() {
       }
       // === END FLOW ENGINE ===
 
-      // IA "livre" só entra se a conversa estiver com aiActive (recarrega, pois um nó
-      // de fluxo pode ter acabado de ligar a IA). Nunca mais entra "globalmente".
+      // IA "livre" só entra se: aiActive na conversa E a conexão permitir (IA automática
+      // ligada) OU a IA foi escolhida explicitamente (fluxo/atendente). Nunca "globalmente".
       const freshConv = await getConversationById(conversationId);
-      if (!freshConv?.aiActive) {
-        console.log(`[Debounce] Conversa ${conversationId}: IA não ativa nesta conversa, sem resposta automática`);
+      const { isConnectionAiAllowed } = await import("./db");
+      if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) {
+        console.log(`[Debounce] Conversa ${conversationId}: IA não liberada nesta conexão/conversa, sem resposta automática`);
         emitTypingIndicator(conversationId, false, "Auto Inova - Matriz IA");
         return;
       }
@@ -7057,9 +7058,11 @@ const automationAiRouter = router({
   setConnectionAiAuto: adminProcedure
     .input(z.object({ key: z.string().min(1), enabled: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
-      const { upsertSetting } = await import("./db");
+      const { upsertSetting, setConnectionConversationsAiActive } = await import("./db");
       await upsertSetting(`ai_auto:${input.key}`, String(input.enabled), ctx.user.id);
-      return { success: true };
+      // Efeito imediato: aplica também nas conversas abertas dessa conexão
+      const affected = await setConnectionConversationsAiActive(input.key, input.enabled).catch(() => 0);
+      return { success: true, affected };
     }),
 });
 

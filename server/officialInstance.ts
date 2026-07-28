@@ -140,10 +140,11 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
       } catch (flowErr) { console.error(`[Official] erro no fluxo, fallback IA:`, flowErr); }
     }
 
-    // IA "livre" só entra se a conversa estiver com aiActive (recarrega: um nó de
-    // fluxo pode ter acabado de ligar a IA). Nunca mais entra "globalmente".
+    // IA "livre" só entra se: aiActive E a conexão permitir (IA automática ligada) OU
+    // a IA foi escolhida explicitamente (fluxo/atendente). Nunca mais "globalmente".
     const freshConv = await getConversationById(conversationId);
-    if (!freshConv?.aiActive) return;
+    const { isConnectionAiAllowed } = await import("./db");
+    if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) return;
 
     let flowAiOptions: { agentId?: number | null } | undefined;
     if ((conv as any).agentId) {

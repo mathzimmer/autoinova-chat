@@ -99,10 +99,11 @@ async function processZernioConversation(conversationId: number, customerMessage
       }
     }
 
-    // IA "livre" só entra se a conversa estiver com aiActive (recarrega: um nó de
-    // fluxo pode ter acabado de ligar a IA). Nunca mais entra "globalmente".
+    // IA "livre" só entra se: aiActive E a conexão permitir (IA automática ligada) OU
+    // a IA foi escolhida explicitamente (fluxo/atendente). Nunca mais "globalmente".
     const freshConv = await getConversationById(conversationId);
-    if (!freshConv?.aiActive) return;
+    const { isConnectionAiAllowed } = await import("./db");
+    if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) return;
 
     // ── 2) Seleção de agente (fixado → instância → canal → padrão) ──
     let flowAiOptions: { agentId?: number | null } | undefined;

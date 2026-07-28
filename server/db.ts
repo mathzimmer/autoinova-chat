@@ -1812,6 +1812,52 @@ export async function getConnectionAiAuto(key: string): Promise<boolean> {
   }
 }
 
+// Monta a chave de conexão de uma conversa (pra consultar o toggle de IA automática).
+export function connectionKeyForConversation(conv: any): string | null {
+  if (!conv) return null;
+  if (conv.channel === "evolution" && conv.instanceName) return `evolution:${conv.instanceName}`;
+  if (conv.channel === "zernio" && conv.instanceName) return `zernio:${conv.instanceName}`;
+  if (conv.channel === "whatsapp" && conv.instanceName) return `official:${conv.instanceName}`;
+  if (conv.channel === "instagram" || conv.channel === "facebook") return `meta:${conv.channel}`;
+  return null;
+}
+
+// A IA "livre" pode responder nesta conversa? Sim se: a IA foi escolhida
+// explicitamente (routingState='ai_agent', via seleção manual ou nó de fluxo),
+// OU a conexão está com "IA automática" ligada. Caso contrário, não.
+export async function isConnectionAiAllowed(conv: any): Promise<boolean> {
+  if (conv?.routingState === "ai_agent") return true;
+  const key = connectionKeyForConversation(conv);
+  if (!key) return false;
+  return getConnectionAiAuto(key);
+}
+
+// Aplica o toggle de IA automática também nas conversas ABERTAS da conexão,
+// pra o efeito ser imediato (não só nas conversas novas). key ex.: "zernio:<accountId>".
+export async function setConnectionConversationsAiActive(key: string, enabled: boolean): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  const idx = key.indexOf(":");
+  const type = idx >= 0 ? key.slice(0, idx) : key;
+  const rest = idx >= 0 ? key.slice(idx + 1) : "";
+
+  let connWhere: any;
+  if (type === "evolution") connWhere = and(eq(conversations.channel, "evolution" as any), eq(conversations.instanceName, rest));
+  else if (type === "zernio") connWhere = and(eq(conversations.channel, "zernio" as any), eq(conversations.instanceName, rest));
+  else if (type === "official") connWhere = and(eq(conversations.channel, "whatsapp" as any), eq(conversations.instanceName, rest));
+  else if (type === "meta") connWhere = eq(conversations.channel, rest as any); // instagram | facebook
+  else return 0;
+
+  const res = await db.update(conversations)
+    .set({ aiActive: enabled })
+    .where(and(
+      connWhere,
+      or(eq(conversations.status, "open"), eq(conversations.status, "pending"))
+    ))
+    .returning({ id: conversations.id });
+  return res.length;
+}
+
 export async function getActiveFlowsForConnection(params: {
   connectionType?: string | null;
   connectionId?: number | null;

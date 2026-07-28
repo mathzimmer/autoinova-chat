@@ -897,8 +897,8 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
     case "ai_response": {
       // Let AI handle this message - stop flow execution temporarily
       result.handled = false; // Pass to AI
-      // O fluxo chamou a IA: garante que a IA responda mesmo se aiActive estava desligado
-      try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true } as any); } catch { /* noop */ }
+      // O fluxo chamou a IA: garante que ela responda mesmo com IA automática da conexão desligada
+      try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
       // Store instruction + pendingNextNodeId + node agentId in session context
       const nextEdge = edges.find(e => e.sourceNodeId === node.id);
       await updateFlowSession(session.id, {
