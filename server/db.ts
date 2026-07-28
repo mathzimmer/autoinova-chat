@@ -1900,6 +1900,17 @@ export async function getActiveFlowsForConnection(params: {
     );
   }
 
+  // 2c. Condição para número oficial (conversa tem channel=whatsapp + instanceName=phoneNumberId).
+  // O fluxo é salvo com connectionType="official" + instanceName=phoneNumberId.
+  if (params.channel === "whatsapp" && params.instanceName) {
+    conditions.push(
+      and(
+        eq(chatFlows.connectionType, "official"),
+        eq(chatFlows.instanceName, params.instanceName)
+      )
+    );
+  }
+
   // Fluxos rodam SOMENTE na conexão selecionada — sem fallback global.
   // Se a conversa não bate em nenhuma conexão específica, nenhum fluxo dispara.
   if (conditions.length === 0) return [];

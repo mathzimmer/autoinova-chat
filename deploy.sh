@@ -73,11 +73,13 @@ for f in $(ls "$MIG_DIR"/*.sql 2>/dev/null | sort); do
 done
 [ "$APPLIED" -eq 0 ] && echo "   nenhuma migração pendente."
 
-echo "==> removendo containers fantasma (se houver)"
-docker rm -f $(docker ps -aq --filter "name=autoinova") 2>/dev/null || true
-
-echo "==> subindo"
-docker compose -f docker-compose.prod.yml up -d
+echo "==> subindo (recria só o que mudou)"
+# NÃO removemos o container manualmente — isso confundia o compose e derrubava o app.
+# O compose recria sozinho o autoinova quando a imagem muda.
+docker compose -f docker-compose.prod.yml up -d --remove-orphans || {
+  echo "!! up falhou, tentando forçar recriação do autoinova..."
+  docker compose -f docker-compose.prod.yml up -d --force-recreate autoinova
+}
 
 echo "==> status"
 docker compose -f docker-compose.prod.yml ps

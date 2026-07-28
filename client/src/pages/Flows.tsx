@@ -49,15 +49,13 @@ function parseInstanceValue(v: string): { connectionType: string | null; instanc
   const idx = v.indexOf(":");
   const type = idx >= 0 ? v.slice(0, idx) : v;
   const rest = idx >= 0 ? v.slice(idx + 1) : "";
-  if (type === "tech_provider") return { connectionType: "tech_provider", instanceName: null, connectionId: Number(rest) || null };
-  if (type === "evolution" || type === "zernio") return { connectionType: type, instanceName: rest, connectionId: null };
+  if (type === "evolution" || type === "zernio" || type === "official") return { connectionType: type, instanceName: rest, connectionId: null };
   return { connectionType: null, instanceName: null, connectionId: null };
 }
 
 // Converte os campos salvos de um fluxo de volta no value do seletor.
 function flowToInstanceValue(flow: any): string {
-  if (flow?.connectionType === "tech_provider" && flow?.connectionId) return `tech_provider:${flow.connectionId}`;
-  if ((flow?.connectionType === "evolution" || flow?.connectionType === "zernio") && flow?.instanceName) return `${flow.connectionType}:${flow.instanceName}`;
+  if ((flow?.connectionType === "evolution" || flow?.connectionType === "zernio" || flow?.connectionType === "official") && flow?.instanceName) return `${flow.connectionType}:${flow.instanceName}`;
   return "global";
 }
 
@@ -92,7 +90,7 @@ export default function Flows() {
       label: `${i.displayName || i.accountId} (Zernio)`,
     })),
     ...((officialInstancesQuery.data || []) as any[]).map((i) => ({
-      value: `tech_provider:${i.id}`,
+      value: `official:${i.phoneNumberId}`,
       label: `${i.displayName || i.phone || i.phoneNumberId} (Oficial)`,
     })),
   ];

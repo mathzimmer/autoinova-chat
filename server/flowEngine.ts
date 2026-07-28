@@ -191,6 +191,7 @@ export async function findMatchingFlow(
     channel: conv.channel,
   });
 
+  console.log(`[FlowEngine] findMatchingFlow conv=${conversationId} channel=${conv.channel} instance=${conv.instanceName} connType=${conv.connectionType} → ${activeFlows.length} fluxo(s) ativo(s) nesta conexão`);
   if (activeFlows.length === 0) return null;
 
   for (const flow of activeFlows) {
