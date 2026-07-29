@@ -243,7 +243,8 @@ async function initDebounce() {
 
       // Check if there's an active flow session with a custom prompt or agent
       // Priority: node agentId > flow agentId > channel agent > global prompts
-      let flowAiOptions: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null } | undefined;
+      let flowAiOptions: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null; onlyTools?: string[] } | undefined;
+      let collectOnlyTools: string[] | undefined;
       try {
         const activeFlowSession = await getActiveFlowSession(conversationId);
         console.log(`[Debounce] Conversa ${conversationId}: activeFlowSession=${activeFlowSession ? `id=${activeFlowSession.id}, currentNodeId=${activeFlowSession.currentNodeId}, context=${JSON.stringify(activeFlowSession.context)}` : 'null'}`);
@@ -252,6 +253,13 @@ async function initDebounce() {
           if (flow) {
             const sessionCtx = (activeFlowSession.context as any) || {};
             console.log(`[Debounce] Conversa ${conversationId}: fluxo "${flow.name}", sessionCtx.nodeAgentId=${sessionCtx.nodeAgentId}, flow.agentId=${flow.agentId}, flow.aiPrompt=${flow.aiPrompt ? 'yes' : 'no'}`);
+            // Nó "Coletar com IA": restringe as ferramentas da IA (só coleta, sem buscar veículo)
+            if (sessionCtx.collectMode) {
+              collectOnlyTools = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
+            } else if (Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0) {
+              // Nó de IA livre com ferramentas específicas configuradas
+              collectOnlyTools = sessionCtx.nodeOnlyTools;
+            }
             // Priority 1: agentId from the current ai_response node
             if (sessionCtx.nodeAgentId) {
               flowAiOptions = {
@@ -312,6 +320,10 @@ async function initDebounce() {
         }
       }
 
+      // Coleta com IA: força o conjunto mínimo de ferramentas, independente do agente escolhido
+      if (collectOnlyTools) {
+        flowAiOptions = { ...flowAiOptions, onlyTools: collectOnlyTools };
+      }
       console.log(`[Debounce] Conversa ${conversationId}: chamando processAIMessage com flowAiOptions=${JSON.stringify(flowAiOptions)}`);
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent, flowAiOptions);
       console.log(`[Debounce] Conversa ${conversationId}: IA respondeu, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
@@ -4761,7 +4773,7 @@ const flowRouter = router({
       flowId: z.number(),
       nodes: z.array(z.object({
         id: z.number().optional(),
-        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number"]),
+        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number", "collect_with_ai", "vehicle_discovery"]),
         label: z.string().optional(),
         data: z.any(),
         positionX: z.number(),

@@ -71,6 +71,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   condition: { label: "Condição", icon: GitBranch, color: "text-yellow-400", bgColor: "border-yellow-500/50 bg-yellow-500/5", description: "If/Else baseado em dados" },
   ai_response: { label: "IA Livre", icon: Bot, color: "text-emerald-400", bgColor: "border-emerald-500/50 bg-emerald-500/5", description: "Deixar IA responder" },
   collect_with_ai: { label: "Coletar com IA", icon: Bot, color: "text-cyan-400", bgColor: "border-cyan-500/50 bg-cyan-500/5", description: "IA pede dados e insiste até coletar; avança com o que tiver" },
+  vehicle_discovery: { label: "Apresentar com IA", icon: Car, color: "text-violet-400", bgColor: "border-violet-500/50 bg-violet-500/5", description: "IA busca e apresenta carros com foto até o cliente gostar de um" },
   update_lead: { label: "Atualizar Lead", icon: UserCheck, color: "text-orange-400", bgColor: "border-orange-500/50 bg-orange-500/5", description: "Atualizar dados do lead" },
   assign_agent: { label: "Transferir", icon: UserCheck, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Transferir para humano" },
   delay: { label: "Delay", icon: Clock, color: "text-gray-400", bgColor: "border-gray-500/50 bg-gray-500/5", description: "Aguardar X segundos" },
@@ -328,6 +329,34 @@ function NodeAgentSelector({ config, updateConfig, node, onUpdate }: { config: a
           Instrução específica para este momento do fluxo (complementa o prompt do agente)
         </p>
       </div>
+      <div>
+        <Label className="text-xs">Ferramentas neste nó (opcional)</Label>
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {[
+            { key: "buscar_veiculos", label: "Buscar veículos" },
+            { key: "apresentar_veiculo", label: "Apresentar veículo (foto)" },
+            { key: "buscar_veiculo_por_id", label: "Buscar por ID" },
+            { key: "resumo_estoque", label: "Resumo do estoque" },
+            { key: "atualizar_lead", label: "Salvar dados do lead" },
+            { key: "enviar_botoes", label: "Enviar botões" },
+            { key: "enviar_lista", label: "Enviar lista" },
+          ].map((t) => {
+            const list = (config.tools || []) as string[];
+            const on = list.includes(t.key);
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => updateConfig("tools", on ? list.filter((x) => x !== t.key) : [...list, t.key])}
+                className={`text-[11px] px-2 py-1 rounded border transition-colors ${on ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-500" : "border-border text-muted-foreground hover:text-foreground"}`}
+              >
+                {t.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-1">Deixe vazio pra usar as ferramentas do agente. Marque aqui pra forçar só estas neste momento (ex.: nó que apresenta carros com foto).</p>
+      </div>
     </div>
   );
 }
@@ -410,6 +439,161 @@ function PropertiesPanel({
               className="text-sm"
             />
             <VarChips onInsert={(v) => updateConfig("text", (config.text || "") + v)} />
+          </div>
+        )}
+
+        {nodeType === "collect_with_ai" && (
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Dados que a IA deve coletar</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {[
+                  { key: "name", label: "Nome" },
+                  { key: "city", label: "Cidade" },
+                  { key: "tradeVehicle", label: "Veículo de troca" },
+                  { key: "tradeYear", label: "Ano da troca" },
+                  { key: "tradeKm", label: "KM da troca" },
+                  { key: "paymentMethod", label: "Forma de pagamento" },
+                  { key: "downPayment", label: "Entrada" },
+                  { key: "email", label: "E-mail" },
+                  { key: "cpf", label: "CPF" },
+                ].map((f) => {
+                  const list = (config.fields || []) as { key: string; label: string }[];
+                  const on = list.some((x) => x.key === f.key);
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => updateConfig("fields", on ? list.filter((x) => x.key !== f.key) : [...list, f])}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${on ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-500" : "border-border text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Instrução pra IA</Label>
+              <Textarea
+                value={config.instruction || ""}
+                onChange={(e) => updateConfig("instruction", e.target.value)}
+                placeholder="Colete os dados de forma cordial, uma pergunta por vez. Se o cliente desviar, retome pedindo o que falta."
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Máx. tentativas</Label>
+                <Input type="number" value={config.maxAttempts ?? 4} onChange={(e) => updateConfig("maxAttempts", parseInt(e.target.value) || 0)} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-xs">Sem resposta: lembrar após (min)</Label>
+                <Input type="number" value={config.noReplyMinutes ?? 60} onChange={(e) => updateConfig("noReplyMinutes", parseInt(e.target.value) || 0)} className="h-8 text-sm" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Ferramentas que a IA pode usar</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {[
+                  { key: "atualizar_lead", label: "Salvar dados do lead" },
+                  { key: "buscar_veiculos", label: "Buscar veículos" },
+                  { key: "apresentar_veiculo", label: "Apresentar veículo (foto)" },
+                  { key: "buscar_veiculo_por_id", label: "Buscar por ID" },
+                  { key: "resumo_estoque", label: "Resumo do estoque" },
+                  { key: "enviar_botoes", label: "Enviar botões" },
+                  { key: "enviar_lista", label: "Enviar lista" },
+                ].map((t) => {
+                  const list = (config.tools || []) as string[];
+                  const on = list.includes(t.key);
+                  return (
+                    <button
+                      key={t.key}
+                      type="button"
+                      onClick={() => updateConfig("tools", on ? list.filter((x) => x !== t.key) : [...list, t.key])}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${on ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-500" : "border-border text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">Se não marcar nada, a IA fica só com "Salvar dados do lead" — não busca nem oferece veículos. Marque "Buscar/Apresentar" só em nós onde ela deve mostrar carros.</p>
+            </div>
+            <p className="text-[10px] text-muted-foreground">A IA insiste até completar. Ao esgotar as tentativas (ou o cliente sumir), avança pro próximo nó com o que já coletou.</p>
+          </div>
+        )}
+
+        {nodeType === "vehicle_discovery" && (
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">O que mostrar em cada carro</Label>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {[
+                  { key: "titulo", label: "Título" },
+                  { key: "preco", label: "Preço" },
+                  { key: "ano", label: "Ano" },
+                  { key: "km", label: "KM" },
+                  { key: "cambio", label: "Câmbio" },
+                  { key: "combustivel", label: "Combustível" },
+                  { key: "cor", label: "Cor" },
+                  { key: "link", label: "Link do anúncio" },
+                ].map((f) => {
+                  const list = ((config.showFields as string[]) || ["titulo", "preco", "ano", "km"]);
+                  const on = list.includes(f.key);
+                  return (
+                    <button
+                      key={f.key}
+                      type="button"
+                      onClick={() => updateConfig("showFields", on ? list.filter((x) => x !== f.key) : [...list, f.key])}
+                      className={`text-[11px] px-2 py-1 rounded border transition-colors ${on ? "border-violet-500/50 bg-violet-500/10 text-violet-500" : "border-border text-muted-foreground hover:text-foreground"}`}
+                    >
+                      {f.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-muted-foreground mt-1">A foto do carro é sempre enviada. Aqui você escolhe quais dados aparecem na legenda.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Carros por vez</Label>
+                <Input type="number" min={1} max={10} value={config.perBatch ?? 3} onChange={(e) => updateConfig("perBatch", parseInt(e.target.value) || 1)} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-xs">Avança na etapa</Label>
+                <Select value={config.targetStage || "interesse_definido"} onValueChange={(v) => updateConfig("targetStage", v)}>
+                  <SelectTrigger className="h-8 text-sm mt-0.5"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="interesse_definido">Cliente gostou de um carro</SelectItem>
+                    <SelectItem value="pagamento_definido">Definiu forma de pagamento</SelectItem>
+                    <SelectItem value="negociando">Entrou em negociação</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Instrução extra pra IA (opcional)</Label>
+              <Textarea
+                value={config.instruction || ""}
+                onChange={(e) => updateConfig("instruction", e.target.value)}
+                placeholder="Ex: Foque em SUVs e sedans até 100 mil. Seja consultivo, pergunte o uso do carro (cidade, viagem, família)."
+                rows={3}
+                className="text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Máx. rodadas (0 = sem limite)</Label>
+                <Input type="number" min={0} value={config.maxRounds ?? 0} onChange={(e) => updateConfig("maxRounds", parseInt(e.target.value) || 0)} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-xs">Sem resposta: lembrar após (min)</Label>
+                <Input type="number" min={0} value={config.noReplyMinutes ?? 0} onChange={(e) => updateConfig("noReplyMinutes", parseInt(e.target.value) || 0)} className="h-8 text-sm" />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">A IA busca no estoque, mostra os carros com foto e conversa. Quando perceber que o cliente confirmou um carro, ela marca a etapa escolhida e o fluxo avança pro próximo nó (negociação). Se o cliente sumir e você definir o tempo de lembrete, avança pelo caminho padrão.</p>
           </div>
         )}
 

@@ -648,6 +648,11 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return handleCollectStep(currentNode, edges, nodes, session, ctx, result, true);
   }
 
+  // Nó "Apresentar com IA": cliente respondeu → checa se confirmou um carro e decide
+  if (currentNode.nodeType === "vehicle_discovery") {
+    return handleDiscoveryStep(currentNode, edges, nodes, session, ctx, result, true);
+  }
+
   // For condition node waiting for input
   if (currentNode.nodeType === "condition") {
     const condResult = evaluateCondition(currentNode, ctx);
@@ -742,7 +747,7 @@ async function handleCollectStep(
   // Completou tudo OU esgotou tentativas → avança (com o que tiver)
   if (fields.length === 0 || missing.length === 0 || attempts > maxAttempts) {
     const clean = { ...sctx };
-    delete clean.collectAttempts; delete clean.aiInstruction; delete clean.nodeAgentId;
+    delete clean.collectAttempts; delete clean.aiInstruction; delete clean.nodeAgentId; delete clean.collectMode; delete clean.collectTools;
     await updateFlowSession(session.id, { context: clean });
     if (missing.length > 0) {
       console.log(`[FlowEngine] collect_with_ai: avançando parcial (faltou: ${missing.map(m => m.label).join(", ")})`);
@@ -755,13 +760,86 @@ async function handleCollectStep(
 
   // Ainda falta dado → a IA pede/insiste (e extrai a resposta no turno da IA)
   const base = cfg.instruction || "Colete os dados abaixo do cliente de forma cordial, uma pergunta por vez. Se ele desviar do assunto, retome educadamente pedindo o que ainda falta.";
-  const instr = `${base}\nDADOS QUE AINDA FALTAM: ${missing.map(m => m.label).join(", ")}.`;
+  const guard = "IMPORTANTE: Seu único objetivo agora é COLETAR e REGISTRAR os dados pedidos. NÃO busque, sugira ou apresente veículos do estoque. Se o cliente citar um carro (marca/modelo/ano), trate como o VEÍCULO DE TROCA dele e apenas registre — nunca ofereça carros. Assim que tiver um dado, salve com a ferramenta de atualizar lead.";
+  const instr = `${guard}\n\n${base}\nDADOS QUE AINDA FALTAM: ${missing.map(m => m.label).join(", ")}.`;
+  // tools da coleta: usa o que o nó configurar; senão, só atualizar_lead
+  const collectTools: string[] = Array.isArray(cfg.tools) && cfg.tools.length > 0 ? cfg.tools : ["atualizar_lead"];
   await updateFlowSession(session.id, {
     currentNodeId: node.id,
-    context: { ...sctx, collectAttempts: attempts, aiInstruction: instr, nodeAgentId: cfg.agentId || null, pendingNextNodeId: null, waitingSince: Date.now() },
+    context: { ...sctx, collectAttempts: attempts, aiInstruction: instr, nodeAgentId: cfg.agentId || null, collectMode: true, collectTools, pendingNextNodeId: null, waitingSince: Date.now() },
   });
   try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
   result.handled = false; // passa pra IA pedir e extrair os dados
+  result.waitingForInput = true;
+  return result;
+}
+
+// Ordem do funil para decidir se o lead já "avançou" o suficiente
+const FUNNEL_ORDER = ["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "encaminhado_vendedor", "negociando", "fechado"];
+
+/**
+ * Nó "Apresentar com IA" (vehicle_discovery): a IA busca no estoque, mostra até N
+ * carros por vez (com os campos escolhidos), conversa e insiste em outras opções
+ * se o cliente não gostar. Quando a IA percebe que o cliente confirmou interesse
+ * num carro, ela grava etapa_funil = alvo (padrão "interesse_definido") e o fluxo
+ * avança para a etapa de negociação.
+ */
+async function handleDiscoveryStep(
+  node: ChatFlowNode,
+  edges: ChatFlowEdge[],
+  nodes: ChatFlowNode[],
+  session: { id: number; conversationId: number; flowId: number; context: any },
+  ctx: FlowContext,
+  result: FlowResult,
+  isResume: boolean,
+): Promise<FlowResult> {
+  const cfg = (node.data as any) || {};
+  const targetStage: string = cfg.targetStage || "interesse_definido";
+  const perBatch: number = Number(cfg.perBatch ?? 3);
+  const maxRounds: number = Number(cfg.maxRounds ?? 0); // 0 = sem limite
+  const camposKeys: string[] = Array.isArray(cfg.showFields) && cfg.showFields.length > 0 ? cfg.showFields : ["titulo", "preco", "ano", "km"];
+  const tools: string[] = Array.isArray(cfg.tools) && cfg.tools.length > 0 ? cfg.tools : ["buscar_veiculos", "apresentar_veiculo", "buscar_veiculo_por_id", "resumo_estoque", "atualizar_lead"];
+  const sctx = (session.context as any) || {};
+  const rounds = isResume ? (Number(sctx.discoveryRounds || 0) + 1) : 1;
+
+  const lead: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+  const stage: string = lead?.funnelStatus || "novo";
+  const reachedTarget = stage === "perdido"
+    || (FUNNEL_ORDER.indexOf(stage) >= 0 && FUNNEL_ORDER.indexOf(stage) >= FUNNEL_ORDER.indexOf(targetStage));
+  const exhausted = maxRounds > 0 && rounds > maxRounds;
+
+  // Cliente confirmou um carro (ou esgotou as rodadas) → avança para negociação
+  if (reachedTarget || exhausted) {
+    const clean = { ...sctx };
+    delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
+    delete clean.nodeAgentId; delete clean.nodeOnlyTools;
+    await updateFlowSession(session.id, { context: clean });
+    console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
+    const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
+    if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
+    else await updateFlowSession(session.id, { status: "completed" });
+    return result;
+  }
+
+  // Ainda descobrindo → a IA busca, apresenta e conversa
+  const base = cfg.instruction || "";
+  const guard = [
+    "Você está no modo APRESENTAÇÃO DE VEÍCULOS: o cliente ainda NÃO decidiu qual carro quer.",
+    `Use buscar_veiculos para achar opções REAIS no estoque e apresentar_veiculo para mostrar cada carro COM FOTO. Mostre no máximo ${perBatch} carro(s) por vez.`,
+    `Ao chamar apresentar_veiculo, passe campos=${JSON.stringify(camposKeys)} para exibir só esses dados na legenda.`,
+    "Depois de apresentar, pergunte de forma natural se o cliente gostou de algum.",
+    "Se ele NÃO gostou, pergunte o que procura (estilo, faixa de preço, uso) e busque OUTRAS opções — insista com novas sugestões.",
+    `Assim que o cliente CONFIRMAR claramente que gostou de um carro específico, chame atualizar_lead com o veiculo_id desse carro e etapa_funil="${targetStage}". Só faça isso quando houver confirmação clara — é isso que libera a próxima etapa.`,
+    "NUNCA invente carros: só apresente o que veio de buscar_veiculos.",
+  ].join("\n");
+  const instr = base ? `${guard}\n\n${base}` : guard;
+
+  await updateFlowSession(session.id, {
+    currentNodeId: node.id,
+    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, aiInstruction: instr, nodeAgentId: cfg.agentId || null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
+  });
+  try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
+  result.handled = false; // passa pra IA buscar e apresentar
   result.waitingForInput = true;
   return result;
 }
@@ -964,6 +1042,9 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
           ...((session.context as any) || {}),
           aiInstruction: config.instruction || "",
           nodeAgentId: config.agentId || null,
+          // Ferramentas específicas deste nó (opcional). Vazio = usa as do agente/canal.
+          nodeOnlyTools: Array.isArray(config.tools) && config.tools.length > 0 ? config.tools : null,
+          collectMode: false,
           pendingNextNodeId: nextEdge?.targetNodeId || null,
         },
       });
@@ -995,6 +1076,11 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
 
     case "collect_with_ai": {
       await handleCollectStep(node, edges, nodes, session, ctx, result, false);
+      break;
+    }
+
+    case "vehicle_discovery": {
+      await handleDiscoveryStep(node, edges, nodes, session, ctx, result, false);
       break;
     }
 
@@ -1941,8 +2027,9 @@ export async function runFlowNoReplyCheck(): Promise<void> {
         await updateFlowSession(session.id, { context: { ...sctx, waitingSince: 0, noReplyAttempts: 0 } });
 
         const noReplyEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === "noreply");
-        // "Coletar com IA": sem resposta → avança pelo DEFAULT com o que já coletou (não encerra)
-        const advanceEdge = noReplyEdge || (node.nodeType === "collect_with_ai"
+        // "Coletar com IA" e "Apresentar com IA": sem resposta → avança pelo DEFAULT
+        // (coleta = com o que já tiver; descoberta = segue o fluxo mesmo sem confirmação)
+        const advanceEdge = noReplyEdge || ((node.nodeType === "collect_with_ai" || node.nodeType === "vehicle_discovery")
           ? edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle))
           : undefined);
         if (advanceEdge) {

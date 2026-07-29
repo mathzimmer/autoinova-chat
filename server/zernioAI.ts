@@ -105,15 +105,31 @@ async function processZernioConversation(conversationId: number, customerMessage
     const { isConnectionAiAllowed } = await import("./db");
     if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) return;
 
-    // ── 2) Seleção de agente (fixado → instância → canal → padrão) ──
-    let flowAiOptions: { agentId?: number | null } | undefined;
-    if ((conv as any).agentId) {
-      flowAiOptions = { agentId: (conv as any).agentId };
+    // ── 2) Seleção de agente (nó do fluxo → fixado → instância → canal → padrão) ──
+    let flowAiOptions: { agentId?: number | null; flowInstruction?: string; onlyTools?: string[] } | undefined;
+    // Contexto do fluxo ativo (instrução do nó atual + coleta com IA)
+    let sessionCtx: any = {};
+    try {
+      const { getActiveFlowSession } = await import("./db");
+      const fs = await getActiveFlowSession(conversationId);
+      if (fs) sessionCtx = (fs.context as any) || {};
+    } catch { /* noop */ }
+    if (sessionCtx.nodeAgentId) {
+      flowAiOptions = { agentId: sessionCtx.nodeAgentId, flowInstruction: sessionCtx.aiInstruction || undefined };
+    } else if ((conv as any).agentId) {
+      flowAiOptions = { agentId: (conv as any).agentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     } else {
       let picked = accountId ? await getAiAgentForInstance(accountId) : null;
       if (!picked) picked = await getAiAgentForChannel("zernio");
       if (!picked) picked = await getDefaultAiAgent();
-      if (picked) flowAiOptions = { agentId: picked.id };
+      if (picked) flowAiOptions = { agentId: picked.id, flowInstruction: sessionCtx.aiInstruction || undefined };
+    }
+    // Nó "Coletar com IA": restringe ferramentas (só coleta, sem buscar veículo)
+    if (sessionCtx.collectMode) {
+      const only = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
+      flowAiOptions = { ...flowAiOptions, onlyTools: only };
+    } else if (Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0) {
+      flowAiOptions = { ...flowAiOptions, onlyTools: sessionCtx.nodeOnlyTools };
     }
 
     // ── 3) IA ──

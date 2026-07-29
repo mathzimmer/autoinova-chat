@@ -492,6 +492,7 @@ const TOOLS: Tool[] = [
         properties: {
           veiculo_id: { type: "number", description: "ID do veículo no estoque (ex: 42). Obrigatório." },
           mensagem_adicional: { type: "string", description: "Mensagem opcional para enviar junto (ex: 'Olha que beleza esse aqui!'). Se não informado, envia apenas os dados do veículo." },
+          campos: { type: "array", items: { type: "string", enum: ["titulo", "preco", "ano", "km", "cambio", "combustivel", "cor", "link"] }, description: "Opcional. Quais campos exibir na legenda da foto. Se vazio/omitido, exibe todos. Use APENAS quando o sistema instruir quais campos mostrar." },
         },
         required: ["veiculo_id"],
         additionalProperties: false,
@@ -706,7 +707,7 @@ export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
   customerMessage: string,
-  options?: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null }
+  options?: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null; onlyTools?: string[] }
 ): Promise<{ response: string; leadData: Record<string, unknown> | null; interactiveMessages?: InteractiveMessage[] }> {
   const startTime = Date.now();
   const isFlowMode = !!(options?.flowPrompt);
@@ -774,10 +775,14 @@ export async function processAIMessage(
     } catch { /* usa todas */ }
   }
 
-  // Filter tools based on agent config OR free-mode config
-  const toolFilter = agent?.enabledTools && agent.enabledTools.length > 0
-    ? (agent.enabledTools as string[])
-    : freeTools;
+  // Filter tools based on agent config OR free-mode config.
+  // onlyTools (ex.: nó "Coletar com IA") tem precedência: restringe ao mínimo
+  // e desliga busca/apresentação de veículo para a IA só coletar dados.
+  const toolFilter = options?.onlyTools && options.onlyTools.length > 0
+    ? options.onlyTools
+    : (agent?.enabledTools && agent.enabledTools.length > 0
+      ? (agent.enabledTools as string[])
+      : freeTools);
   const activeTools: Tool[] = toolFilter && toolFilter.length > 0
     ? TOOLS.filter(t => toolFilter.includes(t.function.name))
     : TOOLS;
@@ -1143,18 +1148,22 @@ export async function processAIMessage(
                 const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
                 const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
                 
+                // Campos a exibir (config do nó "Apresentar com IA"). Vazio = todos.
+                const wanted: string[] = Array.isArray(args.campos) && args.campos.length > 0 ? args.campos : ["titulo", "ano", "km", "cambio", "combustivel", "cor", "preco", "link"];
+                const show = (k: string) => wanted.includes(k);
                 let caption = "";
                 if (args.mensagem_adicional) {
                   caption += args.mensagem_adicional + "\n\n";
                 }
-                caption += `${v.title || `${v.brand} ${v.model}`}\n`;
-                caption += `Ano: ${v.year}\n`;
-                caption += `Km: ${mileageStr}\n`;
-                caption += `Câmbio: ${transStr}\n`;
-                caption += `Combustível: ${v.fuel || "N/I"}\n`;
-                caption += `Cor: ${v.color || "N/I"}\n`;
-                caption += `Preço: ${priceStr}`;
-                if (v.url) {
+                if (show("titulo")) caption += `${v.title || `${v.brand} ${v.model}`}\n`;
+                if (show("ano")) caption += `Ano: ${v.year}\n`;
+                if (show("km")) caption += `Km: ${mileageStr}\n`;
+                if (show("cambio")) caption += `Câmbio: ${transStr}\n`;
+                if (show("combustivel")) caption += `Combustível: ${v.fuel || "N/I"}\n`;
+                if (show("cor")) caption += `Cor: ${v.color || "N/I"}\n`;
+                if (show("preco")) caption += `Preço: ${priceStr}\n`;
+                caption = caption.replace(/\n$/, "");
+                if (show("link") && v.url) {
                   caption += `\n\nVeja mais: ${v.url}`;
                 }
                 

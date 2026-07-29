@@ -148,14 +148,28 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
     const { isConnectionAiAllowed } = await import("./db");
     if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) return;
 
-    let flowAiOptions: { agentId?: number | null } | undefined;
-    if ((conv as any).agentId) {
-      flowAiOptions = { agentId: (conv as any).agentId };
+    let flowAiOptions: { agentId?: number | null; flowInstruction?: string; onlyTools?: string[] } | undefined;
+    let sessionCtx: any = {};
+    try {
+      const { getActiveFlowSession } = await import("./db");
+      const fs = await getActiveFlowSession(conversationId);
+      if (fs) sessionCtx = (fs.context as any) || {};
+    } catch { /* noop */ }
+    if (sessionCtx.nodeAgentId) {
+      flowAiOptions = { agentId: sessionCtx.nodeAgentId, flowInstruction: sessionCtx.aiInstruction || undefined };
+    } else if ((conv as any).agentId) {
+      flowAiOptions = { agentId: (conv as any).agentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     } else {
       let picked = await getAiAgentForInstance(phoneNumberId);
       if (!picked) picked = await getAiAgentForChannel("whatsapp");
       if (!picked) picked = await getDefaultAiAgent();
-      if (picked) flowAiOptions = { agentId: picked.id };
+      if (picked) flowAiOptions = { agentId: picked.id, flowInstruction: sessionCtx.aiInstruction || undefined };
+    }
+    if (sessionCtx.collectMode) {
+      const only = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
+      flowAiOptions = { ...flowAiOptions, onlyTools: only };
+    } else if (Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0) {
+      flowAiOptions = { ...flowAiOptions, onlyTools: sessionCtx.nodeOnlyTools };
     }
 
     const recent = await listMessages(conversationId, 30);
