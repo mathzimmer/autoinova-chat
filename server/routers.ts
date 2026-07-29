@@ -245,6 +245,7 @@ async function initDebounce() {
       // Priority: node agentId > flow agentId > channel agent > global prompts
       let flowAiOptions: { flowPrompt?: string; flowInstruction?: string; agentId?: number | null; onlyTools?: string[] } | undefined;
       let collectOnlyTools: string[] | undefined;
+      let discoveryPromptCtx: string | undefined;
       try {
         const activeFlowSession = await getActiveFlowSession(conversationId);
         console.log(`[Debounce] Conversa ${conversationId}: activeFlowSession=${activeFlowSession ? `id=${activeFlowSession.id}, currentNodeId=${activeFlowSession.currentNodeId}, context=${JSON.stringify(activeFlowSession.context)}` : 'null'}`);
@@ -257,8 +258,11 @@ async function initDebounce() {
             if (sessionCtx.collectMode) {
               collectOnlyTools = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
             } else if (Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0) {
-              // Nó de IA livre com ferramentas específicas configuradas
+              // Nó de IA livre / Apresentar com IA com ferramentas específicas
               collectOnlyTools = sessionCtx.nodeOnlyTools;
+            }
+            if (sessionCtx.discoveryMode && sessionCtx.discoveryPrompt) {
+              discoveryPromptCtx = sessionCtx.discoveryPrompt;
             }
             // Priority 1: agentId from the current ai_response node
             if (sessionCtx.nodeAgentId) {
@@ -288,6 +292,13 @@ async function initDebounce() {
         }
       } catch (flowPromptErr) {
         console.error(`[Debounce] Erro ao carregar prompt do fluxo:`, flowPromptErr);
+      }
+
+      // Nó "Apresentar com IA": usa prompt PRÓPRIO (sem as 3 camadas globais que
+      // mandariam apresentar em texto). Isso desliga a seleção de agente abaixo.
+      if (discoveryPromptCtx) {
+        flowAiOptions = { flowPrompt: discoveryPromptCtx, onlyTools: collectOnlyTools };
+        console.log(`[Debounce] Conversa ${conversationId}: modo APRESENTAR COM IA (prompt próprio, tools=${JSON.stringify(collectOnlyTools)})`);
       }
 
       // Hierarquia de seleção de agente (do mais específico ao geral).

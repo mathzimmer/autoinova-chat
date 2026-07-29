@@ -148,7 +148,7 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
     const { isConnectionAiAllowed } = await import("./db");
     if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) return;
 
-    let flowAiOptions: { agentId?: number | null; flowInstruction?: string; onlyTools?: string[] } | undefined;
+    let flowAiOptions: { agentId?: number | null; flowInstruction?: string; onlyTools?: string[]; flowPrompt?: string } | undefined;
     let sessionCtx: any = {};
     try {
       const { getActiveFlowSession } = await import("./db");
@@ -168,6 +168,9 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
     if (sessionCtx.collectMode) {
       const only = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
       flowAiOptions = { ...flowAiOptions, onlyTools: only };
+    } else if (sessionCtx.discoveryMode && sessionCtx.discoveryPrompt) {
+      const only = Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0 ? sessionCtx.nodeOnlyTools : undefined;
+      flowAiOptions = { flowPrompt: sessionCtx.discoveryPrompt, onlyTools: only };
     } else if (Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0) {
       flowAiOptions = { ...flowAiOptions, onlyTools: sessionCtx.nodeOnlyTools };
     }

@@ -106,7 +106,7 @@ async function processZernioConversation(conversationId: number, customerMessage
     if (!freshConv?.aiActive || !(await isConnectionAiAllowed(freshConv))) return;
 
     // ── 2) Seleção de agente (nó do fluxo → fixado → instância → canal → padrão) ──
-    let flowAiOptions: { agentId?: number | null; flowInstruction?: string; onlyTools?: string[] } | undefined;
+    let flowAiOptions: { agentId?: number | null; flowInstruction?: string; onlyTools?: string[]; flowPrompt?: string } | undefined;
     // Contexto do fluxo ativo (instrução do nó atual + coleta com IA)
     let sessionCtx: any = {};
     try {
@@ -128,6 +128,10 @@ async function processZernioConversation(conversationId: number, customerMessage
     if (sessionCtx.collectMode) {
       const only = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
       flowAiOptions = { ...flowAiOptions, onlyTools: only };
+    } else if (sessionCtx.discoveryMode && sessionCtx.discoveryPrompt) {
+      // Nó "Apresentar com IA": prompt próprio (sem as 3 camadas globais) + tools de estoque
+      const only = Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0 ? sessionCtx.nodeOnlyTools : undefined;
+      flowAiOptions = { flowPrompt: sessionCtx.discoveryPrompt, onlyTools: only };
     } else if (Array.isArray(sessionCtx.nodeOnlyTools) && sessionCtx.nodeOnlyTools.length > 0) {
       flowAiOptions = { ...flowAiOptions, onlyTools: sessionCtx.nodeOnlyTools };
     }

@@ -817,7 +817,7 @@ async function handleDiscoveryStep(
   if (reachedTarget || exhausted) {
     const clean = { ...sctx };
     delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
-    delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx;
+    delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt;
     await updateFlowSession(session.id, { context: clean });
     console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, base=${baseIdx}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
     const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
@@ -826,22 +826,28 @@ async function handleDiscoveryStep(
     return result;
   }
 
-  // Ainda descobrindo → a IA busca, apresenta e conversa
+  // Ainda descobrindo → a IA busca, apresenta e conversa.
+  // Prompt PRÓPRIO e enxuto (não usa o prompt global de 3 camadas, que mandaria
+  // "apresentar em texto corrido" e brigaria com o envio de fotos).
   const base = cfg.instruction || "";
   const guard = [
-    "Você está no modo APRESENTAÇÃO DE VEÍCULOS: o cliente ainda NÃO decidiu qual carro quer.",
-    `Use buscar_veiculos para achar opções REAIS no estoque e apresentar_veiculo para mostrar cada carro COM FOTO. Mostre no máximo ${perBatch} carro(s) por vez.`,
-    `Ao chamar apresentar_veiculo, passe campos=${JSON.stringify(camposKeys)} para exibir só esses dados na legenda.`,
-    "Depois de apresentar, pergunte de forma natural se o cliente gostou de algum.",
-    "Se ele NÃO gostou, pergunte o que procura (estilo, faixa de preço, uso) e busque OUTRAS opções — insista com novas sugestões.",
-    `Assim que o cliente CONFIRMAR claramente que gostou de um carro específico, chame atualizar_lead com o veiculo_id desse carro e etapa_funil="${targetStage}". Só faça isso quando houver confirmação clara — é isso que libera a próxima etapa.`,
-    "NUNCA invente carros: só apresente o que veio de buscar_veiculos.",
+    "Você é um consultor de vendas da Auto Inova apresentando veículos no WhatsApp para um cliente que ainda NÃO decidiu qual carro quer.",
+    "",
+    "REGRAS (PRIORIDADE MÁXIMA — sobrepõem qualquer regra geral de formatação):",
+    "- Para mostrar QUALQUER carro, chame a ferramenta apresentar_veiculo (UMA chamada por carro, com o veiculo_id). É ela que envia a FOTO.",
+    "- PROIBIDO listar carros em texto (nada de \"Opção 1, Opção 2...\", nada de escrever preço/ano/link no texto). Se você descrever o carro em texto em vez de chamar apresentar_veiculo, está ERRADO.",
+    `- A cada rodada: chame buscar_veiculos para achar opções reais → escolha até ${perBatch} → chame apresentar_veiculo para CADA uma → depois pergunte, em 1 frase curta, se gostou de alguma.`,
+    `- Máximo ${perBatch} carro(s) por rodada.`,
+    `- Ao chamar apresentar_veiculo, passe SEMPRE campos=${JSON.stringify(camposKeys)} para a legenda.`,
+    "- Se o cliente NÃO gostou, pergunte o estilo / faixa de preço / uso e busque OUTRAS opções — insista com novas sugestões.",
+    `- Quando o cliente CONFIRMAR claramente que gostou de um carro específico, chame atualizar_lead com o veiculo_id desse carro e etapa_funil="${targetStage}". Só faça isso quando houver confirmação clara — é o que libera a próxima etapa.`,
+    "- NUNCA invente carros: só apresente os que vieram de buscar_veiculos.",
   ].join("\n");
-  const instr = base ? `${guard}\n\n${base}` : guard;
+  const discoveryPrompt = base ? `${guard}\n\nOrientação extra da loja:\n${base}` : guard;
 
   await updateFlowSession(session.id, {
     currentNodeId: node.id,
-    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, discoveryBaseIdx: baseIdx, aiInstruction: instr, nodeAgentId: cfg.agentId || null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
+    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, discoveryBaseIdx: baseIdx, discoveryPrompt, aiInstruction: null, nodeAgentId: null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
   });
   try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
   result.handled = false; // passa pra IA buscar e apresentar
