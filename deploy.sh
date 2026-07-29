@@ -77,8 +77,10 @@ echo "==> subindo (recria só o que mudou)"
 # NÃO removemos o container manualmente — isso confundia o compose e derrubava o app.
 # O compose recria sozinho o autoinova quando a imagem muda.
 docker compose -f docker-compose.prod.yml up -d --remove-orphans || {
-  echo "!! up falhou, tentando forçar recriação do autoinova..."
-  docker compose -f docker-compose.prod.yml up -d --force-recreate autoinova
+  echo "!! up falhou (conflito de nome). Removendo container antigo e recriando..."
+  # container_name fixo (autoinova) impede o rolling-recreate: remove o antigo e sobe
+  docker rm -f autoinova 2>/dev/null || true
+  docker compose -f docker-compose.prod.yml up -d --remove-orphans
 }
 
 echo "==> status"

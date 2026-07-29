@@ -804,17 +804,22 @@ async function handleDiscoveryStep(
 
   const lead: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
   const stage: string = lead?.funnelStatus || "novo";
-  const reachedTarget = stage === "perdido"
-    || (FUNNEL_ORDER.indexOf(stage) >= 0 && FUNNEL_ORDER.indexOf(stage) >= FUNNEL_ORDER.indexOf(targetStage));
+  const stageIdx = FUNNEL_ORDER.indexOf(stage);
+  const targetIdx = FUNNEL_ORDER.indexOf(targetStage);
+  // Etapa em que o lead estava ao ENTRAR no nó (evita "pular" leads que já vinham
+  // adiantados no funil). Só avança se o funil andar PRA FRENTE dentro do nó.
+  const baseIdx = isResume ? Number(sctx.discoveryBaseIdx ?? stageIdx) : stageIdx;
+  const advancedToTarget = stageIdx >= 0 && stageIdx >= targetIdx && stageIdx > baseIdx;
+  const reachedTarget = isResume && (advancedToTarget || stage === "perdido");
   const exhausted = maxRounds > 0 && rounds > maxRounds;
 
-  // Cliente confirmou um carro (ou esgotou as rodadas) → avança para negociação
+  // Cliente confirmou um carro DENTRO do nó (ou esgotou as rodadas) → avança
   if (reachedTarget || exhausted) {
     const clean = { ...sctx };
     delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
-    delete clean.nodeAgentId; delete clean.nodeOnlyTools;
+    delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx;
     await updateFlowSession(session.id, { context: clean });
-    console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
+    console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, base=${baseIdx}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
     const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
     if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
     else await updateFlowSession(session.id, { status: "completed" });
@@ -836,7 +841,7 @@ async function handleDiscoveryStep(
 
   await updateFlowSession(session.id, {
     currentNodeId: node.id,
-    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, aiInstruction: instr, nodeAgentId: cfg.agentId || null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
+    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, discoveryBaseIdx: baseIdx, aiInstruction: instr, nodeAgentId: cfg.agentId || null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
   });
   try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
   result.handled = false; // passa pra IA buscar e apresentar
