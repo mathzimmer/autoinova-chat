@@ -70,6 +70,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   send_image: { label: "Imagem", icon: Image, color: "text-pink-400", bgColor: "border-pink-500/50 bg-pink-500/5", description: "Enviar imagem" },
   condition: { label: "Condição", icon: GitBranch, color: "text-yellow-400", bgColor: "border-yellow-500/50 bg-yellow-500/5", description: "If/Else baseado em dados" },
   ai_response: { label: "IA Livre", icon: Bot, color: "text-emerald-400", bgColor: "border-emerald-500/50 bg-emerald-500/5", description: "Deixar IA responder" },
+  collect_with_ai: { label: "Coletar com IA", icon: Bot, color: "text-cyan-400", bgColor: "border-cyan-500/50 bg-cyan-500/5", description: "IA pede dados e insiste até coletar; avança com o que tiver" },
   update_lead: { label: "Atualizar Lead", icon: UserCheck, color: "text-orange-400", bgColor: "border-orange-500/50 bg-orange-500/5", description: "Atualizar dados do lead" },
   assign_agent: { label: "Transferir", icon: UserCheck, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Transferir para humano" },
   delay: { label: "Delay", icon: Clock, color: "text-gray-400", bgColor: "border-gray-500/50 bg-gray-500/5", description: "Aguardar X segundos" },

@@ -153,6 +153,10 @@ export async function evaluateFlowConditions(flow: any, conversationId: number):
     channel: String(conv?.channel || "").toLowerCase(),
     quality: String(lead?.quality || "").toLowerCase(),
     payment: String(lead?.paymentMethod || "").toLowerCase(),
+    // Já comprou (fechou negócio) → cliente
+    is_customer: (lead?.funnelStatus === "fechado") ? "sim" : "nao",
+    // Já teve reabertura de ciclo → voltou / retornou
+    is_returning: (Number((lead as any)?.reactivations || 0) > 0) ? "sim" : "nao",
   };
 
   const evalCond = (c: any): boolean => {
@@ -639,6 +643,11 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return result;
   }
 
+  // Nó "Coletar com IA": cliente respondeu → reavalia o que falta e decide
+  if (currentNode.nodeType === "collect_with_ai") {
+    return handleCollectStep(currentNode, edges, nodes, session, ctx, result, true);
+  }
+
   // For condition node waiting for input
   if (currentNode.nodeType === "condition") {
     const condResult = evaluateCondition(currentNode, ctx);
@@ -710,6 +719,53 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
 }
 
 // ─── Execute From Node ───────────────────────────────────────
+// Nó "Coletar com IA": a IA pede os campos que faltam e insiste; ao completar OU
+// esgotar as tentativas, avança (com o que coletou). Chamado na 1ª entrada
+// (isResume=false) e a cada resposta do cliente (isResume=true).
+async function handleCollectStep(
+  node: ChatFlowNode,
+  edges: ChatFlowEdge[],
+  nodes: ChatFlowNode[],
+  session: { id: number; conversationId: number; flowId: number; context: any },
+  ctx: FlowContext,
+  result: FlowResult,
+  isResume: boolean,
+): Promise<FlowResult> {
+  const cfg = (node.data as any) || {};
+  const fields: { key: string; label: string }[] = Array.isArray(cfg.fields) ? cfg.fields : [];
+  const lead: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+  const missing = fields.filter(f => f && f.key && !(lead && lead[f.key]));
+  const sctx = (session.context as any) || {};
+  const attempts = isResume ? (Number(sctx.collectAttempts || 0) + 1) : 1;
+  const maxAttempts = Number(cfg.maxAttempts ?? 4);
+
+  // Completou tudo OU esgotou tentativas → avança (com o que tiver)
+  if (fields.length === 0 || missing.length === 0 || attempts > maxAttempts) {
+    const clean = { ...sctx };
+    delete clean.collectAttempts; delete clean.aiInstruction; delete clean.nodeAgentId;
+    await updateFlowSession(session.id, { context: clean });
+    if (missing.length > 0) {
+      console.log(`[FlowEngine] collect_with_ai: avançando parcial (faltou: ${missing.map(m => m.label).join(", ")})`);
+    }
+    const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
+    if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
+    else await updateFlowSession(session.id, { status: "completed" });
+    return result;
+  }
+
+  // Ainda falta dado → a IA pede/insiste (e extrai a resposta no turno da IA)
+  const base = cfg.instruction || "Colete os dados abaixo do cliente de forma cordial, uma pergunta por vez. Se ele desviar do assunto, retome educadamente pedindo o que ainda falta.";
+  const instr = `${base}\nDADOS QUE AINDA FALTAM: ${missing.map(m => m.label).join(", ")}.`;
+  await updateFlowSession(session.id, {
+    currentNodeId: node.id,
+    context: { ...sctx, collectAttempts: attempts, aiInstruction: instr, nodeAgentId: cfg.agentId || null, pendingNextNodeId: null, waitingSince: Date.now() },
+  });
+  try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
+  result.handled = false; // passa pra IA pedir e extrair os dados
+  result.waitingForInput = true;
+  return result;
+}
+
 async function executeFromNode(
   nodeId: number,
   nodes: ChatFlowNode[],
@@ -934,6 +990,11 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
         },
       });
       result.waitingForInput = true;
+      break;
+    }
+
+    case "collect_with_ai": {
+      await handleCollectStep(node, edges, nodes, session, ctx, result, false);
       break;
     }
 
@@ -1880,9 +1941,13 @@ export async function runFlowNoReplyCheck(): Promise<void> {
         await updateFlowSession(session.id, { context: { ...sctx, waitingSince: 0, noReplyAttempts: 0 } });
 
         const noReplyEdge = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === "noreply");
-        if (noReplyEdge) {
+        // "Coletar com IA": sem resposta → avança pelo DEFAULT com o que já coletou (não encerra)
+        const advanceEdge = noReplyEdge || (node.nodeType === "collect_with_ai"
+          ? edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle))
+          : undefined);
+        if (advanceEdge) {
           const result: FlowResult = { handled: true, responses: [], imageMessages: [], interactiveMessages: [], waitingForInput: false, flowCompleted: false };
-          await executeFromNode(noReplyEdge.targetNodeId, nodes, edges, session, ctx, result);
+          await executeFromNode(advanceEdge.targetNodeId, nodes, edges, session, ctx, result);
           for (const r of result.responses) {
             const bm = await createMessage({ conversationId: conv.id, content: r, senderType: "bot", senderName: "Auto Inova - IA", messageType: "text" });
             emitNewMessage(conv.id, bm);

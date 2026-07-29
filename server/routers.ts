@@ -4532,6 +4532,19 @@ const flowRouter = router({
         buttons: [{ text: "Sim, tenho troca" }, { text: "Não" }],
         onInvalid: "ai",
       }, 820, 240);
+      const coletaTroca = await mk("collect_with_ai", "Coletar dados da troca", {
+        fields: [
+          { key: "tradeVehicle", label: "veículo da troca (marca/modelo)" },
+          { key: "tradeYear", label: "ano do veículo da troca" },
+          { key: "tradeKm", label: "quilometragem (km) da troca" },
+        ],
+        instruction: "Colete os dados do veículo que o cliente quer dar na troca, de forma cordial e uma pergunta por vez. Se ele desviar, retome pedindo o que falta.",
+        maxAttempts: 4,
+        // Sem resposta: lembra 1x após 60min; se continuar mudo, avança com o que tiver.
+        noReplyMinutes: 60,
+        noReplyMaxAttempts: 1,
+        noReplyMessage: "Oi! Só faltam os dados da troca pra eu adiantar seu atendimento. Consegue me passar? 🚗",
+      }, 820, 420);
       const stage = await mk("update_lead_status", "Encaminhado", { funnelStatus: "encaminhado_vendedor" }, 1080, 240);
       const seller = await mk("assign_seller", "Encaminhar vendedor", {}, 1320, 240);
       const bye = await mk("send_message", "Passa pro vendedor", {
@@ -4545,8 +4558,10 @@ const flowRouter = router({
       await link(pag, troca, "button_0");
       await link(pag, troca, "button_1");
       await link(pag, troca, "button_2");
-      // qualquer botão de troca → encaminhar
-      await link(troca, stage, "button_0");
+      // "Sim, tenho troca" → coleta os dados da troca com IA, depois encaminha
+      await link(troca, coletaTroca, "button_0");
+      await link(coletaTroca, stage); // avança quando coletar tudo (ou esgotar tentativas)
+      // "Não" → encaminha direto
       await link(troca, stage, "button_1");
       await link(stage, seller);
       await link(seller, bye);

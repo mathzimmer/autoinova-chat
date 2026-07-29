@@ -476,6 +476,8 @@ export default function Flows() {
                         <SelectItem value="tag">Tem etiqueta</SelectItem>
                         <SelectItem value="quality">Qualidade</SelectItem>
                         <SelectItem value="payment">Forma de pagamento</SelectItem>
+                        <SelectItem value="is_customer">Já é cliente (comprou)</SelectItem>
+                        <SelectItem value="is_returning">Retornou (reativação)</SelectItem>
                       </SelectContent>
                     </Select>
                     <Select value={cond.op} onValueChange={(v) => {
@@ -490,7 +492,7 @@ export default function Flows() {
                     <Input
                       className="h-8 text-xs flex-1"
                       value={cond.value}
-                      placeholder={cond.field === "funnel_stage" ? "negociando" : cond.field === "temperature" ? "quente" : cond.field === "channel" ? "evolution" : cond.field === "tag" ? "Lead quente" : "valor"}
+                      placeholder={cond.field === "funnel_stage" ? "negociando" : cond.field === "temperature" ? "quente" : cond.field === "channel" ? "evolution" : cond.field === "tag" ? "Lead quente" : (cond.field === "is_customer" || cond.field === "is_returning") ? "sim" : "valor"}
                       onChange={(e) => { const next = [...condGroups]; next[gi] = [...group]; next[gi][ci] = { ...cond, value: e.target.value }; setCondGroups(next); }}
                     />
                     <button className="text-muted-foreground hover:text-destructive shrink-0" onClick={() => {
