@@ -2198,12 +2198,40 @@ export async function getAiAgentForInstance(instanceName: string): Promise<typeo
 
 /** Agente marcado como padrão da loja (setting default_agent_id) */
 export async function getDefaultAiAgent(): Promise<typeof aiAgents.$inferSelect | null> {
+  const db = await getDb();
+  // Prioridade: agente marcado como isDefault (fonte de verdade do PR A1)
+  if (db) {
+    const rows = await db.select().from(aiAgents)
+      .where(and(eq(aiAgents.isDefault, true), eq(aiAgents.active, true)))
+      .limit(1);
+    if (rows[0]) return rows[0];
+  }
+  // Fallback legado: setting default_agent_id (deprecado — logar)
   const agentIdStr = await getSetting("default_agent_id");
   if (!agentIdStr) return null;
   const agentId = parseInt(agentIdStr, 10);
   if (isNaN(agentId)) return null;
   const agent = await getAiAgentById(agentId);
-  return agent && agent.active ? agent : null;
+  if (agent && agent.active) {
+    console.log(`[AI] getDefaultAiAgent via setting legado 'default_agent_id' (id=${agentId}). Marque o agente como padrão (isDefault) para migrar.`);
+    return agent;
+  }
+  return null;
+}
+
+/**
+ * Define (ou limpa) o agente padrão da loja. Garante no máximo 1 isDefault e
+ * mantém o setting legado `default_agent_id` sincronizado para compatibilidade.
+ */
+export async function setDefaultAiAgent(agentId: number | null): Promise<void> {
+  const db = await getDb();
+  if (db) {
+    await db.update(aiAgents).set({ isDefault: false }).where(eq(aiAgents.isDefault, true));
+    if (agentId) {
+      await db.update(aiAgents).set({ isDefault: true }).where(eq(aiAgents.id, agentId));
+    }
+  }
+  await upsertSetting("default_agent_id", agentId ? String(agentId) : "");
 }
 
 export async function getAiAgentForFlow(flowId: number): Promise<typeof aiAgents.$inferSelect | null> {

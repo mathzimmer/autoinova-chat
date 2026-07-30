@@ -23,7 +23,7 @@ import {
   listChatFlowEdges, createChatFlowEdge, deleteChatFlowEdge, replaceFlowEdges,
   getActiveFlowSession, createFlowSession, updateFlowSession, getFlowSessionsByFlow,
   pauseFlowSessionByConversation, pauseAllActiveSessionsByFlow,
-  listAiAgents, getAiAgentById, createAiAgent, updateAiAgent, deleteAiAgent, getActiveAiAgents,
+  listAiAgents, getAiAgentById, createAiAgent, updateAiAgent, deleteAiAgent, getActiveAiAgents, setDefaultAiAgent,
   listSellers, listActiveSellers, getSellerById, createSeller, updateSeller, deleteSeller,
   getNextSellerInQueue, createSellerAssignment, listSellerAssignments, updateSellerAssignment,
   getStoreLocationByVehicleId, getDistinctStoreLocations,
@@ -4999,7 +4999,8 @@ const agentRouter = router({
   setDefaultAgent: adminProcedure
     .input(z.object({ agentId: z.number().nullable() }))
     .mutation(async ({ input }) => {
-      await upsertSetting("default_agent_id", input.agentId ? String(input.agentId) : "");
+      // marca isDefault no agente (máx 1) e sincroniza o setting legado
+      await setDefaultAiAgent(input.agentId);
       return { success: true };
     }),
 
@@ -5051,7 +5052,7 @@ const agentRouter = router({
         active: true,
         createdBy: ctx.user.id,
       });
-      await upsertSetting("default_agent_id", String(rec.id));
+      await setDefaultAiAgent(rec.id); // marca isDefault + sincroniza setting
       created.push("Recepção (definido como padrão)");
     }
 

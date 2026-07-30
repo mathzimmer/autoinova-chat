@@ -596,6 +596,7 @@ export const aiAgents = pgTable("aiAgents", {
   maxTokens:          integer("maxTokens").default(1024).notNull(),
   enabledTools:       jsonb("enabledTools").$type<string[]>(),
   active:             boolean("active").default(true).notNull(),
+  isDefault:          boolean("isDefault").default(false).notNull(), // agente padrão da loja (máx 1)
   createdBy:          integer("createdBy"),
   createdAt:          timestamp("createdAt").defaultNow().notNull(),
   updatedAt:          timestamp("updatedAt").defaultNow().notNull(),

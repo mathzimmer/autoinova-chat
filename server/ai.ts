@@ -1,6 +1,6 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById } from "./db";
+import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById, getDefaultAiAgent } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 import { validateLeadArgs, formatValidationErrors } from "./leadValidation";
@@ -729,6 +729,19 @@ export async function processAIMessage(
     }
     if (agent) {
       console.log(`[AI] Using agent: ${agent.name} (ID: ${agent.id}, model: ${agent.model}, tools: ${JSON.stringify(agent.enabledTools)})`);
+    }
+  }
+
+  // PR A1 — "tudo que responde é um agente": se nenhum agente foi resolvido e não
+  // é modo fluxo (prompt legado), usa o AGENTE PADRÃO da loja (isDefault). O modo
+  // livre (camadas soltas) só permanece como última rede de segurança, quando NÃO
+  // há agente padrão configurado.
+  if (!agent && !isFlowMode) {
+    agent = await getDefaultAiAgent();
+    if (agent) {
+      console.log(`[AI] Sem agente resolvido → usando agente PADRÃO "${agent.name}" (isDefault)`);
+    } else {
+      console.log(`[AI] Sem agente padrão configurado → caindo no modo livre (legado). Configure um agente padrão.`);
     }
   }
 
