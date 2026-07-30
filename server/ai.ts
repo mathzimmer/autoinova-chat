@@ -3,6 +3,7 @@ import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
 import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
+import { validateLeadArgs, formatValidationErrors } from "./leadValidation";
 
 // ============================================================================
 // CAMADA 1: NÚCLEO (CORE) — IMUTÁVEL
@@ -1043,9 +1044,15 @@ export async function processAIMessage(
             console.log(`[AI] resumo_estoque: ${toolResult.length} chars`);
 
           } else if (toolCall.function.name === "atualizar_lead") {
-            const args = JSON.parse(toolCall.function.arguments || "{}");
-            parsedArgs = args;
-            console.log(`[AI] atualizar_lead args:`, JSON.stringify(args));
+            const rawArgs = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = rawArgs;
+            console.log(`[AI] atualizar_lead args (raw):`, JSON.stringify(rawArgs));
+
+            // Validação server-side: só grava o que passa; inválidos voltam pro modelo
+            const { cleaned: args, errors: validationErrors } = validateLeadArgs(rawArgs);
+            if (validationErrors.length) {
+              console.warn(`[AI] atualizar_lead rejeitou campos:`, JSON.stringify(validationErrors));
+            }
 
             const leadUpdate: any = {
               conversationId: conversation.id,
@@ -1105,7 +1112,8 @@ export async function processAIMessage(
             try {
               await upsertLead(leadUpdate);
               collectedLeadData = args;
-              toolResult = "Lead atualizado com sucesso.";
+              const errNote = formatValidationErrors(validationErrors);
+              toolResult = errNote ? `Lead atualizado (parcial). ${errNote}` : "Lead atualizado com sucesso.";
               console.log(`[AI] Lead updated for conversation ${conversation.id}`);
             } catch (leadErr) {
               console.error("[AI] Failed to update lead:", leadErr);
