@@ -864,6 +864,20 @@ export async function processAIMessage(
       if (existingLead.funnelStatus) contextBlock += `\n- Etapa do Funil: ${existingLead.funnelStatus}`;
       if (existingLead.temperature) contextBlock += `\n- Temperatura: ${existingLead.temperature}`;
       contextBlock += `\nSe a [MENSAGEM ATUAL] contradiz algum dado acima, a mensagem atual tem prioridade. Atualize com atualizar_lead.`;
+
+      // ── CONTINUIDADE: memória da conversa e próximo passo (anti-repetição) ──
+      const temInteresse = !!(existingLead.vehicleInterest && String(existingLead.vehicleInterest).toLowerCase() !== "não definido");
+      const temPagamento = !!existingLead.paymentMethod;
+      contextBlock += `\n\n⚠️ CONTINUIDADE (siga a conversa, NÃO recomece):`;
+      contextBlock += `\n- NÃO repita perguntas cuja resposta já está nos DADOS DO LEAD acima. NÃO peça de novo algo que o cliente já disse.`;
+      contextBlock += `\n- Leia o histórico recente: se você JÁ apresentou um veículo e o cliente respondeu de forma positiva ("sim", "gostei", "esse", "pode ser"), isso é CONFIRMAÇÃO — NÃO reapresente nem busque o mesmo carro de novo. Registre com atualizar_lead (veiculo_id + etapa_funil: interesse_definido) e AVANCE.`;
+      if (temInteresse && !temPagamento) {
+        contextBlock += `\n- PRÓXIMO PASSO: o cliente já tem um veículo de interesse. Descubra a forma de pagamento (à vista, financiamento, troca) e se tem veículo na troca — UMA pergunta por vez. Não reapresente o carro.`;
+      } else if (temInteresse && temPagamento) {
+        contextBlock += `\n- PRÓXIMO PASSO: veículo E pagamento já definidos → faça o HANDOFF agora com transferir_para_vendedor (resumo + motivo). Pare de apresentar/vender.`;
+      } else {
+        contextBlock += `\n- PRÓXIMO PASSO: descubra o que o cliente procura (tipo/modelo, faixa de preço) e apresente opções reais. Ao apresentar um carro que interessa, salve com atualizar_lead na hora.`;
+      }
     }
   } catch (e) {
     console.error("[AI] Failed to load lead context:", e);
