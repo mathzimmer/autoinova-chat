@@ -536,6 +536,44 @@ function PropertiesPanel({
         {nodeType === "vehicle_discovery" && (
           <div className="space-y-3">
             <div>
+              <Label className="text-xs">Modo de apresentação</Label>
+              <Select value={config.mode || "ai"} onValueChange={(v) => updateConfig("mode", v)}>
+                <SelectTrigger className="h-8 text-sm mt-0.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ai">IA conversa e apresenta (atual)</SelectItem>
+                  <SelectItem value="deterministic">Automático: fotos + legendas fixas, IA só entende respostas</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">No modo automático, o sistema busca, envia as fotos com a legenda abaixo e faz a pergunta fixa — a IA nunca despeja lista em texto.</p>
+            </div>
+            <div>
+              <Label className="text-xs">Legenda da foto (template — vale nos 2 modos)</Label>
+              <Textarea
+                value={config.captionTemplate || ""}
+                onChange={(e) => updateConfig("captionTemplate", e.target.value)}
+                placeholder={"{titulo}\nAno: {ano}\nKm: {km}\nCâmbio: {cambio}\nPreço: {preco}\n\nVeja mais: {link}"}
+                rows={5}
+                className="text-sm font-mono"
+              />
+              <p className="text-[10px] text-muted-foreground mt-1">Placeholders: {"{titulo} {versao} {ano} {km} {cambio} {cor} {combustivel} {preco} {opcionais} {portas} {tipo} {descricao} {link}"}. Vazio = formato padrão.</p>
+            </div>
+            <div>
+              <Label className="text-xs">Pergunta após apresentar</Label>
+              <Input value={config.followupQuestion ?? ""} placeholder="Gostou de algum? 😊 Me diz o número ou o modelo." onChange={(e) => updateConfig("followupQuestion", e.target.value)} className="h-8 text-sm" />
+            </div>
+            {config.mode === "deterministic" && (
+              <div className="space-y-3 rounded-md border border-emerald-500/30 bg-emerald-500/5 p-2.5">
+                <div>
+                  <Label className="text-xs">Pergunta de critério (quando não sabe o que o cliente quer)</Label>
+                  <Input value={config.criteriaQuestion ?? ""} placeholder="Me conta o que você procura: tipo de carro, marca ou faixa de preço?" onChange={(e) => updateConfig("criteriaQuestion", e.target.value)} className="h-8 text-sm" />
+                </div>
+                <div>
+                  <Label className="text-xs">Texto quando não encontra nada</Label>
+                  <Input value={config.noResultsText ?? ""} placeholder="Não achei nada com esses critérios 🤔 Quer tentar outro estilo ou faixa de preço?" onChange={(e) => updateConfig("noResultsText", e.target.value)} className="h-8 text-sm" />
+                </div>
+              </div>
+            )}
+            <div>
               <Label className="text-xs">O que mostrar em cada carro</Label>
               <div className="flex flex-wrap gap-1.5 mt-1">
                 {[

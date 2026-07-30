@@ -1,7 +1,7 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
 import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById, getDefaultAiAgent, updateLeadFunnelStatus, logTimeline, updateConversation, assignSellerRoundRobin, getActiveFlowSession, updateFlowSession } from "./db";
-import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
+import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI, renderVehicleCaptionTemplate } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 import { validateLeadArgs, formatValidationErrors } from "./leadValidation";
 
@@ -1325,20 +1325,30 @@ export async function processAIMessage(
                 // Campos a exibir (config do nó "Apresentar com IA"). Vazio = todos.
                 const wanted: string[] = Array.isArray(args.campos) && args.campos.length > 0 ? args.campos : ["titulo", "ano", "km", "cambio", "combustivel", "cor", "preco", "link"];
                 const show = (k: string) => wanted.includes(k);
+                // Legenda por TEMPLATE configurável do nó (tem prioridade sobre o formato fixo)
+                let captionTpl: string | null = null;
+                try {
+                  const flowSess = await getActiveFlowSession(conversation.id);
+                  captionTpl = (flowSess?.context as any)?.discoveryCaptionTemplate || null;
+                } catch { /* noop */ }
                 let caption = "";
                 if (args.mensagem_adicional) {
                   caption += args.mensagem_adicional + "\n\n";
                 }
-                if (show("titulo")) caption += `${v.title || `${v.brand} ${v.model}`}\n`;
-                if (show("ano")) caption += `Ano: ${v.year}\n`;
-                if (show("km")) caption += `Km: ${mileageStr}\n`;
-                if (show("cambio")) caption += `Câmbio: ${transStr}\n`;
-                if (show("combustivel")) caption += `Combustível: ${v.fuel || "N/I"}\n`;
-                if (show("cor")) caption += `Cor: ${v.color || "N/I"}\n`;
-                if (show("preco")) caption += `Preço: ${priceStr}\n`;
-                caption = caption.replace(/\n$/, "");
-                if (show("link") && v.url) {
-                  caption += `\n\nVeja mais: ${v.url}`;
+                if (captionTpl) {
+                  caption += renderVehicleCaptionTemplate(captionTpl, v);
+                } else {
+                  if (show("titulo")) caption += `${v.title || `${v.brand} ${v.model}`}\n`;
+                  if (show("ano")) caption += `Ano: ${v.year}\n`;
+                  if (show("km")) caption += `Km: ${mileageStr}\n`;
+                  if (show("cambio")) caption += `Câmbio: ${transStr}\n`;
+                  if (show("combustivel")) caption += `Combustível: ${v.fuel || "N/I"}\n`;
+                  if (show("cor")) caption += `Cor: ${v.color || "N/I"}\n`;
+                  if (show("preco")) caption += `Preço: ${priceStr}\n`;
+                  caption = caption.replace(/\n$/, "");
+                  if (show("link") && v.url) {
+                    caption += `\n\nVeja mais: ${v.url}`;
+                  }
                 }
                 
                 if (photoUrl) {

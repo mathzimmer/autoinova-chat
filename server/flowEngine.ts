@@ -30,6 +30,10 @@ import { classifyMessage } from "./nlu";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import { getFlowSender } from "./flowChannelSender";
 import { emitNewMessage } from "./socket";
+import { eq } from "drizzle-orm";
+import { vehicles } from "../drizzle/schema";
+import { passesStockCuration, getStockAiConfig, renderVehicleCaptionTemplate } from "./stockSync";
+import { getDb } from "./db";
 import type { ChatFlowNode, ChatFlowEdge } from "../drizzle/schema";
 
 // ─── Types ───────────────────────────────────────────────────
@@ -783,7 +787,7 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
         const clean = { ...sessionCtx };
         delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
         delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt; delete clean.pendingNextNodeId;
-        delete clean.discoveryPresented; delete clean.discoverySearchIds;
+        delete clean.discoveryPresented; delete clean.discoverySearchIds; delete clean.discoveryCriteria; delete clean.discoveryCaptionTemplate;
         await updateFlowSession(session.id, { context: clean });
         // Garante a etapa mínima de interesse pro restante do funil ficar coerente
         if (!funnelAdvanced && lead2?.id) {
@@ -897,6 +901,14 @@ async function handleDiscoveryStep(
   const maxRounds: number = Number(cfg.maxRounds ?? 0); // 0 = sem limite
   const camposKeys: string[] = Array.isArray(cfg.showFields) && cfg.showFields.length > 0 ? cfg.showFields : ["titulo", "preco", "ano", "km"];
   const tools: string[] = Array.isArray(cfg.tools) && cfg.tools.length > 0 ? cfg.tools : ["buscar_veiculos", "apresentar_veiculo", "buscar_veiculo_por_id", "resumo_estoque", "atualizar_lead"];
+
+  // MODO DETERMINÍSTICO: o motor busca/apresenta/pergunta; a IA (NLU) só
+  // classifica respostas. Retorna null quando a intent é fora de apresentação
+  // (aí cai no modo IA abaixo, como fallback).
+  if (cfg.mode === "deterministic") {
+    const det = await handleDeterministicDiscoveryStep(node, edges, nodes, session, ctx, result, isResume);
+    if (det) return det;
+  }
   const sctx = (session.context as any) || {};
   const rounds = isResume ? (Number(sctx.discoveryRounds || 0) + 1) : 1;
 
@@ -977,7 +989,7 @@ async function handleDiscoveryStep(
     const clean = { ...sctx };
     delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
     delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt;
-    delete clean.discoveryPresented; delete clean.discoverySearchIds;
+    delete clean.discoveryPresented; delete clean.discoverySearchIds; delete clean.discoveryCriteria; delete clean.discoveryCaptionTemplate;
     await updateFlowSession(session.id, { context: clean });
     console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, base=${baseIdx}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
     const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
@@ -1015,12 +1027,225 @@ async function handleDiscoveryStep(
 
   await updateFlowSession(session.id, {
     currentNodeId: node.id,
-    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, discoveryBaseIdx: baseIdx, discoveryPrompt, aiInstruction: null, nodeAgentId: null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
+    context: { ...sctx, discoveryRounds: rounds, discoveryMode: true, discoveryBaseIdx: baseIdx, discoveryPrompt, discoveryCaptionTemplate: cfg.captionTemplate || null, aiInstruction: null, nodeAgentId: null, nodeOnlyTools: tools, collectMode: false, pendingNextNodeId: null, waitingSince: Date.now() },
   });
   try { const { updateConversation } = await import("./db"); await updateConversation(ctx.conversationId, { aiActive: true, routingState: "ai_agent" } as any); } catch { /* noop */ }
   result.handled = false; // passa pra IA buscar e apresentar
   result.waitingForInput = true;
   return result;
+}
+
+// ─── Modo DETERMINÍSTICO do nó "Apresentar com IA" ───
+// O MOTOR busca no estoque, envia fotos com legenda configurável e faz a
+// pergunta de acompanhamento fixa. A IA (NLU) só classifica as respostas —
+// nunca escreve lista em texto nem inventa pergunta. Retorna null quando a
+// intent do cliente é fora de apresentação (fotos/vídeo/dúvida/financiamento)
+// → o chamador cai no modo IA como fallback.
+const DEFAULT_CAPTION_TEMPLATE = "{titulo}\nAno: {ano}\nKm: {km}\nCâmbio: {cambio}\nPreço: {preco}\n\nVeja mais: {link}";
+
+function vehiclePhotoUrl(v: any): string {
+  if (v.imageUrl) return v.imageUrl;
+  if (Array.isArray(v.images) && v.images.length > 0) {
+    const first: any = v.images[0];
+    return first?.IMAGE_URL || first?.url || (typeof first === "string" ? first : "");
+  }
+  return "";
+}
+
+async function searchVehiclesDeterministic(entities: Record<string, any>, perBatch: number, offset: number): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  let vs: any[] = await db.select().from(vehicles).where(eq(vehicles.available, true));
+  const stockCfg = await getStockAiConfig();
+  vs = vs.filter(v => passesStockCuration(v, stockCfg));
+  const ent = entities || {};
+  if (ent.priceMax) vs = vs.filter(v => v.price && v.price <= Number(ent.priceMax));
+  if (ent.priceMin) vs = vs.filter(v => v.price && v.price >= Number(ent.priceMin));
+  if (ent.fuel) vs = vs.filter(v => (v.fuel || "").toLowerCase().includes(String(ent.fuel).toLowerCase()));
+  if (ent.transmission) {
+    const t = String(ent.transmission).toLowerCase().includes("manual") ? "manual" : "automatic";
+    vs = vs.filter(v => (v.transmission || "").toLowerCase().includes(t));
+  }
+  if (ent.bodyType) {
+    const map: Record<string, string> = { suv: "suv", sedan: "sed", hatch: "hatch", picape: "picape", van: "van" };
+    const needle = map[String(ent.bodyType).toLowerCase()] || String(ent.bodyType).toLowerCase();
+    vs = vs.filter(v => (v.vehicleType || "").toLowerCase().includes(needle));
+  }
+  if (ent.vehicleRef) {
+    const kw = String(ent.vehicleRef).toLowerCase().trim();
+    vs = vs.filter(v => `${v.brand} ${v.model} ${v.version || ""} ${v.title || ""}`.toLowerCase().includes(kw));
+  }
+  vs = vs.sort((a, b) => (a.price || 0) - (b.price || 0));
+  return vs.slice(offset, offset + perBatch);
+}
+
+async function handleDeterministicDiscoveryStep(
+  node: ChatFlowNode,
+  edges: ChatFlowEdge[],
+  nodes: ChatFlowNode[],
+  session: { id: number; conversationId: number; flowId: number; context: any },
+  ctx: FlowContext,
+  result: FlowResult,
+  isResume: boolean,
+): Promise<FlowResult | null> {
+  const cfg = (node.data as any) || {};
+  const perBatch = Number(cfg.perBatch ?? 3);
+  const targetStage: string = cfg.targetStage || "interesse_definido";
+  const captionTpl: string = cfg.captionTemplate || DEFAULT_CAPTION_TEMPLATE;
+  const followupQ: string = cfg.followupQuestion || "Gostou de algum? 😊 Me diz o número ou o modelo.";
+  const criteriaQ: string = cfg.criteriaQuestion || "Me conta o que você procura: tipo de carro, marca ou faixa de preço?";
+  const noResultsTxt: string = cfg.noResultsText || "Não achei nada com esses critérios 🤔 Quer tentar outro estilo ou faixa de preço?";
+  const sctx = (session.context as any) || {};
+  const lead: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+
+  const present = async (batch: any[]): Promise<number[]> => {
+    const ids: number[] = [];
+    for (const v of batch) {
+      const caption = renderVehicleCaptionTemplate(captionTpl, v);
+      const photo = vehiclePhotoUrl(v);
+      if (photo) {
+        await outImage(ctx, photo, caption);
+        result.imageMessages.push({ imageUrl: photo, caption });
+      } else {
+        await outText(ctx, caption);
+        result.responses.push(caption);
+      }
+      ids.push(v.id);
+    }
+    return ids;
+  };
+
+  const askAndWait = async (ids: number[], criteria: any) => {
+    await updateFlowSession(session.id, {
+      currentNodeId: node.id,
+      context: { ...sctx, discoveryMode: true, discoveryPresented: ids, discoveryCriteria: criteria, discoveryCaptionTemplate: captionTpl, pendingNextNodeId: null, waitingSince: Date.now() },
+    });
+    const q = replaceVariables(followupQ, ctx);
+    await outText(ctx, q);
+    result.responses.push(q);
+    result.handled = true;
+    result.waitingForInput = true;
+  };
+
+  const askCriteria = async () => {
+    await updateFlowSession(session.id, {
+      currentNodeId: node.id,
+      context: { ...sctx, discoveryMode: true, discoveryCaptionTemplate: captionTpl, pendingNextNodeId: null, waitingSince: Date.now() },
+    });
+    const q = replaceVariables(criteriaQ, ctx);
+    await outText(ctx, q);
+    result.responses.push(q);
+    result.handled = true;
+    result.waitingForInput = true;
+  };
+
+  const advance = async (trigger: string) => {
+    const clean = { ...sctx };
+    delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
+    delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt;
+    delete clean.discoveryPresented; delete clean.discoverySearchIds; delete clean.discoveryCriteria; delete clean.discoveryCaptionTemplate;
+    await updateFlowSession(session.id, { context: clean });
+    const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
+    console.log(`[FlowEngine] vehicle_discovery(determinístico): avançando (${trigger})`);
+    logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "STATE_TRANSITION", payload: { from: "vehicle_discovery_deterministic", trigger, toNodeId: nextEdge?.targetNodeId ?? null } });
+    if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
+    else await updateFlowSession(session.id, { status: "completed" });
+    result.handled = true;
+  };
+
+  const msg = (ctx.customerMessage || "").trim();
+
+  // Classifica a mensagem (na entrada, a mensagem que disparou o nó já conta)
+  let nlu: any = null;
+  if (msg) {
+    const presentedCount = Array.isArray(sctx.discoveryPresented) ? sctx.discoveryPresented.length : 0;
+    try {
+      nlu = await classifyMessage({ text: msg, context: { presentedCount, state: "APRESENTACAO" } });
+      console.log(`[FlowEngine] NLU (discovery determinístico): intent=${nlu.intent} via=${nlu.via} conf=${nlu.confidence}`);
+      logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "NLU_CLASSIFIED", payload: { text: msg.slice(0, 120), intent: nlu.intent, via: nlu.via, confidence: nlu.confidence, entities: nlu.entities } });
+    } catch (nluErr) {
+      console.error("[FlowEngine] NLU error (discovery determinístico):", nluErr);
+    }
+  }
+
+  const presentedIds: number[] = Array.isArray(sctx.discoveryPresented) ? sctx.discoveryPresented : [];
+
+  // Seleção: atalho numérico → NLU SELECT_VEHICLE → AFFIRM com carro em jogo
+  let chosenId: number | null = null;
+  const numMatch = msg.match(/^(\d{1,2})[.)!]?\s*$/) || msg.match(/^(?:op[cç][aã]o|n[úu]mero|o)\s+(\d{1,2})[.)!]?\s*$/i);
+  if (isResume && numMatch && presentedIds[Number(numMatch[1]) - 1]) {
+    chosenId = presentedIds[Number(numMatch[1]) - 1];
+  } else if (isResume && nlu?.intent === "SELECT_VEHICLE") {
+    const idx = (nlu.entities.vehicleIndex ?? 1) - 1;
+    if (presentedIds[idx]) chosenId = presentedIds[idx];
+  }
+
+  if (chosenId || (isResume && nlu?.intent === "AFFIRM" && (lead?.vehicleId || lead?.vehicleInterest))) {
+    if (chosenId) {
+      try {
+        const v: any = await getVehicleById(chosenId).catch(() => null);
+        await upsertLead({
+          conversationId: ctx.conversationId,
+          phone: ctx.phone,
+          vehicleId: chosenId,
+          vehicleInterest: v ? `${v.brand} ${v.model} ${v.year}`.trim() : `Veículo ID ${chosenId}`,
+          intention: "compra",
+        } as any);
+      } catch (selErr) {
+        console.error("[FlowEngine] discovery determinístico: erro ao gravar seleção:", selErr);
+      }
+    }
+    const leadNow: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+    if (leadNow?.id) { try { await setOpenOpportunityStage(leadNow.id, targetStage); } catch { /* noop */ } }
+    await advance(chosenId ? `select_vehicle:${chosenId}` : "affirm");
+    return result;
+  }
+
+  // Busca: critérios novos, próxima página (DENY = "não gostei, mostra outros")
+  if (nlu?.intent === "SEARCH_VEHICLE" || nlu?.intent === "DENY") {
+    const criteria = nlu.intent === "SEARCH_VEHICLE" ? (nlu.entities || {}) : (sctx.discoveryCriteria || {});
+    const offset = nlu.intent === "DENY" ? presentedIds.length : 0;
+    const batch = await searchVehiclesDeterministic(criteria, perBatch, offset);
+    if (batch.length === 0) {
+      const t = replaceVariables(noResultsTxt, ctx);
+      await outText(ctx, t);
+      result.responses.push(t);
+      result.handled = true;
+      result.waitingForInput = true;
+      return result;
+    }
+    const ids = await present(batch);
+    await askAndWait(ids, criteria);
+    return result;
+  }
+
+  // Entrada no nó SEM critério na mensagem: veículo do anúncio/lead → direto;
+  // senão pergunta fixa de critério
+  if (!isResume) {
+    if (lead?.vehicleId) {
+      const v: any = await getVehicleById(lead.vehicleId).catch(() => null);
+      if (v) {
+        const ids = await present([v]);
+        await askAndWait(ids, sctx.discoveryCriteria || {});
+        return result;
+      }
+    }
+    await askCriteria();
+    return result;
+  }
+
+  // Resume com critérios guardados mas resposta ambígua → próxima página
+  if (isResume && sctx.discoveryCriteria && Object.keys(sctx.discoveryCriteria).length > 0 && (nlu?.intent === "UNKNOWN" || nlu?.intent === "GREETING" || !nlu)) {
+    const batch = await searchVehiclesDeterministic(sctx.discoveryCriteria, perBatch, presentedIds.length);
+    if (batch.length > 0) {
+      const ids = await present(batch);
+      await askAndWait(ids, sctx.discoveryCriteria);
+      return result;
+    }
+  }
+
+  // Intents fora de apresentação (fotos, vídeo, técnico, financiamento…) → modo IA
+  return null;
 }
 
 // ─── Nó "Coletar Dados (Sequência)" — fase 3 da arquitetura ───

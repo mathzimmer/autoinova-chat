@@ -304,6 +304,16 @@ export function buildVehicleFicha(v: any, cfg: StockAiConfig, sep: string): stri
   return parts.join(sep);
 }
 
+/**
+ * Renderiza a legenda da foto a partir de um template editável no nó.
+ * Placeholders: {titulo} {versao} {ano} {km} {cambio} {cor} {combustivel}
+ * {preco} {opcionais} {portas} {tipo} {categoria} {descricao} {link}
+ */
+export function renderVehicleCaptionTemplate(template: string, v: any): string {
+  const out = template.replace(/\{(\w+)\}/g, (_, k) => stockFieldValue(v, k) || "");
+  return out.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 /** True se o veículo PODE ser ofertado pela IA (curadoria — tira lixo do feed). */
 export function passesStockCuration(v: any, cfg: StockAiConfig): boolean {
   const cat = (v.category || "").toLowerCase().trim();
