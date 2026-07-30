@@ -116,13 +116,11 @@ async function processZernioConversation(conversationId: number, customerMessage
     } catch { /* noop */ }
     if (sessionCtx.nodeAgentId) {
       flowAiOptions = { agentId: sessionCtx.nodeAgentId, flowInstruction: sessionCtx.aiInstruction || undefined };
-    } else if ((conv as any).agentId) {
-      flowAiOptions = { agentId: (conv as any).agentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     } else {
-      let picked = accountId ? await getAiAgentForInstance(accountId) : null;
-      if (!picked) picked = await getAiAgentForChannel("zernio");
-      if (!picked) picked = await getDefaultAiAgent();
-      if (picked) flowAiOptions = { agentId: picked.id, flowInstruction: sessionCtx.aiInstruction || undefined };
+      // FONTE ÚNICA: fixado → instância → canal (zernio) → padrão
+      const { resolveAgentForConversation } = await import("./agentResolver");
+      const r = await resolveAgentForConversation({ agentId: (conv as any).agentId, instanceName: accountId, channel: "zernio" });
+      if (r.agentId) flowAiOptions = { agentId: r.agentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     }
     // Nó "Coletar com IA": restringe ferramentas (só coleta, sem buscar veículo)
     if (sessionCtx.collectMode) {

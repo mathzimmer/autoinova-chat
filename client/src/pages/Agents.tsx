@@ -140,6 +140,17 @@ export default function Agents() {
   const tools = toolsQuery.data || [];
   const channelAgents = channelAgentsQuery.data;
 
+  // A4 — vínculos de cada agente (é padrão? em quais instâncias/canais?)
+  const defaultAgentId = (defaultAgentQuery.data ?? null) as number | null;
+  const vinculosFor = (agentId: number) => {
+    const instMap = (instanceAgentsQuery.data || {}) as Record<string, number | null>;
+    const chanMap = (channelAgentsQuery.data || {}) as Record<string, number | null>;
+    const instancias = Object.entries(instMap).filter(([, id]) => id === agentId).map(([n]) => n);
+    const canais = Object.entries(chanMap).filter(([, id]) => id === agentId).map(([c]) => c);
+    const ehPadrao = defaultAgentId === agentId;
+    return { instancias, canais, ehPadrao, semVinculo: !ehPadrao && instancias.length === 0 && canais.length === 0 };
+  };
+
   const activeAgents = useMemo(() => agents.filter(a => a.active), [agents]);
 
   function resetForm() {
@@ -408,6 +419,23 @@ export default function Agents() {
                 </div>
               </CardHeader>
               <CardContent className="pt-0">
+                {/* Vínculos (A4) — onde este agente responde */}
+                {(() => {
+                  const v = vinculosFor(agent.id);
+                  return (
+                    <div className="flex flex-wrap items-center gap-1 mb-3">
+                      {v.ehPadrao && <Badge className="text-[10px]">Padrão da loja</Badge>}
+                      {v.instancias.map(i => <Badge key={i} variant="secondary" className="text-[10px]">Nº {i}</Badge>)}
+                      {v.canais.map(c => <Badge key={c} variant="secondary" className="text-[10px]">Canal {c}</Badge>)}
+                      {v.semVinculo && agent.active && (
+                        <span className="text-[10px] text-amber-500 flex items-center gap-1">
+                          <AlertTriangle className="h-3 w-3" /> Sem vínculo — não responde nada
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* Model & Config */}
                 <div className="flex items-center gap-2 mb-3 text-xs text-muted-foreground">
                   <Badge variant="outline" className="text-[10px] font-mono">

@@ -7,8 +7,10 @@
  */
 import { eq, desc, and, gte, inArray } from "drizzle-orm";
 import { conversationInsights, messages as messagesTable, conversations as convTable } from "../drizzle/schema";
-import { getDb, getSetting } from "./db";
+import { getDb, getSetting, calculateTemperature } from "./db";
 import { invokeLLM } from "./_core/llm";
+import { validateLeadArgs } from "./leadValidation";
+import { scoreLead, temperatureFromScore, combineTemperature } from "./leadScore";
 
 /** Diretriz de formato do resumo (comentário da IA no lead), configurável. */
 async function commentStyleDirective(): Promise<string> {
@@ -36,6 +38,16 @@ export type InsightResult = {
   leadQuality: "bom" | "ruim" | null;
   qualityReason: string;
   funnelStage: "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando";
+  // Dados cadastrais extraídos (só o que o cliente informou explicitamente)
+  nomeCompleto: string;
+  email: string;
+  cidade: string;
+  cpf: string;
+  dataNascimento: string;
+  anoTroca: string;
+  kmTroca: string;
+  formaPagamento: string;
+  entrada: string;
 };
 
 const SYSTEM = `Você é um gerente comercial experiente de uma concessionária de veículos analisando uma conversa de WhatsApp entre um cliente e um vendedor/atendente.
@@ -54,7 +66,16 @@ Sua tarefa é avaliar friamente o potencial de fechamento e retornar um JSON EXA
   "visitedStore": true | false | null,
   "leadQuality": "bom" | "ruim" | null,
   "qualityReason": "<1 frase curta: por que é bom ou ruim>",
-  "funnelStage": "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando"
+  "funnelStage": "novo" | "interesse_definido" | "pagamento_definido" | "dados_pessoais" | "dados_troca" | "negociando",
+  "nomeCompleto": "<nome completo do cliente se ele informou, senão ''>",
+  "email": "<email se o cliente informou, senão ''>",
+  "cidade": "<cidade do cliente se informada, senão ''>",
+  "cpf": "<CPF SOMENTE se o cliente informou explicitamente, senão ''>",
+  "dataNascimento": "<data de nascimento como o cliente informou (ex: 1990-05-20 ou 20/05/1990), senão ''>",
+  "anoTroca": "<ano do veículo de troca se informado, senão ''>",
+  "kmTroca": "<quilometragem do veículo de troca se informada, senão ''>",
+  "formaPagamento": "<'financiamento' | 'a_vista' | 'consorcio' | 'troca' se informado, senão ''>",
+  "entrada": "<valor de entrada informado, só números (ex: 20000), senão ''>"
 }
 Critérios do funnelStage (escolha o mais avançado que a conversa JÁ atingiu de fato):
 - novo: só cumprimentou ou pergunta genérica, sem veículo definido.
@@ -81,7 +102,13 @@ Marque "ruim" quando houver sinal claro de que NÃO vai comprar, por exemplo:
 - Crédito negado / nome restrito / sem entrada e sem troca.
 - Só pesquisando preço, sem intenção real, ou quer valor muito abaixo.
 - É revenda/concorrente/curioso, ou pede coisa que a loja não trabalha.
-Use null quando a conversa AINDA não dá base — não chute. Prefira null a errar.`;
+Use null quando a conversa AINDA não dá base — não chute. Prefira null a errar.
+
+DADOS CADASTRAIS (nomeCompleto, email, cidade, cpf, dataNascimento, anoTroca, kmTroca, formaPagamento, entrada):
+Extraia SOMENTE o que o CLIENTE informou EXPLICITAMENTE na conversa. NUNCA invente, deduza ou gere números.
+- Se o cliente não disse, devolva string vazia "".
+- CPF e data de nascimento: só preencha se o próprio cliente escreveu esses dados. Jamais gere um CPF.
+- entrada: apenas o número (ex.: "20000"), sem "R$" nem pontuação.`;
 
 function tempToScore(t: string): number {
   return t === "muito_quente" ? 85 : t === "quente" ? 65 : t === "morno" ? 40 : 15;
@@ -157,6 +184,15 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       leadQuality: (json.leadQuality === "bom" || json.leadQuality === "ruim") ? json.leadQuality : null,
       qualityReason: String(json.qualityReason || "").slice(0, 200),
       funnelStage: (["novo", "interesse_definido", "pagamento_definido", "dados_pessoais", "dados_troca", "negociando"].includes(json.funnelStage) ? json.funnelStage : "novo"),
+      nomeCompleto: String(json.nomeCompleto || "").slice(0, 255).trim(),
+      email: String(json.email || "").slice(0, 255).trim(),
+      cidade: String(json.cidade || "").slice(0, 120).trim(),
+      cpf: String(json.cpf || "").slice(0, 20).trim(),
+      dataNascimento: String(json.dataNascimento || "").slice(0, 20).trim(),
+      anoTroca: String(json.anoTroca || "").slice(0, 10).trim(),
+      kmTroca: String(json.kmTroca || "").slice(0, 20).trim(),
+      formaPagamento: String(json.formaPagamento || "").slice(0, 30).trim(),
+      entrada: String(json.entrada || "").slice(0, 30).trim(),
     };
   } catch (err) {
     console.error(`[Intel] Falha ao analisar conversa ${conversationId}:`, err);
@@ -200,9 +236,52 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
       if ((!lead.vehicleInterest || lead.vehicleInterest === "não definido") && parsed.vehicleInterest && parsed.vehicleInterest !== "não definido") upd.vehicleInterest = parsed.vehicleInterest;
       if (lead.hasTrade == null && parsed.hasTrade != null) upd.hasTrade = parsed.hasTrade;
       if (!lead.tradeVehicle && parsed.tradeVehicle) upd.tradeVehicle = parsed.tradeVehicle;
+
+      // PR#3 — dados cadastrais estruturados: valida (mesmo validador da tool,
+      // PR#1) e preenche SOMENTE colunas vazias (não sobrescreve cadastro manual).
+      try {
+        const { cleaned } = validateLeadArgs({
+          email: parsed.email || undefined,
+          cidade: parsed.cidade || undefined,
+          cpf: parsed.cpf || undefined,
+          ano_troca: parsed.anoTroca || undefined,
+          km_troca: parsed.kmTroca || undefined,
+          entrada: parsed.entrada || undefined,
+          forma_pagamento: parsed.formaPagamento || undefined,
+        });
+        const setIfEmpty = (col: string, val: unknown) => {
+          if (val != null && val !== "" && !(lead as any)[col]) upd[col] = val;
+        };
+        setIfEmpty("email", cleaned.email);
+        setIfEmpty("city", cleaned.cidade);
+        setIfEmpty("cpf", cleaned.cpf);
+        setIfEmpty("tradeYear", cleaned.ano_troca);
+        setIfEmpty("tradeKm", cleaned.km_troca);
+        setIfEmpty("downPayment", cleaned.entrada);
+        setIfEmpty("paymentMethod", cleaned.forma_pagamento);
+        setIfEmpty("fullName", parsed.nomeCompleto);
+        // Data de nascimento: aceita só se parecer uma data (dd/mm/aaaa ou aaaa-mm-dd)
+        if (parsed.dataNascimento && /(\d{2}\D\d{2}\D\d{4}|\d{4}-\d{2}-\d{2})/.test(parsed.dataNascimento) && !lead.birthDate) {
+          upd.birthDate = parsed.dataNascimento;
+        }
+      } catch { /* extração cadastral é best-effort — nunca quebra a análise */ }
+
+      // PR#4 — score/temperatura DETERMINÍSTICOS: score por completude do lead
+      // (já considerando o que acabou de ser extraído em `upd`); temperatura = a
+      // mais quente entre a faixa do score, o piso do funil e a urgência da IA.
+      const mergedLead = { ...lead, ...upd } as any;
+      const compScore = scoreLead(mergedLead);
+      const funnelTemp = calculateTemperature(String(mergedLead.funnelStatus || "novo"));
+      upd.score = compScore;
+      upd.temperature = combineTemperature(
+        temperatureFromScore(compScore),
+        funnelTemp,
+        parsed.temperature === "muito_quente",
+      );
+
       // A IA NÃO decide qualidade nem visita — quem marca é o VENDEDOR.
       // Ela continua analisando e o resultado fica disponível como leitura
-      // (temperatura, objeções, próxima ação), mas não grava julgamento no lead.
+      // (objeções, próxima ação), mas não grava julgamento no lead.
       await db.update(leads).set(upd as any).where(eq(leads.id, lead.id));
     }
   } catch { /* opcional */ }

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { normalizePhone, phoneVariations } from "./phoneNormalize";
+import { resolveAgentForConversation } from "./agentResolver";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
@@ -302,33 +303,17 @@ async function initDebounce() {
         console.log(`[Debounce] Conversa ${conversationId}: modo APRESENTAR COM IA (prompt próprio, tools=${JSON.stringify(collectOnlyTools)})`);
       }
 
-      // Hierarquia de seleção de agente (do mais específico ao geral).
-      // Prioridade 0 (máxima): agente FIXADO manualmente na conversa.
-      if (!flowAiOptions?.agentId && !flowAiOptions?.flowPrompt && (conversation as any).agentId) {
-        flowAiOptions = { ...flowAiOptions, agentId: (conversation as any).agentId };
-        console.log(`[Debounce] Conversa ${conversationId}: usando agente FIXADO na conversa (ID: ${(conversation as any).agentId})`);
-      }
-
-      // Se nada ainda: instância Evolution → canal → agente padrão da loja
+      // Seleção de agente (fixado → instância → canal → padrão) — FONTE ÚNICA
+      // (mesma função usada pelo preview "quem responde esta conversa?").
       if (!flowAiOptions?.agentId && !flowAiOptions?.flowPrompt) {
         try {
-          const { getAiAgentForInstance, getAiAgentForChannel, getDefaultAiAgent } = await import("./db");
-          let picked = null;
-          if ((conversation as any).instanceName) {
-            picked = await getAiAgentForInstance((conversation as any).instanceName);
-            if (picked) console.log(`[Debounce] Conversa ${conversationId}: agente da instância "${(conversation as any).instanceName}" → "${picked.name}"`);
+          const r = await resolveAgentForConversation(conversation as any);
+          if (r.agentId) {
+            flowAiOptions = { ...flowAiOptions, agentId: r.agentId };
+            console.log(`[Debounce] Conversa ${conversationId}: agente por ${r.source} → "${r.agent?.name}" (ID ${r.agentId})`);
           }
-          if (!picked) {
-            picked = await getAiAgentForChannel(conversation.channel || "whatsapp");
-            if (picked) console.log(`[Debounce] Conversa ${conversationId}: agente de canal "${picked.name}"`);
-          }
-          if (!picked) {
-            picked = await getDefaultAiAgent();
-            if (picked) console.log(`[Debounce] Conversa ${conversationId}: agente PADRÃO da loja "${picked.name}"`);
-          }
-          if (picked) flowAiOptions = { ...flowAiOptions, agentId: picked.id };
         } catch (agentErr) {
-          console.error(`[Debounce] Erro ao carregar agente:`, agentErr);
+          console.error(`[Debounce] Erro ao resolver agente:`, agentErr);
         }
       }
 
@@ -4924,6 +4909,40 @@ const agentRouter = router({
   availableTools: protectedProcedure.query(() => {
     return AVAILABLE_TOOLS;
   }),
+
+  /**
+   * "Quem responde esta conversa?" — retorna a cadeia avaliada (fluxo ativo?,
+   * hierarquia de agente) e o vencedor com o motivo, SEM enviar mensagem.
+   * Usa a MESMA função de resolução do atendimento, então nunca mente.
+   */
+  resolvePreview: protectedProcedure
+    .input(z.object({ conversationId: z.number() }))
+    .query(async ({ input }) => {
+      const conv = await getConversationById(input.conversationId);
+      if (!conv) throw new TRPCError({ code: "NOT_FOUND", message: "Conversa não encontrada" });
+      const session = await getActiveFlowSession(input.conversationId);
+      const sctx = (session?.context as any) || {};
+      const hierarquia = await resolveAgentForConversation(conv as any);
+      const handedOff = (conv as any).routingState === "handed_off";
+      const modoFluxo = sctx.discoveryMode ? "apresentar_com_ia" : sctx.collectMode ? "coletar_com_ia" : session ? "fluxo" : null;
+
+      let vencedor: { tipo: string; agentId: number | null; nome: string | null };
+      if (session && sctx.nodeAgentId) {
+        const nodeAgent = await getAiAgentById(sctx.nodeAgentId);
+        vencedor = { tipo: "no_do_fluxo", agentId: sctx.nodeAgentId, nome: nodeAgent?.name ?? null };
+      } else if (handedOff) {
+        vencedor = { tipo: "pos_handoff", agentId: hierarquia.agentId, nome: hierarquia.agent?.name ?? null };
+      } else {
+        vencedor = { tipo: hierarquia.source, agentId: hierarquia.agentId, nome: hierarquia.agent?.name ?? null };
+      }
+      return {
+        conversationId: input.conversationId,
+        fluxoAtivo: session ? { flowId: session.flowId, modo: modoFluxo } : null,
+        handedOff,
+        hierarquia: { source: hierarquia.source, agentId: hierarquia.agentId, nome: hierarquia.agent?.name ?? null },
+        vencedor,
+      };
+    }),
 
   create: adminProcedure
     .input(z.object({

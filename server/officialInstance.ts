@@ -157,13 +157,11 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
     } catch { /* noop */ }
     if (sessionCtx.nodeAgentId) {
       flowAiOptions = { agentId: sessionCtx.nodeAgentId, flowInstruction: sessionCtx.aiInstruction || undefined };
-    } else if ((conv as any).agentId) {
-      flowAiOptions = { agentId: (conv as any).agentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     } else {
-      let picked = await getAiAgentForInstance(phoneNumberId);
-      if (!picked) picked = await getAiAgentForChannel("whatsapp");
-      if (!picked) picked = await getDefaultAiAgent();
-      if (picked) flowAiOptions = { agentId: picked.id, flowInstruction: sessionCtx.aiInstruction || undefined };
+      // FONTE ÚNICA: fixado → instância (phoneNumberId) → canal → padrão
+      const { resolveAgentForConversation } = await import("./agentResolver");
+      const r = await resolveAgentForConversation({ agentId: (conv as any).agentId, instanceName: phoneNumberId, channel: "whatsapp" });
+      if (r.agentId) flowAiOptions = { agentId: r.agentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     }
     if (sessionCtx.collectMode) {
       const only = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
