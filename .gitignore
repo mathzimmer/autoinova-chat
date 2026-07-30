@@ -111,3 +111,6 @@ temp/
 
 # temp de verificação local
 .tmp_lv/
+
+# artefatos de edição (FUSE)
+.fuse_hidden*
