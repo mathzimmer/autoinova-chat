@@ -44,7 +44,7 @@ export const wnMsgStatusEnum            = pgEnum("wn_msg_status",            ["s
 export const reminderStatusEnum         = pgEnum("reminder_status",          ["pending", "fired", "dismissed"]);
 export const scheduledMsgStatusEnum     = pgEnum("scheduled_msg_status",     ["pending", "sent", "failed", "cancelled"]);
 export const capiEventStatusEnum        = pgEnum("capi_event_status",        ["sent", "failed", "skipped"]);
-export const routingStateEnum           = pgEnum("routing_state",            ["flow", "ai_agent", "human"]);
+export const routingStateEnum           = pgEnum("routing_state",            ["flow", "ai_agent", "human", "handed_off"]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TABELAS

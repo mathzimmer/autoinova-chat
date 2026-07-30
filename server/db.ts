@@ -2384,6 +2384,38 @@ export async function getDistinctStoreLocations(): Promise<string[]> {
   return rows.map(r => r.seller).filter(Boolean) as string[];
 }
 
+/**
+ * Atribui um vendedor à conversa pela fila de rodízio (reusa as primitivas do
+ * fluxo: detecção de loja pelo veículo + fila + registro de atribuição).
+ * Usado pela tool `transferir_para_vendedor` (handoff da IA).
+ */
+export async function assignSellerRoundRobin(
+  conversationId: number,
+  opts?: { phone?: string; contactName?: string },
+): Promise<{ seller: typeof sellers.$inferSelect; storeLocation: string } | null> {
+  const lead = await getLeadByConversationId(conversationId);
+  let storeLocation = "";
+  if (lead?.vehicleId) {
+    storeLocation = (await getStoreLocationByVehicleId(lead.vehicleId)) || "";
+  }
+  if (!storeLocation) {
+    const stores = await getDistinctStoreLocations();
+    storeLocation = stores[0] || "Auto Inova - Matriz";
+  }
+  const seller = await getNextSellerInQueue(storeLocation);
+  if (!seller) return null;
+  await createSellerAssignment({
+    sellerId: seller.id,
+    conversationId,
+    storeLocation,
+    vehicleId: lead?.vehicleId || null,
+    customerPhone: opts?.phone || lead?.phone || "",
+    customerName: opts?.contactName || lead?.name || null,
+    status: "pending",
+  });
+  return { seller, storeLocation };
+}
+
 
 /**
  * Get a vehicle by ID with all photos (images array).

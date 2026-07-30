@@ -336,6 +336,15 @@ async function initDebounce() {
       if (collectOnlyTools) {
         flowAiOptions = { ...flowAiOptions, onlyTools: collectOnlyTools };
       }
+      // Pós-handoff: já foi transferido pro vendedor → IA responde breve, sem vender
+      if ((conversation as any).routingState === "handed_off") {
+        flowAiOptions = {
+          ...flowAiOptions,
+          onlyTools: ["atualizar_lead"],
+          flowInstruction: "O atendimento JÁ foi transferido para um vendedor humano. Responda de forma BREVE e cordial: não apresente veículos, não venda e não reabra negociação. Se o cliente insistir em preço/condições, diga que o vendedor vai continuar o atendimento por aqui em instantes.",
+        };
+        console.log(`[Debounce] Conversa ${conversationId}: modo PÓS-HANDOFF (IA breve, sem vender)`);
+      }
       console.log(`[Debounce] Conversa ${conversationId}: chamando processAIMessage com flowAiOptions=${JSON.stringify(flowAiOptions)}`);
       const aiResult = await processAIMessage(conversation, recentMessages, groupedContent, flowAiOptions);
       console.log(`[Debounce] Conversa ${conversationId}: IA respondeu, interactiveMessages=${aiResult.interactiveMessages?.length || 0}`);
@@ -4892,6 +4901,7 @@ const AVAILABLE_TOOLS = [
   { id: "apresentar_veiculo", name: "Apresentar Veículo (Foto)", description: "Envia foto do veículo com informações formatadas" },
   { id: "enviar_botoes", name: "Enviar Botões", description: "Envia botões interativos (máx 3)" },
   { id: "enviar_lista", name: "Enviar Lista", description: "Envia menu de lista interativo (máx 10 itens)" },
+  { id: "transferir_para_vendedor", name: "Transferir para Vendedor", description: "Handoff atômico: registra resumo, move o funil, rodízio opcional e para de vender" },
 ];
 
 const agentRouter = router({
@@ -5152,7 +5162,7 @@ Gatilhos (qualquer um):
   d) Cliente quer agendar visita ou test drive;
   e) Você não conseguiu ajudar após 2 tentativas.
 Protocolo obrigatório:
-  1) Chame atualizar_lead com etapa_funil: encaminhado_vendedor e notas no formato fixo: "Interesse: <veículo> | Troca: <veículo/ano/km ou 'sem troca'> | Pagamento: <forma/entrada> | Dados: <o que já tem> | Pendência: <o que falta> | Observação: <1 frase sobre o cliente>"
+  1) Chame a tool transferir_para_vendedor com: motivo (pediu_humano | negociacao | agendamento | dados_completos | sem_solucao) e resumo no formato fixo: "Interesse: <veículo> | Troca: <veículo/ano/km ou 'sem troca'> | Pagamento: <forma/entrada> | Dados: <o que já tem> | Pendência: <o que falta> | Observação: <1 frase sobre o cliente>". Ela move o funil e registra tudo — não precisa chamar atualizar_lead só para isso.
   2) Avise o cliente: "Já passei tudo para o vendedor, ele/ela vai te chamar aqui mesmo em instantes."
   3) PARE de vender. Se o cliente continuar falando depois do handoff, responda de forma breve e cordial, sem abrir negociação nova — quem conduz agora é o vendedor.
 
@@ -5195,7 +5205,7 @@ LGPD → só colete dados necessários ao estágio atual; se o cliente pedir par
       model: "gpt-4o-mini",
       temperature: "0.5",
       maxTokens: 1024,
-      enabledTools: ["buscar_veiculos", "buscar_veiculo_por_id", "apresentar_veiculo", "resumo_estoque", "atualizar_lead", "enviar_botoes"],
+      enabledTools: ["buscar_veiculos", "buscar_veiculo_por_id", "apresentar_veiculo", "resumo_estoque", "atualizar_lead", "enviar_botoes", "transferir_para_vendedor"],
       active: true,
       createdBy: ctx.user.id,
     });

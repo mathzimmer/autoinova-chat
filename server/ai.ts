@@ -1,6 +1,6 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById, getDefaultAiAgent } from "./db";
+import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById, getDefaultAiAgent, updateLeadFunnelStatus, logTimeline, updateConversation, assignSellerRoundRobin } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 import { validateLeadArgs, formatValidationErrors } from "./leadValidation";
@@ -538,6 +538,23 @@ const TOOLS: Tool[] = [
           rodape: { type: "string", description: "Rodapé opcional (máx 60 chars)" },
         },
         required: ["texto", "texto_botao", "secoes"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "transferir_para_vendedor",
+      description: "Transfere o atendimento para um vendedor humano (handoff). Use quando: o cliente pediu falar com humano/vendedor; escolheu veículo E definiu pagamento; quer negociar preço/condições; quer agendar visita ou test-drive; ou você não conseguiu ajudar após 2 tentativas. A tool registra o resumo, move o funil e sinaliza a transferência — depois PARE de vender.",
+      parameters: {
+        type: "object",
+        properties: {
+          resumo: { type: "string", description: "Resumo estruturado para o vendedor no formato: 'Interesse: <veículo> | Troca: <veículo/ano/km ou sem troca> | Pagamento: <forma/entrada> | Dados: <o que já tem> | Pendência: <o que falta> | Observação: <1 frase>'. OBRIGATÓRIO." },
+          motivo: { type: "string", enum: ["pediu_humano", "negociacao", "agendamento", "dados_completos", "sem_solucao"], description: "Motivo do handoff." },
+          atribuir_rodizio: { type: "boolean", description: "Se true, atribui automaticamente um vendedor pela fila de rodízio da loja e o notifica. Default false." },
+        },
+        required: ["resumo", "motivo"],
         additionalProperties: false,
       },
     },
@@ -1133,6 +1150,52 @@ export async function processAIMessage(
               toolResult = "Erro ao atualizar lead.";
               toolSuccess = false;
               toolErrorMsg = leadErr instanceof Error ? leadErr.message : "Erro desconhecido";
+            }
+          } else if (toolCall.function.name === "transferir_para_vendedor") {
+            const args = JSON.parse(toolCall.function.arguments || "{}");
+            parsedArgs = args;
+            const resumo = String(args.resumo || "").trim();
+            const motivos = ["pediu_humano", "negociacao", "agendamento", "dados_completos", "sem_solucao"];
+            const motivo = motivos.includes(args.motivo) ? args.motivo : "pediu_humano";
+            console.log(`[AI] transferir_para_vendedor: motivo=${motivo}, rodizio=${!!args.atribuir_rodizio}`);
+            try {
+              // 1) Move o funil para "encaminhado ao vendedor"
+              await updateLeadFunnelStatus(conversation.id, "encaminhado_vendedor");
+              // 2) Registra o resumo estruturado nas notas do lead (append)
+              const leadNow = await getLeadByConversationId(conversation.id);
+              const note = `[Handoff IA · ${motivo}] ${resumo}`;
+              await upsertLead({ conversationId: conversation.id, phone: conversation.phone, notes: leadNow?.notes ? `${leadNow.notes}\n${note}` : note } as any);
+              // 3) Timeline
+              await logTimeline({ conversationId: conversation.id, action: "handoff_ia", details: { motivo, resumo } });
+              // 4) Rodízio opcional + notificação do vendedor (best-effort)
+              let sellerNote = "";
+              if (args.atribuir_rodizio) {
+                const assigned = await assignSellerRoundRobin(conversation.id, { phone: conversation.phone, contactName: (conversation as any).contactName || undefined });
+                if (assigned?.seller) {
+                  sellerNote = ` Vendedor ${assigned.seller.name} atribuído.`;
+                  try {
+                    const { sendSellerNotification } = await import("./whatsapp");
+                    await sendSellerNotification(assigned.seller.phone, {
+                      sellerName: assigned.seller.name,
+                      customerName: (conversation as any).contactName || leadNow?.name || "Cliente",
+                      customerPhone: conversation.phone,
+                      vehicleInterest: leadNow?.vehicleInterest || "",
+                      conversationSummary: resumo,
+                      storeLocation: assigned.storeLocation,
+                    });
+                  } catch (notifyErr) { console.error("[AI] Falha ao notificar vendedor:", notifyErr); }
+                }
+              }
+              // 5) Marca a conversa como transferida (IA para de vender)
+              await updateConversation(conversation.id, { routingState: "handed_off" } as any);
+              collectedLeadData = args;
+              toolResult = `Transferência registrada (motivo: ${motivo}).${sellerNote} Agora dê ao cliente UMA mensagem curta de encerramento (o vendedor vai chamar aqui em instantes) e NÃO continue vendendo nem apresentando veículos.`;
+              console.log(`[AI] Handoff registrado para conversa ${conversation.id}`);
+            } catch (handoffErr) {
+              console.error("[AI] Falha no handoff:", handoffErr);
+              toolResult = "Não consegui registrar a transferência agora. Peça um instante ao cliente.";
+              toolSuccess = false;
+              toolErrorMsg = handoffErr instanceof Error ? handoffErr.message : "Erro desconhecido";
             }
           } else if (toolCall.function.name === "buscar_veiculo_por_id") {
             const args = JSON.parse(toolCall.function.arguments || "{}");
