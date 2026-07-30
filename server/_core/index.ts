@@ -8,6 +8,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { normalizePhone } from "../phoneNormalize";
 import { initSocketIO } from "../socket";
 import { sendTextMessage, markAsRead, getMediaUrl, isConfigured as isWhatsAppConfigured } from "../whatsapp";
 import { processWhatsAppMedia } from "../media";
@@ -73,15 +74,6 @@ async function transcribeAudioSafe(audioUrl: string): Promise<string | undefined
     console.error("[Zernio] transcribeAudioSafe erro:", e);
   }
   return undefined;
-}
-
-function normalizePhone(phone: string | undefined): string {
-  if (!phone) return "";
-  const digits = phone.replace(/\D/g, "");
-  if (digits.startsWith("55") && digits.length >= 12) return digits;
-  if (digits.length === 11) return "55" + digits;
-  if (digits.length === 10) return "55" + digits;
-  return digits;
 }
 
 async function startServer() {

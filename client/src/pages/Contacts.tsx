@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { normalizePhone } from "@shared/phone";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -69,13 +70,6 @@ function formatPhone(phone: string): string {
   if (clean.length === 12) return `+${clean.slice(0, 2)} (${clean.slice(2, 4)}) ${clean.slice(4, 8)}-${clean.slice(8)}`;
   if (clean.length === 11) return `(${clean.slice(0, 2)}) ${clean.slice(2, 7)}-${clean.slice(7)}`;
   return phone;
-}
-
-function normalizePhone(phone: string): string {
-  let clean = phone.replace(/\D/g, "");
-  if (clean.length === 11 && clean.startsWith("0")) clean = clean.slice(1);
-  if (clean.length === 10 || clean.length === 11) clean = "55" + clean;
-  return clean;
 }
 
 const SOURCE_LABELS: Record<string, string> = {

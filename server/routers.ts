@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
+import { normalizePhone, phoneVariations } from "./phoneNormalize";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
@@ -949,7 +950,6 @@ const conversationRouter = router({
       if (!db) return null;
       const { conversations: convTable } = await import("../drizzle/schema");
       const { eq, and: andOp, ne: neOp, or: orOp } = await import("drizzle-orm");
-      const { phoneVariations } = await import("./phoneNormalize");
       const digits = input.phone.replace(/\D/g, "");
       const variations = Array.from(new Set([digits, ...phoneVariations(digits)]));
       const isMatriz = input.instance === "matriz";
@@ -1011,7 +1011,7 @@ const conversationRouter = router({
       firstMessage: z.string().max(4000).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const { normalizePhone: normPhone } = await import("./phoneNormalize");
+      const normPhone = normalizePhone;
       const phone = normPhone(input.phone.replace(/\D/g, ""));
       if (!phone || phone.length < 10) throw new Error("Telefone inválido — use DDI+DDD+número");
 
@@ -2505,7 +2505,7 @@ const webhookRouter = router({
       }
 
       // Normalize phone for consistent matching
-      const { normalizePhone: normPhone } = await import("./phoneNormalize");
+      const normPhone = normalizePhone;
       const normalizedPhone = normPhone(input.phone);
 
       // Find or create conversation (tries phone variations automatically)
@@ -5447,7 +5447,6 @@ const contactsRouter = router({
     if (!db) throw new Error("Database not available");
     const { contacts: contactsTable, conversations: convTable } = await import("../drizzle/schema");
     const { eq, and, isNull, inArray } = await import("drizzle-orm");
-    const { phoneVariations } = await import("./phoneNormalize");
 
     // Contatos sem origem definida
     const orphans = await db.select().from(contactsTable).where(isNull(contactsTable.createdByInstance));
@@ -5584,7 +5583,6 @@ const contactsRouter = router({
     .query(async () => {
       const db = await getDb();
       if (!db) return [];
-      const { normalizePhone } = await import("./phoneNormalize");
       const { contacts: contactsTable } = await import("../drizzle/schema");
       const allContacts = await db.select().from(contactsTable).where(eq(contactsTable.isActive, true));
 
@@ -5619,7 +5617,6 @@ const contactsRouter = router({
       const secondary = await getContactById(input.secondaryId);
       if (!primary || !secondary) throw new Error("Contato não encontrado");
 
-      const { normalizePhone } = await import("./phoneNormalize");
       const updates: Record<string, any> = {};
 
       // Merge name: prefer non-generic
@@ -5660,7 +5657,6 @@ const contactsRouter = router({
     .mutation(async () => {
       const db = await getDb();
       if (!db) throw new Error("DB not available");
-      const { normalizePhone } = await import("./phoneNormalize");
       const { contacts: contactsTable } = await import("../drizzle/schema");
       const allContacts = await db.select().from(contactsTable).where(eq(contactsTable.isActive, true));
 

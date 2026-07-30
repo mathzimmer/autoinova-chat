@@ -1,4 +1,5 @@
 import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull } from "drizzle-orm";
+import { normalizePhone, phoneVariations } from "./phoneNormalize";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -844,7 +845,6 @@ export async function getConversationByPhone(phone: string) {
     .where(and(eq(conversations.phone, phone), notEvolution)).limit(1);
   if (exact[0]) return exact[0];
   // Try all phone variations (handles 9th digit, formatting differences)
-  const { phoneVariations } = await import("./phoneNormalize");
   const variations = phoneVariations(phone);
   for (const v of variations) {
     if (v === phone) continue; // already tried
@@ -1120,7 +1120,7 @@ export async function getCanonicalLead(phone: string) {
   const db = await getDb();
   if (!db || !phone) return undefined;
   let norm = phone;
-  try { const { normalizePhone } = await import("./phoneNormalize"); norm = normalizePhone(phone) || phone; } catch { /* usa phone */ }
+  norm = normalizePhone(phone) || phone;
   const rows = await db.select().from(leads).where(or(eq(leads.phone, phone), eq(leads.phone, norm))!);
   if (!rows.length) return undefined;
   const withCtwa = rows.filter(r => (r as any).ctwaId);
@@ -1198,7 +1198,7 @@ export async function getOrCreateLeadByPhone(params: {
   const db = await getDb();
   if (!db) throw new Error("DB indisponível");
   let norm = params.phone;
-  try { const { normalizePhone } = await import("./phoneNormalize"); norm = normalizePhone(params.phone) || params.phone; } catch { /* usa phone */ }
+  norm = normalizePhone(params.phone) || params.phone;
 
   const existing = await getCanonicalLead(params.phone);
   if (existing) {
@@ -2524,7 +2524,6 @@ export async function getContactByPhone(phone: string) {
   const exact = await db.select().from(contacts).where(and(eq(contacts.phone, phone), eq(contacts.isActive, true))).limit(1);
   if (exact[0]) return exact[0];
   // Try all phone variations (handles 9th digit, formatting differences)
-  const { phoneVariations } = await import("./phoneNormalize");
   const variations = phoneVariations(phone);
   for (const v of variations) {
     if (v === phone) continue;
@@ -2559,7 +2558,6 @@ export async function bulkCreateContacts(rows: Array<Omit<InsertContact, "id" | 
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (rows.length === 0) return { created: 0, skipped: 0, merged: 0 };
-  const { normalizePhone } = await import("./phoneNormalize");
   let created = 0;
   let skipped = 0;
   let merged = 0;
