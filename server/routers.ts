@@ -4634,6 +4634,19 @@ const flowRouter = router({
       return { flow, nodes, edges };
     }),
 
+  /**
+   * Saúde da Jornada (arquitetura vendedor virtual): funil por nó, totais por
+   * tipo de evento e últimos fallbacks — alimentado pelo decision log (flowEvents).
+   */
+  health: protectedProcedure
+    .input(z.object({ flowId: z.number(), days: z.number().min(1).max(90).optional() }))
+    .query(async ({ input }) => {
+      const { getFlowHealthStats } = await import("./db");
+      const stats = await getFlowHealthStats(input.flowId, input.days ?? 7);
+      if (!stats) throw new Error("Database not available");
+      return stats;
+    }),
+
   create: adminProcedure
     .input(z.object({
       name: z.string().min(1),

@@ -583,6 +583,26 @@ export type ChatFlowSession = typeof chatFlowSessions.$inferSelect;
 export type InsertChatFlowSession = typeof chatFlowSessions.$inferInsert;
 
 /**
+ * Flow Events (decision log) — arquitetura vendedor virtual (fase 1).
+ * Cada mensagem classificada, transição de nó, ação executada, fallback e
+ * expiração de sessão vira um evento auditável. Alimenta o painel "Saúde da
+ * Jornada" no editor de fluxos.
+ */
+export const flowEvents = pgTable("flowEvents", {
+  id:             serial("id").primaryKey(),
+  sessionId:      integer("sessionId").notNull(),
+  conversationId: integer("conversationId").notNull(),
+  flowId:         integer("flowId").notNull(),
+  nodeId:         integer("nodeId"),
+  event:          varchar("event", { length: 60 }).notNull(),
+  payload:        jsonb("payload"),
+  createdAt:      timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type FlowEvent = typeof flowEvents.$inferSelect;
+export type InsertFlowEvent = typeof flowEvents.$inferInsert;
+
+/**
  * AI Agents — agentes de IA configuráveis com prompt, tools e modelo próprios.
  */
 export const aiAgents = pgTable("aiAgents", {

@@ -24,7 +24,9 @@ import {
   setOpenOpportunityStage,
   getSetting,
   logTimeline,
+  logFlowEvent,
 } from "./db";
+import { classifyMessage } from "./nlu";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import { getFlowSender } from "./flowChannelSender";
 import { emitNewMessage } from "./socket";
@@ -276,6 +278,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
         console.log(`[FlowEngine] sessão ${session.id} expirada (~${Math.round(ageMs / 3600000)}h > ${ttlHours}h) → cancelada`);
         await updateFlowSession(session.id, { status: "cancelled", completedAt: new Date() });
         try { await logTimeline({ conversationId: ctx.conversationId, action: "flow_session_expired", details: { sessionId: session.id, ttlHours } }); } catch { /* opcional */ }
+        logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: session.currentNodeId, event: "SESSION_EXPIRED", payload: { ttlHours, ageHours: Math.round(ageMs / 3600000) } });
         session = undefined;
       }
     }
@@ -686,6 +689,7 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     delete clean.confirmYesId; delete clean.confirmNoId; delete clean.waitingSince; delete clean.noReplyAttempts;
     await updateFlowSession(session.id, { context: clean });
     console.log(`[FlowEngine] confirm_interest: resposta="${msg}" → ${handle}`);
+    logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: (session as any).flowId, nodeId: currentNode.id, event: "STATE_TRANSITION", payload: { from: "confirm_interest", handle, message: msg.slice(0, 120) } });
     const nextEdge = edges.find(e => e.sourceNodeId === currentNode.id && e.sourceHandle === handle);
     if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
     else await updateFlowSession(session.id, { status: "completed" });
@@ -902,40 +906,69 @@ async function handleDiscoveryStep(
   const reachedTarget = isResume && (advancedToTarget || stage === "perdido");
   const exhausted = maxRounds > 0 && rounds > maxRounds;
 
-  // Seleção NUMÉRICA determinística: "1", "2", "3"... escolhe um carro da ÚLTIMA
-  // rodada apresentada (fotos via apresentar_veiculo OU lista em texto vinda de
-  // buscar_veiculos). Não depende da IA marcar a etapa do funil.
-  let numericConfirmed = false;
+  // Seleção de veículo: atalho numérico primeiro, NLU (classificador) depois.
+  // Não depende da IA marcar a etapa do funil — o motor resolve e avança.
+  let selectionConfirmed = false;
   const msgTrim = (ctx.customerMessage || "").trim();
+  const presentedIds: number[] = Array.isArray(sctx.discoveryPresented) && sctx.discoveryPresented.length > 0
+    ? sctx.discoveryPresented
+    : (Array.isArray(sctx.discoverySearchIds) ? sctx.discoverySearchIds : []);
+
+  let chosenId: number | null = null;
+  let affirmWithCar = false;
+
   const numMatch = msgTrim.match(/^(\d{1,2})[.)!]?\s*$/) || msgTrim.match(/^(?:op[cç][aã]o|n[úu]mero|o)\s+(\d{1,2})[.)!]?\s*$/i);
   if (isResume && numMatch) {
     const numIdx = Number(numMatch[1]) - 1;
-    const presentedIds: number[] = Array.isArray(sctx.discoveryPresented) && sctx.discoveryPresented.length > 0
-      ? sctx.discoveryPresented
-      : (Array.isArray(sctx.discoverySearchIds) ? sctx.discoverySearchIds : []);
-    const chosenId = presentedIds[numIdx];
-    if (chosenId) {
-      numericConfirmed = true;
-      try {
-        const chosenVehicle: any = await getVehicleById(chosenId).catch(() => null);
-        await upsertLead({
-          conversationId: ctx.conversationId,
-          phone: ctx.phone,
-          vehicleId: chosenId,
-          vehicleInterest: chosenVehicle ? `${chosenVehicle.brand} ${chosenVehicle.model} ${chosenVehicle.year}`.trim() : `Veículo ID ${chosenId}`,
-          intention: "compra",
-        } as any);
-        const leadNow: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
-        if (leadNow?.id) { try { await setOpenOpportunityStage(leadNow.id, targetStage); } catch { /* noop */ } }
-        console.log(`[FlowEngine] vehicle_discovery: seleção numérica ${numIdx + 1} → veículo ${chosenId} gravado, avançando`);
-      } catch (numErr) {
-        console.error("[FlowEngine] vehicle_discovery: erro ao gravar seleção numérica:", numErr);
+    if (presentedIds[numIdx]) chosenId = presentedIds[numIdx];
+  }
+
+  // NLU (fase 2 da arquitetura): mensagem não-numérica → classifica intenção.
+  // SELECT_VEHICLE com índice resolve o carro da rodada; AFFIRM com carro em
+  // jogo confirma o veículo atual do lead. A LLM só classifica — quem decide
+  // a transição é o motor.
+  if (isResume && !chosenId && msgTrim && !reachedTarget) {
+    try {
+      const nlu = await classifyMessage({ text: msgTrim, context: { presentedCount: presentedIds.length, state: "APRESENTACAO" } });
+      console.log(`[FlowEngine] NLU (vehicle_discovery): intent=${nlu.intent} via=${nlu.via} conf=${nlu.confidence}`);
+      logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "NLU_CLASSIFIED", payload: { text: msgTrim.slice(0, 120), intent: nlu.intent, via: nlu.via, confidence: nlu.confidence, entities: nlu.entities } });
+      if (nlu.intent === "SELECT_VEHICLE") {
+        const idx = (nlu.entities.vehicleIndex ?? 1) - 1;
+        if (presentedIds[idx]) chosenId = presentedIds[idx];
+        else if (lead?.vehicleId || lead?.vehicleInterest) affirmWithCar = true;
+      } else if (nlu.intent === "AFFIRM" && (lead?.vehicleId || lead?.vehicleInterest)) {
+        affirmWithCar = true;
       }
+    } catch (nluErr) {
+      console.error("[FlowEngine] NLU error (vehicle_discovery):", nluErr);
     }
   }
 
+  if (isResume && chosenId) {
+    selectionConfirmed = true;
+    try {
+      const chosenVehicle: any = await getVehicleById(chosenId).catch(() => null);
+      await upsertLead({
+        conversationId: ctx.conversationId,
+        phone: ctx.phone,
+        vehicleId: chosenId,
+        vehicleInterest: chosenVehicle ? `${chosenVehicle.brand} ${chosenVehicle.model} ${chosenVehicle.year}`.trim() : `Veículo ID ${chosenId}`,
+        intention: "compra",
+      } as any);
+      const leadNow: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+      if (leadNow?.id) { try { await setOpenOpportunityStage(leadNow.id, targetStage); } catch { /* noop */ } }
+      console.log(`[FlowEngine] vehicle_discovery: veículo ${chosenId} escolhido → gravado, avançando`);
+    } catch (selErr) {
+      console.error("[FlowEngine] vehicle_discovery: erro ao gravar seleção:", selErr);
+    }
+  } else if (isResume && affirmWithCar) {
+    selectionConfirmed = true;
+    if (lead?.id) { try { await setOpenOpportunityStage(lead.id, targetStage); } catch { /* noop */ } }
+    console.log(`[FlowEngine] vehicle_discovery: confirmação do veículo em jogo (lead ${lead?.id}) → avançando`);
+  }
+
   // Cliente confirmou um carro DENTRO do nó (ou esgotou as rodadas) → avança
-  if (reachedTarget || exhausted || numericConfirmed) {
+  if (reachedTarget || exhausted || selectionConfirmed) {
     const clean = { ...sctx };
     delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
     delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt;
@@ -943,6 +976,7 @@ async function handleDiscoveryStep(
     await updateFlowSession(session.id, { context: clean });
     console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, base=${baseIdx}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
     const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
+    logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "STATE_TRANSITION", payload: { from: "vehicle_discovery", toNodeId: nextEdge?.targetNodeId ?? null, stage, reachedTarget, exhausted, selectionConfirmed } });
     if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
     else await updateFlowSession(session.id, { status: "completed" });
     return result;

@@ -33,7 +33,7 @@ import {
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
   ChevronDown, GripVertical, Cpu, UserPlus, Camera, Car,
-  Thermometer,
+  Thermometer, Activity,
 } from "lucide-react";
 // ─── Funnel Status Labels ─────────────────────────────────────
 const FUNNEL_STATUS_LABELS: Record<string, string> = {
@@ -1742,6 +1742,116 @@ function GotoFlowSelector({ config, onUpdate, node }: { config: any; onUpdate: (
   );
 }
 
+// ─── Journey Health Panel (decision log — arquitetura vendedor virtual) ──────
+const EVENT_LABELS: Record<string, string> = {
+  NLU_CLASSIFIED: "Mensagens classificadas (NLU)",
+  STATE_TRANSITION: "Transições de estado",
+  ACTION_COMPLETED: "Ações executadas",
+  ACTION_FAILED: "Ações com erro",
+  SESSION_EXPIRED: "Sessões expiradas (TTL)",
+  FALLBACK_TRIGGERED: "Fallbacks",
+  HANDOFF_DONE: "Transferências p/ humano",
+};
+
+function HealthPanel({ flowId, nodes }: { flowId: number; nodes: Node[] }) {
+  const healthQuery = trpc.flow.health.useQuery({ flowId, days: 7 }, { refetchInterval: 30000 });
+  const data = healthQuery.data;
+
+  const nodeLabel = (id: string) => {
+    const n = nodes.find(nd => String((nd.data as any).dbId) === id);
+    return n ? String((n.data as any).label || id) : `Nó #${id}`;
+  };
+
+  const perNodeEntries = data ? Object.entries(data.perNode).sort((a, b) => b[1] - a[1]) : [];
+  const maxVisits = perNodeEntries.length > 0 ? perNodeEntries[0][1] : 1;
+  const nluTotal = data?.totals?.NLU_CLASSIFIED ?? 0;
+  const transitions = data?.totals?.STATE_TRANSITION ?? 0;
+
+  return (
+    <div className="border-b border-border bg-card/80 px-4 py-3 max-h-72 overflow-y-auto">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-medium flex items-center gap-1.5">
+            <Activity className="h-3.5 w-3.5 text-primary" />
+            Saúde da Jornada — últimos 7 dias
+          </Label>
+          <span className="text-[10px] text-muted-foreground">
+            {healthQuery.isLoading ? "Carregando..." : `${data?.sessionCount ?? 0} sessões · ${data?.conversationCount ?? 0} conversas · ${data?.totalEvents ?? 0} eventos`}
+          </span>
+        </div>
+
+        {healthQuery.isError && (
+          <p className="text-xs text-destructive">Não foi possível carregar. Rode a migration 2026-07-30_flow_events.sql no banco.</p>
+        )}
+
+        {data && data.totalEvents === 0 && !healthQuery.isLoading && (
+          <p className="text-xs text-muted-foreground">
+            Sem eventos ainda. O decision log começa a registrar assim que a migration 2026-07-30_flow_events.sql for aplicada e o fluxo receber mensagens.
+          </p>
+        )}
+
+        {data && data.totalEvents > 0 && (
+          <>
+            {/* Totais por tipo de evento */}
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(EVENT_LABELS).map(([key, label]) => {
+                const val = data.totals[key] ?? 0;
+                if (val === 0) return null;
+                return (
+                  <div key={key} className="px-2.5 py-1.5 rounded-md bg-accent/50 border border-border/50">
+                    <span className="text-sm font-semibold text-foreground">{val}</span>
+                    <span className="text-[10px] text-muted-foreground ml-1.5">{label}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Funil por nó */}
+            {perNodeEntries.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Visitas por nó (transições que chegaram)</p>
+                <div className="space-y-1">
+                  {perNodeEntries.map(([nodeId, count]) => (
+                    <div key={nodeId} className="flex items-center gap-2">
+                      <span className="text-xs text-foreground w-44 truncate">{nodeLabel(nodeId)}</span>
+                      <div className="flex-1 h-3 rounded bg-accent/40 overflow-hidden">
+                        <div className="h-full bg-primary/70 rounded" style={{ width: `${Math.max(4, (count / maxVisits) * 100)}%` }} />
+                      </div>
+                      <span className="text-[10px] text-muted-foreground w-16 text-right">
+                        {count} ({transitions > 0 ? Math.round((count / transitions) * 100) : 0}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Fallbacks recentes */}
+            {data.recentFallbacks.length > 0 && (
+              <div>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">Últimos fallbacks</p>
+                <div className="space-y-0.5">
+                  {data.recentFallbacks.map((f, i) => (
+                    <p key={i} className="text-[11px] text-muted-foreground truncate">
+                      {new Date(f.createdAt).toLocaleString("pt-BR")} — {(f.payload as any)?.reason || (f.payload as any)?.text || "sem detalhe"}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {nluTotal > 0 && (
+              <p className="text-[10px] text-muted-foreground">
+                NLU: {nluTotal} classificações no período (atalhos + LLM). Detalhe por intent em breve.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Editor Wrapper (provides ReactFlowProvider) ───────────────────────────────────────
 export default function FlowEditor(props: { flowId: number; onBack: () => void }) {
   return (
@@ -1972,6 +2082,7 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
   const flow = flowQuery.data?.flow;
   const [showFlowSettings, setShowFlowSettings] = useState(false);
   const [showTriggerSettings, setShowTriggerSettings] = useState(false);
+  const [showHealth, setShowHealth] = useState(false);
   const [flowAiPrompt, setFlowAiPrompt] = useState("");
   const [flowAgentId, setFlowAgentId] = useState<number | null>(null);
   const [flowTrigger, setFlowTrigger] = useState("");
@@ -2028,9 +2139,13 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
             <Settings2 className="h-3.5 w-3.5 mr-1" />
             Gatilho
           </Button>
-          <Button variant="outline" size="sm" onClick={() => { setShowFlowSettings(!showFlowSettings); if (!showFlowSettings) setShowTriggerSettings(false); }}>
+          <Button variant="outline" size="sm" onClick={() => { setShowFlowSettings(!showFlowSettings); if (!showFlowSettings) { setShowTriggerSettings(false); setShowHealth(false); } }}>
             <Cpu className="h-3.5 w-3.5 mr-1" />
             Agente IA
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => { setShowHealth(!showHealth); if (!showHealth) { setShowTriggerSettings(false); setShowFlowSettings(false); } }}>
+            <Activity className="h-3.5 w-3.5 mr-1" />
+            Saúde
           </Button>
           <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending || !hasChanges}>
             <Save className="h-3.5 w-3.5 mr-1" />
@@ -2162,6 +2277,9 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
           </div>
         </div>
       )}
+
+      {/* Journey Health Panel */}
+      {showHealth && <HealthPanel flowId={flowId} nodes={nodes} />}
 
       {/* Canvas + Sidebar */}
       <div className="flex-1 flex">

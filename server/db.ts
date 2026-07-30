@@ -1,4 +1,4 @@
-import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull } from "drizzle-orm";
+import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull, gte } from "drizzle-orm";
 import { normalizePhone, phoneVariations } from "./phoneNormalize";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
@@ -21,6 +21,7 @@ import {
   chatFlowNodes, InsertChatFlowNode,
   chatFlowEdges, InsertChatFlowEdge,
   chatFlowSessions, InsertChatFlowSession,
+  flowEvents, InsertFlowEvent,
   aiAgents, InsertAiAgent,
   sellers, InsertSeller,
   sellerQueues, InsertSellerQueue,
@@ -2101,6 +2102,62 @@ export async function getFlowSessionsByFlow(flowId: number) {
     .where(eq(chatFlowSessions.flowId, flowId))
     .orderBy(desc(chatFlowSessions.startedAt))
     .limit(100);
+}
+
+// ─── Flow Events (decision log) ─────────────────────────────
+/** Registra um evento da máquina de estados. Best-effort: nunca quebra o fluxo. */
+export async function logFlowEvent(data: InsertFlowEvent): Promise<void> {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(flowEvents).values(data);
+  } catch (err) {
+    console.error("[FlowEvents] Falha ao registrar evento:", err);
+  }
+}
+
+/**
+ * Estatísticas de saúde de uma jornada (painel "Saúde" do editor):
+ * totais por tipo de evento + visitas por nó + últimos fallbacks.
+ */
+export async function getFlowHealthStats(flowId: number, sinceDays = 7) {
+  const db = await getDb();
+  if (!db) return null;
+  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+  const events = await db.select().from(flowEvents)
+    .where(and(eq(flowEvents.flowId, flowId), gte(flowEvents.createdAt, since)))
+    .orderBy(desc(flowEvents.createdAt))
+    .limit(5000);
+
+  const totals: Record<string, number> = {};
+  const perNode: Record<string, number> = {};
+  const sessions = new Set<number>();
+  const conversations = new Set<number>();
+  const fallbacks: { createdAt: Date; payload: any }[] = [];
+
+  for (const e of events) {
+    totals[e.event] = (totals[e.event] || 0) + 1;
+    sessions.add(e.sessionId);
+    conversations.add(e.conversationId);
+    if (e.event === "STATE_TRANSITION" && e.nodeId != null) {
+      const to = String((e.payload as any)?.toNodeId ?? e.nodeId);
+      perNode[to] = (perNode[to] || 0) + 1;
+    }
+    if (e.event === "FALLBACK_TRIGGERED" && fallbacks.length < 10) {
+      fallbacks.push({ createdAt: e.createdAt, payload: e.payload });
+    }
+  }
+
+  return {
+    flowId,
+    sinceDays,
+    totalEvents: events.length,
+    sessionCount: sessions.size,
+    conversationCount: conversations.size,
+    totals,
+    perNode,
+    recentFallbacks: fallbacks,
+  };
 }
 
 export async function pauseFlowSessionByConversation(conversationId: number) {
