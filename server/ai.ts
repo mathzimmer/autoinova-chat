@@ -166,7 +166,20 @@ FILTROS:
 - Exemplos: "picape até 80 mil" → buscar_veiculos(tipo: "picape", preco_max: 80000) | "moto naked" → buscar_veiculos(categoria: "motos", tipo: "naked")
 
 NÃO busque para: "ok", "sim", "obrigado", números de seleção, dados de troca.
-NUNCA diga "vou verificar" ou "só um momento". Apresente resultados na mesma resposta.`;
+NUNCA diga "vou verificar" ou "só um momento". Apresente resultados na mesma resposta.
+
+== REGRA DE OURO: MEMÓRIA DA CONVERSA ==
+NUNCA reapresente um veículo já apresentado nesta conversa. Antes de apresentar,
+verifique o histórico: se o veículo já apareceu, o cliente JÁ VIU — avance.
+
+CONFIRMAÇÃO DE VEÍCULO ("sim", "gostei", "quero", "esse", "pode ser", "bora"
+logo após você apresentar UM veículo ou perguntar se gostou):
+Ação: 1) atualizar_lead(veiculo_interesse, veiculo_id se souber o [ID:X],
+intencao: "compra") 2) NÃO reapresente 3) VÁ DIRETO para a ETAPA 3
+(troca/pagamento). Exemplo: "Ótima escolha! Você tem veículo pra dar na troca?"
+
+DADOS JÁ COLETADOS: o que já está no CONTEXTO DINÂMICO (veículo de interesse,
+troca, pagamento, cidade) NUNCA se pergunta de novo. Se já tem, use.`;
 
 // ============================================================================
 // CAMADA 3: PERSONALIDADE — EDITÁVEL PELO ADMIN
@@ -881,6 +894,35 @@ export async function processAIMessage(
     }
   } catch (e) {
     console.error("[AI] Failed to load lead context:", e);
+  }
+
+  // === CONFIRMAÇÃO DETERMINÍSTICA (anti-reapresentação) ===
+  // Se o cliente respondeu curto ("sim", "quero", etc.) logo após o bot
+  // apresentar exatamente UM veículo, injeta diretiva de avanço no contexto.
+  // Funciona mesmo sem lead gravado (cenário em que o bug ocorria).
+  try {
+    const msgNorm = (customerMessage || "").trim();
+    const SHORT_CONFIRM = /^(sim|s|isso|quero|gostei|esse|essa|pode ser|bora|fechado|ok|okay|beleza|topo|top|claro|com certeza|tenho interesse|interessa|adorei|curti|show|perfeito)[.!\s]*$/i;
+    if (msgNorm.length > 0 && msgNorm.length <= 30 && SHORT_CONFIRM.test(msgNorm)) {
+      const sorted = [...(recentMessages || [])].sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0));
+      const lastVehicleMsg = [...sorted].reverse().find((m: any) =>
+        m.senderType === "bot" && typeof m.content === "string" &&
+        (m.content.includes("/carros/") || /(^|\n)\s*(Ano|ano)\s*:\s*\d{4}/.test(m.content))
+      );
+      if (lastVehicleMsg) {
+        const anoCount = (lastVehicleMsg.content.match(/Ano\s*:\s*\d{4}/gi) || []).length;
+        if (anoCount === 1) {
+          const lines = String(lastVehicleMsg.content).split("\n");
+          const anoIdx = lines.findIndex(l => /^\s*(Ano|ano)\s*:\s*\d{4}/.test(l));
+          let title = anoIdx > 0 ? lines[anoIdx - 1].trim() : "";
+          if (!title || title.length < 4) title = "o veículo apresentado";
+          contextBlock += `\n\n⚠️ AÇÃO OBRIGATÓRIA — CONFIRMAÇÃO DETECTADA: o cliente acabou de confirmar ("${msgNorm}") o veículo "${title}" que você JÁ apresentou na conversa.\n1) Chame atualizar_lead AGORA com veiculo_interesse: "${title}", intencao: "compra" (inclua veiculo_id se souber o [ID:X]).\n2) PROIBIDO reapresentar ou buscar esse veículo de novo — o cliente já viu.\n3) Responda confirmando a escolha e AVANCE para a ETAPA 3: pergunte sobre veículo de troca OU forma de pagamento (uma só pergunta).`;
+          console.log(`[AI] Confirmação curta detectada ("${msgNorm}") → veículo "${title}" — injetando avanço determinístico`);
+        }
+      }
+    }
+  } catch (confirmErr) {
+    console.error("[AI] Erro na detecção de confirmação:", confirmErr);
   }
 
   // === PRE-PROCESSING: Detect vehicle ID in message and fetch directly ===
