@@ -1,6 +1,6 @@
 import { type Tool, type Message as LLMMessage } from "./_core/llm";
 import { invokeAgentLLM as invokeLLM } from "./openaiLLM";
-import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById, getDefaultAiAgent, updateLeadFunnelStatus, logTimeline, updateConversation, assignSellerRoundRobin } from "./db";
+import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, upsertSetting, getLeadByConversationId, upsertLeadSummary, getAiAgentById, getVehicleById, getDefaultAiAgent, updateLeadFunnelStatus, logTimeline, updateConversation, assignSellerRoundRobin, getActiveFlowSession, updateFlowSession } from "./db";
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 import { validateLeadArgs, formatValidationErrors } from "./leadValidation";
@@ -734,6 +734,32 @@ export async function applyAutoTagging(conversationId: number, text: string) {
   }
 }
 
+// Rastreia, na sessão de fluxo (nó "Apresentar com IA"), os veículos apresentados
+// na rodada atual — permite ao flowEngine resolver seleção numérica ("2", "o 3")
+// mesmo quando a IA não marca a etapa do funil.
+async function trackDiscoveryIds(
+  conversationId: number,
+  patch: { reset?: boolean; presentedId?: number; searchIds?: number[] },
+): Promise<void> {
+  try {
+    const session = await getActiveFlowSession(conversationId);
+    if (!session) return;
+    const sctx = (session.context as any) || {};
+    if (!sctx.discoveryMode) return;
+    const next = { ...sctx };
+    if (patch.reset) {
+      next.discoveryPresented = [];
+      next.discoverySearchIds = [];
+    }
+    if (patch.searchIds) next.discoverySearchIds = patch.searchIds;
+    if (patch.presentedId != null) {
+      const cur = Array.isArray(next.discoveryPresented) ? next.discoveryPresented : [];
+      next.discoveryPresented = [...cur, patch.presentedId];
+    }
+    await updateFlowSession(session.id, { context: next });
+  } catch { /* rastreamento é best-effort */ }
+}
+
 export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
@@ -748,6 +774,9 @@ export async function processAIMessage(
   if (customerMessage) {
     applyAutoTagging(conversation.id, customerMessage).catch(err => console.error("[AI] Auto-tagging error:", err));
   }
+
+  // Nó "Apresentar com IA": novo turno da IA → zera o rastreamento da rodada
+  trackDiscoveryIds(conversation.id, { reset: true }).catch(() => {});
 
   // Load agent config if agentId is provided
   let agent: AiAgent | null = null;
@@ -1119,6 +1148,9 @@ export async function processAIMessage(
               color: args.cor,
               pagina: args.pagina,
             });
+            // Rastreia os IDs retornados (na ordem) p/ o nó resolver seleção numérica
+            const searchIds = [...toolResult.matchAll(/\[ID:(\d+)\]/g)].map(m => Number(m[1]));
+            if (searchIds.length > 0) trackDiscoveryIds(conversation.id, { searchIds }).catch(() => {});
             // Extract result count from the response
             const countMatch = toolResult.match(/(\d+)\s*(ve\u00edculos?|resultados?|encontrados?)/i);
             toolResultCount = countMatch ? parseInt(countMatch[1]) : (toolResult.includes("Nenhum") ? 0 : null);
@@ -1275,6 +1307,8 @@ export async function processAIMessage(
               const vehicleResult = await getVehicleByIdForAI(args.veiculo_id);
               if (vehicleResult.found && vehicleResult.vehicle) {
                 const v = vehicleResult.vehicle;
+                // Rastreia a apresentação p/ o nó resolver seleção numérica
+                trackDiscoveryIds(conversation.id, { presentedId: Number(args.veiculo_id) }).catch(() => {});
                 // Get the first image URL
                 let photoUrl = v.imageUrl || "";
                 if (!photoUrl && v.images && Array.isArray(v.images) && v.images.length > 0) {

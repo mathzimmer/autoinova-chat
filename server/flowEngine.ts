@@ -756,6 +756,7 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
         const clean = { ...sessionCtx };
         delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
         delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt; delete clean.pendingNextNodeId;
+        delete clean.discoveryPresented; delete clean.discoverySearchIds;
         await updateFlowSession(session.id, { context: clean });
         // Garante a etapa mínima de interesse pro restante do funil ficar coerente
         if (!funnelAdvanced && lead2?.id) {
@@ -877,11 +878,44 @@ async function handleDiscoveryStep(
   const reachedTarget = isResume && (advancedToTarget || stage === "perdido");
   const exhausted = maxRounds > 0 && rounds > maxRounds;
 
+  // Seleção NUMÉRICA determinística: "1", "2", "3"... escolhe um carro da ÚLTIMA
+  // rodada apresentada (fotos via apresentar_veiculo OU lista em texto vinda de
+  // buscar_veiculos). Não depende da IA marcar a etapa do funil.
+  let numericConfirmed = false;
+  const msgTrim = (ctx.customerMessage || "").trim();
+  const numMatch = msgTrim.match(/^(\d{1,2})[.)!]?\s*$/) || msgTrim.match(/^(?:op[cç][aã]o|n[úu]mero|o)\s+(\d{1,2})[.)!]?\s*$/i);
+  if (isResume && numMatch) {
+    const numIdx = Number(numMatch[1]) - 1;
+    const presentedIds: number[] = Array.isArray(sctx.discoveryPresented) && sctx.discoveryPresented.length > 0
+      ? sctx.discoveryPresented
+      : (Array.isArray(sctx.discoverySearchIds) ? sctx.discoverySearchIds : []);
+    const chosenId = presentedIds[numIdx];
+    if (chosenId) {
+      numericConfirmed = true;
+      try {
+        const chosenVehicle: any = await getVehicleById(chosenId).catch(() => null);
+        await upsertLead({
+          conversationId: ctx.conversationId,
+          phone: ctx.phone,
+          vehicleId: chosenId,
+          vehicleInterest: chosenVehicle ? `${chosenVehicle.brand} ${chosenVehicle.model} ${chosenVehicle.year}`.trim() : `Veículo ID ${chosenId}`,
+          intention: "compra",
+        } as any);
+        const leadNow: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+        if (leadNow?.id) { try { await setOpenOpportunityStage(leadNow.id, targetStage); } catch { /* noop */ } }
+        console.log(`[FlowEngine] vehicle_discovery: seleção numérica ${numIdx + 1} → veículo ${chosenId} gravado, avançando`);
+      } catch (numErr) {
+        console.error("[FlowEngine] vehicle_discovery: erro ao gravar seleção numérica:", numErr);
+      }
+    }
+  }
+
   // Cliente confirmou um carro DENTRO do nó (ou esgotou as rodadas) → avança
-  if (reachedTarget || exhausted) {
+  if (reachedTarget || exhausted || numericConfirmed) {
     const clean = { ...sctx };
     delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
     delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt;
+    delete clean.discoveryPresented; delete clean.discoverySearchIds;
     await updateFlowSession(session.id, { context: clean });
     console.log(`[FlowEngine] vehicle_discovery: avançando (stage=${stage}, base=${baseIdx}, reachedTarget=${reachedTarget}, exhausted=${exhausted})`);
     const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
@@ -909,8 +943,10 @@ async function handleDiscoveryStep(
     "",
     "CONFIRMAÇÃO (MUITO IMPORTANTE):",
     "- Se o cliente demonstrar que gostou/escolheu um carro — ex.: \"gostei\", \"gostei do 2019\", \"esse\", \"quero esse\", \"pode ser\", \"ok\", \"esse aí\", \"o branco\" — isso É CONFIRMAÇÃO.",
+    "- NÚMERO TAMBÉM É CONFIRMAÇÃO: se você apresentou carros e o cliente responde \"1\", \"2\", \"3\", \"o primeiro\", \"o 2\" etc., ele está ESCOLHENDO aquele carro (1 = o primeiro que você mostrou nesta rodada).",
     `- Ao confirmar, ANTES de responder, chame atualizar_lead com veiculo_id = ID do carro escolhido (o [ID:X] daquele carro) e etapa_funil="${targetStage}". É isso que libera a próxima etapa (negociação).`,
     "- NÃO fique repetindo os detalhes do carro nem perguntando \"gostou?\" de novo depois que ele já confirmou. Confirmou → marca a etapa e passa adiante.",
+    "- Depois de confirmar, responda com UMA frase curta celebrando a escolha (sem repetir a ficha do carro). O fluxo segue sozinho para a negociação.",
   ].join("\n");
   const discoveryPrompt = base ? `${guard}\n\nOrientação extra da loja:\n${base}` : guard;
 
