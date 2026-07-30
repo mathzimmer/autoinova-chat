@@ -22,6 +22,8 @@ import {
   getConversationById,
   createMessage,
   setOpenOpportunityStage,
+  getSetting,
+  logTimeline,
 } from "./db";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import { getFlowSender } from "./flowChannelSender";
@@ -262,6 +264,22 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
 
   // Check for active session
   let session = await getActiveFlowSession(ctx.conversationId);
+
+  // A6 — TTL: sessão ativa parada há mais que o limite é cancelada (evita "agente
+  // grudado" em conversas antigas). Configurável via setting flow_session_ttl_hours.
+  if (session) {
+    let ttlHours = 24;
+    try { const raw = await getSetting("flow_session_ttl_hours"); if (raw) ttlHours = Number(raw) || 24; } catch { /* padrão 24 */ }
+    if (ttlHours > 0) {
+      const ageMs = Date.now() - new Date(session.updatedAt).getTime();
+      if (ageMs > ttlHours * 3600_000) {
+        console.log(`[FlowEngine] sessão ${session.id} expirada (~${Math.round(ageMs / 3600000)}h > ${ttlHours}h) → cancelada`);
+        await updateFlowSession(session.id, { status: "cancelled", completedAt: new Date() });
+        try { await logTimeline({ conversationId: ctx.conversationId, action: "flow_session_expired", details: { sessionId: session.id, ttlHours } }); } catch { /* opcional */ }
+        session = undefined;
+      }
+    }
+  }
 
   if (!session) {
     // Guarda anti-interrupção: não inicia um fluxo novo se um humano está atendendo
@@ -774,10 +792,16 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
 
   if (!pendingNextNodeId) return result;
 
-  // Clear the pending flag
+  // Clear the pending flag + A6: saída limpa do nó de IA — não deixa
+  // agente/instrução/tools do nó anterior "grudados" no próximo nó. Se o próximo
+  // nó for de IA (ai_response/coletar/apresentar), ele re-seta o que precisar.
   const newContext = { ...sessionCtx };
   delete newContext.pendingNextNodeId;
+  delete newContext.nodeAgentId; delete newContext.aiInstruction; delete newContext.nodeOnlyTools;
+  delete newContext.collectMode; delete newContext.collectTools;
+  delete newContext.discoveryMode; delete newContext.discoveryPrompt;
   await updateFlowSession(session.id, { context: newContext });
+  (session as any).context = newContext; // reflete em memória para o próximo nó
 
   // Load flow data and execute from the pending node
   const nodes = await listChatFlowNodes(session.flowId);
