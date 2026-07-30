@@ -21,6 +21,7 @@ import {
   listActiveFlowSessions,
   getConversationById,
   createMessage,
+  setOpenOpportunityStage,
 } from "./db";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import { getFlowSender } from "./flowChannelSender";
@@ -740,13 +741,27 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
       const targetIdx = FUNNEL_ORDER.indexOf(cfg.targetStage || "interesse_definido");
       const stageIdx = FUNNEL_ORDER.indexOf(stage);
       const baseIdx = Number(sessionCtx.discoveryBaseIdx ?? 0);
-      if ((stageIdx >= 0 && stageIdx >= targetIdx && stageIdx > baseIdx) || stage === "perdido") {
+      // Sinal 1: a IA marcou a etapa-alvo (funil andou pra frente dentro do nó)
+      const funnelAdvanced = (stageIdx >= 0 && stageIdx >= targetIdx && stageIdx > baseIdx) || stage === "perdido";
+      // Sinal 2 (determinístico, não depende da IA): cliente respondeu algo
+      // afirmativo E já existe um carro em jogo (interesse gravado). Isso cobre o
+      // caso da IA dizer "registrei" mas não chamar a tool pra mudar a etapa.
+      const msgLow = (ctx.customerMessage || "").trim().toLowerCase();
+      const affirmative = /(^|\s)(sim|isso|isso mesmo|gostei|amei|adorei|perfeito|fechou|fechado|quero esse|quero sim|é esse|e esse|pode ser|vamos|bora|top|show|maravilha|esse mesmo|esse a[ií]|esse|aham|claro)(\s|!|\.|$)/i.test(msgLow);
+      // Negação: evita "não gostei desse", "quero ver outros", etc. virarem confirmação
+      const negative = /(n[aã]o|nenhum|outro|outros|ver mais|mais op[cç]|prefiro|muda|troca de ideia)/i.test(msgLow);
+      const carInPlay = !!(lead2?.vehicleId || String(lead2?.vehicleInterest || "").trim());
+      if (funnelAdvanced || (affirmative && !negative && carInPlay)) {
         const edges0 = await listChatFlowEdges(session.flowId);
         const clean = { ...sessionCtx };
         delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
         delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt; delete clean.pendingNextNodeId;
         await updateFlowSession(session.id, { context: clean });
-        console.log(`[FlowEngine] vehicle_discovery: cliente confirmou (stage=${stage}) → avançando no mesmo turno`);
+        // Garante a etapa mínima de interesse pro restante do funil ficar coerente
+        if (!funnelAdvanced && lead2?.id) {
+          try { await setOpenOpportunityStage(lead2.id, cfg.targetStage || "interesse_definido"); } catch { /* noop */ }
+        }
+        console.log(`[FlowEngine] vehicle_discovery: confirmado (funnelAdvanced=${funnelAdvanced}, affirmative=${affirmative}, carInPlay=${carInPlay}) → avançando`);
         const nextEdge = edges0.find(e => e.sourceNodeId === curNode.id && (e.sourceHandle === "default" || !e.sourceHandle));
         result.handled = true;
         if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes0, edges0, session, ctx, result);
