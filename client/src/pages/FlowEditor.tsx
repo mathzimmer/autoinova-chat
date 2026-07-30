@@ -72,6 +72,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   ai_response: { label: "IA Livre", icon: Bot, color: "text-emerald-400", bgColor: "border-emerald-500/50 bg-emerald-500/5", description: "Deixar IA responder" },
   collect_with_ai: { label: "Coletar com IA", icon: Bot, color: "text-cyan-400", bgColor: "border-cyan-500/50 bg-cyan-500/5", description: "IA pede dados e insiste até coletar; avança com o que tiver" },
   vehicle_discovery: { label: "Apresentar com IA", icon: Car, color: "text-violet-400", bgColor: "border-violet-500/50 bg-violet-500/5", description: "IA busca e apresenta carros com foto até o cliente gostar de um" },
+  confirm_interest: { label: "Confirmar Interesse", icon: GitBranch, color: "text-sky-400", bgColor: "border-sky-500/50 bg-sky-500/5", description: "Se o lead já tem interesse, pergunta se segue com ele ou vê outros" },
   update_lead: { label: "Atualizar Lead", icon: UserCheck, color: "text-orange-400", bgColor: "border-orange-500/50 bg-orange-500/5", description: "Atualizar dados do lead" },
   assign_agent: { label: "Transferir", icon: UserCheck, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Transferir para humano" },
   delay: { label: "Delay", icon: Clock, color: "text-gray-400", bgColor: "border-gray-500/50 bg-gray-500/5", description: "Aguardar X segundos" },
@@ -128,6 +129,12 @@ function FlowNode({ data, selected, id }: NodeProps) {
       return [
         { id: "dentro", label: "Dentro ✓" },
         { id: "fora", label: "Fora 🌙" },
+      ];
+    }
+    if (nodeType === "confirm_interest") {
+      return [
+        { id: "confirmado", label: "Segue com esse ✓" },
+        { id: "descobrir", label: "Ver outros / sem interesse 🔍" },
       ];
     }
     return [{ id: "default", label: "" }];
@@ -594,6 +601,33 @@ function PropertiesPanel({
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground">A IA busca no estoque, mostra os carros com foto e conversa. Quando perceber que o cliente confirmou um carro, ela marca a etapa escolhida e o fluxo avança pro próximo nó (negociação). Se o cliente sumir e você definir o tempo de lembrete, avança pelo caminho padrão.</p>
+          </div>
+        )}
+
+        {nodeType === "confirm_interest" && (
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Pergunta ao cliente</Label>
+              <Textarea
+                value={config.question || ""}
+                onChange={(e) => updateConfig("question", e.target.value)}
+                placeholder="Vi que você tinha interesse no {{veiculo_interesse}}. Quer seguir com esse ou ver outras opções?"
+                rows={3}
+                className="text-sm"
+              />
+              <VarChips onInsert={(v) => updateConfig("question", (config.question || "") + v)} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Botão "seguir"</Label>
+                <Input value={config.yesLabel ?? "Seguir com esse"} maxLength={20} onChange={(e) => updateConfig("yesLabel", e.target.value)} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-xs">Botão "ver outros"</Label>
+                <Input value={config.noLabel ?? "Ver outras opções"} maxLength={20} onChange={(e) => updateConfig("noLabel", e.target.value)} className="h-8 text-sm" />
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Se o lead já vem com um veículo de interesse (funil ≥ interesse definido), ele pergunta com botões: "seguir" → saída <b>Segue com esse</b> (negociação); "ver outros" ou qualquer outra resposta → saída <b>Ver outros</b> (Apresentar com IA). Se o lead <b>não</b> tem interesse anterior, vai direto pela saída "Ver outros" sem perguntar.</p>
           </div>
         )}
 

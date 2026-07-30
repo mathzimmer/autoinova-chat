@@ -653,6 +653,26 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return handleDiscoveryStep(currentNode, edges, nodes, session, ctx, result, true);
   }
 
+  // Nó "Confirmar Interesse": cliente respondeu Sim (segue) ou Não/outro (descobrir)
+  if (currentNode.nodeType === "confirm_interest") {
+    const sctx = (session.context as any) || {};
+    const msg = (ctx.customerMessage || "").toLowerCase().trim();
+    const cfg = (currentNode.data as any) || {};
+    const yesId = String(sctx.confirmYesId || "").toLowerCase();
+    const yesText = String(cfg.yesLabel || "Seguir com esse").toLowerCase().trim();
+    const yesExact = new Set(["sim", "isso", "esse", "esse mesmo", "pode ser", "quero esse", "é esse", "aham", "claro", "sim quero", "quero sim", "continuo", "esse ai", "esse aí", "1"]);
+    const isYes = (!!yesId && msg === yesId) || msg === yesText || yesExact.has(msg);
+    const handle = isYes ? "confirmado" : "descobrir";
+    const clean = { ...sctx };
+    delete clean.confirmYesId; delete clean.confirmNoId; delete clean.waitingSince; delete clean.noReplyAttempts;
+    await updateFlowSession(session.id, { context: clean });
+    console.log(`[FlowEngine] confirm_interest: resposta="${msg}" → ${handle}`);
+    const nextEdge = edges.find(e => e.sourceNodeId === currentNode.id && e.sourceHandle === handle);
+    if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
+    else await updateFlowSession(session.id, { status: "completed" });
+    return result;
+  }
+
   // For condition node waiting for input
   if (currentNode.nodeType === "condition") {
     const condResult = evaluateCondition(currentNode, ctx);
@@ -707,6 +727,35 @@ export async function continueFlowAfterAI(conversationId: number, ctx: FlowConte
 
   const sessionCtx = (session.context as any) || {};
   const pendingNextNodeId = sessionCtx.pendingNextNodeId;
+
+  // Nó "Apresentar com IA": se a IA marcou a etapa-alvo NESTE turno (cliente
+  // confirmou um carro), avança na hora — sem esperar a próxima mensagem.
+  if (!pendingNextNodeId && sessionCtx.discoveryMode && session.currentNodeId) {
+    const nodes0 = await listChatFlowNodes(session.flowId);
+    const curNode = nodes0.find(n => n.id === session.currentNodeId);
+    if (curNode?.nodeType === "vehicle_discovery") {
+      const lead2: any = await getLeadByConversationId(conversationId).catch(() => null);
+      const stage: string = lead2?.funnelStatus || "novo";
+      const cfg = (curNode.data as any) || {};
+      const targetIdx = FUNNEL_ORDER.indexOf(cfg.targetStage || "interesse_definido");
+      const stageIdx = FUNNEL_ORDER.indexOf(stage);
+      const baseIdx = Number(sessionCtx.discoveryBaseIdx ?? 0);
+      if ((stageIdx >= 0 && stageIdx >= targetIdx && stageIdx > baseIdx) || stage === "perdido") {
+        const edges0 = await listChatFlowEdges(session.flowId);
+        const clean = { ...sessionCtx };
+        delete clean.discoveryRounds; delete clean.discoveryMode; delete clean.aiInstruction;
+        delete clean.nodeAgentId; delete clean.nodeOnlyTools; delete clean.discoveryBaseIdx; delete clean.discoveryPrompt; delete clean.pendingNextNodeId;
+        await updateFlowSession(session.id, { context: clean });
+        console.log(`[FlowEngine] vehicle_discovery: cliente confirmou (stage=${stage}) → avançando no mesmo turno`);
+        const nextEdge = edges0.find(e => e.sourceNodeId === curNode.id && (e.sourceHandle === "default" || !e.sourceHandle));
+        result.handled = true;
+        if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes0, edges0, session, ctx, result);
+        else await updateFlowSession(session.id, { status: "completed" });
+        return result;
+      }
+    }
+  }
+
   if (!pendingNextNodeId) return result;
 
   // Clear the pending flag
@@ -834,14 +883,19 @@ async function handleDiscoveryStep(
     "Você é um consultor de vendas da Auto Inova apresentando veículos no WhatsApp para um cliente que ainda NÃO decidiu qual carro quer.",
     "",
     "REGRAS (PRIORIDADE MÁXIMA — sobrepõem qualquer regra geral de formatação):",
+    "",
+    "APRESENTAR:",
     "- Para mostrar QUALQUER carro, chame a ferramenta apresentar_veiculo (UMA chamada por carro, com o veiculo_id). É ela que envia a FOTO.",
-    "- PROIBIDO listar carros em texto (nada de \"Opção 1, Opção 2...\", nada de escrever preço/ano/link no texto). Se você descrever o carro em texto em vez de chamar apresentar_veiculo, está ERRADO.",
-    `- A cada rodada: chame buscar_veiculos para achar opções reais → escolha até ${perBatch} → chame apresentar_veiculo para CADA uma → depois pergunte, em 1 frase curta, se gostou de alguma.`,
-    `- Máximo ${perBatch} carro(s) por rodada.`,
-    `- Ao chamar apresentar_veiculo, passe SEMPRE campos=${JSON.stringify(camposKeys)} para a legenda.`,
-    "- Se o cliente NÃO gostou, pergunte o estilo / faixa de preço / uso e busque OUTRAS opções — insista com novas sugestões.",
-    `- Quando o cliente CONFIRMAR claramente que gostou de um carro específico, chame atualizar_lead com o veiculo_id desse carro e etapa_funil="${targetStage}". Só faça isso quando houver confirmação clara — é o que libera a próxima etapa.`,
-    "- NUNCA invente carros: só apresente os que vieram de buscar_veiculos.",
+    "- PROIBIDO listar/descrever carros em texto. NÃO escreva introdução com os modelos (nada de \"Opção 1... Opção 2...\", nem \"tenho o XEi 2012, o GLi 2019...\"). No máximo UMA frase curta tipo \"Achei essas opções, olha só:\" e então as fotos.",
+    `- A cada rodada: chame buscar_veiculos → escolha até ${perBatch} → chame apresentar_veiculo para CADA um → depois pergunte, em 1 frase curta, se gostou de algum.`,
+    `- Máximo ${perBatch} carro(s) por rodada. Ao chamar apresentar_veiculo, passe SEMPRE campos=${JSON.stringify(camposKeys)}.`,
+    "- Se o cliente NÃO gostou, pergunte estilo / faixa de preço / uso e busque OUTRAS opções — insista com novas sugestões.",
+    "- NUNCA invente carros: só os que vieram de buscar_veiculos.",
+    "",
+    "CONFIRMAÇÃO (MUITO IMPORTANTE):",
+    "- Se o cliente demonstrar que gostou/escolheu um carro — ex.: \"gostei\", \"gostei do 2019\", \"esse\", \"quero esse\", \"pode ser\", \"ok\", \"esse aí\", \"o branco\" — isso É CONFIRMAÇÃO.",
+    `- Ao confirmar, ANTES de responder, chame atualizar_lead com veiculo_id = ID do carro escolhido (o [ID:X] daquele carro) e etapa_funil="${targetStage}". É isso que libera a próxima etapa (negociação).`,
+    "- NÃO fique repetindo os detalhes do carro nem perguntando \"gostou?\" de novo depois que ele já confirmou. Confirmou → marca a etapa e passa adiante.",
   ].join("\n");
   const discoveryPrompt = base ? `${guard}\n\nOrientação extra da loja:\n${base}` : guard;
 
@@ -1092,6 +1146,38 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
 
     case "vehicle_discovery": {
       await handleDiscoveryStep(node, edges, nodes, session, ctx, result, false);
+      break;
+    }
+
+    case "confirm_interest": {
+      const lead: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+      const interest: string = (lead?.vehicleInterest || "").trim();
+      const stage: string = lead?.funnelStatus || "novo";
+      const hasInterest = !!interest && FUNNEL_ORDER.indexOf(stage) >= FUNNEL_ORDER.indexOf("interesse_definido");
+      if (!hasInterest) {
+        // Sem interesse anterior → vai direto descobrir
+        console.log(`[FlowEngine] confirm_interest: sem interesse anterior → descobrir`);
+        const disc = edges.find(e => e.sourceNodeId === node.id && e.sourceHandle === "descobrir");
+        if (disc) await executeFromNode(disc.targetNodeId, nodes, edges, session, ctx, result, depth + 1);
+        else await updateFlowSession(session.id, { status: "completed" });
+        break;
+      }
+      // Tem interesse → pergunta se quer seguir com esse ou ver outros (botões)
+      const ctxVars: FlowContext = { ...ctx, leadData: lead };
+      const yesLabel = (config.yesLabel || "Seguir com esse").substring(0, 20);
+      const noLabel = (config.noLabel || "Ver outras opções").substring(0, 20);
+      const body = replaceVariables(config.question || `Vi que você tinha interesse no {{veiculo_interesse}}. Quer seguir com esse ou ver outras opções?`, ctxVars);
+      const buttons = [
+        { id: `confirm_yes_${node.id}`, title: yesLabel },
+        { id: `confirm_no_${node.id}`, title: noLabel },
+      ];
+      await outButtons(ctx, body, buttons);
+      result.interactiveMessages.push({ type: "buttons", data: { body, buttons } });
+      await updateFlowSession(session.id, {
+        currentNodeId: node.id,
+        context: { ...((session.context as any) || {}), confirmYesId: buttons[0].id, confirmNoId: buttons[1].id, waitingSince: Date.now(), noReplyAttempts: 0 },
+      });
+      result.waitingForInput = true;
       break;
     }
 

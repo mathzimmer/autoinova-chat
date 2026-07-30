@@ -4784,7 +4784,7 @@ const flowRouter = router({
       flowId: z.number(),
       nodes: z.array(z.object({
         id: z.number().optional(),
-        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number", "collect_with_ai", "vehicle_discovery"]),
+        nodeType: z.enum(["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number", "collect_with_ai", "vehicle_discovery", "confirm_interest"]),
         label: z.string().optional(),
         data: z.any(),
         positionX: z.number(),
