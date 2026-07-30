@@ -89,6 +89,13 @@ export default function Agents() {
     },
     onError: (err) => toast.error(err.message),
   });
+  const migrateLegacyMutation = trpc.agent.migrateLegacyFlowPrompts.useMutation({
+    onSuccess: (res) => {
+      toast.success(res.count > 0 ? `Fluxos migrados para agentes: ${res.migrated.join(", ")}` : "Nenhum fluxo com prompt legado para migrar.");
+      agentsQuery.refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const setDefaultMutation = trpc.agent.setDefaultAgent.useMutation({
     onSuccess: () => { toast.success("Agente padrão definido"); defaultAgentQuery.refetch(); },
     onError: (err) => toast.error(err.message),
@@ -242,6 +249,10 @@ export default function Agents() {
           <Button variant="outline" onClick={() => seedPrincipalMutation.mutate()} disabled={seedPrincipalMutation.isPending} className="gap-2">
             <Zap className="h-4 w-4" />
             Criar Atendente Principal
+          </Button>
+          <Button variant="outline" onClick={() => migrateLegacyMutation.mutate()} disabled={migrateLegacyMutation.isPending} className="gap-2">
+            <Wrench className="h-4 w-4" />
+            Migrar fluxos antigos
           </Button>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />

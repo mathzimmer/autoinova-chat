@@ -288,7 +288,7 @@ async function initDebounce() {
                 flowPrompt: flow.aiPrompt,
                 flowInstruction: sessionCtx.aiInstruction || undefined,
               };
-              console.log(`[Debounce] Conversa ${conversationId}: usando prompt legado do fluxo "${flow.name}"`);
+              console.log(`[Debounce] Conversa ${conversationId}: ⚠️ usando prompt LEGADO do fluxo "${flow.name}" (aiPrompt). Rode "Migrar fluxos antigos" na tela de Agentes para converter em agente.`);
             }
           }
         }
@@ -5230,6 +5230,38 @@ LGPD → só colete dados necessários ao estágio atual; se o cliente pedir par
     });
     await setDefaultAiAgent(rec.id); // vira o agente padrão da loja
     return { created: true, id: rec.id, name: "Atendente Principal" };
+  }),
+
+  /**
+   * PR A2 — mata o "prompt legado" (chatFlows.aiPrompt) que sequestrava a cadeia:
+   * cada fluxo com aiPrompt e SEM agente vinculado vira um agente "Legado — <fluxo>"
+   * (sem camadas globais) e o fluxo passa a apontar para ele. NÃO toca em nenhuma
+   * conversa — só nas tabelas de agentes/fluxos, então nada é ativado sozinho.
+   * Idempotente: rode quantas vezes quiser.
+   */
+  migrateLegacyFlowPrompts: adminProcedure.mutation(async ({ ctx }) => {
+    const flows = await listChatFlows();
+    const stockTools = ["buscar_veiculos", "buscar_veiculo_por_id", "apresentar_veiculo", "resumo_estoque", "atualizar_lead", "enviar_botoes", "enviar_lista"];
+    const migrated: string[] = [];
+    for (const f of flows) {
+      if (f.aiPrompt && f.aiPrompt.trim() && !f.agentId) {
+        const rec = await createAiAgent({
+          name: `Legado — ${f.name}`.slice(0, 255),
+          description: `Agente criado a partir do prompt legado do fluxo "${f.name}".`,
+          systemPrompt: f.aiPrompt,
+          includeCoreLayers: false,
+          model: "gpt-4o-mini",
+          temperature: "0.7",
+          maxTokens: 1024,
+          enabledTools: stockTools,
+          active: true,
+          createdBy: ctx.user.id,
+        });
+        await updateChatFlow(f.id, { agentId: rec.id });
+        migrated.push(f.name);
+      }
+    }
+    return { migrated, count: migrated.length };
   }),
 });
 
