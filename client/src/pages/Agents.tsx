@@ -81,6 +81,14 @@ export default function Agents() {
     },
     onError: (err) => toast.error(err.message),
   });
+  const seedPrincipalMutation = trpc.agent.seedAtendentePrincipal.useMutation({
+    onSuccess: (res) => {
+      toast.success(res.created ? `Agente "${res.name}" criado e definido como padrão` : `"${res.name}" já existia — definido como padrão`);
+      agentsQuery.refetch();
+      defaultAgentQuery.refetch();
+    },
+    onError: (err) => toast.error(err.message),
+  });
   const setDefaultMutation = trpc.agent.setDefaultAgent.useMutation({
     onSuccess: () => { toast.success("Agente padrão definido"); defaultAgentQuery.refetch(); },
     onError: (err) => toast.error(err.message),
@@ -219,6 +227,10 @@ export default function Agents() {
           <Button variant="outline" onClick={() => seedMutation.mutate()} disabled={seedMutation.isPending} className="gap-2">
             <Zap className="h-4 w-4" />
             Criar agentes prontos
+          </Button>
+          <Button variant="outline" onClick={() => seedPrincipalMutation.mutate()} disabled={seedPrincipalMutation.isPending} className="gap-2">
+            <Zap className="h-4 w-4" />
+            Criar Atendente Principal
           </Button>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
