@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
+import StockAiSettings from "./StockAiSettings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -132,6 +133,9 @@ export default function CrmAiSettings() {
           {saveMutation.isPending ? "Salvando..." : "Salvar Parametrização"}
         </Button>
       </div>
+
+      {/* Estoque para IA (curadoria + campos) */}
+      <StockAiSettings />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* CARD 1: Funil de Vendas e Temperaturas */}

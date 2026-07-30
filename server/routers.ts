@@ -2419,6 +2419,26 @@ const vehicleRouter = router({
       const result = await syncStock();
       return result;
     }),
+
+  /** Config "Estoque para IA": quais campos a IA vê + curadoria (limpa lixo). */
+  getAiConfig: protectedProcedure.query(async () => {
+    const { getStockAiConfig, STOCK_AI_FIELDS } = await import("./stockSync");
+    return { config: await getStockAiConfig(), campos: STOCK_AI_FIELDS };
+  }),
+
+  setAiConfig: adminProcedure
+    .input(z.object({
+      fields: z.array(z.string()).min(1),
+      labels: z.record(z.string(), z.string()).default({}),
+      onlyKnownVehicles: z.boolean(),
+      hideNoPrice: z.boolean(),
+      hideNoPhoto: z.boolean(),
+      hideCategories: z.array(z.string()).default([]),
+    }))
+    .mutation(async ({ input }) => {
+      await upsertSetting("ai_stock_config", JSON.stringify(input));
+      return { success: true };
+    }),
 });
 
 const webhookRouter = router({

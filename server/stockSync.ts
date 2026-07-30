@@ -7,7 +7,7 @@
 import axios from "axios";
 import { eq, notInArray } from "drizzle-orm";
 import { vehicles, InsertVehicle } from "../drizzle/schema";
-import { getDb } from "./db";
+import { getDb, getSetting } from "./db";
 
 const STOCK_URL = "https://autoconf-prod.s3.sa-east-1.amazonaws.com/carros-na-serra/642av2OVG5XVCHO5GK8IvGGM5Pqo1JwOYe8swwXv.json";
 
@@ -204,6 +204,116 @@ async function syncStock(): Promise<SyncResult> {
 /**
  * Get a summary of the current stock for the AI agent
  */
+// ═══════════════════════════════════════════════════════════════
+// Configuração "Estoque para IA" — define O QUE a IA vê de cada veículo
+// (campos + rótulos) e QUAIS veículos podem ser ofertados (curadoria).
+// ═══════════════════════════════════════════════════════════════
+
+/** Catálogo de campos disponíveis para a ficha da IA (para a tela de config). */
+export const STOCK_AI_FIELDS = [
+  { key: "titulo", label: "Título" },
+  { key: "versao", label: "Versão" },
+  { key: "ano", label: "Ano" },
+  { key: "km", label: "KM" },
+  { key: "cambio", label: "Câmbio" },
+  { key: "cor", label: "Cor" },
+  { key: "combustivel", label: "Combustível" },
+  { key: "preco", label: "Preço" },
+  { key: "opcionais", label: "Opcionais" },
+  { key: "portas", label: "Portas" },
+  { key: "tipo", label: "Tipo" },
+  { key: "categoria", label: "Categoria" },
+  { key: "descricao", label: "Descrição" },
+  { key: "link", label: "Link" },
+] as const;
+
+export interface StockAiConfig {
+  fields: string[];                 // campos exibidos (na ordem)
+  labels: Record<string, string>;   // rótulos personalizados por campo
+  onlyKnownVehicles: boolean;       // só carros/motos (esconde barco etc.)
+  hideNoPrice: boolean;             // esconde sem preço
+  hideNoPhoto: boolean;             // esconde sem foto
+  hideCategories: string[];         // categorias a esconder (blocklist)
+}
+
+export const DEFAULT_STOCK_AI_CONFIG: StockAiConfig = {
+  fields: ["titulo", "ano", "km", "cambio", "preco", "link"],
+  labels: {},
+  onlyKnownVehicles: true,
+  hideNoPrice: true,
+  hideNoPhoto: false,
+  hideCategories: [],
+};
+
+const DEFAULT_LABELS: Record<string, string> = Object.fromEntries(STOCK_AI_FIELDS.map(f => [f.key, f.label]));
+
+export async function getStockAiConfig(): Promise<StockAiConfig> {
+  try {
+    const raw = await getSetting("ai_stock_config");
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        fields: Array.isArray(p.fields) && p.fields.length ? p.fields : DEFAULT_STOCK_AI_CONFIG.fields,
+        labels: p.labels && typeof p.labels === "object" ? p.labels : {},
+        onlyKnownVehicles: p.onlyKnownVehicles ?? DEFAULT_STOCK_AI_CONFIG.onlyKnownVehicles,
+        hideNoPrice: p.hideNoPrice ?? DEFAULT_STOCK_AI_CONFIG.hideNoPrice,
+        hideNoPhoto: p.hideNoPhoto ?? DEFAULT_STOCK_AI_CONFIG.hideNoPhoto,
+        hideCategories: Array.isArray(p.hideCategories) ? p.hideCategories : [],
+      };
+    }
+  } catch { /* usa padrão */ }
+  return DEFAULT_STOCK_AI_CONFIG;
+}
+
+function fmtStockPrice(v: any): string {
+  return v.promotionPrice && v.promotionPrice < v.price
+    ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
+    : `R$ ${v.price.toLocaleString("pt-BR")}`;
+}
+
+function stockFieldValue(v: any, key: string): string | null {
+  switch (key) {
+    case "titulo": return v.title || `${v.brand} ${v.model}`.trim() || null;
+    case "versao": return v.version || null;
+    case "ano": return v.year ? String(v.year) : null;
+    case "km": return v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : null;
+    case "cambio": return v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : (v.transmission || null);
+    case "cor": return v.color || null;
+    case "combustivel": return v.fuel || null;
+    case "preco": return v.price ? fmtStockPrice(v) : null;
+    case "opcionais": return Array.isArray(v.features) && v.features.length ? v.features.slice(0, 8).join(", ") : null;
+    case "portas": return v.doors ? String(v.doors) : null;
+    case "tipo": return v.vehicleType || null;
+    case "categoria": return v.category === "motos" ? "Moto" : v.category === "carros" ? "Carro" : (v.category || null);
+    case "descricao": return v.description ? String(v.description).replace(/\s+/g, " ").slice(0, 300) : null;
+    case "link": return v.url || null;
+    default: return null;
+  }
+}
+
+/** Monta a ficha do veículo pra IA conforme a config (campos escolhidos + rótulos). */
+export function buildVehicleFicha(v: any, cfg: StockAiConfig, sep: string): string {
+  const parts: string[] = [];
+  for (const key of cfg.fields) {
+    const val = stockFieldValue(v, key);
+    if (!val) continue;
+    if (key === "titulo") { parts.push(val); continue; } // título vem "puro", sem rótulo
+    const label = cfg.labels[key] || DEFAULT_LABELS[key] || key;
+    parts.push(`${label}: ${val}`);
+  }
+  return parts.join(sep);
+}
+
+/** True se o veículo PODE ser ofertado pela IA (curadoria — tira lixo do feed). */
+export function passesStockCuration(v: any, cfg: StockAiConfig): boolean {
+  const cat = (v.category || "").toLowerCase().trim();
+  if (cfg.onlyKnownVehicles && cat && !["carros", "motos"].includes(cat)) return false;
+  if (cfg.hideCategories.some(c => cat === String(c).toLowerCase().trim())) return false;
+  if (cfg.hideNoPrice && (!v.price || v.price <= 0)) return false;
+  if (cfg.hideNoPhoto && !v.imageUrl && !(Array.isArray(v.images) && v.images.length)) return false;
+  return true;
+}
+
 async function getStockSummaryForAI(): Promise<string> {
   const db = await getDb();
   if (!db) return "Estoque indisponível no momento.";
@@ -264,15 +374,8 @@ async function getVehicleByIdForAI(vehicleId: number): Promise<{ found: boolean;
     return { found: false, text: `O veículo ${v.brand} ${v.model} ${v.year} (ID:${v.id}) não está mais disponível. Pode ter sido vendido recentemente.`, vehicle: v };
   }
 
-  const priceStr = v.promotionPrice && v.promotionPrice < v.price
-    ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
-    : `R$ ${v.price.toLocaleString("pt-BR")}`;
-   const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
-  const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
-  const categoryStr = v.category === "motos" ? "Moto" : v.category === "carros" ? "Carro" : v.category || "N/I";
-  const typeStr = v.vehicleType || "N/I";
-
-  const text = `VE\u00cdCULO DO AN\u00daCIO (ID:${v.id}):\n${v.title || `${v.brand} ${v.model}`}\nCategoria: ${categoryStr}\nTipo: ${typeStr}\nAno: ${v.year}\nCor: ${v.color || "N/I"}\nQuilometragem: ${mileageStr}\nC\u00e2mbio: ${transStr}\nCombust\u00edvel: ${v.fuel || "N/I"}\nPre\u00e7o: ${priceStr}\nLink: ${v.url || "N/I"}`;
+  const stockCfg = await getStockAiConfig();
+  const text = `VE\u00cdCULO DO AN\u00daCIO (ID:${v.id}):\n${buildVehicleFicha(v, stockCfg, "\n")}`;
 
   return { found: true, text, vehicle: v };
 }
@@ -298,10 +401,14 @@ async function searchVehiclesForAI(filters: {
   const db = await getDb();
   if (!db) return "Estoque indisponível no momento.";
 
+  const stockCfg = await getStockAiConfig();
   let allVehicles = await db
     .select()
     .from(vehicles)
     .where(eq(vehicles.available, true));
+
+  // Curadoria: remove o que a config manda esconder (barco, sem preço/foto, etc.)
+  allVehicles = allVehicles.filter(v => passesStockCuration(v, stockCfg));
 
   // Apply filters with fuzzy keyword matching
   // Helper: check if ANY keyword matches in ANY of the vehicle's text fields
@@ -516,14 +623,7 @@ async function searchVehiclesForAI(filters: {
   }
 
   const vehicleList = sorted.map((v, i) => {
-    const priceStr = v.promotionPrice && v.promotionPrice < v.price
-      ? `R$ ${v.price.toLocaleString("pt-BR")} (promo\u00e7\u00e3o: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
-      : `R$ ${v.price.toLocaleString("pt-BR")}`;
-    const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
-    const transStr = v.transmission === "automatic" ? "Autom\u00e1tico" : v.transmission === "manual" ? "Manual" : v.transmission || "";
-    const catStr = v.category === "motos" ? "Moto" : v.category === "carros" ? "Carro" : v.category || "";
-    const typeStr = v.vehicleType || "";
-    return `Op\u00e7\u00e3o ${startIndex + i + 1}: [ID:${v.id}] ${v.title || `${v.brand} ${v.model}`} - ${catStr} - ${typeStr} - ${v.year} - ${v.color || ""} - ${mileageStr} - ${transStr} - ${priceStr} - ${v.url || ""}`;
+    return `Op\u00e7\u00e3o ${startIndex + i + 1}: [ID:${v.id}] ${buildVehicleFicha(v, stockCfg, " | ")}`;
   }).join("\n");
 
   const remaining = allVehicles.length - (startIndex + sorted.length);
