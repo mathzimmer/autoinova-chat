@@ -1149,7 +1149,7 @@ export async function processAIMessage(
               pagina: args.pagina,
             });
             // Rastreia os IDs retornados (na ordem) p/ o nó resolver seleção numérica
-            const searchIds = [...toolResult.matchAll(/\[ID:(\d+)\]/g)].map(m => Number(m[1]));
+            const searchIds = Array.from(toolResult.matchAll(/\[ID:(\d+)\]/g)).map(m => Number(m[1]));
             if (searchIds.length > 0) trackDiscoveryIds(conversation.id, { searchIds }).catch(() => {});
             // Extract result count from the response
             const countMatch = toolResult.match(/(\d+)\s*(ve\u00edculos?|resultados?|encontrados?)/i);

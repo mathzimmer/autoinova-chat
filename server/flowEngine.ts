@@ -675,6 +675,11 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
     return handleDiscoveryStep(currentNode, edges, nodes, session, ctx, result, true);
   }
 
+  // Nó "Coletar Dados (Sequência)": cliente respondeu → extrai o dado do passo e segue
+  if (currentNode.nodeType === "collect_sequence") {
+    return handleCollectSequenceStep(currentNode, edges, nodes, session, ctx, result, true);
+  }
+
   // Nó "Confirmar Interesse": cliente respondeu Sim (segue) ou Não/outro (descobrir)
   if (currentNode.nodeType === "confirm_interest") {
     const sctx = (session.context as any) || {};
@@ -1018,6 +1023,161 @@ async function handleDiscoveryStep(
   return result;
 }
 
+// ─── Nó "Coletar Dados (Sequência)" — fase 3 da arquitetura ───
+// Cadeia determinística de perguntas fixas (ex.: entrada → prazo → CPF;
+// modelo → ano → km → fotos). A ORDEM é garantida pelo motor: não existe
+// caminho que pule passo. A IA (NLU) só extrai a resposta de cada passo —
+// ela nunca decide a pergunta seguinte.
+type CollectSeqStep = {
+  key?: string;        // campo do lead a gravar (opcional p/ kind "photo")
+  label: string;
+  question: string;    // pergunta fixa (aceita variáveis {{nome}}, {{veiculo}}…)
+  kind: "money" | "months" | "cpf" | "year" | "km" | "text" | "photo";
+  optional?: boolean;
+};
+
+const COLLECT_SEQ_EXPECTING: Record<string, string> = {
+  money: "down_payment",
+  months: "term_months",
+  year: "trade_year",
+  km: "trade_km",
+};
+
+const COLLECT_SEQ_ENTITY: Record<string, string> = {
+  money: "downPayment",
+  months: "termMonths",
+  cpf: "cpf",
+  year: "tradeYear",
+  km: "tradeKm",
+};
+
+const COLLECT_SEQ_RETRY: Record<string, string> = {
+  money: "Não entendi o valor 🤔 Me diz em números, tipo 20000 ou 20 mil?",
+  months: "Me confirma o prazo em meses? Ex.: 36, 48 ou 60.",
+  cpf: "Me passa o CPF (11 dígitos)? Pode ser com ou sem pontos.",
+  year: "Qual o ano? Ex.: 2018.",
+  km: "Quantos km rodados? Só o número, ex.: 85000.",
+  text: "Pode repetir? Não consegui registrar.",
+  photo: "Não recebi a foto 🤔 Pode enviar de novo aqui mesmo?",
+};
+
+async function handleCollectSequenceStep(
+  node: ChatFlowNode,
+  edges: ChatFlowEdge[],
+  nodes: ChatFlowNode[],
+  session: { id: number; conversationId: number; flowId: number; context: any },
+  ctx: FlowContext,
+  result: FlowResult,
+  isResume: boolean,
+): Promise<FlowResult> {
+  const cfg = (node.data as any) || {};
+  const steps: CollectSeqStep[] = Array.isArray(cfg.steps) ? cfg.steps.filter((s: any) => s && s.question) : [];
+  const maxAttempts = Number(cfg.maxAttempts ?? 2);
+  const sctx = (session.context as any) || {};
+  const lead: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+  const isFilled = (s: CollectSeqStep) => !!(s.key && lead && String(lead[s.key] || "").trim());
+
+  let stepIdx = isResume ? Number(sctx.collectSeqStepIdx ?? 0) : 0;
+  if (!isResume) {
+    // Regra "nunca perguntar o que já tem": pula passos já preenchidos no lead
+    while (stepIdx < steps.length && isFilled(steps[stepIdx])) stepIdx++;
+  }
+
+  // ── RESUME: extrai a resposta do passo que estava em aberto ──
+  if (isResume && sctx.collectSeq) {
+    const prevIdx = Number(sctx.collectSeqStepIdx ?? 0);
+    const prev = steps[prevIdx];
+    if (prev) {
+      const msg = (ctx.customerMessage || "").trim();
+      let value: string | null = null;
+
+      if (prev.kind === "photo") {
+        // Imagem chega como "[IMAGEM: url]" (debounce) ou "[Imagem recebida]" (oficial)
+        if (/\[imagem|\[foto|📷/i.test(msg)) value = "recebidas";
+      } else if (prev.kind === "text") {
+        if (msg.length >= 2) value = msg;
+      } else {
+        try {
+          const nlu = await classifyMessage({ text: msg, context: { expecting: COLLECT_SEQ_EXPECTING[prev.kind], state: "COLETA_SEQUENCIA" } });
+          console.log(`[FlowEngine] NLU (collect_sequence): kind=${prev.kind} intent=${nlu.intent} via=${nlu.via}`);
+          logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "NLU_CLASSIFIED", payload: { text: msg.slice(0, 120), intent: nlu.intent, via: nlu.via, confidence: nlu.confidence, entities: nlu.entities, stepKind: prev.kind } });
+          const entKey = COLLECT_SEQ_ENTITY[prev.kind];
+          const raw = entKey ? (nlu.entities as any)?.[entKey] : null;
+          if (raw !== undefined && raw !== null && raw !== "") value = String(raw);
+        } catch (nluErr) {
+          console.error("[FlowEngine] NLU error (collect_sequence):", nluErr);
+        }
+      }
+
+      if (value != null) {
+        // Grava o dado e avança o passo
+        try {
+          if (prev.kind === "photo") {
+            const leadNow: any = await getLeadByConversationId(ctx.conversationId).catch(() => null);
+            const stamp = new Date().toISOString().slice(0, 10);
+            await upsertLead({ conversationId: ctx.conversationId, phone: ctx.phone, notes: `${leadNow?.notes ? leadNow.notes + "\n" : ""}[${stamp}] Fotos recebidas (${prev.label})` } as any);
+          } else if (prev.key) {
+            const out = prev.kind === "months" ? `${value}x` : value;
+            await upsertLead({ conversationId: ctx.conversationId, phone: ctx.phone, [prev.key]: out } as any);
+          }
+          console.log(`[FlowEngine] collect_sequence: passo "${prev.label}" = ${value}`);
+        } catch (saveErr) {
+          console.error("[FlowEngine] collect_sequence: erro ao gravar:", saveErr);
+        }
+        stepIdx = prevIdx + 1;
+        while (stepIdx < steps.length && isFilled(steps[stepIdx])) stepIdx++;
+        await updateFlowSession(session.id, { context: { ...sctx, collectSeqStepIdx: stepIdx, collectSeqAttempts: 0 } });
+      } else {
+        // Não extraiu → repete a pergunta (com limite de tentativas)
+        const attempts = Number(sctx.collectSeqAttempts ?? 0) + 1;
+        if (attempts > maxAttempts) {
+          console.log(`[FlowEngine] collect_sequence: passo "${prev.label}" esgotou tentativas → pulando`);
+          logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "FALLBACK_TRIGGERED", payload: { reason: "max_attempts", step: prev.label, kind: prev.kind, message: msg.slice(0, 120) } });
+          stepIdx = prevIdx + 1;
+          while (stepIdx < steps.length && isFilled(steps[stepIdx])) stepIdx++;
+          await updateFlowSession(session.id, { context: { ...sctx, collectSeqStepIdx: stepIdx, collectSeqAttempts: 0 } });
+        } else {
+          await updateFlowSession(session.id, { context: { ...sctx, collectSeqAttempts: attempts } });
+          const retry = replaceVariables(COLLECT_SEQ_RETRY[prev.kind] || COLLECT_SEQ_RETRY.text, ctx);
+          await outText(ctx, retry);
+          result.responses.push(retry);
+          result.handled = true;
+          result.waitingForInput = true;
+          return result;
+        }
+      }
+    }
+  }
+
+  // ── Concluiu todos os passos (ou nó sem passos) → avança o fluxo ──
+  if (steps.length === 0 || stepIdx >= steps.length) {
+    const clean = { ...sctx };
+    delete clean.collectSeq; delete clean.collectSeqStepIdx; delete clean.collectSeqAttempts;
+    await updateFlowSession(session.id, { context: clean });
+    if (cfg.targetStage && lead?.id) { try { await setOpenOpportunityStage(lead.id, cfg.targetStage); } catch { /* noop */ } }
+    const nextEdge = edges.find(e => e.sourceNodeId === node.id && (e.sourceHandle === "default" || !e.sourceHandle));
+    console.log(`[FlowEngine] collect_sequence: cadeia concluída → avançando`);
+    logFlowEvent({ sessionId: session.id, conversationId: ctx.conversationId, flowId: session.flowId, nodeId: node.id, event: "STATE_TRANSITION", payload: { from: "collect_sequence", toNodeId: nextEdge?.targetNodeId ?? null, targetStage: cfg.targetStage || null } });
+    if (nextEdge) await executeFromNode(nextEdge.targetNodeId, nodes, edges, session, ctx, result);
+    else await updateFlowSession(session.id, { status: "completed" });
+    result.handled = true;
+    return result;
+  }
+
+  // ── Pergunta o passo atual (pergunta FIXA configurada — a IA não inventa) ──
+  const step = steps[stepIdx];
+  await updateFlowSession(session.id, {
+    currentNodeId: node.id,
+    context: { ...sctx, collectSeq: true, collectSeqStepIdx: stepIdx, collectSeqAttempts: 0, waitingSince: Date.now() },
+  });
+  const q = replaceVariables(step.question, ctx);
+  await outText(ctx, q);
+  result.responses.push(q);
+  result.handled = true;
+  result.waitingForInput = true;
+  return result;
+}
+
 async function executeFromNode(
   nodeId: number,
   nodes: ChatFlowNode[],
@@ -1255,6 +1415,11 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
 
     case "vehicle_discovery": {
       await handleDiscoveryStep(node, edges, nodes, session, ctx, result, false);
+      break;
+    }
+
+    case "collect_sequence": {
+      await handleCollectSequenceStep(node, edges, nodes, session, ctx, result, false);
       break;
     }
 

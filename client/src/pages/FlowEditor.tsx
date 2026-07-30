@@ -33,7 +33,7 @@ import {
   MessageSquare, MousePointerClick, List, Image, GitBranch,
   Bot, UserCheck, Clock, Square, Play, MessageCircle,
   ChevronDown, GripVertical, Cpu, UserPlus, Camera, Car,
-  Thermometer, Activity,
+  Thermometer, Activity, ListOrdered,
 } from "lucide-react";
 // ─── Funnel Status Labels ─────────────────────────────────────
 const FUNNEL_STATUS_LABELS: Record<string, string> = {
@@ -72,6 +72,7 @@ const NODE_TYPES_CONFIG: Record<string, {
   ai_response: { label: "IA Livre", icon: Bot, color: "text-emerald-400", bgColor: "border-emerald-500/50 bg-emerald-500/5", description: "Deixar IA responder" },
   collect_with_ai: { label: "Coletar com IA", icon: Bot, color: "text-cyan-400", bgColor: "border-cyan-500/50 bg-cyan-500/5", description: "IA pede dados e insiste até coletar; avança com o que tiver" },
   vehicle_discovery: { label: "Apresentar com IA", icon: Car, color: "text-violet-400", bgColor: "border-violet-500/50 bg-violet-500/5", description: "IA busca e apresenta carros com foto até o cliente gostar de um" },
+  collect_sequence: { label: "Coletar Dados (Sequência)", icon: ListOrdered, color: "text-emerald-400", bgColor: "border-emerald-500/50 bg-emerald-500/5", description: "Perguntas fixas em ordem garantida (ex.: entrada → prazo → CPF) — a IA não inventa o fluxo" },
   confirm_interest: { label: "Confirmar Interesse", icon: GitBranch, color: "text-sky-400", bgColor: "border-sky-500/50 bg-sky-500/5", description: "Se o lead já tem interesse, pergunta se segue com ele ou vê outros" },
   update_lead: { label: "Atualizar Lead", icon: UserCheck, color: "text-orange-400", bgColor: "border-orange-500/50 bg-orange-500/5", description: "Atualizar dados do lead" },
   assign_agent: { label: "Transferir", icon: UserCheck, color: "text-red-400", bgColor: "border-red-500/50 bg-red-500/5", description: "Transferir para humano" },
@@ -628,6 +629,97 @@ function PropertiesPanel({
               </div>
             </div>
             <p className="text-[10px] text-muted-foreground">Se o lead já vem com um veículo de interesse (funil ≥ interesse definido), ele pergunta com botões: "seguir" → saída <b>Segue com esse</b> (negociação); "ver outros" ou qualquer outra resposta → saída <b>Ver outros</b> (Apresentar com IA). Se o lead <b>não</b> tem interesse anterior, vai direto pela saída "Ver outros" sem perguntar.</p>
+          </div>
+        )}
+
+        {nodeType === "collect_sequence" && (
+          <div className="space-y-3">
+            <div>
+              <Label className="text-xs">Cadeias prontas (clique para preencher)</Label>
+              <div className="flex gap-2 mt-1">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => updateConfig("steps", [
+                    { key: "downPayment", label: "Entrada", kind: "money", question: "Perfeito! Pra simular o financiamento do {{veiculo}}, quanto você consegue dar de entrada? 💰" },
+                    { key: "creditConditions", label: "Prazo", kind: "months", question: "E em quantas vezes você quer dividir? (ex.: 36, 48, 60)" },
+                    { key: "cpf", label: "CPF", kind: "cpf", question: "Pra finalizar a simulação, me passa o seu CPF? (pode ser com pontos)" },
+                  ])}
+                >
+                  💰 Financiamento
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-xs h-7"
+                  onClick={() => updateConfig("steps", [
+                    { key: "tradeVehicle", label: "Modelo da troca", kind: "text", question: "Qual o modelo do carro que você quer dar na troca?" },
+                    { key: "tradeYear", label: "Ano da troca", kind: "year", question: "Qual o ano dele?" },
+                    { key: "tradeKm", label: "KM da troca", kind: "km", question: "Quantos km rodados?" },
+                    { label: "Fotos da troca", kind: "photo", question: "Por último, me manda fotos dele aqui? 📸 Frente, traseira, painel e interior." },
+                  ])}
+                >
+                  🔄 Troca
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Passos (a ordem é garantida — um de cada vez)</Label>
+              {((config.steps as any[]) || []).map((s, i) => (
+                <div key={i} className="rounded-md border border-border p-2 space-y-1.5 bg-accent/20">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium text-foreground">{i + 1}. {s.label || s.kind}</span>
+                    <div className="flex items-center gap-1">
+                      <Badge variant="secondary" className="text-[9px]">{s.kind}</Badge>
+                      <button
+                        type="button"
+                        onClick={() => updateConfig("steps", ((config.steps as any[]) || []).filter((_, j) => j !== i))}
+                        className="text-muted-foreground hover:text-destructive"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  </div>
+                  <Textarea
+                    value={s.question || ""}
+                    onChange={(e) => updateConfig("steps", ((config.steps as any[]) || []).map((x, j) => j === i ? { ...x, question: e.target.value } : x))}
+                    rows={2}
+                    className="text-xs"
+                  />
+                </div>
+              ))}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs h-7 w-full"
+                onClick={() => updateConfig("steps", [...((config.steps as any[]) || []), { key: "notes", label: "Novo passo", kind: "text", question: "" }])}
+              >
+                <Plus className="h-3 w-3 mr-1" /> Adicionar passo
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-xs">Tentativas por passo</Label>
+                <Input type="number" min={1} max={5} value={config.maxAttempts ?? 2} onChange={(e) => updateConfig("maxAttempts", parseInt(e.target.value) || 2)} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-xs">Etapa ao concluir</Label>
+                <Select value={config.targetStage || "none"} onValueChange={(v) => updateConfig("targetStage", v === "none" ? null : v)}>
+                  <SelectTrigger className="h-8 text-sm mt-0.5"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Não mudar</SelectItem>
+                    <SelectItem value="pagamento_definido">Pagamento definido</SelectItem>
+                    <SelectItem value="dados_pessoais">Dados pessoais</SelectItem>
+                    <SelectItem value="dados_troca">Dados da troca</SelectItem>
+                    <SelectItem value="encaminhado_vendedor">Encaminhado ao vendedor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground">Perguntas fixas, uma por vez, na ordem configurada — a IA (NLU) só extrai a resposta de cada passo, nunca inventa a próxima pergunta. Passos já preenchidos no lead são pulados automaticamente. Esgotadas as tentativas, o passo é pulado e a cadeia segue.</p>
           </div>
         )}
 
