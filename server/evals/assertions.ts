@@ -66,3 +66,26 @@ export function verificarTools(
     proibidasChamadas: proibidas.filter(t => set.has(t)),
   };
 }
+
+function norm(s: string): string {
+  return (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Detecta REAPRESENTAÇÃO de veículo (o bug do "Celta" — PR A7).
+ * `titulosApresentados`: títulos que o bot JÁ apresentou na conversa.
+ * Só acusa quando a resposta tem CARA de apresentação (linha "Ano: XXXX" ou
+ * link /carros/) E repete um título já apresentado. Confirmar a escolha
+ * mencionando o título ("Ótimo, o Celta! Vamos avançar...") NÃO é reapresentar.
+ * Retorna o título reapresentado ou null.
+ */
+export function reapresentouVeiculo(resposta: string, titulosApresentados: string[]): string | null {
+  const temCaraDeApresentacao = /Ano\s*:\s*\d{4}/i.test(resposta) || resposta.includes("/carros/");
+  if (!temCaraDeApresentacao) return null;
+  const r = norm(resposta);
+  for (const t of titulosApresentados) {
+    const nt = norm(t);
+    if (nt.length >= 4 && r.includes(nt)) return t;
+  }
+  return null;
+}

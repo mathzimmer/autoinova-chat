@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { contemMarkdown, ofereceDesconto, contarPerguntas, verificarResposta, verificarTools } from "./assertions";
+import { contemMarkdown, ofereceDesconto, contarPerguntas, verificarResposta, verificarTools, reapresentouVeiculo } from "./assertions";
 import { EVAL_SCENARIOS } from "./fixtures";
 
 describe("contemMarkdown", () => {
@@ -51,6 +51,22 @@ describe("verificarTools", () => {
   });
 });
 
+describe("reapresentouVeiculo (bug do Celta)", () => {
+  const apresentados = ["Chevrolet Celta Life/ LS 1.0 MPFI 8V FlexPower 5p"];
+  it("acusa reapresentação do mesmo veículo", () => {
+    const r = "Encontrei o Chevrolet Celta Life/ LS 1.0 MPFI 8V FlexPower 5p:\nAno: 2012\nPreço: R$ 36.990\nhttps://x.com/carros/celta";
+    expect(reapresentouVeiculo(r, apresentados)).toBe(apresentados[0]);
+  });
+  it("NÃO acusa confirmação que só menciona o título (sem cara de apresentação)", () => {
+    const r = "Ótima escolha! O Chevrolet Celta Life/ LS 1.0 MPFI 8V FlexPower 5p é um bom carro. Você tem veículo na troca?";
+    expect(reapresentouVeiculo(r, apresentados)).toBeNull();
+  });
+  it("NÃO acusa apresentação de veículo diferente", () => {
+    const r = "Ford EcoSport FREESTYLE 1.6\nAno: 2015\nPreço: R$ 58.990";
+    expect(reapresentouVeiculo(r, apresentados)).toBeNull();
+  });
+});
+
 describe("fixtures", () => {
   it("tem 12+ cenários com ids únicos", () => {
     expect(EVAL_SCENARIOS.length).toBeGreaterThanOrEqual(12);
@@ -59,5 +75,16 @@ describe("fixtures", () => {
   });
   it("todo cenário tem ao menos uma mensagem do cliente", () => {
     for (const s of EVAL_SCENARIOS) expect(s.mensagensCliente.length).toBeGreaterThan(0);
+  });
+  it("cenários de regressão obrigatórios existem", () => {
+    const ids = EVAL_SCENARIOS.map(s => s.id);
+    expect(ids).toContain("anti_reapresentacao");
+    expect(ids).toContain("pos_handoff");
+    expect(ids).toContain("retorno_apos_dias");
+  });
+  it("cenários com semReapresentacao têm 2+ mensagens ou contexto de retorno", () => {
+    for (const s of EVAL_SCENARIOS.filter(x => x.esperado.semReapresentacao)) {
+      expect(s.mensagensCliente.length).toBeGreaterThan(0);
+    }
   });
 });

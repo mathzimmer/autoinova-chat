@@ -6,13 +6,17 @@ WhatsApp e torcer".
 ## Arquivos
 
 - `fixtures.ts` — os cenários do playbook (interesse direto, veículo inexistente,
-  ID de anúncio, pechincha, pedido de humano, agendar visita, retorno, LGPD, dois
-  assuntos, fora de horário...). Cada um diz o que é esperado (tools, proibições,
-  avanço de funil, handoff).
+  ID de anúncio, pechincha, pedido de humano, agendar visita, retorno, LGPD,
+  anti-reapresentação, pós-handoff, áudio transcrito...). Cada um diz o que é
+  esperado (tools, proibições, avanço de funil, handoff, `semReapresentacao`).
 - `assertions.ts` — verificações **puras** de conteúdo (sem markdown, sem oferta de
-  desconto, uma pergunta por mensagem) e de tools (esperadas × proibidas).
+  desconto, uma pergunta por mensagem, `reapresentouVeiculo`) e de tools
+  (esperadas × proibidas).
 - `assertions.test.ts` — testes unitários das verificações + sanidade das fixtures.
   Roda no CI junto com `vitest run` (rápido, sem chamar LLM nem banco).
+- `vehicleConfirmation.test.ts` — testes da detecção determinística de confirmação
+  de veículo (`server/vehicleConfirmation.ts`), o módulo puro extraído do fix do
+  bug do "Celta" (cliente dizia "sim" e o agente reapresentava o carro em loop).
 
 ## Rodar no CI (o que já roda)
 

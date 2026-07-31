@@ -4,6 +4,7 @@ import { getDb, upsertLead, createAiLog, createAiDecisionsBatch, getSetting, ups
 import { getStockSummaryForAI, getVehicleByIdForAI, searchVehiclesForAI, renderVehicleCaptionTemplate } from "./stockSync";
 import type { Message, Conversation, AiAgent } from "../drizzle/schema";
 import { validateLeadArgs, formatValidationErrors } from "./leadValidation";
+import { detectVehicleConfirmation } from "./vehicleConfirmation";
 
 // ============================================================================
 // CAMADA 1: NÚCLEO (CORE) — IMUTÁVEL
@@ -929,26 +930,13 @@ export async function processAIMessage(
   // Se o cliente respondeu curto ("sim", "quero", etc.) logo após o bot
   // apresentar exatamente UM veículo, injeta diretiva de avanço no contexto.
   // Funciona mesmo sem lead gravado (cenário em que o bug ocorria).
+  // Lógica pura em vehicleConfirmation.ts (testada em server/evals/).
   try {
-    const msgNorm = (customerMessage || "").trim();
-    const SHORT_CONFIRM = /^(sim|s|isso|quero|gostei|esse|essa|pode ser|bora|fechado|ok|okay|beleza|topo|top|claro|com certeza|tenho interesse|interessa|adorei|curti|show|perfeito)[.!\s]*$/i;
-    if (msgNorm.length > 0 && msgNorm.length <= 30 && SHORT_CONFIRM.test(msgNorm)) {
-      const sorted = [...(recentMessages || [])].sort((a: any, b: any) => (a.id ?? 0) - (b.id ?? 0));
-      const lastVehicleMsg = [...sorted].reverse().find((m: any) =>
-        m.senderType === "bot" && typeof m.content === "string" &&
-        (m.content.includes("/carros/") || /(^|\n)\s*(Ano|ano)\s*:\s*\d{4}/.test(m.content))
-      );
-      if (lastVehicleMsg) {
-        const anoCount = (lastVehicleMsg.content.match(/Ano\s*:\s*\d{4}/gi) || []).length;
-        if (anoCount === 1) {
-          const lines = String(lastVehicleMsg.content).split("\n");
-          const anoIdx = lines.findIndex(l => /^\s*(Ano|ano)\s*:\s*\d{4}/.test(l));
-          let title = anoIdx > 0 ? lines[anoIdx - 1].trim() : "";
-          if (!title || title.length < 4) title = "o veículo apresentado";
-          contextBlock += `\n\n⚠️ AÇÃO OBRIGATÓRIA — CONFIRMAÇÃO DETECTADA: o cliente acabou de confirmar ("${msgNorm}") o veículo "${title}" que você JÁ apresentou na conversa.\n1) Chame atualizar_lead AGORA com veiculo_interesse: "${title}", intencao: "compra" (inclua veiculo_id se souber o [ID:X]).\n2) PROIBIDO reapresentar ou buscar esse veículo de novo — o cliente já viu.\n3) Responda confirmando a escolha e AVANCE para a ETAPA 3: pergunte sobre veículo de troca OU forma de pagamento (uma só pergunta).`;
-          console.log(`[AI] Confirmação curta detectada ("${msgNorm}") → veículo "${title}" — injetando avanço determinístico`);
-        }
-      }
+    const confirmacao = detectVehicleConfirmation(customerMessage || "", recentMessages as any);
+    if (confirmacao) {
+      const { vehicleTitle: title, message: msgNorm } = confirmacao;
+      contextBlock += `\n\n⚠️ AÇÃO OBRIGATÓRIA — CONFIRMAÇÃO DETECTADA: o cliente acabou de confirmar ("${msgNorm}") o veículo "${title}" que você JÁ apresentou na conversa.\n1) Chame atualizar_lead AGORA com veiculo_interesse: "${title}", intencao: "compra" (inclua veiculo_id se souber o [ID:X]).\n2) PROIBIDO reapresentar ou buscar esse veículo de novo — o cliente já viu.\n3) Responda confirmando a escolha e AVANCE para a ETAPA 3: pergunte sobre veículo de troca OU forma de pagamento (uma só pergunta).`;
+      console.log(`[AI] Confirmação curta detectada ("${msgNorm}") → veículo "${title}" — injetando avanço determinístico`);
     }
   } catch (confirmErr) {
     console.error("[AI] Erro na detecção de confirmação:", confirmErr);

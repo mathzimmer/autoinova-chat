@@ -25,6 +25,11 @@ export interface EvalScenario {
     etapaFunilMin?: string;
     /** Deve acionar transferir_para_vendedor. */
     deveTransferir?: boolean;
+    /**
+     * Se true, após a primeira apresentação o agente NÃO pode reapresentar o
+     * mesmo veículo nas respostas seguintes (verificado com reapresentouVeiculo).
+     */
+    semReapresentacao?: boolean;
   };
 }
 
@@ -79,9 +84,34 @@ export const EVAL_SCENARIOS: EvalScenario[] = [
   },
   {
     id: "retorno_apos_dias",
-    descricao: "Cliente retorna; agente retoma sem recomeçar do zero.",
+    descricao: "Cliente retorna; agente retoma sem recomeçar do zero (não repete saudação inicial nem pergunta o que já sabe).",
     mensagensCliente: ["Oi, voltei. Ainda tá disponível aquele que a gente viu?"],
-    esperado: { proibicoes: ["markdown"] },
+    esperado: { proibicoes: ["markdown"], semReapresentacao: true },
+  },
+  {
+    id: "anti_reapresentacao",
+    descricao: "REGRESSÃO do bug do Celta: cliente confirma com 'sim' → agente registra e AVANÇA, sem reapresentar nem buscar o mesmo carro.",
+    mensagensCliente: ["Tem um Celta?", "sim", "sim"],
+    esperado: {
+      toolsEsperadas: ["buscar_veiculos", "atualizar_lead"],
+      proibicoes: ["markdown", "inventar_veiculo"],
+      semReapresentacao: true,
+    },
+  },
+  {
+    id: "pos_handoff",
+    descricao: "Conversa já transferida ao vendedor: IA só responde breve, sem tools de veículo e sem novas perguntas de venda.",
+    mensagensCliente: ["Tá bom, fico no aguardo do vendedor então. Obrigado!"],
+    esperado: {
+      toolsProibidas: ["buscar_veiculos", "buscar_veiculo_por_id", "apresentar_veiculo"],
+      proibicoes: ["markdown", "multiplas_perguntas"],
+    },
+  },
+  {
+    id: "audio_transcrito",
+    descricao: "Mensagem de áudio transcrita chega como texto; agente atende normalmente.",
+    mensagensCliente: ["[áudio transcrito] oi, queria saber se vocês têm um onix até 60 mil"],
+    esperado: { toolsEsperadas: ["buscar_veiculos"], proibicoes: ["markdown", "inventar_veiculo"] },
   },
   {
     id: "dois_assuntos",
