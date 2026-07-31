@@ -1009,6 +1009,9 @@ const conversationRouter = router({
       const isMatriz = input.instance === "matriz";
       const isZernio = input.instance.startsWith("zernio:");
       const zAccountId = isZernio ? input.instance.slice("zernio:".length) : null;
+      // API oficial adicional (coexistência ou número oficial): prefixo "official:"
+      const isOfficial = input.instance.startsWith("official:");
+      const officialPhoneId = isOfficial ? input.instance.slice("official:".length) : null;
 
       // Localiza conversa existente na fonte escolhida
       let conv = (await db.select().from(convTable).where(
@@ -1016,15 +1019,17 @@ const conversationRouter = router({
           ? andOp(eq(convTable.phone, phone), neOp(convTable.channel, "evolution" as any), neOp(convTable.channel, "zernio" as any))
           : isZernio
             ? andOp(eq(convTable.phone, phone), eq(convTable.channel, "zernio" as any), eq(convTable.instanceName, zAccountId!))
-            : andOp(eq(convTable.phone, phone), eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
+            : isOfficial
+              ? andOp(eq(convTable.phone, phone), eq(convTable.channel, "whatsapp" as any), eq(convTable.instanceName, officialPhoneId!))
+              : andOp(eq(convTable.phone, phone), eq(convTable.channel, "evolution" as any), eq(convTable.instanceName, input.instance))
       ).limit(1))[0];
 
       if (!conv) {
         const inserted = await db.insert(convTable).values({
           phone,
           contactName: input.name || null,
-          channel: isMatriz ? "whatsapp" : isZernio ? ("zernio" as any) : ("evolution" as any),
-          instanceName: isMatriz ? null : isZernio ? zAccountId : input.instance,
+          channel: isMatriz ? "whatsapp" : isZernio ? ("zernio" as any) : isOfficial ? ("whatsapp" as any) : ("evolution" as any),
+          instanceName: isMatriz ? null : isZernio ? zAccountId : isOfficial ? officialPhoneId : input.instance,
           status: "open",
           aiActive: false, // conversa iniciada pelo atendente: sem IA
           assignedTo: ctx.user.id,
@@ -1043,7 +1048,7 @@ const conversationRouter = router({
             phone,
             conversationId: conv.id,
             source: "manual",
-            createdByInstance: isMatriz ? null : input.instance,
+            createdByInstance: isMatriz ? null : isOfficial ? officialPhoneId : input.instance,
             isActive: true,
           } as any);
         }
@@ -1089,6 +1094,20 @@ const conversationRouter = router({
                 });
                 emitNewMessage(conv.id, msg);
               }
+            }
+          } else if (isOfficial) {
+            // API oficial adicional (coexistência/número oficial) → NÃO usa Evolution
+            const { sendTextFromNumber } = await import("./whatsappMultiNumber");
+            const r = await sendTextFromNumber(officialPhoneId!, phone, input.firstMessage.trim());
+            if (!r.success) {
+              sendError = r.error || "Falha no envio (API oficial)";
+            } else {
+              const msg = await createMessage({
+                conversationId: conv.id, content: input.firstMessage.trim(),
+                senderType: "agent", senderName: ctx.user.name || "Atendente",
+                messageType: "text", externalId: r.messageId,
+              });
+              emitNewMessage(conv.id, msg);
             }
           } else {
             const { evolutionSendText } = await import("./evolutionService");
