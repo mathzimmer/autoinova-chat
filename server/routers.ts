@@ -255,7 +255,7 @@ async function initDebounce() {
           const flow = await getChatFlowById(activeFlowSession.flowId);
           if (flow) {
             const sessionCtx = (activeFlowSession.context as any) || {};
-            console.log(`[Debounce] Conversa ${conversationId}: fluxo "${flow.name}", sessionCtx.nodeAgentId=${sessionCtx.nodeAgentId}, flow.agentId=${flow.agentId}, flow.aiPrompt=${flow.aiPrompt ? 'yes' : 'no'}`);
+            console.log(`[Debounce] Conversa ${conversationId}: fluxo "${flow.name}", sessionCtx.nodeAgentId=${sessionCtx.nodeAgentId}, flow.agentId=${flow.agentId}`);
             // Nó "Coletar com IA": restringe as ferramentas da IA (só coleta, sem buscar veículo)
             if (sessionCtx.collectMode) {
               collectOnlyTools = Array.isArray(sessionCtx.collectTools) && sessionCtx.collectTools.length > 0 ? sessionCtx.collectTools : ["atualizar_lead"];
@@ -282,14 +282,6 @@ async function initDebounce() {
               };
               console.log(`[Debounce] Conversa ${conversationId}: usando agente ID ${flow.agentId} do fluxo "${flow.name}"`);
             }
-            // Priority 3: legacy prompt from the flow
-            else if (flow.aiPrompt) {
-              flowAiOptions = {
-                flowPrompt: flow.aiPrompt,
-                flowInstruction: sessionCtx.aiInstruction || undefined,
-              };
-              console.log(`[Debounce] Conversa ${conversationId}: ⚠️ usando prompt LEGADO do fluxo "${flow.name}" (aiPrompt). Rode "Migrar fluxos antigos" na tela de Agentes para converter em agente.`);
-            }
           }
         }
       } catch (flowPromptErr) {
@@ -303,7 +295,7 @@ async function initDebounce() {
         console.log(`[Debounce] Conversa ${conversationId}: modo APRESENTAR COM IA (prompt próprio, tools=${JSON.stringify(collectOnlyTools)})`);
       }
 
-      // Seleção de agente (fixado → instância → canal → padrão) — FONTE ÚNICA
+      // Seleção de agente (fixado → instância → padrão) — FONTE ÚNICA
       // (mesma função usada pelo preview "quem responde esta conversa?").
       if (!flowAiOptions?.agentId && !flowAiOptions?.flowPrompt) {
         try {
@@ -4691,7 +4683,6 @@ const flowRouter = router({
       triggerValue: z.string().optional(),
       active: z.boolean().optional(),
       priority: z.number().optional(),
-      aiPrompt: z.string().nullable().optional(),
       agentId: z.number().nullable().optional(),
       connectionType: z.string().nullable().optional(),
       instanceName: z.string().nullable().optional(),
@@ -5031,27 +5022,6 @@ const agentRouter = router({
       return { success: true };
     }),
 
-  // Get/set channel agent assignments
-  getChannelAgents: protectedProcedure.query(async () => {
-    const whatsappId = await getSetting("channel_whatsapp_agent_id");
-    const instagramId = await getSetting("channel_instagram_agent_id");
-    return {
-      whatsapp: whatsappId ? parseInt(whatsappId, 10) : null,
-      instagram: instagramId ? parseInt(instagramId, 10) : null,
-    };
-  }),
-
-  setChannelAgent: adminProcedure
-    .input(z.object({
-      channel: z.enum(["whatsapp", "instagram"]),
-      agentId: z.number().nullable(),
-    }))
-    .mutation(async ({ input }) => {
-      const key = `channel_${input.channel}_agent_id`;
-      await upsertSetting(key, input.agentId ? String(input.agentId) : "");
-      return { success: true };
-    }),
-
   /** Agente padrão da loja (usado quando nada mais específico se aplica) */
   getDefaultAgent: protectedProcedure.query(async () => {
     const id = await getSetting("default_agent_id");
@@ -5263,38 +5233,6 @@ LGPD → só colete dados necessários ao estágio atual; se o cliente pedir par
     });
     await setDefaultAiAgent(rec.id); // vira o agente padrão da loja
     return { created: true, id: rec.id, name: "Atendente Principal" };
-  }),
-
-  /**
-   * PR A2 — mata o "prompt legado" (chatFlows.aiPrompt) que sequestrava a cadeia:
-   * cada fluxo com aiPrompt e SEM agente vinculado vira um agente "Legado — <fluxo>"
-   * (sem camadas globais) e o fluxo passa a apontar para ele. NÃO toca em nenhuma
-   * conversa — só nas tabelas de agentes/fluxos, então nada é ativado sozinho.
-   * Idempotente: rode quantas vezes quiser.
-   */
-  migrateLegacyFlowPrompts: adminProcedure.mutation(async ({ ctx }) => {
-    const flows = await listChatFlows();
-    const stockTools = ["buscar_veiculos", "buscar_veiculo_por_id", "apresentar_veiculo", "resumo_estoque", "atualizar_lead", "enviar_botoes", "enviar_lista"];
-    const migrated: string[] = [];
-    for (const f of flows) {
-      if (f.aiPrompt && f.aiPrompt.trim() && !f.agentId) {
-        const rec = await createAiAgent({
-          name: `Legado — ${f.name}`.slice(0, 255),
-          description: `Agente criado a partir do prompt legado do fluxo "${f.name}".`,
-          systemPrompt: f.aiPrompt,
-          includeCoreLayers: false,
-          model: "gpt-4o-mini",
-          temperature: "0.7",
-          maxTokens: 1024,
-          enabledTools: stockTools,
-          active: true,
-          createdBy: ctx.user.id,
-        });
-        await updateChatFlow(f.id, { agentId: rec.id });
-        migrated.push(f.name);
-      }
-    }
-    return { migrated, count: migrated.length };
   }),
 });
 

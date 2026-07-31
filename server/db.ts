@@ -2216,12 +2216,11 @@ export async function deleteAiAgent(id: number) {
   if (!db) throw new Error("Database not available");
   // Remove agent references from flows
   await db.update(chatFlows).set({ agentId: null }).where(eq(chatFlows.agentId, id));
-  // Remove channel agent settings
-  const channelSettings = ["channel_whatsapp_agent_id", "channel_instagram_agent_id", "channel_facebook_agent_id"];
-  for (const key of channelSettings) {
-    const setting = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
-    if (setting[0] && setting[0].value === String(id)) {
-      await db.update(settings).set({ value: "" }).where(eq(settings.id, setting[0].id));
+  // Remove instance agent settings apontando para este agente
+  const instanceSettings = await db.select().from(settings).where(like(settings.key, "instance_%_agent_id"));
+  for (const setting of instanceSettings) {
+    if (setting.value === String(id)) {
+      await db.update(settings).set({ value: "" }).where(eq(settings.id, setting.id));
     }
   }
   await db.delete(aiAgents).where(eq(aiAgents.id, id));
@@ -2231,17 +2230,6 @@ export async function getActiveAiAgents() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(aiAgents).where(eq(aiAgents.active, true)).orderBy(aiAgents.name);
-}
-
-export async function getAiAgentForChannel(channel: string): Promise<typeof aiAgents.$inferSelect | null> {
-  const settingKey = `channel_${channel}_agent_id`;
-  const agentIdStr = await getSetting(settingKey);
-  if (!agentIdStr) return null;
-  const agentId = parseInt(agentIdStr, 10);
-  if (isNaN(agentId)) return null;
-  const agent = await getAiAgentById(agentId);
-  if (agent && agent.active) return agent;
-  return null;
 }
 
 export async function getAiAgentForInstance(instanceName: string): Promise<typeof aiAgents.$inferSelect | null> {

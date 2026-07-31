@@ -5,7 +5,6 @@
 
 import {
   mirrorOfficialMessage, getConversationById, listMessages, createMessage, getSetting,
-  getAiAgentForInstance, getAiAgentForChannel, getDefaultAiAgent,
 } from "./db";
 import { processWhatsAppMedia } from "./media";
 import { getMediaUrl } from "./whatsapp";
@@ -158,7 +157,7 @@ export async function runOfficialAI(conversationId: number, customerMessage: str
     if (sessionCtx.nodeAgentId) {
       flowAiOptions = { agentId: sessionCtx.nodeAgentId, flowInstruction: sessionCtx.aiInstruction || undefined };
     } else {
-      // FONTE ÚNICA: fixado → instância (phoneNumberId) → canal → padrão
+      // FONTE ÚNICA: fixado → instância (phoneNumberId) → padrão
       const { resolveAgentForConversation } = await import("./agentResolver");
       const r = await resolveAgentForConversation({ agentId: (conv as any).agentId, instanceName: phoneNumberId, channel: "whatsapp" });
       if (r.agentId) flowAiOptions = { agentId: r.agentId, flowInstruction: sessionCtx.aiInstruction || undefined };

@@ -515,7 +515,6 @@ export const chatFlows = pgTable("chatFlows", {
   triggerValue: varchar("triggerValue", { length: 500 }),
   active:       boolean("active").default(false).notNull(),
   priority:     integer("priority").default(0).notNull(),
-  aiPrompt:     text("aiPrompt"),
   agentId:      integer("agentId"),
   connectionType: varchar("connectionType"),
   connectionId:   integer("connectionId"),

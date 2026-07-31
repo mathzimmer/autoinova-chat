@@ -2213,7 +2213,6 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
   const [showFlowSettings, setShowFlowSettings] = useState(false);
   const [showTriggerSettings, setShowTriggerSettings] = useState(false);
   const [showHealth, setShowHealth] = useState(false);
-  const [flowAiPrompt, setFlowAiPrompt] = useState("");
   const [flowAgentId, setFlowAgentId] = useState<number | null>(null);
   const [flowTrigger, setFlowTrigger] = useState("");
   const [flowTriggerValue, setFlowTriggerValue] = useState("");
@@ -2237,13 +2236,12 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
     rescue: "⏰ Resgate (Lead Inativo)",
   };
 
-  // Load flow AI prompt, agent and trigger
+  // Load flow agent and trigger
   useEffect(() => {
-    if (flow?.aiPrompt) setFlowAiPrompt(flow.aiPrompt);
     if (flow?.agentId) setFlowAgentId(flow.agentId);
     if (flow?.trigger) setFlowTrigger(flow.trigger);
     if (flow?.triggerValue) setFlowTriggerValue(flow.triggerValue);
-  }, [flow?.aiPrompt, flow?.agentId, flow?.trigger, flow?.triggerValue]);
+  }, [flow?.agentId, flow?.trigger, flow?.triggerValue]);
 
   return (
     <div className="h-[calc(100vh-64px)] flex flex-col">
@@ -2352,7 +2350,7 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
                   Agente de IA deste Fluxo
                 </Label>
                 <p className="text-[11px] text-muted-foreground">
-                  Selecione qual agente responde nos nós "IA Livre" deste fluxo. Se nenhum for selecionado, usa o prompt legado abaixo.
+                  Selecione qual agente responde nos nós "IA Livre" deste fluxo. Se nenhum for selecionado, vale a cadeia padrão (instância → padrão da loja).
                 </p>
               </div>
               <Button
@@ -2362,7 +2360,6 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
                   updateFlowMutation.mutate({
                     id: flowId,
                     agentId: flowAgentId,
-                    aiPrompt: flowAiPrompt || null,
                   });
                 }}
                 disabled={updateFlowMutation.isPending}
@@ -2378,7 +2375,7 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
                 <SelectValue placeholder="Selecione um agente" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Nenhum (usa prompt legado abaixo)</SelectItem>
+                <SelectItem value="none">Nenhum (usa a cadeia padrão)</SelectItem>
                 {activeAgents.map(a => (
                   <SelectItem key={a.id} value={String(a.id)}>
                     <span className="font-medium">{a.name}</span>
@@ -2387,23 +2384,6 @@ function FlowEditorInner({ flowId, onBack }: { flowId: number; onBack: () => voi
                 ))}
               </SelectContent>
             </Select>
-
-            {/* Legacy Prompt (only shown when no agent selected) */}
-            {!flowAgentId && (
-              <div className="space-y-2 pt-2 border-t border-border/50">
-                <Label className="text-sm font-medium text-muted-foreground">Prompt Legado (sem agente)</Label>
-                <Textarea
-                  value={flowAiPrompt}
-                  onChange={(e) => setFlowAiPrompt(e.target.value)}
-                  placeholder={`Ex: Você é um consultor de vendas da Auto Inova - Matriz...`}
-                  rows={5}
-                  className="text-sm font-mono"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  Variáveis disponíveis: {"{{nome}}"}, {"{{telefone}}"}, {"{{veiculo}}"}, {"{{cidade}}"}, {"{{troca}}"}, {"{{pagamento}}"}
-                </p>
-              </div>
-            )}
           </div>
         </div>
       )}

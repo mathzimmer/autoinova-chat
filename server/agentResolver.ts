@@ -2,16 +2,19 @@
  * Resolução de "qual AGENTE responde uma conversa" — FONTE ÚNICA (PR A5).
  *
  * Hierarquia (mais específico → mais geral):
- *   ① fixado na conversa  ② instância (número)  ③ canal  ④ padrão da loja
+ *   ① fixado na conversa  ② instância (número)  ③ padrão da loja
  *
- * NÃO decide sessão de fluxo (nó/prompt do fluxo) — isso é resolvido antes, no
+ * (PR A2: o nível "canal" foi removido — settings channel_*_agent_id foram
+ * migradas para instance_* na migration 2026-07-31_a2_mata_ai_prompt_legado.sql)
+ *
+ * NÃO decide sessão de fluxo (nó/agente do fluxo) — isso é resolvido antes, no
  * debounce. Esta função é usada tanto pelo atendimento quanto pelo preview
  * "quem responde esta conversa?" (A4), garantindo que o preview nunca minta.
  */
 import type { AiAgent } from "../drizzle/schema";
-import { getAiAgentById, getAiAgentForInstance, getAiAgentForChannel, getDefaultAiAgent } from "./db";
+import { getAiAgentById, getAiAgentForInstance, getDefaultAiAgent } from "./db";
 
-export type AgentSource = "fixado" | "instancia" | "canal" | "padrao" | "nenhum";
+export type AgentSource = "fixado" | "instancia" | "padrao" | "nenhum";
 
 export interface AgentResolution {
   agentId: number | null;
@@ -36,10 +39,7 @@ export async function resolveAgentForConversation(conv: ResolvableConversation):
     const agent = await getAiAgentForInstance(conv.instanceName);
     if (agent) return { agentId: agent.id, agent, source: "instancia" };
   }
-  // ③ Agente do canal
-  const byChannel = await getAiAgentForChannel(conv.channel || "whatsapp");
-  if (byChannel) return { agentId: byChannel.id, agent: byChannel, source: "canal" };
-  // ④ Agente padrão da loja (isDefault)
+  // ③ Agente padrão da loja (isDefault)
   const def = await getDefaultAiAgent();
   if (def) return { agentId: def.id, agent: def, source: "padrao" };
 

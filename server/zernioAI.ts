@@ -2,11 +2,10 @@
 // Reusa o mesmo motor de fluxo (processFlowMessage) e de IA (processAIMessage)
 // do canal oficial, mas envia a resposta pela API do Zernio. A seleção de agente
 // segue a hierarquia: agente fixado na conversa → agente da instância (accountId)
-// → agente do canal → agente padrão da loja.
+// → agente padrão da loja.
 
 import {
   getConversationById, listMessages, createMessage, getSetting,
-  getAiAgentForInstance, getAiAgentForChannel, getDefaultAiAgent,
 } from "./db";
 import { processFlowMessage } from "./flowEngine";
 import { processAIMessage } from "./ai";

@@ -67,7 +67,6 @@ export default function Agents() {
 
   const agentsQuery = trpc.agent.list.useQuery();
   const toolsQuery = trpc.agent.availableTools.useQuery();
-  const channelAgentsQuery = trpc.agent.getChannelAgents.useQuery();
   const defaultAgentQuery = trpc.agent.getDefaultAgent.useQuery();
   const instanceAgentsQuery = trpc.agent.getInstanceAgents.useQuery();
   const instancesQuery = trpc.evolution.listInstances.useQuery();
@@ -86,13 +85,6 @@ export default function Agents() {
       toast.success(res.created ? `Agente "${res.name}" criado e definido como padrão` : `"${res.name}" já existia — definido como padrão`);
       agentsQuery.refetch();
       defaultAgentQuery.refetch();
-    },
-    onError: (err) => toast.error(err.message),
-  });
-  const migrateLegacyMutation = trpc.agent.migrateLegacyFlowPrompts.useMutation({
-    onSuccess: (res) => {
-      toast.success(res.count > 0 ? `Fluxos migrados para agentes: ${res.migrated.join(", ")}` : "Nenhum fluxo com prompt legado para migrar.");
-      agentsQuery.refetch();
     },
     onError: (err) => toast.error(err.message),
   });
@@ -129,33 +121,22 @@ export default function Agents() {
     onSuccess: () => {
       toast.success("Agente excluído");
       agentsQuery.refetch();
-      channelAgentsQuery.refetch();
+      instanceAgentsQuery.refetch();
       setDeleteConfirmId(null);
     },
     onError: (err) => toast.error("Erro ao excluir agente: " + err.message),
   });
 
-  const setChannelMutation = trpc.agent.setChannelAgent.useMutation({
-    onSuccess: () => {
-      toast.success("Canal atualizado");
-      channelAgentsQuery.refetch();
-    },
-    onError: (err) => toast.error("Erro: " + err.message),
-  });
-
   const agents = agentsQuery.data || [];
   const tools = toolsQuery.data || [];
-  const channelAgents = channelAgentsQuery.data;
 
-  // A4 — vínculos de cada agente (é padrão? em quais instâncias/canais?)
+  // A4 — vínculos de cada agente (é padrão? em quais instâncias?)
   const defaultAgentId = (defaultAgentQuery.data ?? null) as number | null;
   const vinculosFor = (agentId: number) => {
     const instMap = (instanceAgentsQuery.data || {}) as Record<string, number | null>;
-    const chanMap = (channelAgentsQuery.data || {}) as Record<string, number | null>;
     const instancias = Object.entries(instMap).filter(([, id]) => id === agentId).map(([n]) => n);
-    const canais = Object.entries(chanMap).filter(([, id]) => id === agentId).map(([c]) => c);
     const ehPadrao = defaultAgentId === agentId;
-    return { instancias, canais, ehPadrao, semVinculo: !ehPadrao && instancias.length === 0 && canais.length === 0 };
+    return { instancias, ehPadrao, semVinculo: !ehPadrao && instancias.length === 0 };
   };
 
   const activeAgents = useMemo(() => agents.filter(a => a.active), [agents]);
@@ -250,10 +231,6 @@ export default function Agents() {
             <Zap className="h-4 w-4" />
             Criar Atendente Principal
           </Button>
-          <Button variant="outline" onClick={() => migrateLegacyMutation.mutate()} disabled={migrateLegacyMutation.isPending} className="gap-2">
-            <Wrench className="h-4 w-4" />
-            Migrar fluxos antigos
-          </Button>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
             Novo Agente
@@ -268,7 +245,7 @@ export default function Agents() {
       <Card className="mb-6 bg-primary/5 border-primary/20">
         <CardContent className="pt-4 pb-3 text-sm text-muted-foreground">
           <p className="font-medium text-foreground mb-1">Como a IA escolhe o agente (do mais específico ao geral):</p>
-          <p>1. Agente <b>fixado na conversa</b> (você escolhe no painel do chat) → 2. Agente do <b>fluxo</b> ativo → 3. Agente da <b>instância</b> → 4. Agente do <b>canal</b> → 5. Agente <b>padrão da loja</b>.</p>
+          <p>1. Agente <b>fixado na conversa</b> (você escolhe no painel do chat) → 2. Agente do <b>fluxo</b> ativo → 3. Agente da <b>instância</b> → 4. Agente <b>padrão da loja</b>.</p>
           <p className="mt-1">Clique em <b>"Criar agentes prontos"</b> para gerar Recepção (herda sua IA atual), Financeiro e Pós-venda.</p>
         </CardContent>
       </Card>
@@ -325,66 +302,6 @@ export default function Agents() {
         </Card>
       )}
 
-      {/* Channel Agent Assignment */}
-      <Card className="mb-6">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Agente por Canal</CardTitle>
-          <CardDescription>
-            Selecione qual agente responde em cada canal quando não há fluxo ativo.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-emerald-500" />
-                WhatsApp
-              </Label>
-              <Select
-                value={channelAgents?.whatsapp ? String(channelAgents.whatsapp) : "none"}
-                onValueChange={(v) => setChannelMutation.mutate({
-                  channel: "whatsapp",
-                  agentId: v === "none" ? null : parseInt(v, 10),
-                })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um agente" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum (usa prompts globais)</SelectItem>
-                  {activeAgents.map(a => (
-                    <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="text-sm font-medium flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-pink-500" />
-                Instagram
-              </Label>
-              <Select
-                value={channelAgents?.instagram ? String(channelAgents.instagram) : "none"}
-                onValueChange={(v) => setChannelMutation.mutate({
-                  channel: "instagram",
-                  agentId: v === "none" ? null : parseInt(v, 10),
-                })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um agente" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum (usa prompts globais)</SelectItem>
-                  {activeAgents.map(a => (
-                    <SelectItem key={a.id} value={String(a.id)}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Agents Grid */}
       {agents.length === 0 ? (
         <Card className="border-dashed">
@@ -437,7 +354,6 @@ export default function Agents() {
                     <div className="flex flex-wrap items-center gap-1 mb-3">
                       {v.ehPadrao && <Badge className="text-[10px]">Padrão da loja</Badge>}
                       {v.instancias.map(i => <Badge key={i} variant="secondary" className="text-[10px]">Nº {i}</Badge>)}
-                      {v.canais.map(c => <Badge key={c} variant="secondary" className="text-[10px]">Canal {c}</Badge>)}
                       {v.semVinculo && agent.active && (
                         <span className="text-[10px] text-amber-500 flex items-center gap-1">
                           <AlertTriangle className="h-3 w-3" /> Sem vínculo — não responde nada
@@ -729,7 +645,7 @@ export default function Agents() {
               <div className="space-y-0.5">
                 <Label className="text-sm font-medium">Agente Ativo</Label>
                 <p className="text-xs text-muted-foreground">
-                  Agentes inativos não são usados em nenhum fluxo ou canal.
+                  Agentes inativos não são usados em nenhum fluxo ou instância.
                 </p>
               </div>
               <Switch
@@ -762,7 +678,7 @@ export default function Agents() {
               Excluir Agente
             </DialogTitle>
             <DialogDescription>
-              Tem certeza? O agente será removido de todos os fluxos e canais onde está vinculado.
+              Tem certeza? O agente será removido de todos os fluxos e instâncias onde está vinculado.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

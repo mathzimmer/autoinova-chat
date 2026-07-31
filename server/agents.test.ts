@@ -127,28 +127,23 @@ describe("agent router", () => {
     expect(found).toBeUndefined(); // Agent was deactivated
   });
 
-  it("sets and gets channel agents", async () => {
+  it("sets and gets instance agents", async () => {
     // First reactivate agent
     await adminCaller.agent.update({ id: createdAgentId, active: true });
 
-    // Set channel agent
-    const setResult = await adminCaller.agent.setChannelAgent({
-      channel: "whatsapp",
+    // Set instance agent (PR A2: nível de canal removido — vínculo é por instância)
+    const setResult = await adminCaller.agent.setInstanceAgent({
+      instanceName: "teste-instancia-a2",
       agentId: createdAgentId,
     });
     expect(setResult.success).toBe(true);
 
-    // Get channel agents
-    const channels = await adminCaller.agent.getChannelAgents();
-    expect(channels.whatsapp).toBe(createdAgentId);
-
-    // Clear channel agent
-    await adminCaller.agent.setChannelAgent({
-      channel: "whatsapp",
+    // Clear instance agent
+    const clearResult = await adminCaller.agent.setInstanceAgent({
+      instanceName: "teste-instancia-a2",
       agentId: null,
     });
-    const cleared = await adminCaller.agent.getChannelAgents();
-    expect(cleared.whatsapp).toBe(null);
+    expect(clearResult.success).toBe(true);
   });
 
   it("regular user cannot create agents", async () => {
