@@ -18,32 +18,38 @@
 CREATE TABLE IF NOT EXISTS "chatFlows_backup_a2" AS SELECT * FROM "chatFlows";
 
 -- 1) Fluxos com aiPrompt e sem agentId → agente "Legado — <fluxo>" vinculado
+--    (só roda se a coluna ainda existir — protege reexecução após o DROP)
 DO $$
 DECLARE
   f RECORD;
   newId INT;
 BEGIN
-  FOR f IN
-    SELECT id, name, "aiPrompt"
-    FROM "chatFlows"
-    WHERE "aiPrompt" IS NOT NULL
-      AND btrim("aiPrompt") <> ''
-      AND "agentId" IS NULL
-  LOOP
-    INSERT INTO "aiAgents" ("name", "description", "systemPrompt", "includeCoreLayers", "model", "enabledTools", "active")
-    VALUES (
-      LEFT('Legado — ' || f."name", 255),
-      'Agente criado a partir do prompt legado do fluxo "' || f."name" || '" (PR A2).',
-      f."aiPrompt",
-      false,
-      'gpt-4o-mini',
-      '["buscar_veiculos","buscar_veiculo_por_id","apresentar_veiculo","resumo_estoque","atualizar_lead","enviar_botoes","enviar_lista"]'::jsonb,
-      true
-    )
-    RETURNING id INTO newId;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name = 'chatFlows' AND column_name = 'aiPrompt'
+  ) THEN
+    FOR f IN
+      SELECT id, name, "aiPrompt"
+      FROM "chatFlows"
+      WHERE "aiPrompt" IS NOT NULL
+        AND btrim("aiPrompt") <> ''
+        AND "agentId" IS NULL
+    LOOP
+      INSERT INTO "aiAgents" ("name", "description", "systemPrompt", "includeCoreLayers", "model", "enabledTools", "active")
+      VALUES (
+        LEFT('Legado — ' || f."name", 255),
+        'Agente criado a partir do prompt legado do fluxo "' || f."name" || '" (PR A2).',
+        f."aiPrompt",
+        false,
+        'gpt-4o-mini',
+        '["buscar_veiculos","buscar_veiculo_por_id","apresentar_veiculo","resumo_estoque","atualizar_lead","enviar_botoes","enviar_lista"]'::jsonb,
+        true
+      )
+      RETURNING id INTO newId;
 
-    UPDATE "chatFlows" SET "agentId" = newId WHERE id = f.id;
-  END LOOP;
+      UPDATE "chatFlows" SET "agentId" = newId WHERE id = f.id;
+    END LOOP;
+  END IF;
 END $$;
 
 -- 2) Canal → instância: instâncias sem agente herdam o agente do canal whatsapp
