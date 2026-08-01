@@ -43,6 +43,8 @@ interface FlowContext {
   customerMessage: string;
   contactName?: string;
   leadData?: Record<string, any>;
+  /** Número da tentativa de resgate (variável {{tentativa_resgate}}) — PR #6. */
+  rescueAttemptNumber?: number;
   /**
    * Remetente por canal. Quando presente (Zernio, número oficial adicional, etc.),
    * o fluxo envia por aqui em vez de usar a Matriz oficial. Sem isso, usa o
@@ -129,7 +131,7 @@ function replaceVariables(text: string, ctx: FlowContext): string {
     .replace(/\{\{etapa_funil\}\}/gi, ctx.leadData?.funnelStatus || "novo")
     .replace(/\{\{temperatura\}\}/gi, ctx.leadData?.temperature || "frio")
     .replace(/\{\{intencao\}\}/gi, ctx.leadData?.intention || "")
-    .replace(/\{\{tentativa_resgate\}\}/gi, String(ctx.leadData?._rescueAttemptNumber || 1));
+    .replace(/\{\{tentativa_resgate\}\}/gi, String(ctx.rescueAttemptNumber ?? ctx.leadData?._rescueAttemptNumber ?? 1));
 }
 
 // ─── Avaliação de condições "Somente se" (grupos E/OU) ───────────────────────
@@ -717,6 +719,56 @@ export async function processFlowMessage(ctx: FlowContext): Promise<FlowResult> 
   }
 
   return result;
+}
+
+// ─── Trigger Rescue Flow (PR #6) ─────────────────────────────
+/**
+ * Dispara um fluxo de resgate para uma conversa inativa via flowEngine DIRETO
+ * (substitui o interpretador duplicado executeRescueForLead do rescueJob).
+ * - Não interrompe sessão de fluxo já ativa (retorna false).
+ * - Cria a sessão no nó start e executa o fluxo; a variável {{tentativa_resgate}}
+ *   recebe `attemptNumber`.
+ * Retorna true se pelo menos uma mensagem foi enviada.
+ */
+export async function triggerRescueFlow(
+  conversationId: number,
+  flowId: number,
+  phone: string,
+  contactName: string | undefined,
+  attemptNumber: number,
+): Promise<boolean> {
+  const existing = await getActiveFlowSession(conversationId);
+  if (existing) {
+    console.log(`[FlowEngine] triggerRescueFlow: conversa ${conversationId} já tem sessão ativa (fluxo ${existing.flowId}) — resgate não interrompe`);
+    return false;
+  }
+
+  const nodes = await listChatFlowNodes(flowId);
+  const startNode = nodes.find(n => n.nodeType === "start");
+  if (!startNode) {
+    console.log(`[FlowEngine] triggerRescueFlow: fluxo ${flowId} sem nó start`);
+    return false;
+  }
+
+  await createFlowSession({
+    conversationId,
+    flowId,
+    currentNodeId: startNode.id,
+    status: "active",
+    context: { origem: "resgate", tentativaResgate: attemptNumber },
+  });
+
+  const result = await processFlowMessage({
+    conversationId,
+    phone,
+    customerMessage: "[resgate automático]",
+    contactName,
+    rescueAttemptNumber: attemptNumber,
+  });
+
+  const sent = result.responses.length + result.imageMessages.length + result.interactiveMessages.length;
+  console.log(`[FlowEngine] triggerRescueFlow: conversa ${conversationId}, fluxo ${flowId}, tentativa #${attemptNumber} → ${sent} mensagem(ns)`);
+  return sent > 0;
 }
 
 // ─── Continue Flow After AI ─────────────────────────────────

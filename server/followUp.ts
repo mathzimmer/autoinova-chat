@@ -123,8 +123,9 @@ export async function getFollowUpStats() {
 }
 
 // ─── Generate follow-up message via AI ───────────────────────────────────────
+// Exportada para reuso pelo motor único de reengajamento (PR #6, estratégia ai_message).
 
-async function generateFollowUpMessage(
+export async function generateFollowUpMessage(
   customerName: string | null,
   leadData: {
     vehicleInterest?: string | null;
@@ -191,6 +192,16 @@ REGRAS ABSOLUTAS:
 
 export async function runFollowUpJob(): Promise<{ sent: number; skipped: number; errors: number }> {
   console.log("[FollowUp] Iniciando job de follow-up...");
+
+  // Gate do motor v2 (PR #6): quando o motor único de reengajamento está ligado,
+  // este job legado fica inerte (evita reengajamento duplo no mesmo lead).
+  try {
+    const { isReengagementV2Enabled } = await import("./reengagement");
+    if (await isReengagementV2Enabled()) {
+      console.log("[FollowUp] Motor v2 de reengajamento ativo — job legado inerte.");
+      return { sent: 0, skipped: 0, errors: 0 };
+    }
+  } catch { /* módulo v2 indisponível → segue legado */ }
 
   const config = await getFollowUpConfig();
 
@@ -372,7 +383,7 @@ let followUpInterval: ReturnType<typeof setInterval> | null = null;
 export function startFollowUpJob(): void {
   // Run after 30s delay on startup
   setTimeout(() => {
-    runFollowUpJob().catch(err => console.error("[FollowUp] Erro na primeira execução:", err));
+    runFollowUpJobLocked().catch(err => console.error("[FollowUp] Erro na primeira execução:", err));
   }, 30_000);
 
   // Schedule periodic runs (re-reads config each time for dynamic interval)
@@ -384,7 +395,7 @@ export function startFollowUpJob(): void {
 
     followUpInterval = setInterval(
       () => {
-        runFollowUpJob().catch(err => console.error("[FollowUp] Erro no job periódico:", err));
+        runFollowUpJobLocked().catch(err => console.error("[FollowUp] Erro no job periódico:", err));
       },
       intervalMs
     );
@@ -393,6 +404,12 @@ export function startFollowUpJob(): void {
   }
 
   scheduleNext();
+}
+
+// Lock distribuído (PR #5): evita execução dupla com múltiplos processos/containers
+async function runFollowUpJobLocked(): Promise<void> {
+  const { withJobLock } = await import("./jobLock");
+  await withJobLock("followup_job", async () => { await runFollowUpJob(); });
 }
 
 export function restartFollowUpJob(): void {

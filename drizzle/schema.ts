@@ -695,6 +695,34 @@ export type RescueAttempt = typeof rescueAttempts.$inferSelect;
 export type InsertRescueAttempt = typeof rescueAttempts.$inferInsert;
 
 /**
+ * Reengagement Attempts — motor ÚNICO de reengajamento (PR #6).
+ * Substitui followUpLogs + rescueAttempts como fonte de verdade: uma fila por
+ * conversa, com estratégia escalonada (flow → ai_message → template).
+ * Garantia: 1 lead nunca recebe 2 reengajamentos concorrentes — a próxima
+ * tentativa só dispara quando a inatividade atinge o limiar do próximo passo.
+ */
+export const reengagementStrategyEnum = pgEnum("reengagement_strategy", ["flow", "ai_message", "template"]);
+export const reengagementStatusEnum   = pgEnum("reengagement_status",   ["sent", "failed", "responded", "cancelled"]);
+
+export const reengagementAttempts = pgTable("reengagementAttempts", {
+  id:             serial("id").primaryKey(),
+  conversationId: integer("conversationId").notNull(),
+  leadId:         integer("leadId"),
+  attemptNumber:  integer("attemptNumber").default(1).notNull(),
+  strategy:       reengagementStrategyEnum("strategy").notNull(),
+  status:         reengagementStatusEnum("reengagementStatus").default("sent").notNull(),
+  flowId:         integer("flowId"),
+  message:        text("message"),
+  error:          text("error"),
+  sentAt:         timestamp("sentAt").defaultNow().notNull(),
+  respondedAt:    timestamp("respondedAt"),
+  createdAt:      timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ReengagementAttempt = typeof reengagementAttempts.$inferSelect;
+export type InsertReengagementAttempt = typeof reengagementAttempts.$inferInsert;
+
+/**
  * Contacts — agenda de contatos para marketing e envio de templates.
  */
 export const contacts = pgTable("contacts", {

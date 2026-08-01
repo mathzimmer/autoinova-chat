@@ -331,6 +331,16 @@ async function executeRescueForLead(
 export async function runRescueJob(): Promise<{ sent: number; skipped: number; errors: number }> {
   console.log("[Rescue] Iniciando job de resgate...");
 
+  // Gate do motor v2 (PR #6): quando o motor único de reengajamento está ligado,
+  // este job legado fica inerte (evita reengajamento duplo no mesmo lead).
+  try {
+    const { isReengagementV2Enabled } = await import("./reengagement");
+    if (await isReengagementV2Enabled()) {
+      console.log("[Rescue] Motor v2 de reengajamento ativo — job legado inerte.");
+      return { sent: 0, skipped: 0, errors: 0 };
+    }
+  } catch { /* módulo v2 indisponível → segue legado */ }
+
   const config = await getRescueConfig();
 
   if (!config.enabled) {

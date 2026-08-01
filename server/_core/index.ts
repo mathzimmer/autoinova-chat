@@ -18,6 +18,7 @@ import { startCampaignScheduler, handleCampaignDeliveryStatus, handleCampaignRes
 import { handleEvolutionWebhook } from "../evolutionService";
 import { handleWNWebhook } from "../whatsappMultiNumber";
 import { startRescueJob } from "../rescueJob";
+import { startReengagementJob } from "../reengagement";
 import { startScheduler } from "../scheduler";
 import { startTokenMonitor } from "../tokenMonitor";
 import { addToDebounce } from "../messageDebounce";
@@ -126,6 +127,9 @@ async function startServer() {
 
   // Resgate de leads inativos (a cada 2 min)
   startRescueJob();
+
+  // Motor único de reengajamento v2 (PR #6 — ativo só quando reengagement_config.enabled=true)
+  startReengagementJob();
 
   // Monitoramento periódico de tokens (a cada 30 min)
   startTokenMonitor();
@@ -336,6 +340,8 @@ async function startServer() {
           try {
             const { markRescueResponded } = await import("../rescueJob");
             await markRescueResponded(result.conversationId);
+            const { markReengagementResponded } = await import("../reengagement");
+            await markReengagementResponded(result.conversationId);
           } catch (err) {
             // Non-critical, don't fail the webhook
           }
