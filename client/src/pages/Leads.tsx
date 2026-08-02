@@ -1,4 +1,6 @@
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { maskCpf } from "@shared/lgpd";
 import { useState, useMemo, useEffect } from "react";
 import { keepPreviousData } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
@@ -174,6 +176,8 @@ const TEMP_OPTIONS = Object.entries(TEMP_CONFIG).map(([value, cfg]) => ({ value,
 
 // ─── Main Component ───────────────────────────────────────────────
 export default function Leads() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin"; // LGPD (#9): CPF completo só para admin
   const [view, setView] = useState<"leads" | "intel" | "kanban">("leads");
   const [statusFilter, setStatusFilter] = useState("all");
   const [funnelFilter, setFunnelFilter] = useState("all");
@@ -399,7 +403,7 @@ export default function Leads() {
     parts.push(`Nome: ${lead.fullName || lead.name || lead.conversation?.contactName || "N/A"}`);
     parts.push(`Telefone: ${formatPhone(lead.phone)}`);
     if (lead.email) parts.push(`Email: ${lead.email}`);
-    if (lead.cpf) parts.push(`CPF: ${lead.cpf}`);
+    if (lead.cpf) parts.push(`CPF: ${isAdmin ? lead.cpf : maskCpf(lead.cpf)}`);
     if (lead.birthDate) parts.push(`Nascimento: ${lead.birthDate}`);
     if (lead.city) parts.push(`Cidade: ${lead.city}`);
     

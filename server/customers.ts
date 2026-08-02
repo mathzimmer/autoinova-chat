@@ -128,6 +128,11 @@ export async function getOrCreateCustomer(
     for (const [k, v] of Object.entries(better)) {
       if (v && v !== (existing as any)[k]) updates[k] = v;
     }
+    // PR #9 (LGPD): consentimento registrado no primeiro contato, se ainda vazio
+    if (!existing.consentAt) {
+      updates.consentAt = new Date();
+      updates.consentSource = "inbound";
+    }
     if (Object.keys(updates).length > 0) {
       updates.updatedAt = new Date();
       await db.update(customers).set(updates).where(eq(customers.id, existing.id));
@@ -139,6 +144,9 @@ export async function getOrCreateCustomer(
   const inserted = await db.insert(customers).values({
     canonicalPhone: canonical,
     ...clean,
+    // PR #9 (LGPD): cliente iniciou o contato → consentimento do atendimento
+    consentAt: new Date(),
+    consentSource: "inbound",
   }).returning();
   return inserted[0];
 }
@@ -300,4 +308,81 @@ export async function listCustomers(limit = 50, offset = 0) {
     db.select({ count: sql<number>`count(*)` }).from(customers),
   ]);
   return { items, total: count[0]?.count ?? 0 };
+}
+
+// ─── Anonização LGPD (PR #9) ─────────────────────────────────────────────────
+
+export interface AnonymizeReport {
+  customerId: number;
+  alreadyAnonymized: boolean;
+  leadsAnonimizados: number;
+  contatosAnonimizados: number;
+}
+
+/**
+ * SOFT-ANONYMIZE: remove PII (nome, CPF, e-mail, telefone, nascimento, cidade)
+ * do customer e dos leads/contacts vinculados, PRESERVANDO as linhas e as
+ * métricas (funil, atribuição, timestamps, contagens). Telefones viram chaves
+ * `anon_*` — a pessoa some, a estatística fica. Idempotente.
+ *
+ * Fora de escopo (consciente): conteúdo de mensagens antigas — apagá-las
+ * destruiria o histórico de atendimento; anonização de transcript fica para
+ * um PR futuro com retenção configurável.
+ */
+export async function anonymizeCustomer(customerId: number): Promise<AnonymizeReport> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  const customer = (await db.select().from(customers).where(eq(customers.id, customerId)).limit(1))[0];
+  if (!customer) throw new Error(`Customer ${customerId} não encontrado`);
+
+  const report: AnonymizeReport = {
+    customerId,
+    alreadyAnonymized: !!customer.anonymizedAt,
+    leadsAnonimizados: 0,
+    contatosAnonimizados: 0,
+  };
+  if (customer.anonymizedAt) return report; // idempotente
+
+  // 1) Customer: PII fora, chave vira anon_<id> (mantém UNIQUE)
+  await db.update(customers).set({
+    canonicalPhone: `anon_${customerId}`,
+    name: "Cliente anonimizado",
+    fullName: null,
+    email: null,
+    cpf: null,
+    birthDate: null,
+    city: null,
+    anonymizedAt: new Date(),
+    updatedAt: new Date(),
+  }).where(eq(customers.id, customerId));
+
+  // 2) Leads vinculados: zera PII, preserva funil/atribuição/métricas
+  const leadRes = await db.update(leads).set({
+    phone: `anon_c${customerId}`,
+    name: "Cliente anonimizado",
+    fullName: null,
+    email: null,
+    cpf: null,
+    birthDate: null,
+    city: null,
+  }).where(eq(leads.customerId, customerId)).returning({ id: leads.id });
+  report.leadsAnonimizados = leadRes.length;
+
+  // 3) Contacts vinculados
+  const contactRes = await db.update(contacts).set({
+    phone: `anon_c${customerId}`,
+    name: "Cliente anonimizado",
+    email: null,
+    cpf: null,
+    birthDate: null,
+    address: null,
+    city: null,
+    notes: null,
+    updatedAt: new Date(),
+  }).where(eq(contacts.customerId, customerId)).returning({ id: contacts.id });
+  report.contatosAnonimizados = contactRes.length;
+
+  console.log(`[LGPD] Customer ${customerId} anonimizado: ${report.leadsAnonimizados} leads, ${report.contatosAnonimizados} contatos`);
+  return report;
 }

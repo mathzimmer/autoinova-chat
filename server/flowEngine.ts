@@ -27,6 +27,7 @@ import {
   logFlowEvent,
 } from "./db";
 import { classifyMessage } from "./nlu";
+import { DEFAULT_STORE_LOCATION } from "./storeConfig";
 import { sendTextMessage, sendReplyButtons, sendListMessage, sendImageMessage, sendContactCard, sendSellerNotification } from "./whatsapp";
 import { getFlowSender } from "./flowChannelSender";
 import { emitNewMessage } from "./socket";
@@ -1837,7 +1838,7 @@ Guia: "compra" = interesse em comprar/ver um veículo, preço, disponibilidade. 
         // 4. Final fallback: usar primeira loja disponível
         if (storeLocation === "auto") {
           const stores = await getDistinctStoreLocations();
-          storeLocation = stores[0] || "Auto Inova - Matriz";
+          storeLocation = stores[0] || DEFAULT_STORE_LOCATION;
           console.log(`[FlowEngine] assign_seller: using fallback store "${storeLocation}"`);
         }
       }

@@ -1,6 +1,7 @@
 import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull, gte } from "drizzle-orm";
 import { normalizePhone, phoneVariations } from "./phoneNormalize";
 import { parseTradeYear, parseTradeKm, parseMoneyToCents, funnelToLeadStatus } from "./fieldParsing";
+import { DEFAULT_STORE_LOCATION } from "./storeConfig";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -2466,7 +2467,7 @@ export async function assignSellerRoundRobin(
   }
   if (!storeLocation) {
     const stores = await getDistinctStoreLocations();
-    storeLocation = stores[0] || "Auto Inova - Matriz";
+    storeLocation = stores[0] || DEFAULT_STORE_LOCATION; // PR #9: constante central
   }
   const seller = await getNextSellerInQueue(storeLocation);
   if (!seller) return null;

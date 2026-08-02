@@ -3378,6 +3378,17 @@ const customersRouter = router({
     const { backfillCustomers } = await import("./customers");
     return backfillCustomers({ dryRun: false });
   }),
+
+  /**
+   * LGPD: soft-anonymize — remove PII do customer + leads/contacts vinculados,
+   * PRESERVANDO linhas e métricas. Idempotente.
+   */
+  anonymize: adminProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { anonymizeCustomer } = await import("./customers");
+      return anonymizeCustomer(input.id);
+    }),
 });
 
 // ── Campaign (Envio em Massa) Router ────────────────────────────────────────

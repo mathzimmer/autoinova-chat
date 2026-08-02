@@ -19,6 +19,7 @@
  */
 
 import { getDb, getSetting, upsertSetting, createMessage, getLeadByConversationId } from "./db";
+import { getStoreConfig } from "./storeConfig";
 import { conversations, leads, messages, reengagementAttempts } from "../drizzle/schema";
 import { and, desc, eq, inArray, isNotNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { isConfigured as isWhatsAppConfigured } from "./whatsapp";
@@ -174,6 +175,10 @@ export async function runReengagementJob(): Promise<{ sent: number; skipped: num
     let skipped = 0;
     let errors = 0;
 
+    // PR #9: remetente por loja (era "Auto Inova - Matriz IA" hardcoded)
+    const storeCfg = await getStoreConfig();
+    const botSenderName = `${storeCfg.iaSenderName} (Reengajamento)`;
+
     for (const conv of candidates) {
       if (sent >= config.maxPerRun) break;
 
@@ -238,7 +243,7 @@ export async function runReengagementJob(): Promise<{ sent: number; skipped: num
             conversationId: conv.id,
             content: usedMessage,
             senderType: "bot",
-            senderName: "Auto Inova - Matriz IA (Reengajamento)",
+            senderName: botSenderName,
             messageType: "text",
           });
           ok = true;
@@ -253,7 +258,7 @@ export async function runReengagementJob(): Promise<{ sent: number; skipped: num
               conversationId: conv.id,
               content: `[Template: ${templateName}] (reengajamento pós-24h)`,
               senderType: "bot",
-              senderName: "Auto Inova - Matriz IA (Reengajamento)",
+              senderName: botSenderName,
               messageType: "text",
               metadata: { isTemplate: true },
             });

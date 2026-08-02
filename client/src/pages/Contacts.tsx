@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import { normalizePhone } from "@shared/phone";
+import { maskCpf } from "@shared/lgpd";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -82,6 +83,7 @@ const SOURCE_LABELS: Record<string, string> = {
 // ─── Main Component ─────────────────────────────────────────────
 export default function ContactsPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin"; // LGPD (#9): CPF completo só para admin
   // toast from sonner is already imported
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -711,7 +713,7 @@ export default function ContactsPage() {
                         </div>
                       )}
                       {contact.cpf && (
-                        <div className="text-[10px] text-muted-foreground font-mono">CPF: {contact.cpf}</div>
+                        <div className="text-[10px] text-muted-foreground font-mono">CPF: {isAdmin ? contact.cpf : maskCpf(contact.cpf)}</div>
                       )}
                       {contact.notes && !contact.lastConversation && (
                         <div className="text-xs text-muted-foreground truncate max-w-[200px]">{contact.notes}</div>

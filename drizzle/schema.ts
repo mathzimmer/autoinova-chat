@@ -783,6 +783,7 @@ export const customers = pgTable("customers", {
   city:           varchar("city", { length: 255 }),
   consentAt:      timestamp("consentAt"),
   consentSource:  varchar("consentSource", { length: 50 }),
+  anonymizedAt:   timestamp("anonymizedAt"),     // LGPD (PR #9): soft-anonymize aplicado
   createdAt:      timestamp("createdAt").defaultNow().notNull(),
   updatedAt:      timestamp("updatedAt").defaultNow().notNull(),
 });

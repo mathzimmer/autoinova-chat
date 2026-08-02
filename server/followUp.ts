@@ -142,7 +142,11 @@ export async function generateFollowUpMessage(
   const contexto = config.messages[Math.min(tentativa - 1, config.messages.length - 1)]
     || FOLLOW_UP_DEFAULTS.messages[Math.min(tentativa - 1, 2)];
 
-  const prompt = `Você é assistente da Auto Inova - Matriz, concessionária em Ivoti-RS.
+  // PR #9: loja vem da config (era "Auto Inova - Matriz" hardcoded)
+  const { getStoreConfig } = await import("./storeConfig");
+  const storeCfg = await getStoreConfig();
+
+  const prompt = `Você é assistente da ${storeCfg.displayName}, concessionária de veículos.
 
 Escreva UMA mensagem de WhatsApp curta (2-3 linhas no máximo) de follow-up para ${nome}.
 Esse cliente demonstrou interesse em: ${veiculo}.
@@ -339,11 +343,13 @@ export async function runFollowUpJob(): Promise<{ sent: number; skipped: number;
         }
 
         // Save to database
+        const { getStoreConfig } = await import("./storeConfig");
+        const storeCfg = await getStoreConfig();
         await createMessage({
           conversationId: conv.id,
           content: usedTemplate ? followUpMsg : followUpMsg,
           senderType: "bot",
-          senderName: "Auto Inova - Matriz IA",
+          senderName: storeCfg.iaSenderName,
           messageType: "text",
         });
 
