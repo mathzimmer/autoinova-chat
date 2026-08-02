@@ -675,6 +675,12 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           // Foto de perfil do contato (best-effort, em background)
           fetchProfilePicIfMissing(instanceName, mirrored.conversationId, parsed.phone)
             .catch(err => console.warn("[Evolution] profile pic:", err));
+          // GATILHO que faltava: fluxo + IA para mensagens inbound da Evolution
+          // (antes daqui, Evolution só salvava no inbox — nada respondia).
+          if (isInbound) {
+            const { runEvolutionAI } = await import("./evolutionAI");
+            runEvolutionAI(mirrored.conversationId, audioTranscript || parsed.content);
+          }
         } else {
           console.log(`[Evolution] Espelhamento pulado (duplicada?) instancia=${instanceName} msgId=${parsed.messageId}`);
         }

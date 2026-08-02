@@ -10,7 +10,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser, Smartphone, Inbox, TrendingUp, Trophy } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser, Smartphone, Inbox, TrendingUp, Trophy, Building2 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
@@ -80,9 +80,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       });
     },
   });
+  // Esconder/mostrar aba Matriz no inbox (quem migrou para instâncias próprias)
+  const setMatrizHidden = trpc.settings.setMatrizHidden.useMutation({
+    onSuccess: (data) => {
+      globalStatus.refetch();
+      toast.success(data.hidden ? "Aba Matriz escondida" : "Aba Matriz visível", {
+        description: data.hidden
+          ? "O inbox não mostra mais a caixa de entrada da Matriz."
+          : "A caixa de entrada da Matriz voltou a aparecer no inbox.",
+      });
+    },
+  });
 
   const aiEnabled = globalStatus.data?.aiEnabled ?? true;
   const flowsEnabled = globalStatus.data?.flowsEnabled ?? true;
+  const matrizHidden = globalStatus.data?.matrizHidden ?? false;
   const allActive = aiEnabled && flowsEnabled;
   const allInactive = !aiEnabled && !flowsEnabled;
 
@@ -221,6 +233,25 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                       : "bg-red-500/15 text-red-400"
                   }`}>
                     {flowsEnabled ? "ON" : "OFF"}
+                  </span>
+                </div>
+              </DropdownMenuItem>
+
+              {/* Esconder aba Matriz no inbox */}
+              <DropdownMenuItem
+                onClick={() => setMatrizHidden.mutate({ hidden: !matrizHidden })}
+                disabled={setMatrizHidden.isPending}
+                className="cursor-pointer"
+              >
+                <div className="flex items-center gap-2 w-full">
+                  <Building2 className={`h-4 w-4 ${matrizHidden ? "text-red-400" : "text-emerald-400"}`} />
+                  <span className="flex-1">Aba Matriz</span>
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                    matrizHidden
+                      ? "bg-red-500/15 text-red-400"
+                      : "bg-emerald-500/15 text-emerald-400"
+                  }`}>
+                    {matrizHidden ? "OCULTA" : "VISÍVEL"}
                   </span>
                 </div>
               </DropdownMenuItem>

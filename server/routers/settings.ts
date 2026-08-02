@@ -281,11 +281,23 @@ export const settingsRouter = router({
   getGlobalStatus: protectedProcedure.query(async () => {
     const aiEnabled = await getSetting("ai_global_enabled");
     const flowsEnabled = await getSetting("flows_global_enabled");
+    const matrizHidden = await getSetting("inbox_hide_matriz");
     return {
       aiEnabled: aiEnabled !== "false", // default true
       flowsEnabled: flowsEnabled !== "false", // default true
+      matrizHidden: matrizHidden === "true", // default false (Matriz visível)
     };
   }),
+
+  // Esconde/mostra a aba "Matriz (oficial)" no inbox — para quem migrou 100%
+  // para instâncias/números próprios e não usa mais o número da Matriz.
+  setMatrizHidden: adminProcedure
+    .input(z.object({ hidden: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("inbox_hide_matriz", String(input.hidden), ctx.user.id);
+      console.log(`[Settings] Aba Matriz ${input.hidden ? "ESCONDIDA" : "VISÍVEL"} por user ${ctx.user.id}`);
+      return { success: true, hidden: input.hidden };
+    }),
 
   setGlobalAI: adminProcedure
     .input(z.object({ enabled: z.boolean() }))

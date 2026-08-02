@@ -29,6 +29,21 @@ export default function Inbox() {
   const { data: officialInstances } = trpc.whatsappNumber.listInstances.useQuery(undefined, {
     refetchInterval: 60000,
   });
+  // Aba Matriz pode ser escondida (quem migrou 100% para instâncias/números próprios)
+  const { data: globalStatus } = trpc.settings.getGlobalStatus.useQuery(undefined, {
+    refetchInterval: 60000,
+  });
+  const matrizHidden = globalStatus?.matrizHidden === true;
+
+  // Se a Matriz está escondida e a fonte atual é "matriz", pula para a 1ª instância disponível
+  useEffect(() => {
+    if (!matrizHidden || source !== "matriz") return;
+    const first =
+      (instances || [])[0]?.instanceName ||
+      (zernioInstances || [])[0]?.instanceName ||
+      ((officialInstances || [])[0] as any)?.instanceName;
+    if (first) setSource(first);
+  }, [matrizHidden, source, instances, zernioInstances, officialInstances]);
 
   const utils = trpc.useUtils();
 
@@ -67,6 +82,7 @@ export default function Inbox() {
     <div className="h-full flex flex-col overflow-hidden">
       {/* ── Seletor de fonte (instância) ── */}
       <div className="shrink-0 flex items-center gap-1 px-3 py-1.5 border-b border-border bg-sidebar overflow-x-auto" style={{ scrollbarWidth: "none" }}>
+        {!matrizHidden && (
         <button
           onClick={() => { setSource("matriz"); setSelectedConversationId(null); }}
           className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
@@ -78,6 +94,7 @@ export default function Inbox() {
           <Building2 className="h-3 w-3" />
           Matriz (oficial)
         </button>
+        )}
         {(instances || []).map((inst: any) => (
           <button
             key={inst.id}
