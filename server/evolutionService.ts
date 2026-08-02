@@ -358,6 +358,19 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
       resolvedJid = remoteJid;
     }
 
+    // Normaliza para a forma canônica BR (insere o 9º dígito em celular sem ele) —
+    // o WhatsApp às vezes envia o JID com o número ANTIGO (sem o 9), o que
+    // duplicava contatos/conversas e quebrava buscas. NÃO mexemos no resolvedJid:
+    // o envio de resposta continua pelo JID original que a Evolution entende.
+    if (phone && !resolvedJid.endsWith("@lid")) {
+      const { normalizePhone } = await import("./phoneNormalize");
+      const normalized = normalizePhone(phone);
+      if (normalized && normalized !== phone) {
+        console.log(`[Evolution] Telefone normalizado: ${phone} -> ${normalized} (9º dígito)`);
+        phone = normalized;
+      }
+    }
+
     // Campos para correção do bug de direção da Evolution 2.3.x (LID):
     // senderPn identifica quem REALMENTE enviou, independente do fromMe
     const senderPnRaw = (msg.key as any)?.senderPn || (msg as any).senderPn
