@@ -149,12 +149,17 @@ export const leads = pgTable("leads", {
   vehicleInterest: varchar("vehicleInterest", { length: 500 }),
   hasTrade:        boolean("hasTrade"),
   tradeVehicle:    varchar("tradeVehicle", { length: 255 }),
-  tradeYear:       varchar("tradeYear", { length: 10 }),
-  tradeKm:         varchar("tradeKm", { length: 50 }),
+  tradeYear:       varchar("tradeYear", { length: 10 }),   // legado varchar — preferir tradeYearInt (PR #8)
+  tradeKm:         varchar("tradeKm", { length: 50 }),     // legado varchar — preferir tradeKmInt (PR #8)
   paymentMethod:   varchar("paymentMethod", { length: 255 }),
-  downPayment:     varchar("downPayment", { length: 100 }),
+  downPayment:     varchar("downPayment", { length: 100 }), // legado varchar — preferir downPaymentCents (PR #8)
+  // ── Colunas tipadas (PR #8): preenchidas automaticamente a partir das varchar ──
+  tradeYearInt:      integer("tradeYearInt"),        // ano da troca (1950..anoAtual+1)
+  tradeKmInt:        integer("tradeKmInt"),          // km da troca
+  downPaymentCents:  integer("downPaymentCents"),    // entrada em centavos de BRL
   vehicleId:       integer("vehicleId"),
   customerId:      integer("customerId"),      // pessoa canônica (PR #7)
+  // DEPRECADO (#8) — funnelStatus vence; status fica sincronizado por funnelToLeadStatus.
   status:          leadStatusEnum("leadStatus").default("new").notNull(),
   funnelStatus:    funnelStatusEnum("funnelStatus").default("novo").notNull(),
   temperature:     leadTemperatureEnum("leadTemperature").default("frio").notNull(),
@@ -362,7 +367,7 @@ export const leadOpportunities = pgTable("leadOpportunities", {
   id:            serial("id").primaryKey(),
   leadId:        integer("leadId").notNull(),
   status:        varchar("status", { length: 20 }).default("open").notNull(), // open | won | lost
-  funnelStatus:  varchar("funnelStatus", { length: 50 }).default("novo").notNull(),
+  funnelStatus:  funnelStatusEnum("funnelStatus").default("novo").notNull(), // PR #8: enum compartilhado
   vehicleId:     integer("vehicleId"),
   vehicleInterest: varchar("vehicleInterest", { length: 500 }),
   valueCents:    bigint("valueCents", { mode: "number" }),

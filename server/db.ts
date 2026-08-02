@@ -1,5 +1,6 @@
 import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull, gte } from "drizzle-orm";
 import { normalizePhone, phoneVariations } from "./phoneNormalize";
+import { parseTradeYear, parseTradeKm, parseMoneyToCents, funnelToLeadStatus } from "./fieldParsing";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -1307,7 +1308,15 @@ export async function upsertLead(data: InsertLead) {
     // Auto-calculate temperature when funnelStatus changes
     if (updateData.funnelStatus && typeof updateData.funnelStatus === "string") {
       updateData.temperature = calculateTemperature(updateData.funnelStatus);
+      // PR #8: funnelStatus vence — sincroniza leads.status (deprecado) se não veio explícito
+      if (typeof updateData.status !== "string") {
+        updateData.status = funnelToLeadStatus(updateData.funnelStatus);
+      }
     }
+    // PR #8: auto-preenche colunas tipadas a partir das varchar legadas
+    if (typeof updateData.tradeYear === "string") updateData.tradeYearInt = parseTradeYear(updateData.tradeYear);
+    if (typeof updateData.tradeKm === "string") updateData.tradeKmInt = parseTradeKm(updateData.tradeKm);
+    if (typeof updateData.downPayment === "string") updateData.downPaymentCents = parseMoneyToCents(updateData.downPayment);
     await db.update(leads).set(updateData).where(eq(leads.id, existing.id));
     // PR #7: garante o customer canônico vinculado (fire-and-forget, best-effort)
     import("./customers").then(({ linkLeadToCustomer }) => linkLeadToCustomer(existing.id))
@@ -1332,7 +1341,13 @@ export async function upsertLead(data: InsertLead) {
   // Auto-calculate temperature for new leads
   if (data.funnelStatus) {
     (data as any).temperature = calculateTemperature(data.funnelStatus);
+    // PR #8: funnelStatus vence — status (deprecado) nasce sincronizado se não veio explícito
+    if (!data.status) (data as any).status = funnelToLeadStatus(data.funnelStatus);
   }
+  // PR #8: auto-preenche colunas tipadas a partir das varchar legadas
+  if (data.tradeYear) (data as any).tradeYearInt = parseTradeYear(data.tradeYear);
+  if (data.tradeKm) (data as any).tradeKmInt = parseTradeKm(data.tradeKm);
+  if (data.downPayment) (data as any).downPaymentCents = parseMoneyToCents(data.downPayment);
   const result = await db.insert(leads).values(data).returning({ id: leads.id });
   // PR #7: lead novo já nasce vinculado ao customer canônico (fire-and-forget)
   import("./customers").then(({ linkLeadToCustomer }) => linkLeadToCustomer(result[0].id))

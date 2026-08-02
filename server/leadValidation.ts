@@ -5,9 +5,10 @@
  * gravados; campos inválidos NÃO são gravados e voltam como erro no tool result
  * para o modelo se autocorrigir (pedir o dado de novo ao cliente).
  *
- * PR #1 do roadmap. NÃO altera semântica de armazenamento (colunas ainda são
- * varchar): números viram string limpa. A conversão de `entrada` para centavos
- * e de km/ano para colunas inteiras fica para o PR #8, junto da migração de tipo.
+ * PR #1 do roadmap. Continua gravando as colunas varchar (compat de leitura por
+ * 1 release); o PR #8 adicionou as colunas tipadas (`tradeYearInt`, `tradeKmInt`,
+ * `downPaymentCents`) que são preenchidas automaticamente no `upsertLead` a
+ * partir das varchar, via `server/fieldParsing.ts`.
  */
 import { z } from "zod";
 import { normalizePhone } from "./phoneNormalize";
@@ -52,7 +53,7 @@ const anoTrocaSchema = z.coerce.number().int("não é inteiro")
   .gte(1950, "ano muito antigo").lte(currentYear + 1, "ano no futuro");
 const kmTrocaSchema = z.coerce.number().int("não é inteiro").gte(0, "negativo");
 // `entrada`: valida que há um valor monetário plausível; mantém string limpa
-// (a conversão para centavos é do PR #8, quando a coluna vira integer).
+// (a conversão para centavos acontece no upsertLead via fieldParsing — PR #8).
 const entradaSchema = z.string()
   .transform(s => String(s).trim())
   .refine(s => /\d/.test(s), "sem valor numérico");
