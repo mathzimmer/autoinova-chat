@@ -1,7 +1,6 @@
 -- PR #8 — tipos numéricos em leads + enum de funil compartilhado em leadOpportunities
--- 100% idempotente: seguro reexecutar (deploy.sh roda todas as migrations em ordem).
-
-BEGIN;
+-- 100% idempotente: seguro reexecutar (deploy.sh roda todas as migrations em ordem
+-- e já envolve cada arquivo em transação própria).
 
 -- 1) Colunas tipadas novas em leads (backfill abaixo)
 ALTER TABLE "leads" ADD COLUMN IF NOT EXISTS "tradeYearInt" integer;
@@ -58,6 +57,8 @@ BEGIN
       AND column_name = 'funnelStatus'
       AND data_type <> 'USER-DEFINED'
   ) THEN
+    -- o default varchar ('novo') não converte sozinho: derruba antes, recria depois
+    ALTER TABLE "leadOpportunities" ALTER COLUMN "funnelStatus" DROP DEFAULT;
     -- valores fora do enum viram 'novo' (fallback seguro)
     ALTER TABLE "leadOpportunities"
       ALTER COLUMN "funnelStatus" TYPE funnel_status
@@ -68,7 +69,7 @@ BEGIN
           ELSE 'novo'
         END
       )::funnel_status;
+    ALTER TABLE "leadOpportunities"
+      ALTER COLUMN "funnelStatus" SET DEFAULT 'novo'::funnel_status;
   END IF;
 END $$;
-
-COMMIT;
