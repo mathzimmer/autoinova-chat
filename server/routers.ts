@@ -146,6 +146,11 @@ import { labelRouter } from "./routers/label";
 import { reminderRouter } from "./routers/reminder";
 import { scheduledMessageRouter } from "./routers/scheduledMessage";
 import { capiRouter } from "./routers/capi";
+import { teamRouter } from "./routers/team";
+import { teamAuthRouter } from "./routers/teamAuth";
+import { notificationRouter } from "./routers/notification";
+import { activityRouter } from "./routers/activity";
+import { aiDecisionRouter } from "./routers/aiDecision";
 
 /**
  * Inicializa o debounce callback e carrega delay do banco
@@ -3000,259 +3005,18 @@ const settingsRouter = router({
 });
 
 // ─── Team Members Router ──────────────────────────────────────
-const teamRouter = router({
-  list: protectedProcedure.query(async () => {
-    return getActiveTeamMembers();
-  }),
-
-  listAll: adminProcedure.query(async () => {
-    return listTeamMembersAuth();
-  }),
-
-  getById: protectedProcedure
-    .input(z.object({ id: z.number() }))
-    .query(async ({ input }) => {
-      return getTeamMemberById(input.id);
-    }),
-
-  create: adminProcedure
-    .input(z.object({
-      name: z.string().min(2),
-      email: z.string().email(),
-      password: z.string().min(6),
-      cargo: z.enum(["admin", "gerente", "vendedor", "suporte"]).default("vendedor"),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const result = await createTeamMember(input.name, input.email, input.password, input.cargo);
-      await createActivityLog({
-        userId: ctx.user.id,
-        action: "create_team_member",
-        details: { name: input.name, email: input.email, cargo: input.cargo },
-      });
-      return { success: true };
-    }),
-
-  update: adminProcedure
-    .input(z.object({
-      id: z.number(),
-      name: z.string().optional(),
-      email: z.string().email().optional(),
-      cargo: z.enum(["admin", "gerente", "vendedor", "suporte"]).optional(),
-      status: z.enum(["ativo", "inativo"]).optional(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const { id, ...updates } = input;
-      await updateTeamMember(id, updates);
-      await createActivityLog({
-        userId: ctx.user.id,
-        action: "update_team_member",
-        details: { memberId: id, ...updates },
-      });
-      return { success: true };
-    }),
-
-  resetPassword: adminProcedure
-    .input(z.object({
-      id: z.number(),
-      newPassword: z.string().min(6),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const newHash = hashPassword(input.newPassword);
-      const db = await getDb();
-      if (!db) throw new Error("Database not available");
-      const { teamMembers: tm } = await import("../drizzle/schema");
-      const { eq } = await import("drizzle-orm");
-      await db.update(tm).set({ passwordHash: newHash }).where(eq(tm.id, input.id));
-      await createActivityLog({
-        userId: ctx.user.id,
-        action: "reset_password",
-        details: { memberId: input.id },
-      });
-      return { success: true };
-    }),
-
-  deactivate: adminProcedure
-    .input(z.object({ id: z.number() }))
-    .mutation(async ({ input, ctx }) => {
-      await deactivateTeamMember(input.id);
-      await createActivityLog({
-        userId: ctx.user.id,
-        action: "deactivate_team_member",
-        details: { memberId: input.id },
-      });
-      return { success: true };
-    }),
-});
 
 // ─── Team Auth Router ──────────────────────────────────────
 const TEAM_COOKIE = "team_session";
 
-const teamAuthRouter = router({
-  login: publicProcedure
-    .input(z.object({
-      email: z.string().email(),
-      password: z.string(),
-    }))
-    .mutation(async ({ input, ctx }) => {
-      const member = await authenticateTeamMember(input.email, input.password);
-      if (!member) {
-        throw new Error("Email ou senha inválidos");
-      }
-      // Create a virtual openId for this team member
-      const virtualOpenId = `team_member_${member.id}`;
-      // Ensure a user record exists for this team member
-      const existingUser = await getUserByOpenId(virtualOpenId);
-      if (!existingUser) {
-        await upsertUser({
-          openId: virtualOpenId,
-          name: member.name,
-          email: member.email,
-          role: member.cargo === "admin" ? "admin" : "user",
-          lastSignedIn: new Date(),
-        });
-      } else {
-        await upsertUser({
-          openId: virtualOpenId,
-          name: member.name,
-          lastSignedIn: new Date(),
-        });
-      }
-      // Create session token and set cookie
-      const token = await sdk.createSessionToken(virtualOpenId, { name: member.name });
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.cookie(COOKIE_NAME, token, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      return {
-        success: true,
-        member: { id: member.id, name: member.name, email: member.email, cargo: member.cargo },
-      };
-    }),
-
-  me: publicProcedure.query(async ({ ctx }) => {
-    if (!ctx.user) return null;
-    // Check if this is a team member
-    if (ctx.user.openId.startsWith("team_member_")) {
-      const memberId = parseInt(ctx.user.openId.replace("team_member_", ""));
-      const member = await getTeamMemberById(memberId);
-      if (member) {
-        return {
-          ...ctx.user,
-          teamMember: { id: member.id, name: member.name, email: member.email, cargo: member.cargo, status: member.status },
-          isTeamMember: true,
-        };
-      }
-    }
-    return { ...ctx.user, teamMember: null, isTeamMember: false };
-  }),
-});
 
 import { getUserByOpenId, upsertUser } from "./db";
 
 // ─── Notification Router ──────────────────────────────────────
-const notificationRouter = router({
-  list: protectedProcedure
-    .input(z.object({ unreadOnly: z.boolean().optional() }).optional())
-    .query(async ({ ctx, input }) => {
-      return listTeamNotifications(ctx.user.id, input?.unreadOnly);
-    }),
-
-  unreadCount: protectedProcedure.query(async ({ ctx }) => {
-    return getUnreadNotificationCount(ctx.user.id);
-  }),
-
-  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
-    await markNotificationsAsRead(ctx.user.id);
-    return { success: true };
-  }),
-});
 
 // ─── Activity Log Router ──────────────────────────────────────
-const activityRouter = router({
-  list: protectedProcedure
-    .input(z.object({
-      conversationId: z.number().optional(),
-      limit: z.number().optional(),
-    }).optional())
-    .query(async ({ input }) => {
-      return listActivityLogs(input?.conversationId, input?.limit);
-    }),
-
-  /** Linha do tempo do lead: eventos + notas, com nome do usuário resolvido */
-  timeline: protectedProcedure
-    .input(z.object({ conversationId: z.number() }))
-    .query(async ({ input }) => {
-      const logs = await listActivityLogs(input.conversationId, 200);
-      let members: any[] = [];
-      try { members = (await listTeamMembersAuth()) as any[]; } catch {}
-      const nameOf = (uid: number) => uid === 0 ? "Sistema" : (members.find(m => m.id === uid)?.name || "Usuário");
-      return (logs as any[]).map(l => ({
-        id: l.id,
-        action: l.action,
-        userId: l.userId,
-        userName: nameOf(l.userId),
-        details: l.details,
-        createdAt: l.createdAt,
-      }));
-    }),
-
-  /** Linha do tempo UNIFICADA por lead (todos os números/conversas da pessoa) */
-  timelineByLead: protectedProcedure
-    .input(z.object({ leadId: z.number() }))
-    .query(async ({ input }) => {
-      const { listActivityLogsByLead } = await import("./db");
-      const logs = await listActivityLogsByLead(input.leadId, 120);
-      let members: any[] = [];
-      try { members = (await listTeamMembersAuth()) as any[]; } catch {}
-      const nameOf = (uid: number) => uid === 0 ? "Sistema" : (members.find(m => m.id === uid)?.name || "Usuário");
-      return (logs as any[]).map(l => ({
-        id: l.id, action: l.action, userId: l.userId, userName: nameOf(l.userId),
-        details: l.details, createdAt: l.createdAt,
-      }));
-    }),
-
-  /** Adiciona uma nota manual à linha do tempo (registra quem, quando) */
-  addNote: protectedProcedure
-    .input(z.object({ conversationId: z.number(), note: z.string().min(1).max(2000) }))
-    .mutation(async ({ input, ctx }) => {
-      const { logTimeline } = await import("./db");
-      await logTimeline({
-        conversationId: input.conversationId,
-        userId: ctx.user.id,
-        action: "nota",
-        details: { note: input.note.trim(), authorName: ctx.user.name || "Atendente" },
-      });
-      return { success: true };
-    }),
-});
 
 // ─── AI Decision Router ──────────────────────────────────────
-const aiDecisionRouter = router({
-  list: adminProcedure
-    .input(z.object({
-      conversationId: z.number().optional(),
-      toolName: z.string().optional(),
-      limit: z.number().optional(),
-      offset: z.number().optional(),
-    }).optional())
-    .query(async ({ input }) => {
-      return listAiDecisions({
-        conversationId: input?.conversationId,
-        toolName: input?.toolName,
-        limit: input?.limit || 50,
-        offset: input?.offset || 0,
-      });
-    }),
-
-  byConversation: protectedProcedure
-    .input(z.object({ conversationId: z.number() }))
-    .query(async ({ input }) => {
-      return getAiDecisionsByConversation(input.conversationId);
-    }),
-
-  stats: adminProcedure
-    .query(async () => {
-      return getAiDecisionStats();
-    }),
-});
 
 // ── Rescue Router ────────────────────────────────────────────────────────────
 
