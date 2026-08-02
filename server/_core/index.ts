@@ -568,6 +568,14 @@ async function startServer() {
           return;
         }
 
+        // Número de DESTINO migrado p/ outro canal (ex.: Evolution) mas ainda
+        // registrado no Zernio → chega com o accountId de terceiro; ignora.
+        const { isZernioBusinessPhoneBlocked } = await import("../db");
+        if (await isZernioBusinessPhoneBlocked(m.businessPhone)) {
+          console.log(`[Zernio] message.received ignorado: destino ${m.businessPhone} é atendido por outro canal`);
+          return;
+        }
+
         // Mídia do Zernio exige Bearer token → re-hospeda no S3/MinIO para o
         // inbox renderizar (imagem/áudio/vídeo) e a transcrição conseguir baixar.
         let hostedMediaUrl: string | undefined = m.mediaUrl;
@@ -653,6 +661,11 @@ async function startServer() {
         const { isZernioAccountAllowed } = await import("../db");
         if (!(await isZernioAccountAllowed(m.accountId))) {
           console.log(`[Zernio] message.sent ignorado: conta ${m.accountId || "?"} não cadastrada ou inativa no CRM`);
+          return;
+        }
+        const { isZernioBusinessPhoneBlocked } = await import("../db");
+        if (await isZernioBusinessPhoneBlocked(m.businessPhone)) {
+          console.log(`[Zernio] message.sent ignorado: destino ${m.businessPhone} é atendido por outro canal`);
           return;
         }
         let hostedMediaUrl: string | undefined = m.mediaUrl;

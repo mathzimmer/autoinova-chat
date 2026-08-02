@@ -374,6 +374,9 @@ export interface ZernioParsedMessage {
   conversationId?: string;
   accountId?: string;
   platform?: string;
+  /** Telefone do NEGÓCIO (número de destino que recebeu a mensagem) — usado para
+   *  ignorar números migrados p/ outro canal que seguem registrados no Zernio */
+  businessPhone?: string;
   phone: string;
   name?: string;
   senderName?: string;      // nome de quem enviou (negócio no outbound, cliente no inbound)
@@ -507,6 +510,14 @@ export function parseZernioMessage(payload: any): ZernioParsedMessage {
     conversationId: firstDefined<string>(conv?.id, conv?._id, conv?.conversationId, msg?.conversationId),
     accountId: firstDefined<string>(account?.id, account?._id, account?.accountId, msg?.accountId),
     platform: firstDefined<string>(account?.platform, conv?.platform, msg?.platform),
+    businessPhone: (() => {
+      const raw = firstDefined<string>(
+        account?.phoneNumber, account?.phone, account?.username,
+        msg?.to, msg?.recipient, msg?.recipientPhone, msg?.receiver,
+        conv?.accountPhone, conv?.businessPhone, conv?.recipientBusinessPhone,
+      );
+      return raw ? String(raw).replace(/[^\d]/g, "") : undefined;
+    })(),
     phone,
     name,
     senderName,

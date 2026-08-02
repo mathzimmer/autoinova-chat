@@ -524,6 +524,36 @@ export async function isZernioAccountAllowed(accountId?: string): Promise<boolea
   return (inst as any).active !== false;
 }
 
+/**
+ * O número de DESTINO da mensagem Zernio já é atendido por outro canal?
+ * Cobre o caso do número migrado (ex.: 555131919081 → Evolution) que segue
+ * registrado na conta Zernio de outra pessoa — o webhook chega com o accountId
+ * dela, mas o destino é o número migrado. Bloqueia quando:
+ *  1. o telefone bate com uma instância Evolution cadastrada, OU
+ *  2. consta na setting manual `zernio_blocked_phones` (CSV, qualquer formato).
+ */
+export async function isZernioBusinessPhoneBlocked(businessPhone?: string): Promise<boolean> {
+  const digits = (businessPhone || "").replace(/\D/g, "");
+  if (!digits) return false;
+  const { normalizePhone } = await import("./phoneNormalize");
+  const canon = normalizePhone(digits);
+  const db = await getDb();
+  if (db) {
+    const rows = await db.select({ phone: evolutionInstances.phone }).from(evolutionInstances);
+    for (const r of rows) {
+      if (r.phone && normalizePhone(r.phone) === canon) return true;
+    }
+  }
+  try {
+    const raw = await getSetting("zernio_blocked_phones");
+    if (raw) {
+      const list = raw.split(/[,;\s]+/).map((p) => normalizePhone(p)).filter(Boolean);
+      if (list.includes(canon)) return true;
+    }
+  } catch { /* setting opcional */ }
+  return false;
+}
+
 // ─── Espelhamento de mensagens de um NÚMERO OFICIAL adicional (multi-número) ──
 // Conversas ficam com channel "whatsapp" + instanceName = phoneNumberId, para
 // aparecerem numa aba própria no inbox (o número da Matriz tem instanceName null).
