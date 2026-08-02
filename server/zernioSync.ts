@@ -30,6 +30,8 @@ export async function runZernioSync(opts?: { convsPerAccount?: number; msgsPerCo
 
   let instances: any[] = [];
   try { instances = await listZernioInstances(); } catch { return { inserted: 0 }; }
+  // Só sincroniza contas ATIVAS — conta desativada/excluída não deve ser puxada
+  instances = instances.filter((i: any) => i?.active !== false);
   if (!instances.length) return { inserted: 0 };
   console.log(`[ZernioSync] iniciando (${instances.length} instância(s))`);
   let debugged = false;

@@ -559,6 +559,15 @@ async function startServer() {
           return;
         }
 
+        // Ignora contas NÃO cadastradas ou INATIVAS no CRM. Sem isto, um número
+        // "excluído" do CRM (exclusão é só local) continuava espelhando mensagens
+        // enquanto o Zernio seguisse entregando webhooks dele.
+        const { isZernioAccountAllowed } = await import("../db");
+        if (!(await isZernioAccountAllowed(m.accountId))) {
+          console.log(`[Zernio] message.received ignorado: conta ${m.accountId || "?"} não cadastrada ou inativa no CRM`);
+          return;
+        }
+
         // Mídia do Zernio exige Bearer token → re-hospeda no S3/MinIO para o
         // inbox renderizar (imagem/áudio/vídeo) e a transcrição conseguir baixar.
         let hostedMediaUrl: string | undefined = m.mediaUrl;
@@ -640,6 +649,12 @@ async function startServer() {
       // ── Mensagem enviada (pela Bianca no app / dashboard Zernio) → espelha ──
       if (event === "message.sent") {
         const m = parseZernioMessage(payload);
+        // Mesmo guard do message.received: conta não cadastrada/inativa → ignora
+        const { isZernioAccountAllowed } = await import("../db");
+        if (!(await isZernioAccountAllowed(m.accountId))) {
+          console.log(`[Zernio] message.sent ignorado: conta ${m.accountId || "?"} não cadastrada ou inativa no CRM`);
+          return;
+        }
         let hostedMediaUrl: string | undefined = m.mediaUrl;
         if (m.mediaUrl && m.messageType !== "text") {
           const { hostZernioMedia } = await import("../zernioService");

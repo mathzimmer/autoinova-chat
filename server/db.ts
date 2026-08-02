@@ -510,6 +510,20 @@ export async function getZernioInstanceByAccount(accountId: string) {
   return (await db.select().from(zernioInstances).where(eq(zernioInstances.accountId, accountId)).limit(1))[0];
 }
 
+/**
+ * O webhook/sync só podem espelhar mensagens de contas Zernio CADASTRADAS e
+ * ATIVAS no CRM. Sem este guard, um número desconectado ("excluído" do CRM)
+ * continuava gerando conversas — a exclusão era só local e o Zernio seguia
+ * entregando webhooks. Retorna false também quando o accountId não veio no
+ * payload (não dá para saber de qual conta é → melhor ignorar e logar).
+ */
+export async function isZernioAccountAllowed(accountId?: string): Promise<boolean> {
+  if (!accountId) return false;
+  const inst = await getZernioInstanceByAccount(accountId);
+  if (!inst) return false; // não cadastrada no CRM → ignora
+  return (inst as any).active !== false;
+}
+
 // ─── Espelhamento de mensagens de um NÚMERO OFICIAL adicional (multi-número) ──
 // Conversas ficam com channel "whatsapp" + instanceName = phoneNumberId, para
 // aparecerem numa aba própria no inbox (o número da Matriz tem instanceName null).
