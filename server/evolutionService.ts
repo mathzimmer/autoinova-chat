@@ -3,6 +3,8 @@
  * Handles communication with the Evolution API for multi-number WhatsApp management
  */
 
+import { normalizePhone } from "./phoneNormalize";
+
 const EVOLUTION_API_URL = process.env.EVOLUTION_API_URL || "";
 const EVOLUTION_API_KEY = process.env.EVOLUTION_API_KEY || "";
 
@@ -363,7 +365,6 @@ export function parseWebhookMessage(payload: EvolutionWebhookPayload) {
     // duplicava contatos/conversas e quebrava buscas. NÃO mexemos no resolvedJid:
     // o envio de resposta continua pelo JID original que a Evolution entende.
     if (phone && !resolvedJid.endsWith("@lid")) {
-      const { normalizePhone } = await import("./phoneNormalize");
       const normalized = normalizePhone(phone);
       if (normalized && normalized !== phone) {
         console.log(`[Evolution] Telefone normalizado: ${phone} -> ${normalized} (9º dígito)`);
