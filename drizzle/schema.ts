@@ -1,7 +1,7 @@
 import {
   pgTable, pgEnum,
   serial, integer, smallint, bigint, numeric,
-  varchar, text, boolean, json, jsonb, timestamp,
+  varchar, text, boolean, json, jsonb, timestamp, date,
 } from "drizzle-orm/pg-core";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -82,6 +82,7 @@ export const conversations = pgTable("conversations", {
   // Agente de IA fixado nesta conversa (null = usa a hierarquia padrão)
   agentId:                 integer("agentId"),
   leadId:                  integer("leadId"),           // lead (pessoa) desta conversa
+  customerId:              integer("customerId"),        // pessoa canônica (PR #7)
   // Arquivamento (sai da caixa principal sem apagar)
   archived:                boolean("archived").default(false).notNull(),
   platformUserId:          varchar("platformUserId", { length: 255 }),  // BSUID vai aqui
@@ -153,6 +154,7 @@ export const leads = pgTable("leads", {
   paymentMethod:   varchar("paymentMethod", { length: 255 }),
   downPayment:     varchar("downPayment", { length: 100 }),
   vehicleId:       integer("vehicleId"),
+  customerId:      integer("customerId"),      // pessoa canônica (PR #7)
   status:          leadStatusEnum("leadStatus").default("new").notNull(),
   funnelStatus:    funnelStatusEnum("funnelStatus").default("novo").notNull(),
   temperature:     leadTemperatureEnum("leadTemperature").default("frio").notNull(),
@@ -735,6 +737,7 @@ export const contacts = pgTable("contacts", {
   source:         contactSourceEnum("contactSource").default("manual").notNull(),
   conversationId: integer("conversationId"),
   leadId:         integer("leadId"),
+  customerId:     integer("customerId"),      // pessoa canônica (PR #7)
   // ── Classificação e dados completos ──
   kind:           varchar("contactKind", { length: 40 }).default("lead").notNull(), // lead | cliente | tipos customizados
   // Instância Evolution que originou/criou o contato (null = matriz/oficial)
@@ -756,6 +759,31 @@ export const contacts = pgTable("contacts", {
 
 export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = typeof contacts.$inferInsert;
+
+/**
+ * Customers — PESSOA CANÔNICA (PR #7).
+ * Uma linha por ser humano, identificada por canonicalPhone (normalizePhone).
+ * leads/conversations/contacts apontam para cá via customerId — acaba a
+ * duplicação "mesmo cliente, várias conversas/canais". consentAt/Source
+ * alimentam o LGPD (PR #9).
+ */
+export const customers = pgTable("customers", {
+  id:             serial("id").primaryKey(),
+  canonicalPhone: varchar("canonicalPhone", { length: 20 }).notNull().unique(),
+  name:           varchar("name", { length: 255 }),
+  fullName:       varchar("fullName", { length: 255 }),
+  email:          varchar("email", { length: 320 }),
+  cpf:            varchar("cpf", { length: 11 }),          // só dígitos
+  birthDate:      date("birthDate"),                        // YYYY-MM-DD
+  city:           varchar("city", { length: 255 }),
+  consentAt:      timestamp("consentAt"),
+  consentSource:  varchar("consentSource", { length: 50 }),
+  createdAt:      timestamp("createdAt").defaultNow().notNull(),
+  updatedAt:      timestamp("updatedAt").defaultNow().notNull(),
+});
+
+export type Customer = typeof customers.$inferSelect;
+export type InsertCustomer = typeof customers.$inferInsert;
 
 /**
  * Template Sends — histórico de envios de templates de marketing para contatos.

@@ -3354,6 +3354,32 @@ const reengagementRouter = router({
   }),
 });
 
+// ── Customers Router (pessoa canônica — PR #7) ───────────────────────────────
+
+const customersRouter = router({
+  list: adminProcedure
+    .input(z.object({
+      limit: z.number().min(1).max(100).default(50),
+      offset: z.number().min(0).default(0),
+    }).optional())
+    .query(async ({ input }) => {
+      const { listCustomers } = await import("./customers");
+      return listCustomers(input?.limit ?? 50, input?.offset ?? 0);
+    }),
+
+  /** DRY-RUN: relatório de duplicados ANTES de escrever qualquer coisa. */
+  dryRunBackfill: adminProcedure.query(async () => {
+    const { backfillCustomers } = await import("./customers");
+    return backfillCustomers({ dryRun: true });
+  }),
+
+  /** Executa o backfill de verdade (rode o dryRunBackfill antes!). */
+  runBackfill: adminProcedure.mutation(async () => {
+    const { backfillCustomers } = await import("./customers");
+    return backfillCustomers({ dryRun: false });
+  }),
+});
+
 // ── Campaign (Envio em Massa) Router ────────────────────────────────────────
 
 const campaignRouter = router({
@@ -7399,6 +7425,7 @@ export const appRouter = router({
   seller: sellerRouter,
   rescue: rescueRouter,
   reengagement: reengagementRouter,
+  customers: customersRouter,
   contact: contactsRouter,
   evolution: evolutionRouter,
   zernio: zernioRouter,

@@ -1309,6 +1309,9 @@ export async function upsertLead(data: InsertLead) {
       updateData.temperature = calculateTemperature(updateData.funnelStatus);
     }
     await db.update(leads).set(updateData).where(eq(leads.id, existing.id));
+    // PR #7: garante o customer canônico vinculado (fire-and-forget, best-effort)
+    import("./customers").then(({ linkLeadToCustomer }) => linkLeadToCustomer(existing.id))
+      .catch(err => console.error("[Customers] hook upsertLead:", err));
     // Meta CAPI: reporta progresso do funil/status (fire-and-forget)
     const funnelChanged = typeof updateData.funnelStatus === "string" && updateData.funnelStatus !== existing.funnelStatus;
     const statusChanged = typeof updateData.status === "string" && updateData.status !== existing.status;
@@ -1331,6 +1334,9 @@ export async function upsertLead(data: InsertLead) {
     (data as any).temperature = calculateTemperature(data.funnelStatus);
   }
   const result = await db.insert(leads).values(data).returning({ id: leads.id });
+  // PR #7: lead novo já nasce vinculado ao customer canônico (fire-and-forget)
+  import("./customers").then(({ linkLeadToCustomer }) => linkLeadToCustomer(result[0].id))
+    .catch(err => console.error("[Customers] hook upsertLead(insert):", err));
   // Meta CAPI: lead novo já criado em etapa avançada do funil
   if (data.funnelStatus || data.status) {
     const newId = result[0].id;
