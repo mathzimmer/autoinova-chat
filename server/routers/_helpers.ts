@@ -52,3 +52,11 @@ export const vendorKeyProcedure = publicProcedure.use(async ({ ctx, next }) => {
   if (!vendor) throw new Error("Invalid or inactive API key");
   return next({ ctx: { ...ctx, vendor } });
 });
+
+// Deriva o valor da "fonte" (aba do inbox) de uma conversa
+export function conversationSourceValue(conv: { channel?: string | null; instanceName?: string | null }): string {
+  if (conv.channel === "evolution" && conv.instanceName) return conv.instanceName;
+  if (conv.channel === "zernio" && conv.instanceName) return `zernio:${conv.instanceName}`;
+  if (conv.channel === "whatsapp" && conv.instanceName) return `official:${conv.instanceName}`;
+  return "matriz";
+}
