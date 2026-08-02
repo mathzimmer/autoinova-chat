@@ -44,7 +44,12 @@ WHERE NOT EXISTS (SELECT 1 FROM "reengagementAttempts" r WHERE r."conversationId
 
 INSERT INTO "reengagementAttempts" ("conversationId", "leadId", "attemptNumber", "strategy", "reengagementStatus", "flowId", "sentAt", "respondedAt", "createdAt")
 SELECT a."conversationId", a."leadId", a."attemptNumber", 'flow',
-       CASE a."rescueStatus" WHEN 'responded' THEN 'responded' ELSE 'sent' END,
+       (CASE a."rescueStatus"
+          WHEN 'responded' THEN 'responded'
+          WHEN 'cancelled' THEN 'cancelled'
+          WHEN 'expired'   THEN 'cancelled'
+          ELSE 'sent'
+        END)::reengagement_status,
        a."flowId", a."sentAt", a."respondedAt", a."sentAt"
 FROM "rescueAttempts" a
 WHERE NOT EXISTS (SELECT 1 FROM "reengagementAttempts" r WHERE r."conversationId" = a."conversationId" AND r."sentAt" = a."sentAt");
