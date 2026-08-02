@@ -664,28 +664,34 @@ export async function mirrorZernioMessage(params: {
   }
 
   // Localiza conversa: pelo zernioConversationId no metadata, senão pelo phone+canal.
-  // AMBAS as buscas são escopadas pela INSTÂNCIA (accountId) — sem isso, uma
-  // conversa poluída de outra instância (bianca ↔ deivid) pode ser encontrada.
+  // REGRA DURA: busca por TELEFONE só com accountId — sem ele, casaria com a
+  // conversa de OUTRA instância Zernio do mesmo cliente e a mensagem "vazaria"
+  // de uma aba para outra (bug: conversa aparecendo em instância errada).
   const convScope = (extra: any) => {
     const conds = [eq(conversations.channel, "zernio" as any), extra];
     if (params.accountId) conds.push(eq(conversations.instanceName, params.accountId));
     return and(...conds);
   };
+  // zernioConversationId é globalmente único → pode buscar sem escopo quando o
+  // accountId faltar; o instanceName é backfillado depois (needsInstance).
   let conv = params.zernioConversationId
     ? (await db.select().from(conversations)
         .where(convScope(sql`metadata->>'zernioConversationId' = ${params.zernioConversationId}`)).limit(1))[0]
     : undefined;
   if (!conv && bestPhone) {
-    // Escopo por INSTÂNCIA (accountId): o mesmo cliente pode falar com números
-    // Zernio diferentes (bianca, deivid). Sem filtrar por instância, a mensagem
-    // de um número "colaria" na conversa do outro.
-    const phoneConds = [
-      eq(conversations.channel, "zernio" as any),
-      eq(conversations.phone, bestPhone),
-    ];
-    if (params.accountId) phoneConds.push(eq(conversations.instanceName, params.accountId));
-    conv = (await db.select().from(conversations)
-      .where(and(...phoneConds)).limit(1))[0];
+    if (!params.accountId) {
+      console.warn(`[Zernio] mirror SEM accountId (phone ${bestPhone}) — busca por telefone pulada para não cruzar instâncias`);
+    } else {
+      // Escopo por INSTÂNCIA (accountId): o mesmo cliente pode falar com números
+      // Zernio diferentes (bianca, deivid). Sem filtrar por instância, a mensagem
+      // de um número "colaria" na conversa do outro.
+      conv = (await db.select().from(conversations)
+        .where(and(
+          eq(conversations.channel, "zernio" as any),
+          eq(conversations.phone, bestPhone),
+          eq(conversations.instanceName, params.accountId),
+        )).limit(1))[0];
+    }
   }
 
   // Sincronizador: se a conversa já existe e já tem uma mensagem com o mesmo
