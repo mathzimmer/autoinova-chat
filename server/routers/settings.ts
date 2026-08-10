@@ -106,6 +106,23 @@ export const settingsRouter = router({
     }),
 
   /** Estilo dos comentários da IA nos leads (curto/objetivo x detalhado) */
+  /** Uso do disco do servidor (pra avisar antes de encher e quebrar mídia/uploads). */
+  diskUsage: protectedProcedure.query(async () => {
+    try {
+      const { statfs } = await import("fs/promises");
+      const s: any = await statfs("/");
+      const bsize = Number(s.bsize) || 4096;
+      const total = Number(s.blocks) * bsize;
+      const freeRoot = Number(s.bfree) * bsize;
+      const avail = Number(s.bavail) * bsize;   // livre para usuário comum
+      const used = total - freeRoot;
+      const percent = used + avail > 0 ? Math.round((used / (used + avail)) * 100) : 0;
+      return { ok: true, totalBytes: total, usedBytes: used, availBytes: avail, percent };
+    } catch (e) {
+      return { ok: false, totalBytes: 0, usedBytes: 0, availBytes: 0, percent: 0, error: e instanceof Error ? e.message : "erro" };
+    }
+  }),
+
   getIaCommentStyle: protectedProcedure.query(async () => {
     return { style: (await getSetting("ia_comment_style")) || "objetivo" };
   }),

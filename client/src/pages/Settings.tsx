@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Settings as SettingsIcon, Bot, Save, RotateCcw, Info, CheckCircle2, AlertTriangle, Shield, ShoppingCart, Sparkles, Timer, Loader2, Smartphone, Copy, ExternalLink } from "lucide-react";
+import { Settings as SettingsIcon, Bot, Save, RotateCcw, Info, CheckCircle2, AlertTriangle, Shield, ShoppingCart, Sparkles, Timer, Loader2, Smartphone, Copy, ExternalLink, HardDrive, RefreshCw } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
@@ -212,6 +212,67 @@ function IaCommentStyleSettings() {
   );
 }
 
+function fmtBytes(b: number): string {
+  if (!b || b < 0) return "0 B";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0, n = b;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return `${n.toFixed(i === 0 || n >= 100 ? 0 : 1)} ${u[i]}`;
+}
+
+function StorageCard() {
+  const { data, isLoading, refetch, isFetching } = trpc.settings.diskUsage.useQuery(undefined, { refetchInterval: 60000 });
+  const pct = data?.percent ?? 0;
+  const barColor = pct >= 90 ? "bg-red-500" : pct >= 75 ? "bg-yellow-500" : "bg-emerald-500";
+  const txtColor = pct >= 90 ? "text-red-500" : pct >= 75 ? "text-yellow-500" : "text-emerald-500";
+  const total = (data?.usedBytes ?? 0) + (data?.availBytes ?? 0);
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+            <HardDrive className="h-4 w-4 text-primary" /> Espaço em disco do servidor
+          </CardTitle>
+          <button onClick={() => refetch()} disabled={isFetching} className="text-muted-foreground hover:text-foreground" title="Atualizar">
+            <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+        <CardDescription className="mt-0.5">Fotos e áudios das conversas são guardados aqui. Se o disco encher, mídias novas param de aparecer.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Carregando…</div>
+        ) : data?.ok === false ? (
+          <div className="text-sm text-muted-foreground">Não foi possível ler o uso do disco.</div>
+        ) : (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">{fmtBytes(data?.usedBytes ?? 0)} de {fmtBytes(total)} usados</span>
+              <span className={`font-semibold ${txtColor}`}>{pct}%</span>
+            </div>
+            <div className="h-3 w-full rounded-full bg-muted overflow-hidden">
+              <div className={`h-3 rounded-full ${barColor} transition-all`} style={{ width: `${Math.min(100, pct)}%` }} />
+            </div>
+            <div className="text-xs text-muted-foreground">{fmtBytes(data?.availBytes ?? 0)} livres</div>
+            {pct >= 90 && (
+              <div className="flex items-start gap-1.5 text-xs text-red-500 mt-1">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>Disco quase cheio. Libere espaço (mídia antiga do MinIO e logs do Docker) para as mídias voltarem a funcionar.</span>
+              </div>
+            )}
+            {pct >= 75 && pct < 90 && (
+              <div className="flex items-start gap-1.5 text-xs text-yellow-500 mt-1">
+                <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>Atenção: o disco está enchendo. Vale planejar uma limpeza de mídia antiga.</span>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data: promptData, refetch, isLoading } = trpc.settings.getPrompt.useQuery();
 
@@ -310,6 +371,9 @@ export default function Settings() {
             <p className="text-sm text-muted-foreground">Qualificação, comentários da IA, rastreamento e personalização. (Edição do prompt fica em Agentes IA.)</p>
           </div>
         </div>
+
+        {/* Espaço em disco do servidor */}
+        <StorageCard />
 
         {/* Auto-qualificação de leads */}
         <AutoQualifySettings />
