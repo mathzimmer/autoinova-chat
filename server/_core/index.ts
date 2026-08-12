@@ -192,9 +192,10 @@ async function startServer() {
         try {
           const { getWhatsappNumberByPhoneNumberId } = await import("../whatsappMultiNumber");
           const registered = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
-          // Só desvia se for um número ADICIONAL (não o número padrão do .env)
-          const envNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
-          if (registered && registered.isActive && phoneNumberId !== envNumberId) {
+          // Qualquer número oficial REGISTRADO e ativo é roteado para sua própria
+          // aba (inbox por número). Não depende mais de ser diferente do .env — assim
+          // um número em coexistência nunca "cai na Matriz" só por ser o padrão do .env.
+          if (registered && registered.isActive) {
             const { handleOfficialMessage } = await import("../officialInstance");
             // status updates ainda seguem o fluxo padrão abaixo; mensagens vão para o handler oficial
             if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
