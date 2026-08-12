@@ -187,9 +187,10 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
   const [templateParams, setTemplateParams] = useState<string[]>([]);
 
-  const { data: templates } = trpc.whatsappTemplate.list.useQuery(undefined, {
-    enabled: showTemplateDialog,
-  });
+  const { data: templates } = trpc.whatsappTemplate.list.useQuery(
+    { phoneNumberId: (conversation as any)?.instanceName || undefined },
+    { enabled: showTemplateDialog },
+  );
   const sendTemplateMutation = trpc.whatsappTemplate.send.useMutation({
     onSuccess: () => {
       toast.success("Template enviado com sucesso! Janela de 24h reaberta.");

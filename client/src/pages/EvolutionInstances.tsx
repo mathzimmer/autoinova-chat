@@ -12,6 +12,7 @@ import {
   Trash2, LogOut, RotateCcw, MessageSquare, Users, Settings
 } from "lucide-react";
 import { Link } from "wouter";
+import AddInstanceWizard from "@/components/AddInstanceWizard";
 
 type Instance = {
   id: number;
@@ -27,6 +28,7 @@ type Instance = {
 
 export default function EvolutionInstances() {
   const [createOpen, setCreateOpen] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [newName, setNewName] = useState("");
@@ -203,20 +205,14 @@ export default function EvolutionInstances() {
             <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? "animate-spin" : ""}`} />
             Sincronizar
           </Button>
-          <Button size="sm" onClick={() => setCreateOpen(true)}>
+          <Button size="sm" onClick={() => setWizardOpen(true)}>
             <Plus className="w-4 h-4 mr-2" />
-            Adicionar Número
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setZCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar Zernio
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setOCreateOpen(true)}>
-            <Plus className="w-4 h-4 mr-2" />
-            Adicionar API Oficial
+            Adicionar instância
           </Button>
         </div>
       </div>
+
+      <AddInstanceWizard open={wizardOpen} onOpenChange={setWizardOpen} />
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-4 mb-6">

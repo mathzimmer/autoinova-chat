@@ -67,7 +67,15 @@ export async function resolveChannelSender(conversationId: number): Promise<Chan
     };
   }
 
-  // ── 4. Matriz Oficial (WhatsApp padrão) ──
+  // ── 4. Matriz Oficial (WhatsApp padrão) — só se a Matriz estiver ATIVA ──
+  // Sem instância própria + Matriz desativada = não usar o número padrão do .env.
+  const { isMatrizActive } = await import("./matrizConfig");
+  if (!(await isMatrizActive())) {
+    throw new Error(
+      `Conversa ${conversationId} não tem instância própria e a Matriz está desativada. ` +
+      `Registre o número como instância (oficial/coexistência/Evolution/Zernio) para enviar.`,
+    );
+  }
   return {
     text: async (b) => { const { sendTextMessage } = await import("./whatsapp"); return sendTextMessage(phone, b); },
     image: async (url, caption) => { const { sendImageMessage } = await import("./whatsapp"); return sendImageMessage(phone, url, caption); },

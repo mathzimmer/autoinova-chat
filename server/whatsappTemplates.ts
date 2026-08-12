@@ -60,13 +60,46 @@ export function isTemplatesConfigured(): { configured: boolean; missingVars: str
 }
 
 /**
- * List all message templates for the WhatsApp Business Account
+ * Resolve as credenciais de MODELOS (WABA + token + phoneNumberId) de uma
+ * INSTÂNCIA. Se o phoneNumberId for de um número registrado, usa a WABA e o
+ * token DAQUELE número (independência por instância). Caso contrário, cai no
+ * padrão do .env (o antigo "Matriz"). Aceita "official:<id>" ou o id cru.
  */
-export async function listTemplates(): Promise<WhatsAppTemplate[]> {
-  const { systemUserToken, wabaId } = getTemplateConfig();
+export async function resolveTemplateCreds(phoneNumberId?: string | null): Promise<{
+  wabaId?: string; token?: string; phoneNumberId?: string; source: "instancia" | "matriz";
+}> {
+  const env = getTemplateConfig();
+  const raw = phoneNumberId && phoneNumberId !== "matriz" ? phoneNumberId : undefined;
+  const pid = raw ? (raw.startsWith("official:") ? raw.slice("official:".length) : raw) : undefined;
+  if (pid) {
+    try {
+      const { getWhatsappNumberByPhoneNumberId } = await import("./whatsappMultiNumber");
+      const rec = await getWhatsappNumberByPhoneNumberId(pid);
+      if (rec?.wabaId) {
+        return {
+          wabaId: rec.wabaId,
+          token: rec.accessToken || env.systemUserToken || undefined,
+          phoneNumberId: pid,
+          source: "instancia",
+        };
+      }
+    } catch (e) {
+      console.error("[WhatsAppTemplates] resolveTemplateCreds falhou, usando .env:", e);
+    }
+  }
+  return { wabaId: env.wabaId, token: env.systemUserToken, phoneNumberId: env.phoneNumberId, source: "matriz" };
+}
+
+/**
+ * List all message templates for a WhatsApp Business Account.
+ * Sem `opts`, usa a WABA/token padrão do .env; com `opts`, usa os da instância.
+ */
+export async function listTemplates(opts?: { wabaId?: string | null; token?: string | null }): Promise<WhatsAppTemplate[]> {
+  const wabaId = opts?.wabaId ?? process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+  const systemUserToken = opts?.token ?? process.env.WHATSAPP_SYSTEM_USER_TOKEN;
 
   if (!systemUserToken || !wabaId) {
-    console.warn("[WhatsAppTemplates] Not configured. Need WHATSAPP_SYSTEM_USER_TOKEN and WHATSAPP_BUSINESS_ACCOUNT_ID.");
+    console.warn("[WhatsAppTemplates] Sem credenciais (WABA + token) para listar modelos.");
     return [];
   }
 
@@ -112,12 +145,14 @@ export async function sendWhatsAppTemplate(
   bodyParams: string[] = [],
   language: string = "pt_BR",
   headerParams?: string[],
+  opts?: { phoneNumberId?: string | null; token?: string | null },
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  const { systemUserToken, phoneNumberId } = getTemplateConfig();
+  const phoneNumberId = opts?.phoneNumberId ?? process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const systemUserToken = opts?.token ?? process.env.WHATSAPP_SYSTEM_USER_TOKEN;
 
   if (!systemUserToken || !phoneNumberId) {
-    console.warn("[WhatsAppTemplates] Not configured for sending.");
-    return { success: false, error: "WhatsApp Templates API not configured (need WHATSAPP_SYSTEM_USER_TOKEN and WHATSAPP_PHONE_NUMBER_ID)" };
+    console.warn("[WhatsAppTemplates] Sem credenciais para enviar modelo.");
+    return { success: false, error: "WhatsApp Templates API sem credenciais (número + token)" };
   }
 
   try {

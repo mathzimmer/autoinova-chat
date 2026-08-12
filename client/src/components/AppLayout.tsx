@@ -84,10 +84,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const setMatrizHidden = trpc.settings.setMatrizHidden.useMutation({
     onSuccess: (data) => {
       globalStatus.refetch();
-      toast.success(data.hidden ? "Aba Matriz escondida" : "Aba Matriz visível", {
+      toast.success(data.hidden ? "Matriz desativada" : "Matriz ativada", {
         description: data.hidden
-          ? "O inbox não mostra mais a caixa de entrada da Matriz."
-          : "A caixa de entrada da Matriz voltou a aparecer no inbox.",
+          ? "A Matriz saiu do inbox e não roteia mais: mensagem de número sem instância é ignorada e não se envia por ela. Cadastre cada número como instância própria."
+          : "A Matriz voltou: aba no inbox e roteamento padrão pelo número do .env.",
       });
     },
   });
@@ -237,7 +237,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
                 </div>
               </DropdownMenuItem>
 
-              {/* Esconder aba Matriz no inbox */}
+              {/* Ativar/desativar a Matriz (aba no inbox + roteamento padrão) */}
               <DropdownMenuItem
                 onClick={() => setMatrizHidden.mutate({ hidden: !matrizHidden })}
                 disabled={setMatrizHidden.isPending}
@@ -245,13 +245,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               >
                 <div className="flex items-center gap-2 w-full">
                   <Building2 className={`h-4 w-4 ${matrizHidden ? "text-red-400" : "text-emerald-400"}`} />
-                  <span className="flex-1">Aba Matriz</span>
+                  <span className="flex-1">Matriz (número padrão)</span>
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                     matrizHidden
                       ? "bg-red-500/15 text-red-400"
                       : "bg-emerald-500/15 text-emerald-400"
                   }`}>
-                    {matrizHidden ? "OCULTA" : "VISÍVEL"}
+                    {matrizHidden ? "DESATIVADA" : "ATIVA"}
                   </span>
                 </div>
               </DropdownMenuItem>

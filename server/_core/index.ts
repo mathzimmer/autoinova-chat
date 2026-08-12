@@ -210,6 +210,15 @@ async function startServer() {
 
       // Process incoming messages from WhatsApp Cloud API
       if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+        // ── Matriz desativada? Se chegou aqui, o número NÃO é uma instância
+        // registrada (os registrados já foram roteados/retornados acima). Então
+        // ignora a mensagem em vez de criar uma conversa fantasma na Matriz.
+        const { isMatrizActive } = await import("../matrizConfig");
+        if (!(await isMatrizActive())) {
+          console.warn(`[Webhook] Matriz desativada; número ${phoneNumberId || "?"} não é instância registrada — mensagem ignorada (não roteada).`);
+          return res.sendStatus(200);
+        }
+
         const msg = body.entry[0].changes[0].value.messages[0];
         const contact = body.entry[0].changes[0].value.contacts?.[0];
         const phone = msg.from;
