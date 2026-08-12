@@ -18,9 +18,33 @@ export const whatsappNumberRouter = router({
       displayName: r.displayName,
       phone: r.phoneDisplay,
       status: r.isActive ? "connected" : "disconnected",
+      receiving: !!r.isActive,       // recebimento (assinatura da WABA) ligado?
+      wabaId: r.wabaId || null,
       channel: "whatsapp" as const,
     }));
   }),
+
+  // Pausa/retoma o RECEBIMENTO pela API oficial: assina/desassina a WABA no app
+  // (a Meta para/volta a mandar webhooks) e marca isActive. Mantém o cadastro.
+  setReceiving: protectedProcedure
+    .input(z.object({ id: z.number(), enabled: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const member = await currentTeamMember(ctx);
+      if (member && member.cargo === "vendedor") throw new Error("Apenas administradores");
+      const {
+        getWhatsappNumberById, updateWhatsappNumber, subscribeWabaToApp, unsubscribeWabaFromApp,
+      } = await import("../whatsappMultiNumber");
+      const rec: any = await getWhatsappNumberById(input.id);
+      if (!rec) throw new Error("Número não encontrado");
+      if (!rec.wabaId) throw new Error("Número sem WABA cadastrada — não dá para pausar/retomar o recebimento");
+      const token = rec.accessToken || undefined;
+      const res = input.enabled
+        ? await subscribeWabaToApp(rec.wabaId, token)
+        : await unsubscribeWabaFromApp(rec.wabaId, token);
+      if (!res.success) throw new Error(res.error || "Falha ao alterar a assinatura na Meta");
+      await updateWhatsappNumber(input.id, { isActive: input.enabled });
+      return { success: true, receiving: input.enabled };
+    }),
 
   createInstance: protectedProcedure
     .input(z.object({

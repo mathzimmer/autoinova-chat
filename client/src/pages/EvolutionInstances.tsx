@@ -164,6 +164,10 @@ export default function EvolutionInstances() {
     onSuccess: () => { officialQuery.refetch(); toast.success("Número oficial removido"); },
     onError: (e) => toast.error("Erro ao remover: " + e.message),
   });
+  const oReceivingMutation = trpc.whatsappNumber.setReceiving.useMutation({
+    onSuccess: (r) => { officialQuery.refetch(); toast.success(r.receiving ? "Recebimento retomado (WABA assinada)" : "Recebimento pausado (WABA desassinada)"); },
+    onError: (e) => toast.error("Erro ao alterar recebimento: " + e.message),
+  });
   const officialInstances = officialQuery.data || [];
 
   const instances = instancesQuery.data || [];
@@ -577,7 +581,9 @@ export default function EvolutionInstances() {
                         <p className="text-xs text-muted-foreground">{inst.phone || inst.phoneNumberId}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className="text-xs">Oficial</Badge>
+                    <Badge variant="outline" className={`text-xs ${inst.receiving ? "border-emerald-500/40 text-emerald-500" : "border-red-500/40 text-red-500"}`}>
+                      {inst.receiving ? "Recebendo" : "Pausado"}
+                    </Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -588,6 +594,16 @@ export default function EvolutionInstances() {
                         Mensagens
                       </Button>
                     </Link>
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={oReceivingMutation.isPending}
+                      title={inst.receiving ? "Parar de receber pela API oficial (desassina a WABA na Meta)" : "Voltar a receber (assina a WABA na Meta)"}
+                      onClick={() => oReceivingMutation.mutate({ id: inst.id, enabled: !inst.receiving })}
+                    >
+                      {inst.receiving
+                        ? <><WifiOff className="w-3 h-3 mr-1" />Pausar</>
+                        : <><Wifi className="w-3 h-3 mr-1" />Retomar</>}
+                    </Button>
                     <Button
                       size="sm" variant="outline" className="text-red-500 hover:text-red-600"
                       onClick={() => { if (confirm(`Remover número oficial "${inst.displayName}"?`)) oDeleteMutation.mutate({ id: inst.id }); }}

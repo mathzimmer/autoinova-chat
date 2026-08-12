@@ -119,6 +119,26 @@ export async function subscribeWabaToApp(wabaId: string, token?: string): Promis
 }
 
 /**
+ * DESASSINA a WABA do app do provedor: a Meta PARA de mandar os webhooks
+ * (mensagens/status) desse número. Reversível — basta assinar de novo.
+ * Usado pelo botão "Pausar recebimento" no número oficial.
+ */
+export async function unsubscribeWabaFromApp(wabaId: string, token?: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const t = token || getGlobalToken();
+    await axios.delete(`${WHATSAPP_API_URL}/${wabaId}/subscribed_apps`, {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    console.log(`[WA-Multi] WABA ${wabaId} DESASSINADA do app (recebimento pausado)`);
+    return { success: true };
+  } catch (error: any) {
+    const errMsg = error?.response?.data?.error?.message || error.message;
+    console.error(`[WA-Multi] Falha ao desassinar WABA ${wabaId}:`, errMsg);
+    return { success: false, error: errMsg };
+  }
+}
+
+/**
  * Conexão completa via Embedded Signup: assina a WABA no app + salva o número.
  * O token de envio é o do provedor (System User) por padrão — não precisa token
  * por número. Retorna o registro salvo.
