@@ -220,6 +220,73 @@ function fmtBytes(b: number): string {
   return `${n.toFixed(i === 0 || n >= 100 ? 0 : 1)} ${u[i]}`;
 }
 
+function CopilotConfigCard() {
+  const { data, isLoading } = trpc.copilot.getConfig.useQuery();
+  const [tom, setTom] = useState("");
+  const [fluxo, setFluxo] = useState("");
+  const [sinais, setSinais] = useState("");
+  const [objecoes, setObjecoes] = useState("");
+  const [objetivo, setObjetivo] = useState("");
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    if (data && !loaded) {
+      setTom(data.tom || ""); setFluxo(data.fluxo || ""); setSinais(data.sinais || "");
+      setObjecoes(data.objecoes || ""); setObjetivo(data.objetivo || ""); setLoaded(true);
+    }
+  }, [data, loaded]);
+
+  const save = trpc.copilot.setConfig.useMutation({
+    onSuccess: () => toast.success("Copiloto atualizado! As próximas sugestões já usam o novo playbook."),
+    onError: (e) => toast.error("Erro ao salvar: " + e.message),
+  });
+
+  const field = (label: string, value: string, setValue: (v: string) => void, placeholder: string, rows = 2) => (
+    <div className="grid gap-1">
+      <label className="text-xs font-medium text-foreground">{label}</label>
+      <textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        rows={rows}
+        placeholder={placeholder}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none resize-y focus:border-primary"
+      />
+    </div>
+  );
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" /> Copiloto do Vendedor
+        </CardTitle>
+        <CardDescription className="mt-0.5">
+          Como a IA deve sugerir respostas ao vendedor. Vira um prompt único. Ligue o copiloto dentro de cada conversa (padrão desligado).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
+        ) : (
+          <>
+            {field("Tom", tom, setTom, "Ex.: cordial, direto, informal de WhatsApp", 2)}
+            {field("Fluxo de condução da conversa", fluxo, setFluxo, "Passos: entender → mostrar carro → contornar objeção → puxar pra loja", 3)}
+            {field("Sinais de interesse", sinais, setSinais, "O que indica cliente quente (pede preço, foto, financiamento, endereço...)", 2)}
+            {field("Objeções + como contornar", objecoes, setObjecoes, "Preço, troca, distância, 'vou pensar'...", 3)}
+            {field("Objetivo / CTA padrão", objetivo, setObjetivo, "Ex.: trazer o cliente até a loja (visita/test-drive)", 2)}
+            <div className="flex justify-end">
+              <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ tom, fluxo, sinais, objecoes, objetivo })}>
+                {save.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                Salvar copiloto
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function StorageCard() {
   const { data, isLoading, refetch, isFetching } = trpc.settings.diskUsage.useQuery(undefined, { refetchInterval: 60000 });
   const pct = data?.percent ?? 0;
@@ -371,6 +438,9 @@ export default function Settings() {
             <p className="text-sm text-muted-foreground">Qualificação, comentários da IA, rastreamento e personalização. (Edição do prompt fica em Agentes IA.)</p>
           </div>
         </div>
+
+        {/* Copiloto do Vendedor (sugestões em tempo real) */}
+        <CopilotConfigCard />
 
         {/* Espaço em disco do servidor */}
         <StorageCard />

@@ -154,6 +154,7 @@ import { aiDecisionRouter } from "./routers/aiDecision";
 import { rescueRouter } from "./routers/rescue";
 import { reengagementRouter } from "./routers/reengagement";
 import { whatsappTemplateRouter } from "./routers/whatsappTemplate";
+import { copilotRouter } from "./routers/copilot";
 import { vendorRouter } from "./routers/vendor";
 import { evolutionRouter } from "./routers/evolution";
 import { zernioRouter } from "./routers/zernio";
@@ -769,6 +770,7 @@ export const appRouter = router({
   metaAds: metaAdsRouter,
   campaign: campaignRouter,
   whatsappTemplate: whatsappTemplateRouter,
+  copilot: copilotRouter,
   tokenHealth: tokenHealthRouter,
   vendor: vendorRouter,
   flow: flowRouter,

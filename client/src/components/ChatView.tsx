@@ -13,6 +13,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import SellerCopilotPanel from "@/components/SellerCopilotPanel";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -169,6 +170,13 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     { refetchInterval: 15000 }
   );
 
+  // ── Copiloto do vendedor (por conversa) ──
+  const copilotEnabled = !!((conversation as any)?.metadata?.copilot);
+  const copilotToggle = trpc.copilot.setEnabled.useMutation({
+    onSuccess: () => utils.conversation.getById.invalidate({ id: conversationId }),
+    onError: (e) => toast.error("Erro no copiloto: " + e.message),
+  });
+
   const { data: activeFlowSession, refetch: refetchFlowSession } = trpc.flow.getActiveSession.useQuery(
     { conversationId },
     { refetchInterval: 10000 }
@@ -182,6 +190,14 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
     { conversationId },
     { refetchInterval: 5000 }
   );
+
+  // Última mensagem do CLIENTE — dispara/atualiza as sugestões do copiloto.
+  const copilotLastMsg = msgs && msgs.length
+    ? msgs.reduce((a: any, b: any) => (new Date(a.createdAt).getTime() >= new Date(b.createdAt).getTime() ? a : b))
+    : null;
+  const copilotLastMsgId = copilotLastMsg && (copilotLastMsg as any).senderType === "customer"
+    ? (copilotLastMsg as any).id as number
+    : undefined;
 
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string>("");
@@ -1402,6 +1418,18 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
               ))}
             </div>
           </div>
+        )}
+
+        {/* Copiloto do vendedor — faixa compacta acima do campo de escrever */}
+        {!noteMode && (
+          <SellerCopilotPanel
+            conversationId={conversationId}
+            enabled={copilotEnabled}
+            toggling={copilotToggle.isPending}
+            onToggle={(v) => copilotToggle.mutate({ conversationId, enabled: v })}
+            onUse={(text) => { setNewMessage(text); setTimeout(() => inputRef.current?.focus(), 30); }}
+            lastMessageId={copilotLastMsgId}
+          />
         )}
 
         {isRecording ? (
