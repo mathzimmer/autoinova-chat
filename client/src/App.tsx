@@ -25,6 +25,7 @@ import Agents from "./pages/Agents";
 import Automation from "./pages/Automation";
 import Sellers from "./pages/Sellers";
 import Performance from "./pages/Performance";
+import Coach from "./pages/Coach";
 import EvolutionInstances from "./pages/EvolutionInstances";
 import { useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -134,6 +135,11 @@ function Router() {
       <Route path="/performance">
         <AppLayout>
           <Performance />
+        </AppLayout>
+      </Route>
+      <Route path="/coach">
+        <AppLayout>
+          <Coach />
         </AppLayout>
       </Route>
       <Route path="/evolution-instances">

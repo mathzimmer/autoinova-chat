@@ -36,15 +36,18 @@ export async function getCopilotPlaybook(): Promise<CopilotPlaybook> {
 export interface CopilotResult {
   suggestions: string[];
   proximoPasso: string;
+  tips: string[]; // dicas de coaching AO VIVO (modo Coach)
 }
 
 /** Gera sugestões para o vendedor com base no contexto + playbook. */
 export async function suggestForConversation(conversationId: number, count = 3): Promise<CopilotResult> {
   const msgs = await listMessages(conversationId, 15);
-  if (!msgs || msgs.length === 0) return { suggestions: [], proximoPasso: "" };
+  if (!msgs || msgs.length === 0) return { suggestions: [], proximoPasso: "", tips: [] };
 
   const lead = await getLeadByConversationId(conversationId).catch(() => null);
   const pb = await getCopilotPlaybook();
+  let coachHint = "";
+  try { const { buildCoachHint } = await import("./salesCoach"); coachHint = await buildCoachHint(msgs); } catch { /* coach opcional */ }
 
   const ordered = [...msgs].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
   const transcript = ordered
@@ -68,8 +71,9 @@ export async function suggestForConversation(conversationId: number, count = 3):
     `OBJEÇÕES comuns e como contornar: ${pb.objecoes}`,
     `OBJETIVO de toda sugestão: ${pb.objetivo}`,
     "Regras: nunca invente veículo ou preço; não ofereça desconto por conta própria; uma pergunta por mensagem; sem markdown; frases curtas de WhatsApp.",
-    `Responda APENAS em JSON válido no formato: {"sugestoes": ["texto 1", "texto 2", "texto 3"], "proximo_passo": "ação recomendada curta"}. Gere exatamente ${count} sugestões de mensagens prontas para o vendedor enviar.${leadContext}`,
-  ].join("\n");
+    coachHint,
+    `Responda APENAS em JSON válido no formato: {"sugestoes": ["texto 1", "texto 2", "texto 3"], "proximo_passo": "ação recomendada curta", "dicas": ["dica de coaching 1", "dica 2"]}. Gere exatamente ${count} sugestões de mensagens prontas para o vendedor enviar e 1–2 dicas de coaching.${leadContext}`,
+  ].filter(Boolean).join("\n");
 
   const user = `Conversa (últimas ${ordered.length} mensagens):\n\n${transcript}\n\nGere o JSON.`;
 
@@ -105,9 +109,13 @@ export async function suggestForConversation(conversationId: number, count = 3):
         : typeof parsed.proximoPasso === "string" ? parsed.proximoPasso
           : "";
 
-    return { suggestions, proximoPasso };
+    const tips: string[] = Array.isArray(parsed.dicas)
+      ? parsed.dicas.filter((s: any) => typeof s === "string" && s.trim()).slice(0, 2)
+      : [];
+
+    return { suggestions, proximoPasso, tips };
   } catch (e) {
     console.error("[Copilot] Falha ao gerar sugestões:", e);
-    return { suggestions: [], proximoPasso: "" };
+    return { suggestions: [], proximoPasso: "", tips: [] };
   }
 }

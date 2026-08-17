@@ -1,5 +1,5 @@
 import { trpc } from "@/lib/trpc";
-import { Sparkles, Loader2, RefreshCw, ChevronRight } from "lucide-react";
+import { Sparkles, Loader2, RefreshCw, ChevronRight, Lightbulb } from "lucide-react";
 
 /**
  * Faixa compacta do Copiloto do Vendedor, acima do campo de escrever.
@@ -61,6 +61,17 @@ export default function SellerCopilotPanel({
             <p className="text-[11px] text-[#8696a0] py-1">
               {lastMessageId ? "Sem sugestão no momento." : "Aguardando mensagem do cliente para sugerir."}
             </p>
+          )}
+
+          {q.data && Array.isArray((q.data as any).tips) && (q.data as any).tips.length > 0 && (
+            <div className="mb-1.5 rounded-md bg-amber-50 border border-amber-200 px-2.5 py-1.5">
+              <div className="flex items-center gap-1 text-[10px] font-bold text-amber-700 uppercase tracking-wide mb-0.5">
+                <Lightbulb className="h-3 w-3" /> Coach
+              </div>
+              {(q.data as any).tips.map((t: string, i: number) => (
+                <p key={i} className="text-[11px] text-amber-900 leading-snug">• {t}</p>
+              ))}
+            </div>
           )}
 
           {q.data && q.data.suggestions.length > 0 && (

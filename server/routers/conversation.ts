@@ -83,6 +83,11 @@ export const conversationRouter = router({
         import("../csat").then(({ requestCsat }) => requestCsat(input.id))
           .catch(err => console.error("[CSAT] hook updateStatus:", err));
       }
+      // Coach: avalia o atendimento ao encerrar (fire-and-forget; dedup interno)
+      if (input.status === "resolved" || input.status === "closed") {
+        import("../salesCoach").then(m => m.evaluateConversation(input.id, "encerrado"))
+          .catch(err => console.error("[Coach] hook updateStatus:", err));
+      }
       return conv;
     }),
 

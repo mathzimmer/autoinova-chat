@@ -1,7 +1,7 @@
 import {
   pgTable, pgEnum,
   serial, integer, smallint, bigint, numeric,
-  varchar, text, boolean, json, jsonb, timestamp, date,
+  varchar, text, boolean, json, jsonb, timestamp,
 } from "drizzle-orm/pg-core";
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -20,7 +20,7 @@ export const leadTemperatureEnum        = pgEnum("lead_temperature",         ["f
 export const adStatusEnum               = pgEnum("ad_status",                ["paused", "active", "archived"]);
 export const adSourceEnum               = pgEnum("ad_source",                ["crm", "imported"]);
 export const flowTriggerEnum            = pgEnum("flow_trigger",             ["first_contact", "keyword", "button_click", "ad_click", "manual", "reactivation", "category_interest", "rescue", "tag_added", "tag_removed", "funnel_stage_entered"]);
-export const nodeTypeEnum               = pgEnum("node_type",                ["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number", "collect_with_ai", "vehicle_discovery", "confirm_interest", "collect_sequence"]);
+export const nodeTypeEnum               = pgEnum("node_type",                ["start", "send_message", "send_buttons", "send_list", "send_image", "condition", "ai_response", "update_lead", "assign_agent", "delay", "wait_input", "end", "goto_flow", "assign_seller", "send_vehicle_photos", "vehicle_presentation", "update_lead_status", "classify_intent", "business_hours", "notify_number", "collect_with_ai", "vehicle_discovery", "confirm_interest"]);
 export const sessionStatusEnum          = pgEnum("session_status",           ["active", "completed", "paused", "cancelled"]);
 export const memberCargoEnum            = pgEnum("member_cargo",             ["admin", "gerente", "vendedor", "suporte"]);
 export const memberStatusEnum           = pgEnum("member_status",            ["ativo", "inativo"]);
@@ -44,7 +44,7 @@ export const wnMsgStatusEnum            = pgEnum("wn_msg_status",            ["s
 export const reminderStatusEnum         = pgEnum("reminder_status",          ["pending", "fired", "dismissed"]);
 export const scheduledMsgStatusEnum     = pgEnum("scheduled_msg_status",     ["pending", "sent", "failed", "cancelled"]);
 export const capiEventStatusEnum        = pgEnum("capi_event_status",        ["sent", "failed", "skipped"]);
-export const routingStateEnum           = pgEnum("routing_state",            ["flow", "ai_agent", "human", "handed_off"]);
+export const routingStateEnum           = pgEnum("routing_state",            ["flow", "ai_agent", "human"]);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TABELAS
@@ -82,7 +82,6 @@ export const conversations = pgTable("conversations", {
   // Agente de IA fixado nesta conversa (null = usa a hierarquia padrão)
   agentId:                 integer("agentId"),
   leadId:                  integer("leadId"),           // lead (pessoa) desta conversa
-  customerId:              integer("customerId"),        // pessoa canônica (PR #7)
   // Arquivamento (sai da caixa principal sem apagar)
   archived:                boolean("archived").default(false).notNull(),
   platformUserId:          varchar("platformUserId", { length: 255 }),  // BSUID vai aqui
@@ -149,17 +148,11 @@ export const leads = pgTable("leads", {
   vehicleInterest: varchar("vehicleInterest", { length: 500 }),
   hasTrade:        boolean("hasTrade"),
   tradeVehicle:    varchar("tradeVehicle", { length: 255 }),
-  tradeYear:       varchar("tradeYear", { length: 10 }),   // legado varchar — preferir tradeYearInt (PR #8)
-  tradeKm:         varchar("tradeKm", { length: 50 }),     // legado varchar — preferir tradeKmInt (PR #8)
+  tradeYear:       varchar("tradeYear", { length: 10 }),
+  tradeKm:         varchar("tradeKm", { length: 50 }),
   paymentMethod:   varchar("paymentMethod", { length: 255 }),
-  downPayment:     varchar("downPayment", { length: 100 }), // legado varchar — preferir downPaymentCents (PR #8)
-  // ── Colunas tipadas (PR #8): preenchidas automaticamente a partir das varchar ──
-  tradeYearInt:      integer("tradeYearInt"),        // ano da troca (1950..anoAtual+1)
-  tradeKmInt:        integer("tradeKmInt"),          // km da troca
-  downPaymentCents:  integer("downPaymentCents"),    // entrada em centavos de BRL
+  downPayment:     varchar("downPayment", { length: 100 }),
   vehicleId:       integer("vehicleId"),
-  customerId:      integer("customerId"),      // pessoa canônica (PR #7)
-  // DEPRECADO (#8) — funnelStatus vence; status fica sincronizado por funnelToLeadStatus.
   status:          leadStatusEnum("leadStatus").default("new").notNull(),
   funnelStatus:    funnelStatusEnum("funnelStatus").default("novo").notNull(),
   temperature:     leadTemperatureEnum("leadTemperature").default("frio").notNull(),
@@ -367,7 +360,7 @@ export const leadOpportunities = pgTable("leadOpportunities", {
   id:            serial("id").primaryKey(),
   leadId:        integer("leadId").notNull(),
   status:        varchar("status", { length: 20 }).default("open").notNull(), // open | won | lost
-  funnelStatus:  funnelStatusEnum("funnelStatus").default("novo").notNull(), // PR #8: enum compartilhado
+  funnelStatus:  varchar("funnelStatus", { length: 50 }).default("novo").notNull(),
   vehicleId:     integer("vehicleId"),
   vehicleInterest: varchar("vehicleInterest", { length: 500 }),
   valueCents:    bigint("valueCents", { mode: "number" }),
@@ -522,6 +515,7 @@ export const chatFlows = pgTable("chatFlows", {
   triggerValue: varchar("triggerValue", { length: 500 }),
   active:       boolean("active").default(false).notNull(),
   priority:     integer("priority").default(0).notNull(),
+  aiPrompt:     text("aiPrompt"),
   agentId:      integer("agentId"),
   connectionType: varchar("connectionType"),
   connectionId:   integer("connectionId"),
@@ -589,26 +583,6 @@ export type ChatFlowSession = typeof chatFlowSessions.$inferSelect;
 export type InsertChatFlowSession = typeof chatFlowSessions.$inferInsert;
 
 /**
- * Flow Events (decision log) — arquitetura vendedor virtual (fase 1).
- * Cada mensagem classificada, transição de nó, ação executada, fallback e
- * expiração de sessão vira um evento auditável. Alimenta o painel "Saúde da
- * Jornada" no editor de fluxos.
- */
-export const flowEvents = pgTable("flowEvents", {
-  id:             serial("id").primaryKey(),
-  sessionId:      integer("sessionId").notNull(),
-  conversationId: integer("conversationId").notNull(),
-  flowId:         integer("flowId").notNull(),
-  nodeId:         integer("nodeId"),
-  event:          varchar("event", { length: 60 }).notNull(),
-  payload:        jsonb("payload"),
-  createdAt:      timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type FlowEvent = typeof flowEvents.$inferSelect;
-export type InsertFlowEvent = typeof flowEvents.$inferInsert;
-
-/**
  * AI Agents — agentes de IA configuráveis com prompt, tools e modelo próprios.
  */
 export const aiAgents = pgTable("aiAgents", {
@@ -622,7 +596,6 @@ export const aiAgents = pgTable("aiAgents", {
   maxTokens:          integer("maxTokens").default(1024).notNull(),
   enabledTools:       jsonb("enabledTools").$type<string[]>(),
   active:             boolean("active").default(true).notNull(),
-  isDefault:          boolean("isDefault").default(false).notNull(), // agente padrão da loja (máx 1)
   createdBy:          integer("createdBy"),
   createdAt:          timestamp("createdAt").defaultNow().notNull(),
   updatedAt:          timestamp("updatedAt").defaultNow().notNull(),
@@ -702,34 +675,6 @@ export type RescueAttempt = typeof rescueAttempts.$inferSelect;
 export type InsertRescueAttempt = typeof rescueAttempts.$inferInsert;
 
 /**
- * Reengagement Attempts — motor ÚNICO de reengajamento (PR #6).
- * Substitui followUpLogs + rescueAttempts como fonte de verdade: uma fila por
- * conversa, com estratégia escalonada (flow → ai_message → template).
- * Garantia: 1 lead nunca recebe 2 reengajamentos concorrentes — a próxima
- * tentativa só dispara quando a inatividade atinge o limiar do próximo passo.
- */
-export const reengagementStrategyEnum = pgEnum("reengagement_strategy", ["flow", "ai_message", "template"]);
-export const reengagementStatusEnum   = pgEnum("reengagement_status",   ["sent", "failed", "responded", "cancelled"]);
-
-export const reengagementAttempts = pgTable("reengagementAttempts", {
-  id:             serial("id").primaryKey(),
-  conversationId: integer("conversationId").notNull(),
-  leadId:         integer("leadId"),
-  attemptNumber:  integer("attemptNumber").default(1).notNull(),
-  strategy:       reengagementStrategyEnum("strategy").notNull(),
-  status:         reengagementStatusEnum("reengagementStatus").default("sent").notNull(),
-  flowId:         integer("flowId"),
-  message:        text("message"),
-  error:          text("error"),
-  sentAt:         timestamp("sentAt").defaultNow().notNull(),
-  respondedAt:    timestamp("respondedAt"),
-  createdAt:      timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type ReengagementAttempt = typeof reengagementAttempts.$inferSelect;
-export type InsertReengagementAttempt = typeof reengagementAttempts.$inferInsert;
-
-/**
  * Contacts — agenda de contatos para marketing e envio de templates.
  */
 export const contacts = pgTable("contacts", {
@@ -742,7 +687,6 @@ export const contacts = pgTable("contacts", {
   source:         contactSourceEnum("contactSource").default("manual").notNull(),
   conversationId: integer("conversationId"),
   leadId:         integer("leadId"),
-  customerId:     integer("customerId"),      // pessoa canônica (PR #7)
   // ── Classificação e dados completos ──
   kind:           varchar("contactKind", { length: 40 }).default("lead").notNull(), // lead | cliente | tipos customizados
   // Instância Evolution que originou/criou o contato (null = matriz/oficial)
@@ -764,32 +708,6 @@ export const contacts = pgTable("contacts", {
 
 export type Contact = typeof contacts.$inferSelect;
 export type InsertContact = typeof contacts.$inferInsert;
-
-/**
- * Customers — PESSOA CANÔNICA (PR #7).
- * Uma linha por ser humano, identificada por canonicalPhone (normalizePhone).
- * leads/conversations/contacts apontam para cá via customerId — acaba a
- * duplicação "mesmo cliente, várias conversas/canais". consentAt/Source
- * alimentam o LGPD (PR #9).
- */
-export const customers = pgTable("customers", {
-  id:             serial("id").primaryKey(),
-  canonicalPhone: varchar("canonicalPhone", { length: 20 }).notNull().unique(),
-  name:           varchar("name", { length: 255 }),
-  fullName:       varchar("fullName", { length: 255 }),
-  email:          varchar("email", { length: 320 }),
-  cpf:            varchar("cpf", { length: 11 }),          // só dígitos
-  birthDate:      date("birthDate"),                        // YYYY-MM-DD
-  city:           varchar("city", { length: 255 }),
-  consentAt:      timestamp("consentAt"),
-  consentSource:  varchar("consentSource", { length: 50 }),
-  anonymizedAt:   timestamp("anonymizedAt"),     // LGPD (PR #9): soft-anonymize aplicado
-  createdAt:      timestamp("createdAt").defaultNow().notNull(),
-  updatedAt:      timestamp("updatedAt").defaultNow().notNull(),
-});
-
-export type Customer = typeof customers.$inferSelect;
-export type InsertCustomer = typeof customers.$inferInsert;
 
 /**
  * Template Sends — histórico de envios de templates de marketing para contatos.
@@ -1199,40 +1117,6 @@ export const sellerEvaluations = pgTable("sellerEvaluations", {
 
 export type SellerEvaluation = typeof sellerEvaluations.$inferSelect;
 export type InsertSellerEvaluation = typeof sellerEvaluations.$inferInsert;
-
-// Coach de Vendas — avaliação POR CONVERSA (início/meio/fim) do atendimento.
-export const conversationEvaluations = pgTable("conversationEvaluations", {
-  id:             serial("id").primaryKey(),
-  conversationId: integer("conversationId").notNull(),
-  sellerId:       integer("sellerId"),                     // teamMembers.id (assignedTo)
-  outcome:        varchar("outcome", { length: 20 }),      // ganho | perdido | encerrado
-  scoreOverall:   integer("scoreOverall").default(0).notNull(),
-  scoreInicio:    integer("scoreInicio").default(0).notNull(),
-  scoreMeio:      integer("scoreMeio").default(0).notNull(),
-  scoreFim:       integer("scoreFim").default(0).notNull(),
-  strengths:      jsonb("strengths").$type<string[]>(),
-  errors:         jsonb("errors").$type<string[]>(),
-  tips:           jsonb("tips").$type<string[]>(),
-  reason:         text("reason"),                          // por que ganhou/perdeu
-  summary:        text("summary"),
-  createdAt:      timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type ConversationEvaluation = typeof conversationEvaluations.$inferSelect;
-export type InsertConversationEvaluation = typeof conversationEvaluations.$inferInsert;
-
-// Coach de Vendas — lições de negócios ganhos/perdidos (alimentam as dicas ao vivo).
-export const salesLessons = pgTable("salesLessons", {
-  id:             serial("id").primaryKey(),
-  conversationId: integer("conversationId"),
-  sellerId:       integer("sellerId"),
-  kind:           varchar("kind", { length: 10 }),   // ganhou | perdeu
-  lesson:         text("lesson").notNull(),
-  createdAt:      timestamp("createdAt").defaultNow().notNull(),
-});
-
-export type SalesLesson = typeof salesLessons.$inferSelect;
-export type InsertSalesLesson = typeof salesLessons.$inferInsert;
 
 export const knowledgeBase = pgTable("knowledgeBase", {
   id:          serial("id").primaryKey(),

@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import SellerCopilotPanel from "@/components/SellerCopilotPanel";
+import AttendanceEvaluationCard from "@/components/AttendanceEvaluationCard";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -1419,6 +1420,9 @@ export default function ChatView({ conversationId, onBack, panelToggle }: Props)
             </div>
           </div>
         )}
+
+        {/* Coach: avaliação do atendimento (compacta) */}
+        {!noteMode && <AttendanceEvaluationCard conversationId={conversationId} />}
 
         {/* Copiloto do vendedor — faixa compacta acima do campo de escrever */}
         {!noteMode && (

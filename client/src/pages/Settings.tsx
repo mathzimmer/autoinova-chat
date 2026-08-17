@@ -220,6 +220,108 @@ function fmtBytes(b: number): string {
   return `${n.toFixed(i === 0 || n >= 100 ? 0 : 1)} ${u[i]}`;
 }
 
+function CoachConfigCard() {
+  const cfgQuery = trpc.coach.getConfig.useQuery();
+  const [inicio, setInicio] = useState("");
+  const [meio, setMeio] = useState("");
+  const [fim, setFim] = useState("");
+  const [tom, setTom] = useState("");
+  const [slaMin, setSlaMin] = useState(5);
+  const [gapMin, setGapMin] = useState(30);
+  const [bancos, setBancos] = useState(2);
+  const [criterios, setCriterios] = useState<any[]>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const c: any = cfgQuery.data;
+    if (c && !loaded) {
+      setInicio(c.padraoInicio || ""); setMeio(c.padraoMeio || ""); setFim(c.padraoFim || "");
+      setTom(c.tom || ""); setSlaMin(c.slaMin ?? 5); setGapMin(c.gapMin ?? 30); setBancos(c.bancosEsperado ?? 2);
+      setCriterios(Array.isArray(c.criterios) ? c.criterios : []); setLoaded(true);
+    }
+  }, [cfgQuery.data, loaded]);
+
+  const save = trpc.coach.setConfig.useMutation({
+    onSuccess: () => toast.success("Coach atualizado! As próximas avaliações e dicas usam a nova régua."),
+    onError: (e) => toast.error("Erro ao salvar: " + e.message),
+  });
+
+  const setCrit = (id: string, patch: any) =>
+    setCriterios(cs => cs.map(c => c.id === id ? { ...c, ...patch } : c));
+
+  const ta = (label: string, value: string, set: (v: string) => void, rows = 2) => (
+    <div className="grid gap-1">
+      <label className="text-xs font-medium text-foreground">{label}</label>
+      <textarea value={value} onChange={(e) => set(e.target.value)} rows={rows}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none resize-y focus:border-primary" />
+    </div>
+  );
+  const num = (label: string, value: number, set: (v: number) => void) => (
+    <div className="grid gap-1">
+      <label className="text-xs font-medium text-foreground">{label}</label>
+      <input type="number" value={value} onChange={(e) => set(Number(e.target.value))}
+        className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary" />
+    </div>
+  );
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+          <Sparkles className="h-4 w-4 text-primary" /> Coach de Vendas (avaliação + dicas)
+        </CardTitle>
+        <CardDescription className="mt-0.5">
+          A régua que avalia o atendimento (início/meio/fim) e gera as dicas ao vivo. Ligue o Copiloto na conversa para ver as dicas.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {cfgQuery.isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Carregando...</div>
+        ) : (
+          <>
+            {ta("Padrão — Início", inicio, setInicio, 2)}
+            {ta("Padrão — Meio", meio, setMeio, 3)}
+            {ta("Padrão — Fim", fim, setFim, 2)}
+            {ta("Tom das dicas", tom, setTom, 2)}
+            <div className="grid grid-cols-3 gap-2">
+              {num("SLA 1ª resposta (min)", slaMin, setSlaMin)}
+              {num("Gap máx. sem responder (min)", gapMin, setGapMin)}
+              {num("Bancos na simulação", bancos, setBancos)}
+            </div>
+
+            <div className="grid gap-1">
+              <label className="text-xs font-medium text-foreground">Critérios (ligar/desligar + peso)</label>
+              <div className="rounded-md border border-border divide-y divide-border">
+                {criterios.map((c) => (
+                  <div key={c.id} className="flex items-center gap-2 px-2 py-1.5">
+                    <input type="checkbox" checked={!!c.enabled} onChange={(e) => setCrit(c.id, { enabled: e.target.checked })} />
+                    <span className="text-xs flex-1 text-foreground">{c.label}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase">{c.etapa}</span>
+                    <input type="number" min={0} max={10} value={c.peso}
+                      onChange={(e) => setCrit(c.id, { peso: Number(e.target.value) })}
+                      className="w-14 rounded border border-border bg-background px-1.5 py-0.5 text-xs" title="Peso" />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({
+                padraoInicio: inicio, padraoMeio: meio, padraoFim: fim, tom,
+                slaMin, gapMin, bancosEsperado: bancos, criterios,
+                dicasAtivas: criterios.filter((c) => c.enabled).map((c) => c.id),
+              })}>
+                {save.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                Salvar coach
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function CopilotConfigCard() {
   const { data, isLoading } = trpc.copilot.getConfig.useQuery();
   const [tom, setTom] = useState("");
@@ -441,6 +543,9 @@ export default function Settings() {
 
         {/* Copiloto do Vendedor (sugestões em tempo real) */}
         <CopilotConfigCard />
+
+        {/* Coach de Vendas (avaliação do atendimento + dicas ao vivo) */}
+        <CoachConfigCard />
 
         {/* Espaço em disco do servidor */}
         <StorageCard />

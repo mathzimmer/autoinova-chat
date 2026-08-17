@@ -1,7 +1,4 @@
-import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull, gte } from "drizzle-orm";
-import { normalizePhone, phoneVariations } from "./phoneNormalize";
-import { parseTradeYear, parseTradeKm, parseMoneyToCents, funnelToLeadStatus } from "./fieldParsing";
-import { DEFAULT_STORE_LOCATION } from "./storeConfig";
+import { eq, ne, desc, and, sql, like, ilike, or, inArray, notInArray, lt, isNotNull, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import {
@@ -23,7 +20,6 @@ import {
   chatFlowNodes, InsertChatFlowNode,
   chatFlowEdges, InsertChatFlowEdge,
   chatFlowSessions, InsertChatFlowSession,
-  flowEvents, InsertFlowEvent,
   aiAgents, InsertAiAgent,
   sellers, InsertSeller,
   sellerQueues, InsertSellerQueue,
@@ -510,50 +506,6 @@ export async function getZernioInstanceByAccount(accountId: string) {
   return (await db.select().from(zernioInstances).where(eq(zernioInstances.accountId, accountId)).limit(1))[0];
 }
 
-/**
- * O webhook/sync só podem espelhar mensagens de contas Zernio CADASTRADAS e
- * ATIVAS no CRM. Sem este guard, um número desconectado ("excluído" do CRM)
- * continuava gerando conversas — a exclusão era só local e o Zernio seguia
- * entregando webhooks. Retorna false também quando o accountId não veio no
- * payload (não dá para saber de qual conta é → melhor ignorar e logar).
- */
-export async function isZernioAccountAllowed(accountId?: string): Promise<boolean> {
-  if (!accountId) return false;
-  const inst = await getZernioInstanceByAccount(accountId);
-  if (!inst) return false; // não cadastrada no CRM → ignora
-  return (inst as any).active !== false;
-}
-
-/**
- * O número de DESTINO da mensagem Zernio já é atendido por outro canal?
- * Cobre o caso do número migrado (ex.: 555131919081 → Evolution) que segue
- * registrado na conta Zernio de outra pessoa — o webhook chega com o accountId
- * dela, mas o destino é o número migrado. Bloqueia quando:
- *  1. o telefone bate com uma instância Evolution cadastrada, OU
- *  2. consta na setting manual `zernio_blocked_phones` (CSV, qualquer formato).
- */
-export async function isZernioBusinessPhoneBlocked(businessPhone?: string): Promise<boolean> {
-  const digits = (businessPhone || "").replace(/\D/g, "");
-  if (!digits) return false;
-  const { normalizePhone } = await import("./phoneNormalize");
-  const canon = normalizePhone(digits);
-  const db = await getDb();
-  if (db) {
-    const rows = await db.select({ phone: evolutionInstances.phone }).from(evolutionInstances);
-    for (const r of rows) {
-      if (r.phone && normalizePhone(r.phone) === canon) return true;
-    }
-  }
-  try {
-    const raw = await getSetting("zernio_blocked_phones");
-    if (raw) {
-      const list = raw.split(/[,;\s]+/).map((p) => normalizePhone(p)).filter(Boolean);
-      if (list.includes(canon)) return true;
-    }
-  } catch { /* setting opcional */ }
-  return false;
-}
-
 // ─── Espelhamento de mensagens de um NÚMERO OFICIAL adicional (multi-número) ──
 // Conversas ficam com channel "whatsapp" + instanceName = phoneNumberId, para
 // aparecerem numa aba própria no inbox (o número da Matriz tem instanceName null).
@@ -708,34 +660,28 @@ export async function mirrorZernioMessage(params: {
   }
 
   // Localiza conversa: pelo zernioConversationId no metadata, senão pelo phone+canal.
-  // REGRA DURA: busca por TELEFONE só com accountId — sem ele, casaria com a
-  // conversa de OUTRA instância Zernio do mesmo cliente e a mensagem "vazaria"
-  // de uma aba para outra (bug: conversa aparecendo em instância errada).
+  // AMBAS as buscas são escopadas pela INSTÂNCIA (accountId) — sem isso, uma
+  // conversa poluída de outra instância (bianca ↔ deivid) pode ser encontrada.
   const convScope = (extra: any) => {
     const conds = [eq(conversations.channel, "zernio" as any), extra];
     if (params.accountId) conds.push(eq(conversations.instanceName, params.accountId));
     return and(...conds);
   };
-  // zernioConversationId é globalmente único → pode buscar sem escopo quando o
-  // accountId faltar; o instanceName é backfillado depois (needsInstance).
   let conv = params.zernioConversationId
     ? (await db.select().from(conversations)
         .where(convScope(sql`metadata->>'zernioConversationId' = ${params.zernioConversationId}`)).limit(1))[0]
     : undefined;
   if (!conv && bestPhone) {
-    if (!params.accountId) {
-      console.warn(`[Zernio] mirror SEM accountId (phone ${bestPhone}) — busca por telefone pulada para não cruzar instâncias`);
-    } else {
-      // Escopo por INSTÂNCIA (accountId): o mesmo cliente pode falar com números
-      // Zernio diferentes (bianca, deivid). Sem filtrar por instância, a mensagem
-      // de um número "colaria" na conversa do outro.
-      conv = (await db.select().from(conversations)
-        .where(and(
-          eq(conversations.channel, "zernio" as any),
-          eq(conversations.phone, bestPhone),
-          eq(conversations.instanceName, params.accountId),
-        )).limit(1))[0];
-    }
+    // Escopo por INSTÂNCIA (accountId): o mesmo cliente pode falar com números
+    // Zernio diferentes (bianca, deivid). Sem filtrar por instância, a mensagem
+    // de um número "colaria" na conversa do outro.
+    const phoneConds = [
+      eq(conversations.channel, "zernio" as any),
+      eq(conversations.phone, bestPhone),
+    ];
+    if (params.accountId) phoneConds.push(eq(conversations.instanceName, params.accountId));
+    conv = (await db.select().from(conversations)
+      .where(and(...phoneConds)).limit(1))[0];
   }
 
   // Sincronizador: se a conversa já existe e já tem uma mensagem com o mesmo
@@ -889,21 +835,21 @@ export async function getConversationById(id: number) {
 export async function getConversationByPhone(phone: string) {
   const db = await getDb();
   if (!db) return undefined;
-  // IMPORTANTE: exclui conversas de instâncias Evolution E Zernio — este lookup é
-  // usado apenas pelos canais oficiais (Cloud API/IG/FB). Sem esse filtro, uma
-  // mensagem recebida no número oficial CAIA na conversa de outra instância do
-  // mesmo telefone (bug: msg da WABA gravada na aba Zernio da Bianca).
-  const notInstanceChannel = notInArray(conversations.channel, ["evolution", "zernio"] as any);
+  // IMPORTANTE: exclui conversas de instâncias Evolution — este lookup é usado
+  // apenas pelos canais oficiais (Cloud API/IG/FB). Sem esse filtro, uma mensagem
+  // recebida no número oficial cairia na conversa Evolution do mesmo telefone.
+  const notEvolution = ne(conversations.channel, "evolution" as any);
   // Try exact match first
   const exact = await db.select().from(conversations)
-    .where(and(eq(conversations.phone, phone), notInstanceChannel)).limit(1);
+    .where(and(eq(conversations.phone, phone), notEvolution)).limit(1);
   if (exact[0]) return exact[0];
   // Try all phone variations (handles 9th digit, formatting differences)
+  const { phoneVariations } = await import("./phoneNormalize");
   const variations = phoneVariations(phone);
   for (const v of variations) {
     if (v === phone) continue; // already tried
     const row = await db.select().from(conversations)
-      .where(and(eq(conversations.phone, v), notInstanceChannel)).limit(1);
+      .where(and(eq(conversations.phone, v), notEvolution)).limit(1);
     if (row[0]) return row[0];
   }
   return undefined;
@@ -1174,7 +1120,7 @@ export async function getCanonicalLead(phone: string) {
   const db = await getDb();
   if (!db || !phone) return undefined;
   let norm = phone;
-  norm = normalizePhone(phone) || phone;
+  try { const { normalizePhone } = await import("./phoneNormalize"); norm = normalizePhone(phone) || phone; } catch { /* usa phone */ }
   const rows = await db.select().from(leads).where(or(eq(leads.phone, phone), eq(leads.phone, norm))!);
   if (!rows.length) return undefined;
   const withCtwa = rows.filter(r => (r as any).ctwaId);
@@ -1252,7 +1198,7 @@ export async function getOrCreateLeadByPhone(params: {
   const db = await getDb();
   if (!db) throw new Error("DB indisponível");
   let norm = params.phone;
-  norm = normalizePhone(params.phone) || params.phone;
+  try { const { normalizePhone } = await import("./phoneNormalize"); norm = normalizePhone(params.phone) || params.phone; } catch { /* usa phone */ }
 
   const existing = await getCanonicalLead(params.phone);
   if (existing) {
@@ -1360,19 +1306,8 @@ export async function upsertLead(data: InsertLead) {
     // Auto-calculate temperature when funnelStatus changes
     if (updateData.funnelStatus && typeof updateData.funnelStatus === "string") {
       updateData.temperature = calculateTemperature(updateData.funnelStatus);
-      // PR #8: funnelStatus vence — sincroniza leads.status (deprecado) se não veio explícito
-      if (typeof updateData.status !== "string") {
-        updateData.status = funnelToLeadStatus(updateData.funnelStatus);
-      }
     }
-    // PR #8: auto-preenche colunas tipadas a partir das varchar legadas
-    if (typeof updateData.tradeYear === "string") updateData.tradeYearInt = parseTradeYear(updateData.tradeYear);
-    if (typeof updateData.tradeKm === "string") updateData.tradeKmInt = parseTradeKm(updateData.tradeKm);
-    if (typeof updateData.downPayment === "string") updateData.downPaymentCents = parseMoneyToCents(updateData.downPayment);
     await db.update(leads).set(updateData).where(eq(leads.id, existing.id));
-    // PR #7: garante o customer canônico vinculado (fire-and-forget, best-effort)
-    import("./customers").then(({ linkLeadToCustomer }) => linkLeadToCustomer(existing.id))
-      .catch(err => console.error("[Customers] hook upsertLead:", err));
     // Meta CAPI: reporta progresso do funil/status (fire-and-forget)
     const funnelChanged = typeof updateData.funnelStatus === "string" && updateData.funnelStatus !== existing.funnelStatus;
     const statusChanged = typeof updateData.status === "string" && updateData.status !== existing.status;
@@ -1393,17 +1328,8 @@ export async function upsertLead(data: InsertLead) {
   // Auto-calculate temperature for new leads
   if (data.funnelStatus) {
     (data as any).temperature = calculateTemperature(data.funnelStatus);
-    // PR #8: funnelStatus vence — status (deprecado) nasce sincronizado se não veio explícito
-    if (!data.status) (data as any).status = funnelToLeadStatus(data.funnelStatus);
   }
-  // PR #8: auto-preenche colunas tipadas a partir das varchar legadas
-  if (data.tradeYear) (data as any).tradeYearInt = parseTradeYear(data.tradeYear);
-  if (data.tradeKm) (data as any).tradeKmInt = parseTradeKm(data.tradeKm);
-  if (data.downPayment) (data as any).downPaymentCents = parseMoneyToCents(data.downPayment);
   const result = await db.insert(leads).values(data).returning({ id: leads.id });
-  // PR #7: lead novo já nasce vinculado ao customer canônico (fire-and-forget)
-  import("./customers").then(({ linkLeadToCustomer }) => linkLeadToCustomer(result[0].id))
-    .catch(err => console.error("[Customers] hook upsertLead(insert):", err));
   // Meta CAPI: lead novo já criado em etapa avançada do funil
   if (data.funnelStatus || data.status) {
     const newId = result[0].id;
@@ -1475,14 +1401,8 @@ export async function updateLeadFunnelStatus(conversationId: number, funnelStatu
       trackLeadProgress(lead.id, { funnelStatus })
     ).catch(err => console.error("[CAPI] hook updateLeadFunnelStatus:", err));
     // Oportunidade: fecha (ganho/perdido) ou atualiza o estágio da aberta
-    if (funnelStatus === "fechado") {
-      closeOpenOpportunity(lead.id, "won").catch(() => {}); promoteContactToCliente(lead.id).catch(() => {});
-      import("./salesCoach").then(m => m.evaluateConversation(conversationId, "ganho")).catch(() => {});
-    }
-    else if (funnelStatus === "perdido") {
-      closeOpenOpportunity(lead.id, "lost").catch(() => {});
-      import("./salesCoach").then(m => m.evaluateConversation(conversationId, "perdido")).catch(() => {});
-    }
+    if (funnelStatus === "fechado") { closeOpenOpportunity(lead.id, "won").catch(() => {}); promoteContactToCliente(lead.id).catch(() => {}); }
+    else if (funnelStatus === "perdido") { closeOpenOpportunity(lead.id, "lost").catch(() => {}); }
     else { setOpenOpportunityStage(lead.id, funnelStatus).catch(() => {}); }
     // Linha do tempo: mudança de etapa (venda se "fechado")
     logTimeline({
@@ -2183,62 +2103,6 @@ export async function getFlowSessionsByFlow(flowId: number) {
     .limit(100);
 }
 
-// ─── Flow Events (decision log) ─────────────────────────────
-/** Registra um evento da máquina de estados. Best-effort: nunca quebra o fluxo. */
-export async function logFlowEvent(data: InsertFlowEvent): Promise<void> {
-  try {
-    const db = await getDb();
-    if (!db) return;
-    await db.insert(flowEvents).values(data);
-  } catch (err) {
-    console.error("[FlowEvents] Falha ao registrar evento:", err);
-  }
-}
-
-/**
- * Estatísticas de saúde de uma jornada (painel "Saúde" do editor):
- * totais por tipo de evento + visitas por nó + últimos fallbacks.
- */
-export async function getFlowHealthStats(flowId: number, sinceDays = 7) {
-  const db = await getDb();
-  if (!db) return null;
-  const since = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
-  const events = await db.select().from(flowEvents)
-    .where(and(eq(flowEvents.flowId, flowId), gte(flowEvents.createdAt, since)))
-    .orderBy(desc(flowEvents.createdAt))
-    .limit(5000);
-
-  const totals: Record<string, number> = {};
-  const perNode: Record<string, number> = {};
-  const sessions = new Set<number>();
-  const conversations = new Set<number>();
-  const fallbacks: { createdAt: Date; payload: any }[] = [];
-
-  for (const e of events) {
-    totals[e.event] = (totals[e.event] || 0) + 1;
-    sessions.add(e.sessionId);
-    conversations.add(e.conversationId);
-    if (e.event === "STATE_TRANSITION" && e.nodeId != null) {
-      const to = String((e.payload as any)?.toNodeId ?? e.nodeId);
-      perNode[to] = (perNode[to] || 0) + 1;
-    }
-    if (e.event === "FALLBACK_TRIGGERED" && fallbacks.length < 10) {
-      fallbacks.push({ createdAt: e.createdAt, payload: e.payload });
-    }
-  }
-
-  return {
-    flowId,
-    sinceDays,
-    totalEvents: events.length,
-    sessionCount: sessions.size,
-    conversationCount: conversations.size,
-    totals,
-    perNode,
-    recentFallbacks: fallbacks,
-  };
-}
-
 export async function pauseFlowSessionByConversation(conversationId: number) {
   const db = await getDb();
   if (!db) return false;
@@ -2295,11 +2159,12 @@ export async function deleteAiAgent(id: number) {
   if (!db) throw new Error("Database not available");
   // Remove agent references from flows
   await db.update(chatFlows).set({ agentId: null }).where(eq(chatFlows.agentId, id));
-  // Remove instance agent settings apontando para este agente
-  const instanceSettings = await db.select().from(settings).where(like(settings.key, "instance_%_agent_id"));
-  for (const setting of instanceSettings) {
-    if (setting.value === String(id)) {
-      await db.update(settings).set({ value: "" }).where(eq(settings.id, setting.id));
+  // Remove channel agent settings
+  const channelSettings = ["channel_whatsapp_agent_id", "channel_instagram_agent_id", "channel_facebook_agent_id"];
+  for (const key of channelSettings) {
+    const setting = await db.select().from(settings).where(eq(settings.key, key)).limit(1);
+    if (setting[0] && setting[0].value === String(id)) {
+      await db.update(settings).set({ value: "" }).where(eq(settings.id, setting[0].id));
     }
   }
   await db.delete(aiAgents).where(eq(aiAgents.id, id));
@@ -2309,6 +2174,17 @@ export async function getActiveAiAgents() {
   const db = await getDb();
   if (!db) return [];
   return db.select().from(aiAgents).where(eq(aiAgents.active, true)).orderBy(aiAgents.name);
+}
+
+export async function getAiAgentForChannel(channel: string): Promise<typeof aiAgents.$inferSelect | null> {
+  const settingKey = `channel_${channel}_agent_id`;
+  const agentIdStr = await getSetting(settingKey);
+  if (!agentIdStr) return null;
+  const agentId = parseInt(agentIdStr, 10);
+  if (isNaN(agentId)) return null;
+  const agent = await getAiAgentById(agentId);
+  if (agent && agent.active) return agent;
+  return null;
 }
 
 export async function getAiAgentForInstance(instanceName: string): Promise<typeof aiAgents.$inferSelect | null> {
@@ -2322,40 +2198,12 @@ export async function getAiAgentForInstance(instanceName: string): Promise<typeo
 
 /** Agente marcado como padrão da loja (setting default_agent_id) */
 export async function getDefaultAiAgent(): Promise<typeof aiAgents.$inferSelect | null> {
-  const db = await getDb();
-  // Prioridade: agente marcado como isDefault (fonte de verdade do PR A1)
-  if (db) {
-    const rows = await db.select().from(aiAgents)
-      .where(and(eq(aiAgents.isDefault, true), eq(aiAgents.active, true)))
-      .limit(1);
-    if (rows[0]) return rows[0];
-  }
-  // Fallback legado: setting default_agent_id (deprecado — logar)
   const agentIdStr = await getSetting("default_agent_id");
   if (!agentIdStr) return null;
   const agentId = parseInt(agentIdStr, 10);
   if (isNaN(agentId)) return null;
   const agent = await getAiAgentById(agentId);
-  if (agent && agent.active) {
-    console.log(`[AI] getDefaultAiAgent via setting legado 'default_agent_id' (id=${agentId}). Marque o agente como padrão (isDefault) para migrar.`);
-    return agent;
-  }
-  return null;
-}
-
-/**
- * Define (ou limpa) o agente padrão da loja. Garante no máximo 1 isDefault e
- * mantém o setting legado `default_agent_id` sincronizado para compatibilidade.
- */
-export async function setDefaultAiAgent(agentId: number | null): Promise<void> {
-  const db = await getDb();
-  if (db) {
-    await db.update(aiAgents).set({ isDefault: false }).where(eq(aiAgents.isDefault, true));
-    if (agentId) {
-      await db.update(aiAgents).set({ isDefault: true }).where(eq(aiAgents.id, agentId));
-    }
-  }
-  await upsertSetting("default_agent_id", agentId ? String(agentId) : "");
+  return agent && agent.active ? agent : null;
 }
 
 export async function getAiAgentForFlow(flowId: number): Promise<typeof aiAgents.$inferSelect | null> {
@@ -2506,38 +2354,6 @@ export async function getDistinctStoreLocations(): Promise<string[]> {
   if (!db) return [];
   const rows = await db.selectDistinct({ seller: vehicles.seller }).from(vehicles).where(eq(vehicles.available, true));
   return rows.map(r => r.seller).filter(Boolean) as string[];
-}
-
-/**
- * Atribui um vendedor à conversa pela fila de rodízio (reusa as primitivas do
- * fluxo: detecção de loja pelo veículo + fila + registro de atribuição).
- * Usado pela tool `transferir_para_vendedor` (handoff da IA).
- */
-export async function assignSellerRoundRobin(
-  conversationId: number,
-  opts?: { phone?: string; contactName?: string },
-): Promise<{ seller: typeof sellers.$inferSelect; storeLocation: string } | null> {
-  const lead = await getLeadByConversationId(conversationId);
-  let storeLocation = "";
-  if (lead?.vehicleId) {
-    storeLocation = (await getStoreLocationByVehicleId(lead.vehicleId)) || "";
-  }
-  if (!storeLocation) {
-    const stores = await getDistinctStoreLocations();
-    storeLocation = stores[0] || DEFAULT_STORE_LOCATION; // PR #9: constante central
-  }
-  const seller = await getNextSellerInQueue(storeLocation);
-  if (!seller) return null;
-  await createSellerAssignment({
-    sellerId: seller.id,
-    conversationId,
-    storeLocation,
-    vehicleId: lead?.vehicleId || null,
-    customerPhone: opts?.phone || lead?.phone || "",
-    customerName: opts?.contactName || lead?.name || null,
-    status: "pending",
-  });
-  return { seller, storeLocation };
 }
 
 
@@ -2708,6 +2524,7 @@ export async function getContactByPhone(phone: string) {
   const exact = await db.select().from(contacts).where(and(eq(contacts.phone, phone), eq(contacts.isActive, true))).limit(1);
   if (exact[0]) return exact[0];
   // Try all phone variations (handles 9th digit, formatting differences)
+  const { phoneVariations } = await import("./phoneNormalize");
   const variations = phoneVariations(phone);
   for (const v of variations) {
     if (v === phone) continue;
@@ -2742,6 +2559,7 @@ export async function bulkCreateContacts(rows: Array<Omit<InsertContact, "id" | 
   const db = await getDb();
   if (!db) throw new Error("DB not available");
   if (rows.length === 0) return { created: 0, skipped: 0, merged: 0 };
+  const { normalizePhone } = await import("./phoneNormalize");
   let created = 0;
   let skipped = 0;
   let merged = 0;
