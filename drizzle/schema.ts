@@ -966,6 +966,8 @@ export const whatsappNumbers = pgTable("whatsappNumbers", {
   sellerId:       integer("sellerId"),
   assignedUserId: integer("assignedUserId"),
   isActive:       boolean("isActive").default(true).notNull(),
+  // 'normal' = IA do CRM responde; 'meta_agent' = agente da Meta responde (CRM só observa + handoff)
+  mode:           varchar("mode", { length: 20 }).default("normal"),
   notes:          text("notes"),
   createdAt:      timestamp("createdAt").defaultNow().notNull(),
   updatedAt:      timestamp("updatedAt").defaultNow().notNull(),

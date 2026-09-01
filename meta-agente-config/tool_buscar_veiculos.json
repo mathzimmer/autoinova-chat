@@ -1,0 +1,21 @@
+{
+  "name": "buscar_veiculos",
+  "description": "Busca o estoque ATUAL da Auto Inova. Use sempre que o cliente quiser ver carros ou perguntar por modelo, marca, tipo, faixa de preco ou ano. Passe o termo em 'q' (ex.: 'corolla', 'hilux', 'suv') e/ou 'max_price'. Retorna vehicles[] com: titulo, marca, modelo, ano, km, preco, cor, combustivel, link (anuncio) e fotos (lista de URLs). Use as URLs de 'fotos' para enviar carrossel/imagem dos carros. Nunca invente carros nem fotos: use so o que a ferramenta retornou.",
+  "request_definition": {
+    "method": "GET",
+    "path": "/api/agent/vehicles",
+    "query_parameters": {
+      "q": {
+        "type": "string",
+        "description": "Termo de busca livre: modelo, marca ou tipo (ex.: corolla, hilux, suv). Opcional.",
+        "required": false
+      },
+      "max_price": {
+        "type": "integer",
+        "description": "Preco maximo em reais, ex.: 60000. Opcional.",
+        "required": false
+      }
+    }
+  },
+  "user_auth_required": false
+}

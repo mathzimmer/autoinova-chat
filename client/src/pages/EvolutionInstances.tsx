@@ -168,6 +168,10 @@ export default function EvolutionInstances() {
     onSuccess: (r) => { officialQuery.refetch(); toast.success(r.receiving ? "Recebimento retomado (WABA assinada)" : "Recebimento pausado (WABA desassinada)"); },
     onError: (e) => toast.error("Erro ao alterar recebimento: " + e.message),
   });
+  const oModeMutation = trpc.whatsappNumber.setMode.useMutation({
+    onSuccess: (r) => { officialQuery.refetch(); toast.success(r.mode === "meta_agent" ? "Número marcado como Meta Agent (CRM só observa)" : "Número voltou ao modo normal (IA do CRM responde)"); },
+    onError: (e) => toast.error("Erro ao alterar modo: " + e.message),
+  });
   const officialInstances = officialQuery.data || [];
 
   const instances = instancesQuery.data || [];
@@ -581,9 +585,14 @@ export default function EvolutionInstances() {
                         <p className="text-xs text-muted-foreground">{inst.phone || inst.phoneNumberId}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className={`text-xs ${inst.receiving ? "border-emerald-500/40 text-emerald-500" : "border-red-500/40 text-red-500"}`}>
-                      {inst.receiving ? "Recebendo" : "Pausado"}
-                    </Badge>
+                    <div className="flex flex-col items-end gap-1">
+                      <Badge variant="outline" className={`text-xs ${inst.receiving ? "border-emerald-500/40 text-emerald-500" : "border-red-500/40 text-red-500"}`}>
+                        {inst.receiving ? "Recebendo" : "Pausado"}
+                      </Badge>
+                      {inst.mode === "meta_agent" && (
+                        <Badge variant="outline" className="text-[10px] border-purple-500/40 text-purple-500">Meta Agent</Badge>
+                      )}
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -603,6 +612,14 @@ export default function EvolutionInstances() {
                       {inst.receiving
                         ? <><WifiOff className="w-3 h-3 mr-1" />Pausar</>
                         : <><Wifi className="w-3 h-3 mr-1" />Retomar</>}
+                    </Button>
+                    <Button
+                      size="sm" variant="outline"
+                      disabled={oModeMutation.isPending}
+                      title={inst.mode === "meta_agent" ? "Voltar ao modo normal (IA do CRM responde)" : "Marcar como Meta Business Agent (CRM só observa + handoff)"}
+                      onClick={() => oModeMutation.mutate({ id: inst.id, mode: inst.mode === "meta_agent" ? "normal" : "meta_agent" })}
+                    >
+                      {inst.mode === "meta_agent" ? "Modo normal" : "Meta Agent"}
                     </Button>
                     <Button
                       size="sm" variant="outline" className="text-red-500 hover:text-red-600"

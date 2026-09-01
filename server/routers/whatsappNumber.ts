@@ -20,9 +20,22 @@ export const whatsappNumberRouter = router({
       status: r.isActive ? "connected" : "disconnected",
       receiving: !!r.isActive,       // recebimento (assinatura da WABA) ligado?
       wabaId: r.wabaId || null,
+      mode: r.mode || "normal",      // 'normal' | 'meta_agent'
       channel: "whatsapp" as const,
     }));
   }),
+
+  // Marca/desmarca o número como gerido pelo Meta Business Agent
+  // (mode = meta_agent → o CRM só observa + trata handoff, não responde pela IA).
+  setMode: protectedProcedure
+    .input(z.object({ id: z.number(), mode: z.enum(["normal", "meta_agent"]) }))
+    .mutation(async ({ ctx, input }) => {
+      const member = await currentTeamMember(ctx);
+      if (member && member.cargo === "vendedor") throw new Error("Apenas administradores");
+      const { updateWhatsappNumber } = await import("../whatsappMultiNumber");
+      await updateWhatsappNumber(input.id, { mode: input.mode } as any);
+      return { success: true, mode: input.mode };
+    }),
 
   // Pausa/retoma o RECEBIMENTO pela API oficial: assina/desassina a WABA no app
   // (a Meta para/volta a mandar webhooks) e marca isActive. Mantém o cadastro.
@@ -53,6 +66,7 @@ export const whatsappNumberRouter = router({
       phoneDisplay: z.string().optional(),
       accessToken: z.string().optional(),
       wabaId: z.string().optional(),
+      mode: z.enum(["normal", "meta_agent"]).optional(),
     }))
     .mutation(async ({ input }) => {
       const { createWhatsappNumber } = await import("../whatsappMultiNumber");

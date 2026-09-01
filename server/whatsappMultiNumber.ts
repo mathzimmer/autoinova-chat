@@ -66,6 +66,7 @@ export async function createWhatsappNumber(data: {
   sellerId?: number;
   assignedUserId?: number;
   notes?: string;
+  mode?: string; // 'normal' | 'meta_agent'
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not configured");
@@ -77,6 +78,7 @@ export async function createWhatsappNumber(data: {
       phoneDisplay: data.phoneDisplay ?? existing.phoneDisplay,
       accessToken: data.accessToken ?? existing.accessToken,
       wabaId: data.wabaId ?? (existing as any).wabaId,
+      mode: data.mode ?? (existing as any).mode ?? "normal",
       isActive: true, updatedAt: new Date(),
     } as any).where(eq(whatsappNumbers.id, existing.id));
     return getWhatsappNumberById(existing.id);
@@ -90,6 +92,7 @@ export async function createWhatsappNumber(data: {
     sellerId: data.sellerId || null,
     assignedUserId: data.assignedUserId || null,
     notes: data.notes || null,
+    mode: data.mode || "normal",
     isActive: true,
   } as any);
   const rows = await db

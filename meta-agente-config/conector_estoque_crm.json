@@ -1,0 +1,6 @@
+{
+  "name": "Estoque Auto Inova (CRM)",
+  "description": "Estoque ATUAL da Auto Inova, servido pelo CRM. Busca veiculos disponiveis com fotos, preco, ano, km e link do anuncio.",
+  "base_url": "https://SEU_DOMINIO_DO_CRM",
+  "auth_type": "NONE"
+}

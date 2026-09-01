@@ -196,6 +196,12 @@ async function startServer() {
           // aba (inbox por número). Não depende mais de ser diferente do .env — assim
           // um número em coexistência nunca "cai na Matriz" só por ser o padrão do .env.
           if (registered && registered.isActive) {
+            // Número gerido pelo Meta Business Agent: o CRM só observa + trata handoff.
+            if ((registered as any).mode === "meta_agent") {
+              const { handleMetaAgentWebhook } = await import("../metaAgent");
+              await handleMetaAgentWebhook(body, phoneNumberId);
+              return res.sendStatus(200);
+            }
             const { handleOfficialMessage } = await import("../officialInstance");
             // status updates ainda seguem o fluxo padrão abaixo; mensagens vão para o handler oficial
             if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
@@ -473,6 +479,34 @@ async function startServer() {
     } catch (error) {
       console.error("[Webhook] Error:", error);
       res.sendStatus(200); // Always return 200 to WhatsApp
+    }
+  });
+
+  // ── Estoque para o Meta Business Agent (conector) ──
+  // Busca ESTRUTURADA do estoque atual (com fotos), pro agente da Meta consumir
+  // ao vivo via conector. Estoque é publico (site), mas aceita chave opcional
+  // (env AGENT_API_KEY) via ?key= ou header x-api-key.
+  app.get("/api/agent/vehicles", async (req, res) => {
+    try {
+      const requiredKey = process.env.AGENT_API_KEY;
+      if (requiredKey && req.query.key !== requiredKey && req.headers["x-api-key"] !== requiredKey) {
+        return res.status(401).json({ error: "unauthorized" });
+      }
+      const num = (x: any) => (x != null && x !== "" && !isNaN(Number(x)) ? Number(x) : undefined);
+      const q = typeof req.query.q === "string" ? req.query.q : (typeof req.query.query === "string" ? req.query.query : "");
+      const { searchVehiclesStructured } = await import("../stockSync");
+      const vehiclesOut = await searchVehiclesStructured({
+        q,
+        maxPrice: num(req.query.max_price ?? req.query.maxPrice),
+        minPrice: num(req.query.min_price ?? req.query.minPrice),
+        yearMin: num(req.query.year_min ?? req.query.yearMin),
+        fuel: typeof req.query.fuel === "string" ? req.query.fuel : undefined,
+        limit: num(req.query.limit) || 10,
+      });
+      res.json({ total: vehiclesOut.length, vehicles: vehiclesOut });
+    } catch (err) {
+      console.error("[AgentVehicles] erro:", err);
+      res.status(500).json({ error: "erro ao buscar estoque" });
     }
   });
 

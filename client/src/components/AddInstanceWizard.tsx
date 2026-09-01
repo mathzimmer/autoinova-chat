@@ -99,6 +99,7 @@ function OficialForm({ onDone }: { onDone: () => void }) {
   const [phoneDisplay, setPhoneDisplay] = useState("");
   const [wabaId, setWabaId] = useState("");
   const [accessToken, setAccessToken] = useState("");
+  const [metaAgent, setMetaAgent] = useState(false);
 
   const create = trpc.whatsappNumber.createInstance.useMutation({
     onSuccess: () => { toast.success("Número oficial cadastrado!"); onDone(); },
@@ -117,6 +118,12 @@ function OficialForm({ onDone }: { onDone: () => void }) {
       <p className="text-[11px] text-muted-foreground">
         Sem token, usa o System User global. A WABA precisa estar acessível a esse token.
       </p>
+      <label className="flex items-start gap-2 text-xs cursor-pointer rounded-md border border-border p-2.5">
+        <input type="checkbox" checked={metaAgent} onChange={(e) => setMetaAgent(e.target.checked)} className="mt-0.5" />
+        <span>
+          <b>Meta Business Agent</b> — a IA da Meta responde neste número. O CRM só <b>observa</b> as mensagens e <b>assume no handoff</b> (não responde pela IA do CRM).
+        </span>
+      </label>
       <DialogFooter>
         <Button
           disabled={!valid || create.isPending}
@@ -126,6 +133,7 @@ function OficialForm({ onDone }: { onDone: () => void }) {
             phoneDisplay: phoneDisplay.trim() || undefined,
             wabaId: wabaId.trim() || undefined,
             accessToken: accessToken.trim() || undefined,
+            mode: metaAgent ? "meta_agent" : "normal",
           })}
         >
           {create.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}

@@ -393,6 +393,47 @@ async function getVehicleByIdForAI(vehicleId: number): Promise<{ found: boolean;
 /**
  * Search vehicles with detailed info for AI responses
  */
+/**
+ * Busca ESTRUTURADA do estoque para o Meta Business Agent (conector).
+ * Diferente de searchVehiclesForAI (que devolve texto), aqui devolvemos JSON com
+ * as URLs das fotos — pro carrossel/imagem do agente enviar as fotos ao vivo.
+ * Aplica a mesma curadoria do estoque (esconde barco, sem preço/foto, etc.).
+ */
+export async function searchVehiclesStructured(opts: {
+  q?: string; maxPrice?: number; minPrice?: number; yearMin?: number; fuel?: string; limit?: number;
+}): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const cfg = await getStockAiConfig();
+  let all = await db.select().from(vehicles).where(eq(vehicles.available, true));
+  all = all.filter((v: any) => passesStockCuration(v, cfg));
+
+  const stop = new Set(["carro", "carros", "quero", "um", "uma", "de", "do", "da", "com", "ate", "até", "por", "o", "a", "veiculo", "veículo"]);
+  const kws = (opts.q || "").toLowerCase().replace(/[/\\()\[\]{}]/g, " ").split(/\s+/).filter(w => w.length >= 2 && !stop.has(w));
+
+  const match = (v: any): boolean => {
+    if (kws.length) {
+      const t = [v.brand, v.model, v.version, v.title].join(" ").toLowerCase();
+      if (!kws.some(k => t.includes(k))) return false;
+    }
+    if (opts.maxPrice && v.price > opts.maxPrice) return false;
+    if (opts.minPrice && v.price < opts.minPrice) return false;
+    if (opts.yearMin && v.year < opts.yearMin) return false;
+    if (opts.fuel && !String(v.fuel || "").toLowerCase().includes(opts.fuel.toLowerCase())) return false;
+    return true;
+  };
+
+  return all.filter(match).slice(0, opts.limit && opts.limit > 0 ? opts.limit : 10).map((v: any) => ({
+    id: v.id,
+    titulo: v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim(),
+    marca: v.brand, modelo: v.model, versao: v.version,
+    ano: v.year, km: v.mileage, preco: v.price,
+    cor: v.color, combustivel: v.fuel, cambio: v.transmission,
+    link: v.url,
+    fotos: Array.isArray(v.images) ? (v.images as string[]).slice(0, 6) : (v.imageUrl ? [v.imageUrl] : []),
+  }));
+}
+
 async function searchVehiclesForAI(filters: {
   brand?: string;
   model?: string;
