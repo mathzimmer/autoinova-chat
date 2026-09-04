@@ -1,6 +1,16 @@
 {
-  "name": "Estoque Auto Inova (CRM)",
-  "description": "Estoque ATUAL da Auto Inova, servido pelo CRM. Busca veiculos disponiveis com fotos, preco, ano, km e link do anuncio.",
-  "base_url": "https://SEU_DOMINIO_DO_CRM",
-  "auth_type": "NONE"
+  "name": "Estoque Auto Inova",
+  "description": "Estoque atual da Auto Inova. Busca veiculos disponiveis com fotos, preco, ano, km e link do anuncio.",
+  "base_url": "https://autoinovacrm.com.br",
+  "auth_type": "API_KEY",
+  "auth_config": {
+    "api_key": {
+      "query_params": [
+        {
+          "field_name": "key",
+          "value": "autoinova-agent-2026"
+        }
+      ]
+    }
+  }
 }
