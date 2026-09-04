@@ -434,6 +434,19 @@ export async function searchVehiclesStructured(opts: {
   }));
 }
 
+/**
+ * Retorna TODOS os veículos disponíveis + curados (sem limite), linhas cruas do banco.
+ * Usado pelo feed de catálogo do Facebook (server/catalogFeed.ts).
+ */
+export async function getAllCuratedVehicles(): Promise<any[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const cfg = await getStockAiConfig();
+  let all = await db.select().from(vehicles).where(eq(vehicles.available, true));
+  all = all.filter((v: any) => passesStockCuration(v, cfg));
+  return all;
+}
+
 async function searchVehiclesForAI(filters: {
   brand?: string;
   model?: string;

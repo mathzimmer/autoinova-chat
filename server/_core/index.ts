@@ -510,6 +510,24 @@ async function startServer() {
     }
   });
 
+  // ── Feed de catálogo VEHICLES pro Facebook/Meta Commerce ──
+  // CSV completo (várias fotos + ano/km/câmbio/combustível) gerado do estoque
+  // real do CRM. Cole esta URL no Commerce Manager como fonte de dados agendada;
+  // o Facebook re-processa sozinho no horário definido.
+  app.get(["/api/catalog/facebook.csv", "/api/catalog/vehicles.csv"], async (req, res) => {
+    try {
+      const { buildFacebookVehiclesCsv } = await import("../catalogFeed");
+      const csv = await buildFacebookVehiclesCsv();
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=autoinova_vehicles.csv");
+      res.setHeader("Cache-Control", "public, max-age=1800");
+      res.send("﻿" + csv); // BOM p/ acentos
+    } catch (err) {
+      console.error("[CatalogFeed] erro:", err);
+      res.status(500).send("erro ao gerar feed");
+    }
+  });
+
   // WhatsApp Cloud API webhook verification (GET)
   app.get("/api/webhook/whatsapp", (req, res) => {
     const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
