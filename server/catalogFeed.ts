@@ -144,25 +144,27 @@ export async function buildFacebookVehiclesCsv(injectedRows?: any[]): Promise<st
     const url = v.url || SITE;
     const priceNum = Number(v.promotionPrice || v.price || 0);
 
+    const state = mapState(v.condition);
     const cols = [
-      v.externalId ?? v.id,
-      title,
-      description,
-      url,
-      v.brand || "",
-      v.model || "",
-      v.year || "",
-      v.mileage != null ? v.mileage : "",
-      "KM",
-      priceNum > 0 ? `${priceNum} BRL` : "",
-      mapState(v.condition),
-      mapState(v.condition) === "NEW" ? "NEW" : "EXCELLENT",
-      v.color || "",
-      mapFuel(v.fuel),
-      mapTransmission(v.transmission),
-      mapBodyStyle(v.category, v.vehicleType),
-      v.plate || "",
-      addressJson,
+      v.externalId ?? v.id,                       // vehicle_id
+      title,                                       // title
+      description,                                 // description
+      url,                                         // url
+      v.brand || "",                               // make
+      v.model || "",                               // model
+      v.year || "",                                // year
+      v.mileage != null ? v.mileage : "",          // mileage.value
+      "KM",                                        // mileage.unit
+      priceNum > 0 ? `${priceNum} BRL` : "",       // price
+      state,                                       // state_of_vehicle
+      "available",                                 // availability
+      state === "NEW" ? "NEW" : "EXCELLENT",       // condition
+      v.color || "",                               // exterior_color
+      mapFuel(v.fuel),                             // fuel_type
+      mapTransmission(v.transmission),             // transmission
+      mapBodyStyle(v.category, v.vehicleType),     // body_style
+      "",                                          // vehicle_registration_plate (placa mascarada -> vazio)
+      addressJson,                                 // address
       ...Array.from({ length: MAX_IMAGES }, (_, i) => imgs[i] || ""),
     ];
 
