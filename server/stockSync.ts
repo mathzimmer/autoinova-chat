@@ -376,7 +376,9 @@ async function getVehicleByIdForAI(vehicleId: number): Promise<{ found: boolean;
 
   const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
   if (rows.length === 0) {
-    return { found: false, text: `Veículo com ID ${vehicleId} não encontrado no estoque. Pode ter sido vendido.`, vehicle: null };
+    // ID não existe = provável id errado/inventado pelo modelo. NÃO dizer ao cliente
+    // que vendeu — instruir a usar um id real da lista já mostrada.
+    return { found: false, text: `[INTERNO — NÃO diga ao cliente que o veículo foi vendido] O ID ${vehicleId} não corresponde a nenhum veículo do estoque (provavelmente id errado). Use o [ID:X] correto de um veículo da lista JÁ MOSTRADA no contexto, ou chame buscar_veiculos. NÃO afirme indisponibilidade.`, vehicle: null };
   }
 
   const v = rows[0];
@@ -687,7 +689,7 @@ async function searchVehiclesForAI(filters: {
   }
 
   const vehicleList = sorted.map((v, i) => {
-    return `Op\u00e7\u00e3o ${startIndex + i + 1}: [ID:${v.id}] ${buildVehicleFicha(v, stockCfg, " | ")}`;
+    return `${startIndex + i + 1}) [ID:${v.id}] ${buildVehicleFicha(v, stockCfg, " | ")}`;
   }).join("\n");
 
   const remaining = allVehicles.length - (startIndex + sorted.length);
@@ -695,7 +697,7 @@ async function searchVehiclesForAI(filters: {
     ? `\n\n(Mostrando página ${page}. Restam mais ${remaining} veículos. Para ver mais, chame buscar_veiculos novamente com pagina: ${page + 1} e os MESMOS filtros.)` 
     : `\n\n(Estes são TODOS os veículos disponíveis com esses critérios. Não há mais opções.)`;
 
-  return `RESULTADOS DA BUSCA (${allVehicles.length} veículos no total, mostrando ${sorted.length} - página ${page}):\n\nIMPORTANTE: Apresente EXATAMENTE os veículos abaixo ao cliente. PROIBIDO inventar, modificar nomes, preços, links ou adicionar veículos que NÃO estão nesta lista. Se o cliente pedir mais opções, chame buscar_veiculos com pagina: ${page + 1}.\n\n${vehicleList}${moreText}`;
+  return `RESULTADOS DA BUSCA (${allVehicles.length} veículos no total, mostrando ${sorted.length} - página ${page}):\n\nIMPORTANTE: Apresente EXATAMENTE os veículos abaixo ao cliente. PROIBIDO inventar, modificar nomes, preços, links ou adicionar veículos que NÃO estão nesta lista.\nID VÁLIDO PARA FERRAMENTAS = SOMENTE o número dentro de [ID:...]. NUNCA use o número da opção (1, 2, 3) como id. Se o cliente escolher "o primeiro/segundo", pegue o [ID:X] daquela linha.\nSe o cliente pedir mais opções, chame buscar_veiculos com pagina: ${page + 1}.\n\n${vehicleList}${moreText}`;
 }
 
 // Auto-sync interval (every 30 minutes)

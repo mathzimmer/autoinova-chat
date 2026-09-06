@@ -25,6 +25,11 @@ IMPORTANTE - VEÍCULOS:
 - COPIE preço e ano EXATAMENTE como retornados. Nunca invente ou misture dados
 - Para mais opções: buscar_veiculos com pagina: 2+ e MESMOS filtros
 - PROIBIDO inventar veículos, preços, links ou URLs
+- id de ferramenta = SOMENTE o número dentro de [ID:X]. NUNCA use o número da opção/lista como id.
+
+FOTO: Quando o cliente pedir foto/imagem ("manda foto", "tem foto?", "quero ver") de um veículo, chame apresentar_veiculo com o veiculo_id daquele carro (pegue o [ID:X] dos VEÍCULOS JÁ MOSTRADOS no contexto). A foto é enviada pela ferramenta.
+
+DISPONIBILIDADE: Um veículo que você JÁ mostrou nesta conversa ESTÁ disponível. NUNCA diga que ele foi vendido/indisponível a menos que uma ferramenta retorne explicitamente que não está disponível. Se um id não resolver, é id errado — use o [ID:X] correto da lista, não anuncie indisponibilidade.
 
 MÍDIA: Imagens → confirme naturalmente ("Recebi a foto!"). Áudios → trate como texto. NUNCA diga "não consigo ver" ou mencione transcrição.
 
@@ -761,6 +766,71 @@ async function trackDiscoveryIds(
   } catch { /* rastreamento é best-effort */ }
 }
 
+/**
+ * Memória dos veículos JÁ MOSTRADOS na conversa — gravada em conversation.metadata
+ * (funciona no modo agente puro, não só no fluxo). Sem isso, o modelo perde o
+ * [ID:X] entre turnos e "chuta" um id na confirmação → cai em "não disponível".
+ */
+type ShownVehicle = { id: number; title: string };
+function readShownVehicles(conv: Conversation): ShownVehicle[] {
+  const md = (conv as any).metadata as Record<string, any> | null;
+  return Array.isArray(md?.shownVehicles) ? md!.shownVehicles as ShownVehicle[] : [];
+}
+async function recordShownVehicles(
+  conv: Conversation,
+  items: ShownVehicle[],
+  lastPresentedId?: number,
+): Promise<void> {
+  try {
+    const md = ((conv as any).metadata as Record<string, any>) || {};
+    const prev = readShownVehicles(conv);
+    const byId = new Map<number, ShownVehicle>();
+    for (const it of [...prev, ...items]) {
+      if (!it || !Number.isFinite(it.id)) continue;
+      const title = (it.title && it.title.length >= 3 ? it.title : byId.get(it.id)?.title || `veículo ${it.id}`).slice(0, 80);
+      byId.set(it.id, { id: it.id, title });
+    }
+    const merged = Array.from(byId.values()).slice(-12); // mantém os 12 mais recentes
+    const nextMd: Record<string, any> = { ...md, shownVehicles: merged };
+    if (lastPresentedId != null) nextMd.lastPresentedId = lastPresentedId;
+    (conv as any).metadata = nextMd; // reflete no snapshot p/ o mesmo turno
+    await updateConversation(conv.id, { metadata: nextMd } as any);
+  } catch (e) {
+    console.error("[AI] recordShownVehicles falhou:", e);
+  }
+}
+/**
+ * Resolve o ID REAL do veículo confirmado, sem chutar:
+ * 1) o último apresentado; 2) o único da lista; 3) casamento por título. Puro/testável.
+ */
+export function resolveConfirmedVehicleId(
+  shown: ShownVehicle[],
+  lastPresentedId: number | undefined,
+  title: string | undefined,
+): number | null {
+  if (lastPresentedId != null && Number.isFinite(lastPresentedId)) return lastPresentedId;
+  if (shown.length === 1) return shown[0].id;
+  if (title) {
+    const t = title.toLowerCase().slice(0, 15);
+    const hit = shown.find(s => (s.title || "").toLowerCase().includes(t));
+    if (hit) return hit.id;
+  }
+  return null;
+}
+
+/** Extrai {id,título} do texto de resultados da busca (linhas com [ID:X]). */
+export function parseShownFromSearchText(text: string): ShownVehicle[] {
+  const out: ShownVehicle[] = [];
+  for (const line of String(text).split("\n")) {
+    const m = line.match(/\[ID:(\d+)\]\s*(.+)/);
+    if (!m) continue;
+    const id = Number(m[1]);
+    const title = (m[2] || "").split(" | ")[0].replace(/^R\$.*$/, "").trim();
+    if (Number.isFinite(id)) out.push({ id, title });
+  }
+  return out;
+}
+
 export async function processAIMessage(
   conversation: Conversation,
   recentMessages: Message[],
@@ -931,15 +1001,41 @@ export async function processAIMessage(
   // apresentar exatamente UM veículo, injeta diretiva de avanço no contexto.
   // Funciona mesmo sem lead gravado (cenário em que o bug ocorria).
   // Lógica pura em vehicleConfirmation.ts (testada em server/evals/).
+  let isConfirmation = false;
   try {
     const confirmacao = detectVehicleConfirmation(customerMessage || "", recentMessages as any);
     if (confirmacao) {
+      isConfirmation = true;
       const { vehicleTitle: title, message: msgNorm } = confirmacao;
-      contextBlock += `\n\n⚠️ AÇÃO OBRIGATÓRIA — CONFIRMAÇÃO DETECTADA: o cliente acabou de confirmar ("${msgNorm}") o veículo "${title}" que você JÁ apresentou na conversa.\n1) Chame atualizar_lead AGORA com veiculo_interesse: "${title}", intencao: "compra" (inclua veiculo_id se souber o [ID:X]).\n2) PROIBIDO reapresentar ou buscar esse veículo de novo — o cliente já viu.\n3) Responda confirmando a escolha e AVANCE para a ETAPA 3: pergunte sobre veículo de troca OU forma de pagamento (uma só pergunta).`;
-      console.log(`[AI] Confirmação curta detectada ("${msgNorm}") → veículo "${title}" — injetando avanço determinístico`);
+      // Resolve o ID REAL do veículo confirmado a partir da memória (sem chutar):
+      // 1º o último apresentado; senão o único da lista; senão casamento por título.
+      const shownArr = readShownVehicles(conversation);
+      const lastPresented = (conversation as any).metadata?.lastPresentedId as number | undefined;
+      const confirmedId = resolveConfirmedVehicleId(shownArr, lastPresented, title);
+      contextBlock += `\n\n⚠️ AÇÃO OBRIGATÓRIA — CONFIRMAÇÃO DETECTADA: o cliente confirmou ("${msgNorm}") o veículo "${title}" que você JÁ apresentou.`;
+      if (confirmedId) {
+        contextBlock += `\n➡️ ESTE veículo é o [ID:${confirmedId}] e ESTÁ disponível. Use veiculo_id: ${confirmedId} em atualizar_lead. NUNCA diga que ele não está disponível.`;
+        try {
+          await upsertLead({ conversationId: conversation.id, phone: conversation.phone, vehicleId: confirmedId, vehicleInterest: title, intention: "compra", status: "qualifying" } as any);
+          console.log(`[AI] Confirmação → lead.vehicleId=${confirmedId} gravado deterministicamente`);
+        } catch (e) { console.error("[AI] Falha ao gravar vehicleId na confirmação:", e); }
+      } else {
+        contextBlock += `\n1) Chame atualizar_lead com veiculo_interesse: "${title}", intencao: "compra".`;
+      }
+      contextBlock += `\n2) PROIBIDO reapresentar ou buscar esse veículo de novo — o cliente já viu.\n3) AVANCE: pergunte sobre veículo de troca OU forma de pagamento (uma só pergunta).`;
+      console.log(`[AI] Confirmação curta ("${msgNorm}") → "${title}" (id=${confirmedId ?? "?"}) — avanço determinístico`);
     }
   } catch (confirmErr) {
     console.error("[AI] Erro na detecção de confirmação:", confirmErr);
+  }
+
+  // Injeta a lista de veículos JÁ MOSTRADOS (com os IDs reais) — dá ao modelo a
+  // memória que faltava entre turnos.
+  const shownForCtx = readShownVehicles(conversation);
+  if (shownForCtx.length) {
+    contextBlock += `\n\n=== VEÍCULOS JÁ MOSTRADOS NESTA CONVERSA ===`;
+    contextBlock += `\n` + shownForCtx.map((s, i) => `${i + 1}) ${s.title} [ID:${s.id}]`).join("\n");
+    contextBlock += `\nSe o cliente escolher, confirmar ou pedir foto de um destes, use EXATAMENTE o [ID:X] correspondente em apresentar_veiculo / buscar_veiculo_por_id / atualizar_lead. NUNCA invente um id, e NUNCA diga que um destes está indisponível sem checar.`;
   }
 
   // === PRE-PROCESSING: Detect vehicle ID in message and fetch directly ===
@@ -1031,7 +1127,7 @@ export async function processAIMessage(
   const interactiveMessages: InteractiveMessage[] = [];
 
   // Detect if we should force vehicle search (skip if ad vehicle already pre-loaded)
-  const forceSearch = adVehicleId ? false : shouldForceVehicleSearch(customerMessage);
+  const forceSearch = (adVehicleId || isConfirmation) ? false : shouldForceVehicleSearch(customerMessage);
 
   try {
     console.log(`[AI] Processing message for conversation ${conversation.id}: "${customerMessage.substring(0, 80)}..." forceSearch=${forceSearch}`);
@@ -1139,6 +1235,9 @@ export async function processAIMessage(
             // Rastreia os IDs retornados (na ordem) p/ o nó resolver seleção numérica
             const searchIds = Array.from(toolResult.matchAll(/\[ID:(\d+)\]/g)).map(m => Number(m[1]));
             if (searchIds.length > 0) trackDiscoveryIds(conversation.id, { searchIds }).catch(() => {});
+            // Memória entre turnos (modo agente): guarda {id,título} dos mostrados
+            const shownFromSearch = parseShownFromSearchText(toolResult);
+            if (shownFromSearch.length > 0) await recordShownVehicles(conversation, shownFromSearch);
             // Extract result count from the response
             const countMatch = toolResult.match(/(\d+)\s*(ve\u00edculos?|resultados?|encontrados?)/i);
             toolResultCount = countMatch ? parseInt(countMatch[1]) : (toolResult.includes("Nenhum") ? 0 : null);
@@ -1297,6 +1396,12 @@ export async function processAIMessage(
                 const v = vehicleResult.vehicle;
                 // Rastreia a apresentação p/ o nó resolver seleção numérica
                 trackDiscoveryIds(conversation.id, { presentedId: Number(args.veiculo_id) }).catch(() => {});
+                // Memória entre turnos (modo agente): este é o veículo apresentado agora
+                await recordShownVehicles(
+                  conversation,
+                  [{ id: Number(args.veiculo_id), title: v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim() }],
+                  Number(args.veiculo_id),
+                );
                 // Get the first image URL
                 let photoUrl = v.imageUrl || "";
                 if (!photoUrl && v.images && Array.isArray(v.images) && v.images.length > 0) {
