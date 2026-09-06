@@ -3,7 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
 import { getDb, getSetting, upsertSetting, getAllSettings } from "../db";
-import { DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getCorePrompt, getCommercialPrompt, getPersonalityPrompt } from "../ai";
+import { DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, DEFAULT_BUSINESS_INFO, getCorePrompt, getCommercialPrompt, getPersonalityPrompt } from "../ai";
 import { setDebounceDelay } from "../messageDebounce";
 import { chatFlowSessions } from "../../drizzle/schema";
 
@@ -268,6 +268,55 @@ export const settingsRouter = router({
         await upsertSetting("ai_prompt", "", ctx.user.id);
       }
       return { success: true, defaultPrompt: defaultMap[input.layer] };
+    }),
+
+  // ── Informações oficiais da loja (injetadas em todo atendimento; anti-invenção) ──
+  getBusinessInfo: protectedProcedure.query(async () => {
+    const saved = await getSetting("ai_business_info");
+    const isCustom = !!(saved && saved.trim());
+    return {
+      businessInfo: isCustom ? saved! : DEFAULT_BUSINESS_INFO,
+      isCustom,
+      defaultBusinessInfo: DEFAULT_BUSINESS_INFO,
+    };
+  }),
+
+  saveBusinessInfo: adminProcedure
+    .input(z.object({ businessInfo: z.string().min(3).max(8000) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ai_business_info", input.businessInfo, ctx.user.id);
+      return { success: true };
+    }),
+
+  resetBusinessInfo: adminProcedure.mutation(async ({ ctx }) => {
+    await upsertSetting("ai_business_info", "", ctx.user.id);
+    return { success: true, defaultBusinessInfo: DEFAULT_BUSINESS_INFO };
+  }),
+
+  // ── Config da ferramenta apresentar_veiculo (formato da legenda da foto) ──
+  getPresentTool: protectedProcedure.query(async () => {
+    const raw = await getSetting("apresentar_veiculo_config");
+    let campos: string[] = [];
+    let template = "";
+    if (raw) {
+      try { const p = JSON.parse(raw); campos = Array.isArray(p.campos) ? p.campos : []; template = p.template || ""; } catch { /* padrão */ }
+    }
+    return {
+      campos,
+      template,
+      allFields: ["titulo", "ano", "km", "cambio", "combustivel", "cor", "preco", "link"],
+      isCustom: !!raw,
+    };
+  }),
+
+  savePresentTool: adminProcedure
+    .input(z.object({
+      campos: z.array(z.string()).max(12),
+      template: z.string().max(1000).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("apresentar_veiculo_config", JSON.stringify({ campos: input.campos, template: (input.template || "").trim() }), ctx.user.id);
+      return { success: true };
     }),
 
   getAll: protectedProcedure.query(async () => {

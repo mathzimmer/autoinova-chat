@@ -150,6 +150,7 @@ export default function ConversationPanel({ conversationId }: Props) {
   const [leadIntention, setLeadIntention] = useState("");
   const [leadVehicleInterest, setLeadVehicleInterest] = useState("");
   const [leadVehicleId, setLeadVehicleId] = useState<number | null>(null);
+  const [vehFilter, setVehFilter] = useState("");
   const [leadHasTrade, setLeadHasTrade] = useState(false);
   const [leadTradeVehicle, setLeadTradeVehicle] = useState("");
   const [leadTradeYear, setLeadTradeYear] = useState("");
@@ -681,20 +682,34 @@ ${(lead as any).notes || "N/A"}
             <FieldInput label="Intenção" value={leadIntention} onChange={setLeadIntention} placeholder="compra, troca, informação..." />
             <FieldInput label="Veículo de Interesse (Texto)" value={leadVehicleInterest} onChange={setLeadVehicleInterest} placeholder="Ex: Toyota Corolla 2024" />
             <div>
-              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Veículo do Estoque</label>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Veículo do Estoque (real, com valor)</label>
+              <input
+                type="text"
+                value={vehFilter}
+                onChange={(e) => setVehFilter(e.target.value)}
+                placeholder="Buscar por modelo, marca, ano..."
+                className="w-full h-8 px-2 mb-1 text-sm rounded-md border border-border bg-input"
+              />
               <Select value={leadVehicleId?.toString() || "none"} onValueChange={(val) => setLeadVehicleId(val === "none" ? null : parseInt(val))}>
                 <SelectTrigger className="h-8 text-sm bg-input border-border">
                   <SelectValue placeholder="Selecione um veículo..." />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Nenhum (limpar)</SelectItem>
-                  {vehicles && vehicles.length > 0 && (
-                    vehicles.map((v: any) => (
+                  {(() => {
+                    const terms = vehFilter.toLowerCase().split(/\s+/).filter(Boolean);
+                    const filtered = (vehicles || []).filter((v: any) => {
+                      if (!terms.length) return true;
+                      const t = `${v.brand || ""} ${v.model || ""} ${v.version || ""} ${v.year || ""}`.toLowerCase();
+                      return terms.every((w: string) => t.includes(w));
+                    }).slice(0, 60);
+                    return filtered.map((v: any) => (
                       <SelectItem key={v.id} value={v.id.toString()}>
-                        {v.year} {v.brand} {v.model} - {v.km?.toLocaleString()}km
+                        {v.year} {v.brand} {v.model} — R$ {(v.price || 0).toLocaleString("pt-BR")}
+                        {v.mileage ? ` · ${v.mileage.toLocaleString("pt-BR")}km` : ""}
                       </SelectItem>
-                    ))
-                  )}
+                    ));
+                  })()}
                 </SelectContent>
               </Select>
             </div>

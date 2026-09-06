@@ -31,6 +31,8 @@ FOTO: Quando o cliente pedir foto/imagem ("manda foto", "tem foto?", "quero ver"
 
 DISPONIBILIDADE: Um veículo que você JÁ mostrou nesta conversa ESTÁ disponível. NUNCA diga que ele foi vendido/indisponível a menos que uma ferramenta retorne explicitamente que não está disponível. Se um id não resolver, é id errado — use o [ID:X] correto da lista, não anuncie indisponibilidade.
 
+DADOS DA LOJA (anti-invenção): NUNCA invente endereço, horário de funcionamento, telefone, condições ou qualquer dado da loja. Use SOMENTE o que está em "INFORMAÇÕES OFICIAIS DA LOJA" no seu contexto. Se a informação não estiver lá, diga que vai confirmar com o vendedor — não chute.
+
 MÍDIA: Imagens → confirme naturalmente ("Recebi a foto!"). Áudios → trate como texto. NUNCA diga "não consigo ver" ou mencione transcrição.
 
 LIMPEZA: Remova [ID:X], [FOTO], [IMAGEM] da resposta. Texto natural apenas.`;
@@ -201,9 +203,7 @@ TOM DE VOZ:
 - Direto ao ponto, sem enrolação
 - Profissional mas acessível
 
-INFORMAÇÕES DA LOJA:
-- WhatsApp: (51) 99478-2062
-- Endereço: Av Castro Alves, nº 1655, Sete de Setembro, Ivoti - RS`;
+(Endereços, telefone e políticas ficam em "INFORMAÇÕES OFICIAIS DA LOJA", injetadas automaticamente — não repita nem invente aqui.)`;
 
 // ============================================================================
 // O DEFAULT_SYSTEM_PROMPT legado é mantido para compatibilidade com prompts
@@ -240,7 +240,43 @@ MÍDIA: Imagens → confirme naturalmente. Áudios → trate como texto. NUNCA d
 
 LIMPEZA: Remova [ID:X], [FOTO], [IMAGEM] da resposta.
 
-INFORMAÇÕES: WhatsApp (51) 99478-2062 | Av Castro Alves 1655, Ivoti - RS | Para falar com humano: transfira.`;
+INFORMAÇÕES: use o bloco "INFORMAÇÕES OFICIAIS DA LOJA" (injetado automaticamente). NUNCA invente endereço/telefone. Para falar com humano: transfira.`;
+
+// ============================================================================
+// INFORMAÇÕES OFICIAIS DA LOJA — sempre injetadas (qualquer modo: agente/livre/fluxo)
+// Fonte única contra alucinação de endereço/horário/telefone. Editável no setting
+// "ai_business_info"; se vazio, usa o padrão abaixo com as 3 lojas reais.
+// ============================================================================
+export const DEFAULT_BUSINESS_INFO = `Auto Inova — revenda de seminovos, +8 anos de mercado, 3 lojas. Muitos clientes satisfeitos.
+LOJAS:
+- Matriz (Ivoti): Av. Castro Alves, 1655 - Sete de Setembro, Ivoti/RS, CEP 93900-000
+- Loja 2 (Ivoti): Av. Presidente Lucena, 501 - Bom Jardim, Ivoti/RS
+- Estância Velha: Rua Portão, 2405 - Das Quintas, Estância Velha/RS, CEP 93615-740
+WhatsApp: (51) 99478-2062`;
+
+/**
+ * Config global da ferramenta apresentar_veiculo (editável na tela):
+ * quais campos exibir na legenda da foto e um template opcional.
+ * setting: "apresentar_veiculo_config" = { campos: string[], template?: string }
+ */
+export const PRESENT_VEHICLE_FIELDS = ["titulo", "ano", "km", "cambio", "combustivel", "cor", "preco", "link"] as const;
+export async function getPresentVehicleConfig(): Promise<{ campos: string[]; template: string | null }> {
+  try {
+    const raw = await getSetting("apresentar_veiculo_config");
+    if (raw) {
+      const p = JSON.parse(raw);
+      return { campos: Array.isArray(p.campos) ? p.campos : [], template: (p.template && String(p.template).trim()) ? String(p.template) : null };
+    }
+  } catch { /* usa padrão */ }
+  return { campos: [], template: null };
+}
+
+async function getBusinessInfoBlock(): Promise<string> {
+  let info = "";
+  try { info = (await getSetting("ai_business_info")) || ""; } catch { /* usa padrão */ }
+  if (!info.trim()) info = DEFAULT_BUSINESS_INFO;
+  return `\n\n=== INFORMAÇÕES OFICIAIS DA LOJA (use SOMENTE estas; se faltar algo, diga que confirma com o vendedor) ===\n${info}`;
+}
 
 /**
  * Load a prompt layer from the DB with fallback to the default constant.
@@ -1077,8 +1113,9 @@ export async function processAIMessage(
   const finalCommercial = await interpolateSystemVariables(commercialPrompt, conversation);
   const finalPersonality = await interpolateSystemVariables(personalityPrompt, conversation);
   const kbContext = await getKnowledgeBaseContext(customerMessage);
+  const businessInfoBlock = await getBusinessInfoBlock();
 
-  const fullSystemPrompt = `${finalCore}\n\n${finalCommercial}\n\n${finalPersonality}\n\n${contextBlock}${adVehicleContext}${kbContext}`;
+  const fullSystemPrompt = `${finalCore}\n\n${finalCommercial}\n\n${finalPersonality}${businessInfoBlock}\n\n${contextBlock}${adVehicleContext}${kbContext}`;
 
   console.log(`[AI] Prompt assembled: CORE(${finalCore.length}ch) + COMMERCIAL(${finalCommercial.length}ch) + PERSONALITY(${finalPersonality.length}ch) + CONTEXT(${contextBlock.length}ch) + AD_VEHICLE(${adVehicleContext.length}ch) + KB(${kbContext.length}ch) = ${fullSystemPrompt.length}ch total`);
 
@@ -1415,14 +1452,18 @@ export async function processAIMessage(
                 const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
                 const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
                 
-                // Campos a exibir (config do nó "Apresentar com IA"). Vazio = todos.
-                const wanted: string[] = Array.isArray(args.campos) && args.campos.length > 0 ? args.campos : ["titulo", "ano", "km", "cambio", "combustivel", "cor", "preco", "link"];
+                // Campos/legenda: precedência nó de fluxo > config global (tela) > padrão.
+                const presentCfg = await getPresentVehicleConfig();
+                const wanted: string[] = (Array.isArray(args.campos) && args.campos.length > 0)
+                  ? args.campos
+                  : (presentCfg.campos.length > 0 ? presentCfg.campos : ["titulo", "ano", "km", "cambio", "combustivel", "cor", "preco", "link"]);
                 const show = (k: string) => wanted.includes(k);
-                // Legenda por TEMPLATE configurável do nó (tem prioridade sobre o formato fixo)
-                let captionTpl: string | null = null;
+                // Template de legenda: global (tela) e, se houver nó de fluxo, ele tem prioridade
+                let captionTpl: string | null = presentCfg.template;
                 try {
                   const flowSess = await getActiveFlowSession(conversation.id);
-                  captionTpl = (flowSess?.context as any)?.discoveryCaptionTemplate || null;
+                  const flowTpl = (flowSess?.context as any)?.discoveryCaptionTemplate || null;
+                  if (flowTpl) captionTpl = flowTpl;
                 } catch { /* noop */ }
                 let caption = "";
                 if (args.mensagem_adicional) {

@@ -442,6 +442,126 @@ function StorageCard() {
   );
 }
 
+function BusinessInfoCard() {
+  const { data, refetch, isLoading } = trpc.settings.getBusinessInfo.useQuery();
+  const [value, setValue] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => { if (data) { setValue(data.businessInfo); setDirty(false); } }, [data]);
+
+  const save = trpc.settings.saveBusinessInfo.useMutation({
+    onSuccess: () => { refetch(); setDirty(false); toast.success("Informações da loja salvas! A IA já está usando."); },
+    onError: (e) => toast.error("Erro ao salvar: " + e.message),
+  });
+  const reset = trpc.settings.resetBusinessInfo.useMutation({
+    onSuccess: (d) => { setValue(d.defaultBusinessInfo); setDirty(false); refetch(); toast.success("Restaurado para o padrão."); },
+    onError: (e) => toast.error("Erro ao restaurar: " + e.message),
+  });
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+          <Info className="h-4 w-4 text-primary" /> Informações da loja
+          {data?.isCustom ? <Badge variant="outline" className="text-[10px]">personalizado</Badge> : <Badge variant="outline" className="text-[10px]">padrão</Badge>}
+        </CardTitle>
+        <CardDescription className="mt-0.5">
+          Endereços, telefone, horário e políticas. Isto é injetado em TODO atendimento (agente, livre ou fluxo) e a IA é proibida de inventar o que não estiver aqui. Se faltar um dado, ela diz que confirma com o vendedor.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <Textarea
+          value={value}
+          onChange={(e) => { setValue(e.target.value); setDirty(true); }}
+          rows={10}
+          disabled={isLoading}
+          placeholder="Ex: Lojas, endereços, WhatsApp, horário de funcionamento, formas de pagamento, políticas de troca/garantia..."
+          className="font-mono text-xs"
+        />
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => save.mutate({ businessInfo: value.trim() })} disabled={!dirty || save.isPending || value.trim().length < 3}>
+            <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => reset.mutate()} disabled={reset.isPending}>
+            <RotateCcw className="h-3.5 w-3.5 mr-1" /> Restaurar padrão
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+const PRESENT_FIELD_LABELS: Record<string, string> = {
+  titulo: "Título", ano: "Ano", km: "Km", cambio: "Câmbio",
+  combustivel: "Combustível", cor: "Cor", preco: "Preço", link: "Link do anúncio",
+};
+
+function PresentToolCard() {
+  const { data, refetch, isLoading } = trpc.settings.getPresentTool.useQuery();
+  const [selected, setSelected] = useState<string[]>([]);
+  const [template, setTemplate] = useState("");
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    if (data) {
+      setSelected(data.campos.length > 0 ? data.campos : data.allFields);
+      setTemplate(data.template || "");
+      setDirty(false);
+    }
+  }, [data]);
+
+  const save = trpc.settings.savePresentTool.useMutation({
+    onSuccess: () => { refetch(); setDirty(false); toast.success("Ferramenta 'apresentar veículo' atualizada!"); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+
+  const toggle = (f: string) => {
+    setSelected((prev) => prev.includes(f) ? prev.filter((x) => x !== f) : [...prev, f]);
+    setDirty(true);
+  };
+
+  const allFields = data?.allFields || [];
+
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2">
+          <Bot className="h-4 w-4 text-primary" /> Como a IA apresenta o veículo (foto)
+        </CardTitle>
+        <CardDescription className="mt-0.5">
+          Escolha quais dados aparecem na legenda da foto que o agente envia. Opcional: um template livre (use chaves como {"{titulo}"}, {"{preco}"}, {"{ano}"}, {"{km}"}, {"{cambio}"}, {"{cor}"}, {"{link}"}) — se preenchido, ele manda no template ignorando os campos acima.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        <div className="flex flex-wrap gap-2">
+          {allFields.map((f) => (
+            <label key={f} className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-sm cursor-pointer ${selected.includes(f) ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground"}`}>
+              <input type="checkbox" checked={selected.includes(f)} onChange={() => toggle(f)} className="accent-primary" />
+              {PRESENT_FIELD_LABELS[f] || f}
+            </label>
+          ))}
+        </div>
+        <div>
+          <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Template da legenda (opcional)</label>
+          <Textarea
+            value={template}
+            onChange={(e) => { setTemplate(e.target.value); setDirty(true); }}
+            rows={4}
+            disabled={isLoading}
+            placeholder={"Ex:\n🚗 {titulo}\n📅 {ano} · {km} · {cambio}\n💰 {preco}\n👉 {link}"}
+            className="font-mono text-xs"
+          />
+        </div>
+        <div>
+          <Button size="sm" onClick={() => save.mutate({ campos: selected, template: template.trim() })} disabled={!dirty || save.isPending}>
+            <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data: promptData, refetch, isLoading } = trpc.settings.getPrompt.useQuery();
 
@@ -540,6 +660,12 @@ export default function Settings() {
             <p className="text-sm text-muted-foreground">Qualificação, comentários da IA, rastreamento e personalização. (Edição do prompt fica em Agentes IA.)</p>
           </div>
         </div>
+
+        {/* Informações oficiais da loja (anti-invenção de endereço/telefone) */}
+        <BusinessInfoCard />
+
+        {/* Como a IA apresenta o veículo (formato da foto) */}
+        <PresentToolCard />
 
         {/* Copiloto do Vendedor (sugestões em tempo real) */}
         <CopilotConfigCard />
