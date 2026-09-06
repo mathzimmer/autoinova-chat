@@ -95,17 +95,18 @@ async function startServer() {
   // Aceita MAIS DE UM App Secret (números podem estar em apps Meta diferentes,
   // ex.: "Auto Inova CRM" e "Filial Auto Inova"). Cada app assina com o SEU
   // secret; validamos contra todos os configurados.
-  //   META_APP_SECRET            -> secret principal
-  //   META_APP_SECRET_2          -> secret do 2º app (opcional)
-  //   META_APP_SECRETS           -> lista separada por vírgula (opcional)
+  // Pega TODA variável de ambiente cujo nome começa com "META_APP_SECRET"
+  // (ex.: META_APP_SECRET, META_APP_SECRET_2, META_APP_SECRET_filial), e ainda
+  // aceita listas separadas por vírgula dentro de qualquer uma delas.
   function getMetaAppSecrets(): string[] {
-    const list = [
-      process.env.META_APP_SECRET,
-      process.env.META_APP_SECRET_2,
-      ...(process.env.META_APP_SECRETS || "").split(","),
-    ]
-      .map((s) => (s || "").trim())
-      .filter(Boolean);
+    const list: string[] = [];
+    for (const [key, val] of Object.entries(process.env)) {
+      if (!key.startsWith("META_APP_SECRET")) continue;
+      for (const part of String(val || "").split(",")) {
+        const s = part.trim();
+        if (s) list.push(s);
+      }
+    }
     return Array.from(new Set(list));
   }
 
