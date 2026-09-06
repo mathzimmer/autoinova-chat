@@ -92,21 +92,43 @@ async function startServer() {
   // A Meta assina todo webhook com HMAC-SHA256 do corpo usando o App Secret.
   // Sem essa checagem, qualquer pessoa que descubra a URL pode injetar
   // mensagens/leads falsos e acionar a IA.
+  // Aceita MAIS DE UM App Secret (números podem estar em apps Meta diferentes,
+  // ex.: "Auto Inova CRM" e "Filial Auto Inova"). Cada app assina com o SEU
+  // secret; validamos contra todos os configurados.
+  //   META_APP_SECRET            -> secret principal
+  //   META_APP_SECRET_2          -> secret do 2º app (opcional)
+  //   META_APP_SECRETS           -> lista separada por vírgula (opcional)
+  function getMetaAppSecrets(): string[] {
+    const list = [
+      process.env.META_APP_SECRET,
+      process.env.META_APP_SECRET_2,
+      ...(process.env.META_APP_SECRETS || "").split(","),
+    ]
+      .map((s) => (s || "").trim())
+      .filter(Boolean);
+    return Array.from(new Set(list));
+  }
+
   function verifyMetaSignature(req: express.Request): boolean {
-    const secret = process.env.META_APP_SECRET;
-    if (!secret) {
-      console.warn("[Webhook Security] META_APP_SECRET não configurado — assinatura NÃO verificada");
+    const secrets = getMetaAppSecrets();
+    if (secrets.length === 0) {
+      console.warn("[Webhook Security] Nenhum META_APP_SECRET configurado — assinatura NÃO verificada");
       return true; // não bloqueia se não há secret para comparar
     }
     const signature = req.headers["x-hub-signature-256"] as string | undefined;
     const rawBody = (req as any).rawBody as Buffer | undefined;
     if (!signature || !rawBody) return false;
-    const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
-    try {
-      return timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
-    } catch {
-      return false;
+    const sigBuf = Buffer.from(signature);
+    for (const secret of secrets) {
+      const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
+      try {
+        const expBuf = Buffer.from(expected);
+        if (sigBuf.length === expBuf.length && timingSafeEqual(sigBuf, expBuf)) return true;
+      } catch {
+        // tenta o próximo secret
+      }
     }
+    return false;
   }
 
   function requireMetaSignature(req: express.Request, res: express.Response): boolean {
