@@ -387,6 +387,31 @@ export async function runAgentV2Turn(input: {
     assistant = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
   }
 
-  const reply = (assistant?.content || "").trim() || "…";
-  return { reply, images, toolTrace, shownVehicles: s.shown };
+  let reply = (assistant?.content || "").trim() || "…";
+
+  // REDE DE SEGURANÇA: se prometeu transferir/chamar o vendedor mas NÃO chamou a
+  // ferramenta neste turno, força a transferência agora (senão o lead se perde).
+  const prometeuTransferir = /(vou|irei|já vou|vou já)\s+(transferir|chamar|encaminhar|passar)|chamar (o|um) vendedor|passar (pro|para o) vendedor|encaminhar (seu|sua|suas|para)/i.test(reply);
+  if (!sess(input.sessionId).handedOff && prometeuTransferir) {
+    messages.push({ role: "assistant", content: reply });
+    messages.push({ role: "user", content: "[SISTEMA: você indicou que vai transferir/chamar o vendedor mas NÃO chamou a ferramenta. Chame transferir_para_vendedor AGORA com um resumo completo (interesse, troca, pagamento/financiamento com CPF/nascimento/parcela se houver, pendências). Não escreva 'um momento'.]" });
+    try {
+      const forced = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
+      if (forced?.tool_calls?.length) {
+        messages.push({ role: "assistant", content: forced.content || "", tool_calls: forced.tool_calls });
+        for (const tc of forced.tool_calls) {
+          if (tc.function?.name === "transferir_para_vendedor") {
+            const st = sess(input.sessionId);
+            let a: any = {}; try { a = JSON.parse(tc.function.arguments || "{}"); } catch { /* noop */ }
+            if (!st.handedOff) { st.handedOff = true; toolTrace.push({ name: "transferir_para_vendedor", args: a, resultSummary: "handoff forçado (rede de segurança)" }); }
+          }
+          messages.push({ role: "tool", tool_call_id: tc.id, content: "Handoff registrado. Dê UMA mensagem curta de encerramento; um vendedor assume." } as any);
+        }
+        const fecho = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
+        reply = (fecho?.content || reply).trim();
+      }
+    } catch { /* mantém a resposta original */ }
+  }
+
+  return { reply, images, toolTrace, shownVehicles: sess(input.sessionId).shown };
 }
