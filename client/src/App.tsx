@@ -26,6 +26,7 @@ import Automation from "./pages/Automation";
 import Sellers from "./pages/Sellers";
 import Performance from "./pages/Performance";
 import Coach from "./pages/Coach";
+import AgentSandbox from "./pages/AgentSandbox";
 import EvolutionInstances from "./pages/EvolutionInstances";
 import { useEffect } from "react";
 import { useLocation, useSearch } from "wouter";
@@ -140,6 +141,11 @@ function Router() {
       <Route path="/coach">
         <AppLayout>
           <Coach />
+        </AppLayout>
+      </Route>
+      <Route path="/agente-simulador">
+        <AppLayout>
+          <AgentSandbox />
         </AppLayout>
       </Route>
       <Route path="/evolution-instances">

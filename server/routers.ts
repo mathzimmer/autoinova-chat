@@ -173,6 +173,7 @@ import { messageRouter } from "./routers/message";
 import { leadRouter } from "./routers/lead";
 import { flowRouter } from "./routers/flow";
 import { agentRouter } from "./routers/agent";
+import { agentV2Router } from "./routers/agentV2";
 import { contactsRouter } from "./routers/contacts";
 import { currentTeamMember } from "./routers/_helpers";
 
@@ -777,6 +778,7 @@ export const appRouter = router({
   vendor: vendorRouter,
   flow: flowRouter,
   agent: agentRouter,
+  agentV2: agentV2Router,
   seller: sellerRouter,
   rescue: rescueRouter,
   reengagement: reengagementRouter,

@@ -40,6 +40,7 @@ const navItems: NavItem[] = [
   { icon: UserCheck, label: "Vendedores", path: "/sellers", allowedCargos: ["admin", "gerente"] },
   { icon: Trophy, label: "Performance", path: "/performance", allowedCargos: ["admin", "gerente"] },
   { icon: GraduationCap, label: "Coach", path: "/coach", allowedCargos: ["admin", "gerente"] },
+  { icon: Bot, label: "Simulador IA", path: "/agente-simulador", allowedCargos: ["admin", "gerente"] },
   { icon: Brain, label: "Auditoria IA", path: "/ai-audit", allowedCargos: ["admin"] },
   { icon: Smartphone, label: "Instâncias WhatsApp", path: "/evolution-instances", allowedCargos: ["admin", "gerente"] },
   { icon: Key, label: "API Keys", path: "/vendor-keys", allowedCargos: ["admin"] },
