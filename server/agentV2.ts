@@ -56,7 +56,7 @@ Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`
 // As regras de segurança (anti-invenção, id) ficam fixas no código.
 export const DEFAULT_RULES = `COMPORTAMENTO:
 - BUSCAR JÁ: se o cliente cita um modelo, marca ou tipo (ex: "interesse na Compass", "quero um SUV"), chame buscar_veiculos IMEDIATAMENTE e mostre as opções — NÃO peça faixa de preço nem modelo antes. Só pergunte preço/uso se NÃO houver em estoque, ou depois de mostrar, pra refinar se vierem muitos resultados.
-- LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo — sem perguntar "o que você busca". Se der exatamente 1 resultado, mande a foto (apresentar_veiculo) de cara. Não consegue abrir links, então extraia o modelo do texto da mensagem.
+- LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo — sem perguntar "o que você busca". Se der exatamente 1 resultado, mande a foto (apresentar_veiculo) de cara. Não consegue abrir links, então extraia o modelo do TEXTO da mensagem. Se o link NÃO tiver o nome/modelo do carro (ex: só um número), NÃO chute nem busque aleatório — pergunte simpaticamente qual carro ele viu/procura.
 - Foto: mande apresentar_veiculo ao mostrar um carro pela PRIMEIRA vez ou quando pedirem foto/"mais fotos". Ao pedir mais fotos, use o MESMO [ID:X] daquele carro (da lista "VEÍCULOS JÁ MOSTRADOS") — a ferramenta já envia várias fotos. NUNCA invente um id nem chame outro carro. Em simples confirmação de um já mostrado ("gostei", "esse"), NÃO reenvie a foto: só confirme e AVANCE (troca/pagamento/visita).
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
 - FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: (1) CPF, (2) data de nascimento, (3) valor de parcela que consegue pagar por mês (e entrada, se tiver). VALIDE: CPF tem exatamente 11 dígitos; data no formato dd/mm/aaaa. Se vier algo que claramente não é CPF/data válida, peça de novo com gentileza — NÃO transfira com dado inválido. Só transfira depois dos 3 dados válidos, e inclua todos no resumo.
@@ -322,6 +322,18 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     return !(j.includes("barco") || j.includes("lancha") || j.includes("jet ski") || j.includes("jetski"));
   });
 
+  // Ignora "modelo"/"marca" que são só números (ex: id de link do Marketplace/OLX).
+  const isNumericJunk = (s: any) => /^\d{4,}$/.test(String(s || "").replace(/\D/g, "")) && String(s || "").replace(/[^a-zA-Z]/g, "").length < 2;
+  if (isNumericJunk(args.modelo)) delete args.modelo;
+  if (isNumericJunk(args.marca)) delete args.marca;
+
+  // Sem NENHUM critério útil (ex: cliente mandou só um link sem citar o carro) →
+  // não despeje estoque aleatório; peça qual veículo ele procura.
+  const temCriterio = !!(args.marca || args.modelo || args.tipo || args.cor || args.combustivel || args.requisitos || args.preco_max || args.preco_min || args.ano_min || args.km_max);
+  if (!temCriterio) {
+    return "SEM CRITÉRIO: o cliente não disse qual carro quer (ex: mandou só um link sem o nome/modelo). Pergunte, de forma simpática, qual veículo, tipo ou faixa de preço ele procura. NÃO liste carros aleatórios.";
+  }
+
   const cambioAuto = args.cambio ? norm(args.cambio).includes("auto") : null;
   const reqWords = args.requisitos ? norm(args.requisitos).split(/\s+/).filter((w: string) => w.length >= 3) : [];
 
@@ -554,7 +566,7 @@ export async function runAgentV2Turn(input: {
   if (selectedId != null) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId; }
 
   // Funil guiado: estado + próximo passo obrigatório (a "trilha" que garante a ordem).
-  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\nUse coletar_dado SEMPRE que o cliente informar nome, cidade, troca, pagamento ou financiamento. Siga o PRÓXIMO PASSO — mas de forma natural, uma pergunta por vez, sem parecer formulário.`;
+  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas.`;
 
   // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória → funil.
   const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}`;
