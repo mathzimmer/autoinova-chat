@@ -26,7 +26,14 @@ export interface AgentResult {
 
 // ── Memória por sessão (só na RAM; é simulador) ──────────────────────────────
 type ListItem = { id: number; title: string; year?: number; color?: string; price?: number; auto?: boolean };
-const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[] }>();
+type LeadData = {
+  nome?: string; cidade?: string;
+  veiculoId?: number; veiculoInteresse?: string;
+  temTroca?: boolean; trocaModelo?: string; trocaAno?: string; trocaKm?: string;
+  pagamento?: "avista" | "financiado";
+  finCpf?: string; finNascimento?: string; finParcela?: string; finEntrada?: string;
+};
+const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[]; lead?: LeadData }>();
 function sess(id: string) {
   if (!SESSIONS.has(id)) SESSIONS.set(id, { shown: [] });
   return SESSIONS.get(id)!;
@@ -64,21 +71,43 @@ export const DEFAULT_RULES = `COMPORTAMENTO:
 - FLEXIBILIDADE: se não houver o veículo exato pedido, NUNCA responda só "não temos". Ofereça alternativas próximas (mesma faixa de preço, perfil parecido) que a busca trouxe, explicando por que servem (espaço pra família, economia, custo-benefício). Sempre dê um caminho.
 - INFORMAÇÃO QUE NÃO TEM (pneus, revisão, estado detalhado, garantia específica): NUNCA prometa "vou verificar e te aviso depois" — você não faz follow-up sozinho. Seja honesto e diga que esse detalhe é conferido na VISITA/test-drive ou direto com o vendedor, e já ofereça agendar a visita ou falar com um vendedor. Nunca deixe o cliente esperando um retorno que não vai acontecer.
 - AÇÃO NA HORA (crítico): QUALQUER ação (mandar foto, transferir pro vendedor, agendar) é executada CHAMANDO a ferramenta na MESMA resposta em que você fala dela. NUNCA anuncie e espere ("vou enviar", "vou transferir agora", "um momento", "aguarde") sem já chamar a ferramenta — você não tem um próximo turno garantido; o cliente pode não responder e a ação nunca acontece. Se disse que vai transferir, o transferir_para_vendedor tem que estar nessa mesma resposta.
+- OBJEÇÕES: se o cliente objetar ("tá caro", "vou pensar", "muito rodado", "meu carro vale mais", "só olhando"), NUNCA desista nem encerre. Use o bloco "FAQ E CONTORNO DE OBJEÇÕES": reconheça, contorne com valor (procedência, opcionais, simulação, troca) e conduza pro próximo passo (visita/vendedor/foto).
 - CONDUZA SEMPRE: toda resposta termina com uma pergunta ou um próximo passo (mostrar outro carro, falar de troca/pagamento, agendar visita). Nunca deixe a conversa parada.
 - Faça UMA pergunta por vez. Seja curto e natural.`;
 
-export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; temperature: number }> {
+export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; faq: string; temperature: number }> {
   const model = (await getSetting("agentv2_model")) || "openai/gpt-4o-mini";
   const persona = (await getSetting("agentv2_persona")) || DEFAULT_PERSONA;
   const rules = (await getSetting("agentv2_rules")) || DEFAULT_RULES;
+  const faq = (await getSetting("agentv2_faq")) || DEFAULT_FAQ;
   const tRaw = await getSetting("agentv2_temperature");
   const temperature = tRaw ? Number(tRaw) : 0.5;
-  return { model, persona, rules, temperature };
+  return { model, persona, rules, faq, temperature };
 }
 
 async function getBusinessInfo(): Promise<string> {
   const saved = await getSetting("ai_business_info");
   return (saved && saved.trim()) ? saved : DEFAULT_BUSINESS_INFO;
+}
+
+// FAQ + contorno de objeções — editável (setting agentv2_faq). O agente usa pra
+// responder dúvidas comuns e NÃO desistir quando o cliente objeta.
+export const DEFAULT_FAQ = `PERGUNTAS FREQUENTES:
+- Aceita troca? Sim, avaliamos seu usado (presencial ou por fotos/vídeo).
+- Faz financiamento? Sim, com +12 financeiras; com ou sem entrada; analisamos até com restrição.
+- Atende de outra cidade? Sim, atendimento online com vídeos, fotos e simulação.
+
+CONTORNO DE OBJEÇÕES (nunca desista — reconheça, contorne e conduza pra visita/vendedor):
+- "Tá caro": mostre o valor (estado, opcionais, procedência) e ofereça simular parcela ou avaliar a troca pra encaixar no orçamento.
+- "Vou pensar": tudo bem, mas ofereça já garantir uma visita/test-drive sem compromisso, ou mandar mais fotos/vídeo. Descubra a real objeção (preço? parcela? modelo?).
+- "É muito rodado": destaque revisões/procedência e ofereça alternativas com menos km na mesma faixa.
+- "Meu carro vale mais na troca": a avaliação é presencial e justa; vale trazer pra avaliar sem compromisso.
+- "Achei mais barato em outro lugar": foque no custo-benefício, procedência e atendimento; ofereça a visita pra comparar de perto.
+- "Só estou olhando": ok! Pergunte o que procura e ofereça ajudar a achar a melhor opção quando decidir.`;
+
+async function getFaq(): Promise<string> {
+  const saved = await getSetting("agentv2_faq");
+  return (saved && saved.trim()) ? saved : DEFAULT_FAQ;
 }
 
 // ── Cliente LLM (OpenRouter; cai pro OpenAI se não houver chave OpenRouter) ───
@@ -152,6 +181,26 @@ const TOOLS = [
         type: "object",
         properties: { veiculo_id: { type: "number" }, mensagem: { type: "string" } },
         required: ["veiculo_id"], additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "coletar_dado",
+      description: "Registra dados do cliente conforme você descobre na conversa. CHAME sempre que o cliente informar qualquer um destes: nome, cidade, troca, forma de pagamento ou dados de financiamento. Pode chamar várias vezes.",
+      parameters: {
+        type: "object",
+        properties: {
+          nome: { type: "string" },
+          cidade: { type: "string" },
+          veiculo_id: { type: "number", description: "ID do veículo de interesse escolhido." },
+          tem_troca: { type: "boolean", description: "true se o cliente tem carro na troca, false se não tem." },
+          troca_modelo: { type: "string" }, troca_ano: { type: "string" }, troca_km: { type: "string" },
+          pagamento: { type: "string", enum: ["avista", "financiado"] },
+          cpf: { type: "string" }, data_nascimento: { type: "string" }, parcela: { type: "string" }, entrada: { type: "string" },
+        },
+        required: [], additionalProperties: false,
       },
     },
   },
@@ -400,6 +449,75 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   return `Enviadas ${batch.length} foto(s) de ${title}${restam > 0 ? ` (há mais ${restam} se pedir)` : " (essas são todas as fotos que temos aqui)"}. NÃO repita os dados no texto — já estão na legenda. Avance: pergunte troca/pagamento ou ofereça visita.`;
 }
 
+// ── Funil guiado: captura de dados + próximo passo + completude ──────────────
+function execColetar(sessionId: string, args: any): string {
+  const st = sess(sessionId);
+  const lead: LeadData = st.lead || (st.lead = {});
+  if (args.nome) lead.nome = String(args.nome).trim();
+  if (args.cidade) lead.cidade = String(args.cidade).trim();
+  if (args.veiculo_id != null) lead.veiculoId = Number(args.veiculo_id);
+  if (typeof args.tem_troca === "boolean") lead.temTroca = args.tem_troca;
+  if (args.troca_modelo) lead.trocaModelo = String(args.troca_modelo);
+  if (args.troca_ano) lead.trocaAno = String(args.troca_ano);
+  if (args.troca_km) lead.trocaKm = String(args.troca_km);
+  if (args.pagamento === "avista" || args.pagamento === "financiado") lead.pagamento = args.pagamento;
+  if (args.cpf) lead.finCpf = String(args.cpf).replace(/\D/g, "");
+  if (args.data_nascimento) lead.finNascimento = String(args.data_nascimento);
+  if (args.parcela) lead.finParcela = String(args.parcela);
+  if (args.entrada) lead.finEntrada = String(args.entrada);
+  return `Dados registrados. ${nextStep(lead)}`;
+}
+
+/** Próximo passo obrigatório do funil, na ordem. "" = checklist completo. */
+function nextStep(lead: LeadData): string {
+  if (!lead.nome) return "PRÓXIMO PASSO: descubra e registre o NOME do cliente.";
+  if (!lead.cidade) return "PRÓXIMO PASSO: descubra a CIDADE do cliente (e se mora longe, ofereça atendimento online).";
+  if (!lead.veiculoId && !lead.veiculoInteresse) return "PRÓXIMO PASSO: descubra o VEÍCULO de interesse (busque e mostre).";
+  if (lead.temTroca === undefined) return "PRÓXIMO PASSO: pergunte se o cliente tem carro na TROCA.";
+  if (lead.temTroca && !lead.trocaModelo) return "PRÓXIMO PASSO: pegue os dados da TROCA (modelo, ano, km).";
+  if (!lead.pagamento) return "PRÓXIMO PASSO: pergunte a forma de PAGAMENTO (à vista ou financiado).";
+  if (lead.pagamento === "financiado" && (!lead.finCpf || !lead.finNascimento || !lead.finParcela)) return "PRÓXIMO PASSO: colete os dados do FINANCIAMENTO (CPF, data de nascimento, valor de parcela).";
+  return "CHECKLIST COMPLETO: pode agendar visita ou transferir pro vendedor com transferir_para_vendedor.";
+}
+
+/** true se todos os obrigatórios do caminho estão preenchidos. */
+function leadCompleto(lead?: LeadData): boolean {
+  if (!lead) return false;
+  if (!lead.nome || !lead.cidade) return false;
+  if (!lead.veiculoId && !lead.veiculoInteresse) return false;
+  if (lead.temTroca === undefined) return false;
+  if (lead.temTroca && !lead.trocaModelo) return false;
+  if (!lead.pagamento) return false;
+  if (lead.pagamento === "financiado" && (!lead.finCpf || !lead.finNascimento || !lead.finParcela)) return false;
+  return true;
+}
+
+function faltamNoLead(lead?: LeadData): string[] {
+  const f: string[] = [];
+  if (!lead?.nome) f.push("nome");
+  if (!lead?.cidade) f.push("cidade");
+  if (!lead?.veiculoId && !lead?.veiculoInteresse) f.push("veículo de interesse");
+  if (lead?.temTroca === undefined) f.push("se tem troca");
+  else if (lead?.temTroca && !lead?.trocaModelo) f.push("dados da troca");
+  if (!lead?.pagamento) f.push("forma de pagamento");
+  else if (lead?.pagamento === "financiado" && (!lead?.finCpf || !lead?.finNascimento || !lead?.finParcela)) f.push("dados do financiamento (CPF/nascimento/parcela)");
+  return f;
+}
+
+function resumoLead(lead?: LeadData): string {
+  if (!lead) return "";
+  const p: string[] = [];
+  if (lead.nome) p.push(`Nome: ${lead.nome}`);
+  if (lead.cidade) p.push(`Cidade: ${lead.cidade}`);
+  if (lead.veiculoId) p.push(`Veículo: [ID:${lead.veiculoId}]`);
+  else if (lead.veiculoInteresse) p.push(`Veículo: ${lead.veiculoInteresse}`);
+  if (lead.temTroca === false) p.push("Troca: não");
+  else if (lead.temTroca) p.push(`Troca: ${lead.trocaModelo || "?"} ${lead.trocaAno || ""} ${lead.trocaKm || ""}`.trim());
+  if (lead.pagamento) p.push(`Pagamento: ${lead.pagamento}`);
+  if (lead.pagamento === "financiado") p.push(`Financiamento: CPF ${lead.finCpf || "?"}, nasc ${lead.finNascimento || "?"}, parcela ${lead.finParcela || "?"}${lead.finEntrada ? `, entrada ${lead.finEntrada}` : ""}`);
+  return p.join(" | ");
+}
+
 // ── Runtime: um turno de conversa ────────────────────────────────────────────
 export async function runAgentV2Turn(input: {
   sessionId: string;
@@ -408,6 +526,7 @@ export async function runAgentV2Turn(input: {
 }): Promise<AgentResult> {
   const cfg = await getAgentV2Config();
   const businessInfo = await getBusinessInfo();
+  const faq = await getFaq();
   const s = sess(input.sessionId);
 
   // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
@@ -431,8 +550,14 @@ export async function runAgentV2Turn(input: {
     selBlock = `\n\n⚠️ SELEÇÃO DETECTADA: o cliente se refere ao veículo [ID:${selectedId}]${it ? ` (${it.title} ${it.year || ""} ${it.color || ""})`.trim() : ""} da última lista. Para apresentar/confirmar/mandar foto, use veiculo_id: ${selectedId}. NUNCA use outro id.`;
   }
 
-  // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória.
-  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}${shownBlock}${selBlock}`;
+  // Auto-captura: seleção de carro já vira interesse no funil.
+  if (selectedId != null) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId; }
+
+  // Funil guiado: estado + próximo passo obrigatório (a "trilha" que garante a ordem).
+  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\nUse coletar_dado SEMPRE que o cliente informar nome, cidade, troca, pagamento ou financiamento. Siga o PRÓXIMO PASSO — mas de forma natural, uma pergunta por vez, sem parecer formulário.`;
+
+  // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória → funil.
+  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}`;
 
   const messages: LLMMsg[] = [{ role: "system", content: system }];
   for (const h of input.history.slice(-20)) messages.push({ role: h.role, content: h.content });
@@ -458,14 +583,28 @@ export async function runAgentV2Turn(input: {
           // Rede de segurança: se houve seleção determinística e o modelo mandou outro id, corrige.
           if (selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
           result = await execApresentar(input.sessionId, args, images);
+          // Auto-captura: carro apresentado vira interesse no funil.
+          if (args.veiculo_id) { const st = sess(input.sessionId); (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id); }
+        }
+        else if (tc.function.name === "coletar_dado") {
+          result = execColetar(input.sessionId, args);
         }
         else if (tc.function.name === "transferir_para_vendedor") {
           const st = sess(input.sessionId);
           if (st.handedOff) {
-            result = "JÁ TRANSFERIDO nesta conversa — NÃO transfira de novo. O vendedor já foi acionado. Se surgiu um detalhe novo (ex: agendou visita), apenas registre na conversa e dê uma mensagem curta; sem chamar a ferramenta outra vez.";
+            result = "JÁ TRANSFERIDO nesta conversa — NÃO transfira de novo. O vendedor já foi acionado. Se surgiu um detalhe novo, apenas registre e dê uma mensagem curta; sem chamar a ferramenta outra vez.";
           } else {
-            st.handedOff = true;
-            result = `Handoff registrado (simulação): ${args.motivo}. Um vendedor assume. Dê UMA mensagem curta de encerramento e NÃO transfira novamente nesta conversa.`;
+            // Trava FLEXÍVEL: exige o checklist, MAS libera se o cliente pediu humano.
+            const pediuHumano = args.motivo === "pediu_humano" || /\b(humano|atendente|vendedor|pessoa|liga|ligar|whats)\b/i.test(input.message);
+            const falta = faltamNoLead(st.lead);
+            if (falta.length > 0 && !pediuHumano) {
+              result = `AINDA NÃO PODE TRANSFERIR. Faltam: ${falta.join(", ")}. Colete esses dados (siga o PRÓXIMO PASSO do funil) antes de transferir. Não transfira agora.`;
+            } else {
+              st.handedOff = true;
+              const resumo = resumoLead(st.lead);
+              const pend = falta.length ? ` | PENDÊNCIAS (cliente pediu humano): ${falta.join(", ")}` : "";
+              result = `Handoff registrado (simulação): ${args.motivo}. RESUMO PRO VENDEDOR → ${resumo || args.resumo || "(sem dados)"}${pend}. Dê UMA mensagem curta de encerramento e NÃO transfira de novo.`;
+            }
           }
         }
         else result = "Ferramenta desconhecida.";

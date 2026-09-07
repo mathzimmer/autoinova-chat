@@ -25,9 +25,10 @@ export default function AgentSandbox() {
   const [model, setModel] = useState("");
   const [persona, setPersona] = useState("");
   const [rules, setRules] = useState("");
+  const [faq, setFaq] = useState("");
   const [temperature, setTemperature] = useState(0.5);
   useEffect(() => {
-    if (cfgQuery.data) { setModel(cfgQuery.data.model); setPersona(cfgQuery.data.persona); setRules((cfgQuery.data as any).rules || ""); setTemperature(cfgQuery.data.temperature); }
+    if (cfgQuery.data) { setModel(cfgQuery.data.model); setPersona(cfgQuery.data.persona); setRules((cfgQuery.data as any).rules || ""); setFaq((cfgQuery.data as any).faq || ""); setTemperature(cfgQuery.data.temperature); }
   }, [cfgQuery.data]);
 
   const saveCfg = trpc.agentV2.setConfig.useMutation({
@@ -112,7 +113,11 @@ export default function AgentSandbox() {
               <Textarea value={rules} onChange={(e) => setRules(e.target.value)} rows={7} className="text-xs font-mono" />
             </div>
             <div>
-              <Button size="sm" disabled={saveCfg.isPending} onClick={() => saveCfg.mutate({ model: model.trim(), persona: persona.trim(), rules: rules.trim(), temperature })}>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">FAQ e contorno de objeções (dúvidas comuns + como responder quando o cliente objeta)</label>
+              <Textarea value={faq} onChange={(e) => setFaq(e.target.value)} rows={7} className="text-xs" />
+            </div>
+            <div>
+              <Button size="sm" disabled={saveCfg.isPending} onClick={() => saveCfg.mutate({ model: model.trim(), persona: persona.trim(), rules: rules.trim(), faq: faq.trim(), temperature })}>
                 <Save className="h-3.5 w-3.5 mr-1" /> Salvar config
               </Button>
               <span className="ml-2 text-[11px] text-muted-foreground">Salvou → a próxima mensagem já usa. Sem deploy.</span>

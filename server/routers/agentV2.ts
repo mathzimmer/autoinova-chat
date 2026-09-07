@@ -56,12 +56,14 @@ export const agentV2Router = router({
       model: z.string().min(2).max(120),
       persona: z.string().min(5).max(6000),
       rules: z.string().min(5).max(6000),
+      faq: z.string().min(0).max(8000).optional(),
       temperature: z.number().min(0).max(1),
     }))
     .mutation(async ({ input, ctx }) => {
       await upsertSetting("agentv2_model", input.model, ctx.user.id);
       await upsertSetting("agentv2_persona", input.persona, ctx.user.id);
       await upsertSetting("agentv2_rules", input.rules, ctx.user.id);
+      if (input.faq !== undefined) await upsertSetting("agentv2_faq", input.faq, ctx.user.id);
       await upsertSetting("agentv2_temperature", String(input.temperature), ctx.user.id);
       return { success: true };
     }),
