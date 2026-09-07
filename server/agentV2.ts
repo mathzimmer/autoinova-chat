@@ -477,6 +477,10 @@ function execColetar(sessionId: string, args: any): string {
   if (args.data_nascimento) lead.finNascimento = String(args.data_nascimento);
   if (args.parcela) lead.finParcela = String(args.parcela);
   if (args.entrada) lead.finEntrada = String(args.entrada);
+  // Dedução: se veio qualquer dado de financiamento, a forma de pagamento É financiado.
+  if ((lead.finCpf || lead.finNascimento || lead.finParcela || lead.finEntrada) && lead.pagamento !== "avista") {
+    lead.pagamento = "financiado";
+  }
   return `Dados registrados. ${nextStep(lead)}`;
 }
 
@@ -566,7 +570,7 @@ export async function runAgentV2Turn(input: {
   if (selectedId != null) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId; }
 
   // Funil guiado: estado + próximo passo obrigatório (a "trilha" que garante a ordem).
-  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas.`;
+  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
 
   // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória → funil.
   const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}`;
