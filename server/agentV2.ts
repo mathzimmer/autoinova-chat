@@ -47,11 +47,13 @@ Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`
 // Regras de comportamento EDITÁVEIS (mude no simulador e veja na hora).
 // As regras de segurança (anti-invenção, id) ficam fixas no código.
 export const DEFAULT_RULES = `COMPORTAMENTO:
-- Ao apresentar um veículo específico que o cliente já demonstrou interesse, JÁ mande a foto (apresentar_veiculo) — não espere ele pedir.
+- Mande a foto (apresentar_veiculo) ao mostrar um carro específico pela PRIMEIRA vez, ou quando pedirem. NÃO reenvie a foto de um carro que já está na lista "VEÍCULOS JÁ MOSTRADOS": se o cliente confirmar/escolher um já apresentado, apenas confirme a escolha e AVANCE (troca/pagamento/visita), sem mandar a foto de novo.
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
 - Handoff: transfira UMA única vez, quando tiver o veículo de interesse + a situação de troca/pagamento, ou quando o cliente pedir humano/visita. Depois de transferir, NÃO repita "vou transferir"; apenas confirme que o vendedor assume.
-- Visita: confirme a loja, o dia e o horário antes de encaminhar ao vendedor.
+- Visita: confirme a loja, o dia e o horário e, DEPOIS de confirmar os três, CHAME transferir_para_vendedor (motivo: agendamento) com o resumo incluindo a visita (carro, dia, hora, loja, troca/pagamento). É a ferramenta que registra e avisa o vendedor — NUNCA confirme um agendamento sem chamá-la.
 - FLEXIBILIDADE: se não houver o veículo exato pedido, NUNCA responda só "não temos". Ofereça alternativas próximas (mesma faixa de preço, perfil parecido) que a busca trouxe, explicando por que servem (espaço pra família, economia, custo-benefício). Sempre dê um caminho.
+- INFORMAÇÃO QUE NÃO TEM (pneus, revisão, estado detalhado, garantia específica): NUNCA prometa "vou verificar e te aviso depois" — você não faz follow-up sozinho. Seja honesto e diga que esse detalhe é conferido na VISITA/test-drive ou direto com o vendedor, e já ofereça agendar a visita ou falar com um vendedor. Nunca deixe o cliente esperando um retorno que não vai acontecer.
+- CONDUZA SEMPRE: toda resposta termina com uma pergunta ou um próximo passo (mostrar outro carro, falar de troca/pagamento, agendar visita). Nunca deixe a conversa parada.
 - Faça UMA pergunta por vez. Seja curto e natural.`;
 
 export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; temperature: number }> {
@@ -122,6 +124,7 @@ const TOOLS = [
           combustivel: { type: "string", description: "flex, gasolina, diesel, híbrido, elétrico" },
           requisitos: { type: "string", description: "Opcionais/características em texto livre: 'teto solar', 'couro', 'multimídia', 'automático completo'. Busca nos opcionais e na descrição." },
           preco_max: { type: "number" }, preco_min: { type: "number" }, ano_min: { type: "number" },
+          km_max: { type: "number", description: "Quilometragem MÁXIMA. Ex: 'até 50 mil km' → km_max: 50000." },
         },
         required: [], additionalProperties: false,
       },
@@ -131,7 +134,7 @@ const TOOLS = [
     type: "function",
     function: {
       name: "apresentar_veiculo",
-      description: "Envia a FOTO do veículo + dados. Use quando o cliente pedir foto ou você quiser mostrar um carro específico. Passe o veiculo_id do [ID:X].",
+      description: "Envia a FOTO do veículo + dados. Use ao mostrar um carro específico pela primeira vez ou quando pedirem foto. Passe o veiculo_id do [ID:X]. NÃO reenvie a foto de um carro que você já mostrou nesta conversa.",
       parameters: {
         type: "object",
         properties: { veiculo_id: { type: "number" }, mensagem: { type: "string" } },
@@ -224,6 +227,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     if (args.preco_max && v.price > args.preco_max) return false;
     if (args.preco_min && v.price < args.preco_min) return false;
     if (args.ano_min && v.year < args.ano_min) return false;
+    if (args.km_max && v.mileage && v.mileage > args.km_max) return false;
     if (args.marca && !norm(v.brand).includes(norm(args.marca))) return false;
     if (args.modelo) {
       const mtxt = norm(`${v.model} ${v.version || ""} ${v.title || ""}`);
@@ -306,6 +310,7 @@ export async function runAgentV2Turn(input: {
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
+- NUNCA escreva links ou imagens no texto (nada de markdown ![]() nem URLs de foto). A foto é enviada SOMENTE pela ferramenta apresentar_veiculo. Só use links que vierem da ferramenta.
 - NUNCA invente endereço/telefone/horário: use só "INFORMAÇÕES DA LOJA". Se faltar, diga que confirma com o vendedor.`;
 
   const shownBlock = s.shown.length
