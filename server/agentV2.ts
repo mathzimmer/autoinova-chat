@@ -25,7 +25,8 @@ export interface AgentResult {
 }
 
 // ── Memória por sessão (só na RAM; é simulador) ──────────────────────────────
-const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number> }>();
+type ListItem = { id: number; title: string; year?: number; color?: string; price?: number; auto?: boolean };
+const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[] }>();
 function sess(id: string) {
   if (!SESSIONS.has(id)) SESSIONS.set(id, { shown: [] });
   return SESSIONS.get(id)!;
@@ -227,6 +228,41 @@ function matchTipo(vehText: string, tipoRaw: string): boolean {
   return syns.some(s => vehText.includes(s));
 }
 
+// Resolve DETERMINISTICAMENTE a seleção do cliente sobre a última lista mostrada
+// (número, "o primeiro", ano, cor, câmbio, "mais barato"). Retorna o ID ou null.
+const ORD_WORDS: Record<string, number> = {
+  primeiro: 0, primeira: 0, segundo: 1, segunda: 1, terceiro: 2, terceira: 2,
+  quarto: 3, quarta: 3, quinto: 4, quinta: 4, ultimo: -1, ultima: -1,
+};
+function resolveSelection(msg: string, list?: ListItem[]): number | null {
+  if (!list || list.length === 0) return null;
+  const m = norm(msg).trim();
+  if (m.length > 30) return null;
+  // Negação/troca de opção → NÃO force seleção (ex: "não quero a 2012", "quero outra").
+  if (/\bnao\b|\bnunca\b|sem interesse|nao quero|nao gostei|esquece|\boutro\b|\boutra\b/.test(m)) return null;
+  // número puro ("1", "o 2", "opção 3")
+  const num = m.match(/^(?:o|a|no|na|op(?:c|ç)ao|numero|quero o|quero a|quero)?\s*(\d{1,2})\s*$/);
+  if (num) { const i = Number(num[1]) - 1; if (list[i]) return list[i].id; }
+  // ordinal por extenso
+  for (const [w, idx] of Object.entries(ORD_WORDS)) {
+    if (m.includes(w)) { const i = idx < 0 ? list.length - 1 : idx; if (list[i]) return list[i].id; }
+  }
+  // ano (4 dígitos)
+  const yr = m.match(/\b(19|20)\d{2}\b/);
+  if (yr) { const hit = list.find(v => v.year === Number(yr[0])); if (hit) return hit.id; }
+  // cor
+  for (const c of ["branco", "preto", "prata", "cinza", "vermelho", "azul", "verde", "amarelo", "dourado", "marrom", "bege", "vinho", "laranja"]) {
+    if (m.includes(c)) { const hit = list.find(v => norm(v.color).includes(c)); if (hit) return hit.id; }
+  }
+  // câmbio
+  if (m.includes("automat")) { const hit = list.find(v => v.auto); if (hit) return hit.id; }
+  if (/\bmanual\b/.test(m)) { const hit = list.find(v => !v.auto); if (hit) return hit.id; }
+  // mais barato / mais caro
+  if (m.includes("barat")) return [...list].sort((a, b) => (a.price || 0) - (b.price || 0))[0].id;
+  if (m.includes("caro")) return [...list].sort((a, b) => (b.price || 0) - (a.price || 0))[0].id;
+  return null;
+}
+
 async function execBuscar(sessionId: string, args: any): Promise<string> {
   let all = await getAllCuratedVehicles();
   // Barra não-carros que às vezes vêm no feed (barco, lancha, jet ski).
@@ -271,7 +307,14 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     return `${i + 1}) [ID:${v.id}] ${title} — ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)} · ${v.year} · ${v.mileage ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} · ${cambio} · ${v.color || "cor n/i"}${tipo ? " · " + tipo : ""}${feats}`;
   };
 
+  const toListItem = (v: any): ListItem => ({
+    id: v.id, title: v.title || `${v.brand} ${v.model}`, year: v.year, color: v.color,
+    price: (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price,
+    auto: norm(v.transmission).includes("auto"),
+  });
+
   if (filtered.length > 0) {
+    sess(sessionId).lastList = filtered.map(toListItem);
     recordShown(sessionId, filtered.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
     return `RESULTADOS (${filtered.length}). Use SOMENTE o número dentro de [ID:X] como id de ferramenta (não o número da opção). Apresente com os dados EXATOS abaixo, sem inventar. Se o cliente citou um opcional (ex: teto solar) e ele aparece em "opcionais", destaque isso:\n${filtered.map(fmtLine).join("\n")}`;
   }
@@ -320,6 +363,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     .slice(0, 5)
     .map((s) => s.v);
 
+  sess(sessionId).lastList = alt.map(toListItem);
   recordShown(sessionId, alt.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
   return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), ofereça deixando claro a diferença. Só ofereça carros com relação com o pedido. Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
 }
@@ -377,8 +421,16 @@ export async function runAgentV2Turn(input: {
     ? `\n\nVEÍCULOS JÁ MOSTRADOS (use estes IDs):\n${s.shown.map((x, i) => `${i + 1}) ${x.title} [ID:${x.id}]`).join("\n")}`
     : "";
 
+  // Seleção determinística sobre a última lista ("1", "o azul", "a 2012", "automático"...).
+  const selectedId = resolveSelection(input.message, s.lastList);
+  let selBlock = "";
+  if (selectedId != null) {
+    const it = (s.lastList || []).find((x) => x.id === selectedId);
+    selBlock = `\n\n⚠️ SELEÇÃO DETECTADA: o cliente se refere ao veículo [ID:${selectedId}]${it ? ` (${it.title} ${it.year || ""} ${it.color || ""})`.trim() : ""} da última lista. Para apresentar/confirmar/mandar foto, use veiculo_id: ${selectedId}. NUNCA use outro id.`;
+  }
+
   // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória.
-  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}${shownBlock}`;
+  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}${shownBlock}${selBlock}`;
 
   const messages: LLMMsg[] = [{ role: "system", content: system }];
   for (const h of input.history.slice(-20)) messages.push({ role: h.role, content: h.content });
@@ -400,7 +452,11 @@ export async function runAgentV2Turn(input: {
       let result = "";
       try {
         if (tc.function.name === "buscar_veiculos") result = await execBuscar(input.sessionId, args);
-        else if (tc.function.name === "apresentar_veiculo") result = await execApresentar(input.sessionId, args, images);
+        else if (tc.function.name === "apresentar_veiculo") {
+          // Rede de segurança: se houve seleção determinística e o modelo mandou outro id, corrige.
+          if (selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
+          result = await execApresentar(input.sessionId, args, images);
+        }
         else if (tc.function.name === "transferir_para_vendedor") {
           const st = sess(input.sessionId);
           if (st.handedOff) {
