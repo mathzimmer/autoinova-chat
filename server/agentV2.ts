@@ -44,12 +44,22 @@ const DEFAULT_PERSONA = `Você é a atendente virtual da Auto Inova (revenda de 
 Faz pré-atendimento no WhatsApp: entende o que o cliente procura, apresenta veículos do estoque com foto, tira dúvidas e conduz para um vendedor humano ou agenda uma visita.
 Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`;
 
-export async function getAgentV2Config(): Promise<{ model: string; persona: string; temperature: number }> {
+// Regras de comportamento EDITÁVEIS (mude no simulador e veja na hora).
+// As regras de segurança (anti-invenção, id) ficam fixas no código.
+export const DEFAULT_RULES = `COMPORTAMENTO:
+- Ao apresentar um veículo específico que o cliente já demonstrou interesse, JÁ mande a foto (apresentar_veiculo) — não espere ele pedir.
+- Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
+- Handoff: transfira UMA única vez, quando tiver o veículo de interesse + a situação de troca/pagamento, ou quando o cliente pedir humano/visita. Depois de transferir, NÃO repita "vou transferir"; apenas confirme que o vendedor assume.
+- Visita: confirme a loja, o dia e o horário antes de encaminhar ao vendedor.
+- Faça UMA pergunta por vez. Seja curto e natural.`;
+
+export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; temperature: number }> {
   const model = (await getSetting("agentv2_model")) || "openai/gpt-4o-mini";
   const persona = (await getSetting("agentv2_persona")) || DEFAULT_PERSONA;
+  const rules = (await getSetting("agentv2_rules")) || DEFAULT_RULES;
   const tRaw = await getSetting("agentv2_temperature");
   const temperature = tRaw ? Number(tRaw) : 0.5;
-  return { model, persona, temperature };
+  return { model, persona, rules, temperature };
 }
 
 async function getBusinessInfo(): Promise<string> {
@@ -141,6 +151,39 @@ const TOOLS = [
   },
 ];
 
+// ── Config das ferramentas (editável no simulador): descrição + on/off ───────
+export interface ToolOverride { enabled: boolean; description: string }
+export async function getToolsConfig(): Promise<Record<string, ToolOverride>> {
+  let saved: Record<string, Partial<ToolOverride>> = {};
+  try { const raw = await getSetting("agentv2_tools"); if (raw) saved = JSON.parse(raw); } catch { /* padrão */ }
+  const out: Record<string, ToolOverride> = {};
+  for (const t of TOOLS) {
+    const name = t.function.name;
+    const desc = saved[name]?.description;
+    out[name] = {
+      enabled: saved[name]?.enabled !== false, // default ligado
+      description: (desc && desc.trim()) ? desc : t.function.description,
+    };
+  }
+  return out;
+}
+/** Lista pras telas: nome, estado, descrição atual e a padrão. */
+export async function getAgentV2Tools() {
+  const cfg = await getToolsConfig();
+  return TOOLS.map(t => ({
+    name: t.function.name,
+    enabled: cfg[t.function.name].enabled,
+    description: cfg[t.function.name].description,
+    defaultDescription: t.function.description,
+  }));
+}
+function buildEffectiveTools(cfg: Record<string, ToolOverride>) {
+  return TOOLS.filter(t => cfg[t.function.name].enabled).map(t => ({
+    ...t,
+    function: { ...t.function, description: cfg[t.function.name].description },
+  }));
+}
+
 function fmtBRL(n: any) { return `R$ ${Number(n || 0).toLocaleString("pt-BR")}`; }
 
 async function execBuscar(sessionId: string, args: any): Promise<string> {
@@ -189,28 +232,31 @@ export async function runAgentV2Turn(input: {
   const businessInfo = await getBusinessInfo();
   const s = sess(input.sessionId);
 
-  const rules = `REGRAS:
+  // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
+  const coreRules = `REGRAS FIXAS:
 - Escreva como WhatsApp: texto corrido, sem markdown, 1-2 emojis no máximo, curto.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
-- Quando o cliente pedir foto, chame apresentar_veiculo com o [ID:X].
-- NUNCA invente endereço/telefone/horário: use só "INFORMAÇÕES DA LOJA". Se faltar, diga que confirma com o vendedor.
-- Ao definir veículo + pagamento (ou cliente pedir humano/visita), chame transferir_para_vendedor.`;
+- NUNCA invente endereço/telefone/horário: use só "INFORMAÇÕES DA LOJA". Se faltar, diga que confirma com o vendedor.`;
 
   const shownBlock = s.shown.length
     ? `\n\nVEÍCULOS JÁ MOSTRADOS (use estes IDs):\n${s.shown.map((x, i) => `${i + 1}) ${x.title} [ID:${x.id}]`).join("\n")}`
     : "";
 
-  const system = `${cfg.persona}\n\n${rules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}${shownBlock}`;
+  // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória.
+  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}${shownBlock}`;
 
   const messages: LLMMsg[] = [{ role: "system", content: system }];
   for (const h of input.history.slice(-20)) messages.push({ role: h.role, content: h.content });
   messages.push({ role: "user", content: input.message });
 
+  const toolsCfg = await getToolsConfig();
+  const effectiveTools = buildEffectiveTools(toolsCfg);
+
   const images: AgentImage[] = [];
   const toolTrace: ToolTraceItem[] = [];
-  let assistant = await chatCompletion({ model: cfg.model, messages, tools: TOOLS, temperature: cfg.temperature });
+  let assistant = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
 
   let rounds = 5;
   while (assistant?.tool_calls?.length && rounds-- > 0) {
@@ -230,7 +276,7 @@ export async function runAgentV2Turn(input: {
       toolTrace.push({ name: tc.function.name, args, resultSummary: result.slice(0, 300) });
       messages.push({ role: "tool", tool_call_id: tc.id, content: result } as any);
     }
-    assistant = await chatCompletion({ model: cfg.model, messages, tools: TOOLS, temperature: cfg.temperature });
+    assistant = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
   }
 
   const reply = (assistant?.content || "").trim() || "…";

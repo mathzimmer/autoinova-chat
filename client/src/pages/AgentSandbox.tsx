@@ -24,13 +24,23 @@ export default function AgentSandbox() {
   const cfgQuery = trpc.agentV2.getConfig.useQuery();
   const [model, setModel] = useState("");
   const [persona, setPersona] = useState("");
+  const [rules, setRules] = useState("");
   const [temperature, setTemperature] = useState(0.5);
   useEffect(() => {
-    if (cfgQuery.data) { setModel(cfgQuery.data.model); setPersona(cfgQuery.data.persona); setTemperature(cfgQuery.data.temperature); }
+    if (cfgQuery.data) { setModel(cfgQuery.data.model); setPersona(cfgQuery.data.persona); setRules((cfgQuery.data as any).rules || ""); setTemperature(cfgQuery.data.temperature); }
   }, [cfgQuery.data]);
 
   const saveCfg = trpc.agentV2.setConfig.useMutation({
     onSuccess: () => { cfgQuery.refetch(); toast.success("Config salva."); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+
+  // Ferramentas (editar descrição + on/off, ao vivo)
+  const toolsQuery = trpc.agentV2.getTools.useQuery();
+  const [tools, setTools] = useState<{ name: string; enabled: boolean; description: string; defaultDescription: string }[]>([]);
+  useEffect(() => { if (toolsQuery.data) setTools(toolsQuery.data as any); }, [toolsQuery.data]);
+  const saveTools = trpc.agentV2.setTools.useMutation({
+    onSuccess: () => { toolsQuery.refetch(); toast.success("Ferramentas atualizadas!"); },
     onError: (e) => toast.error("Erro: " + e.message),
   });
 
@@ -98,9 +108,49 @@ export default function AgentSandbox() {
               <Textarea value={persona} onChange={(e) => setPersona(e.target.value)} rows={5} className="text-xs" />
             </div>
             <div>
-              <Button size="sm" disabled={saveCfg.isPending} onClick={() => saveCfg.mutate({ model: model.trim(), persona: persona.trim(), temperature })}>
+              <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Regras de comportamento (quando transferir, mandar foto, o que perguntar...)</label>
+              <Textarea value={rules} onChange={(e) => setRules(e.target.value)} rows={7} className="text-xs font-mono" />
+            </div>
+            <div>
+              <Button size="sm" disabled={saveCfg.isPending} onClick={() => saveCfg.mutate({ model: model.trim(), persona: persona.trim(), rules: rules.trim(), temperature })}>
                 <Save className="h-3.5 w-3.5 mr-1" /> Salvar config
               </Button>
+              <span className="ml-2 text-[11px] text-muted-foreground">Salvou → a próxima mensagem já usa. Sem deploy.</span>
+            </div>
+
+            {/* Ferramentas: editar descrição (quando usar) + ligar/desligar */}
+            <div className="pt-2 border-t border-border">
+              <div className="flex items-center gap-2 mb-2">
+                <Wrench className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Ferramentas</span>
+                <span className="text-[11px] text-muted-foreground">edite a descrição (o agente usa isso pra decidir quando chamar) ou desligue</span>
+              </div>
+              <div className="grid gap-2">
+                {tools.map((t, i) => (
+                  <div key={t.name} className="p-2 rounded-md border border-border">
+                    <label className="flex items-center gap-2 text-sm font-mono mb-1">
+                      <input
+                        type="checkbox"
+                        checked={t.enabled}
+                        onChange={(e) => setTools((prev) => prev.map((x, k) => k === i ? { ...x, enabled: e.target.checked } : x))}
+                        className="accent-primary"
+                      />
+                      {t.name}
+                    </label>
+                    <Textarea
+                      value={t.description}
+                      onChange={(e) => setTools((prev) => prev.map((x, k) => k === i ? { ...x, description: e.target.value } : x))}
+                      rows={2}
+                      className="text-xs"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2">
+                <Button size="sm" variant="outline" disabled={saveTools.isPending} onClick={() => saveTools.mutate({ tools: tools.map((t) => ({ name: t.name, enabled: t.enabled, description: t.description.trim() })) })}>
+                  <Save className="h-3.5 w-3.5 mr-1" /> Salvar ferramentas
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

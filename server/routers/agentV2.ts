@@ -4,7 +4,7 @@
  */
 import { z } from "zod";
 import { protectedProcedure, adminProcedure, router } from "../_core/trpc";
-import { runAgentV2Turn, getAgentV2Config, resetSession } from "../agentV2";
+import { runAgentV2Turn, getAgentV2Config, getAgentV2Tools, resetSession } from "../agentV2";
 import { upsertSetting } from "../db";
 
 export const agentV2Router = router({
@@ -32,15 +32,36 @@ export const agentV2Router = router({
     return getAgentV2Config();
   }),
 
+  getTools: protectedProcedure.query(async () => {
+    return getAgentV2Tools();
+  }),
+
+  setTools: adminProcedure
+    .input(z.object({
+      tools: z.array(z.object({
+        name: z.string(),
+        enabled: z.boolean(),
+        description: z.string().min(3).max(1200),
+      })),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const obj: Record<string, { enabled: boolean; description: string }> = {};
+      for (const t of input.tools) obj[t.name] = { enabled: t.enabled, description: t.description.trim() };
+      await upsertSetting("agentv2_tools", JSON.stringify(obj), ctx.user.id);
+      return { success: true };
+    }),
+
   setConfig: adminProcedure
     .input(z.object({
       model: z.string().min(2).max(120),
       persona: z.string().min(5).max(6000),
+      rules: z.string().min(5).max(6000),
       temperature: z.number().min(0).max(1),
     }))
     .mutation(async ({ input, ctx }) => {
       await upsertSetting("agentv2_model", input.model, ctx.user.id);
       await upsertSetting("agentv2_persona", input.persona, ctx.user.id);
+      await upsertSetting("agentv2_rules", input.rules, ctx.user.id);
       await upsertSetting("agentv2_temperature", String(input.temperature), ctx.user.id);
       return { success: true };
     }),
