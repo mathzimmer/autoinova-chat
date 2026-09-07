@@ -47,9 +47,14 @@ Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`
 // Regras de comportamento EDITÁVEIS (mude no simulador e veja na hora).
 // As regras de segurança (anti-invenção, id) ficam fixas no código.
 export const DEFAULT_RULES = `COMPORTAMENTO:
+- BUSCAR JÁ: se o cliente cita um modelo, marca ou tipo (ex: "interesse na Compass", "quero um SUV"), chame buscar_veiculos IMEDIATAMENTE e mostre as opções — NÃO peça faixa de preço nem modelo antes. Só pergunte preço/uso se NÃO houver em estoque, ou depois de mostrar, pra refinar se vierem muitos resultados.
+- LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo — sem perguntar "o que você busca". Se der exatamente 1 resultado, mande a foto (apresentar_veiculo) de cara. Não consegue abrir links, então extraia o modelo do texto da mensagem.
 - Foto: mande apresentar_veiculo ao mostrar um carro pela PRIMEIRA vez ou quando pedirem foto/"mais fotos". Ao pedir mais fotos, use o MESMO [ID:X] daquele carro (da lista "VEÍCULOS JÁ MOSTRADOS") — a ferramenta já envia várias fotos. NUNCA invente um id nem chame outro carro. Em simples confirmação de um já mostrado ("gostei", "esse"), NÃO reenvie a foto: só confirme e AVANCE (troca/pagamento/visita).
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
-- FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: (1) CPF, (2) data de nascimento, (3) valor de parcela que consegue pagar por mês (e entrada, se tiver). Diga que é pra o vendedor já deixar a simulação pronta. Só transfira depois de ter esses dados, e inclua todos no resumo do handoff.
+- FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: (1) CPF, (2) data de nascimento, (3) valor de parcela que consegue pagar por mês (e entrada, se tiver). VALIDE: CPF tem exatamente 11 dígitos; data no formato dd/mm/aaaa. Se vier algo que claramente não é CPF/data válida, peça de novo com gentileza — NÃO transfira com dado inválido. Só transfira depois dos 3 dados válidos, e inclua todos no resumo.
+- PARCELA ≠ PREÇO: valor "por mês"/parcela (ex: "R$1.300 por mês") é dado de FINANCIAMENTO, nunca o preço do carro. NUNCA use isso como preço na busca. Registre como parcela e siga.
+- NUNCA DEAD-END: se o cliente demonstra intenção de compra/financiamento (ex: tem crédito aprovado) e você não tem o modelo exato ou na condição pedida, NÃO responda só "não temos". Mostre o carro/parecido que tem e conduza: colete os dados (troca, e no financiamento CPF/nascimento/parcela) e encaminhe pro vendedor. Sempre dê um próximo passo.
+- NÃO AFIRME O QUE NÃO FEZ: só diga "agendei" depois de ter loja + dia + horário E chamar transferir_para_vendedor. Nunca diga "fiz o agendamento" se ainda vai perguntar loja/dia. Descreva só ações que realmente aconteceram.
 - Handoff: transfira UMA única vez, e só no momento REAL de conversão: agendou visita, pediu falar com humano, ou entrou em negociação de preço/condições. NÃO transfira só porque pediu "mais informações/detalhes" — responda o que puder (opcionais, dados do carro) e siga. Depois de transferir, apenas dê uma mensagem curta de encerramento; NUNCA transfira de novo nem continue fazendo perguntas de qualificação.
 - SEJA HUMANA: fale de forma natural e calorosa, variando as frases — não robótica. Use o nome do cliente se souber. NÃO repita a mesma pergunta padrão ("tem troca? como vai pagar?") a cada mensagem; pergunte no momento certo e uma coisa por vez.
 - Visita: confirme a loja, o dia e o horário e, DEPOIS de confirmar os três, CHAME transferir_para_vendedor (motivo: agendamento) com o resumo incluindo a visita (carro, dia, hora, loja, troca/pagamento). É a ferramenta que registra e avisa o vendedor — NUNCA confirme um agendamento sem chamá-la.
@@ -126,7 +131,9 @@ const TOOLS = [
           cambio: { type: "string", description: "automatico ou manual" },
           combustivel: { type: "string", description: "flex, gasolina, diesel, híbrido, elétrico" },
           requisitos: { type: "string", description: "Opcionais/características em texto livre: 'teto solar', 'couro', 'multimídia', 'automático completo'. Busca nos opcionais e na descrição." },
-          preco_max: { type: "number" }, preco_min: { type: "number" }, ano_min: { type: "number" },
+          preco_max: { type: "number", description: "Preço TOTAL do veículo em reais (ex: 80000). NUNCA coloque aqui valor de parcela mensal — 'R$1.300 por mês' é parcela de financiamento, não o preço do carro." },
+          preco_min: { type: "number", description: "Preço TOTAL mínimo em reais." },
+          ano_min: { type: "number" },
           km_max: { type: "number", description: "Quilometragem MÁXIMA. Ex: 'até 50 mil km' → km_max: 50000." },
         },
         required: [], additionalProperties: false,
@@ -280,15 +287,41 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
 
   if (altAll.length === 0) return "Não há veículos nessa faixa de preço/ano. Sugira ampliar o orçamento. NÃO invente veículos.";
 
-  // Sem orçamento E sem tipo → NÃO despeje carros caros aleatórios. Pergunte a faixa.
-  if (!hasBudget && !args.tipo) {
-    return "SEM MATCH EXATO para o modelo pedido, e o cliente NÃO informou faixa de preço nem tipo. Faça UMA pergunta curta: qual o orçamento (faixa de preço) dele? Só sugira alternativas depois de ter o preço ou o tipo. NÃO liste carros caros aleatórios agora.";
+  // Sem nenhuma pista (nem preço, nem tipo, nem modelo/marca) → pergunte a faixa.
+  if (!hasBudget && !args.tipo && !args.modelo && !args.marca) {
+    return "SEM MATCH EXATO e o cliente NÃO informou preço, tipo nem modelo. Faça UMA pergunta curta: qual o orçamento (faixa de preço) dele? NÃO liste carros aleatórios agora.";
   }
 
-  // Com orçamento: mais próximos do teto primeiro. Sem orçamento (mas com tipo): mais baratos primeiro.
-  const alt = altAll.sort((a: any, b: any) => hasBudget ? (b.price - a.price) : (a.price - b.price)).slice(0, 5);
+  // SIMILARIDADE: descobre o "tipo alvo" — o informado, ou o segmento do modelo pedido.
+  const reqModel = args.modelo ? norm(args.modelo) : "";
+  const reqBrand = args.marca ? norm(args.marca) : "";
+  let targetType = args.tipo ? norm(args.tipo) : "";
+  if (!targetType && reqModel) {
+    const sameModelAny = all.find((v: any) => norm(`${v.model} ${v.version || ""} ${v.title || ""}`).includes(reqModel));
+    if (sameModelAny) targetType = norm(`${sameModelAny.vehicleType || sameModelAny.category || ""}`);
+  }
+
+  // Pontua cada candidato: mesmo modelo (100) > mesma marca (20) + mesmo segmento (50).
+  const scored = altAll.map((v: any) => {
+    const modelText = norm(`${v.brand} ${v.model} ${v.version || ""} ${v.title || ""}`);
+    const bodyText = norm(`${v.category || ""} ${v.vehicleType || ""} ${v.model || ""} ${v.title || ""}`);
+    let score = 0;
+    if (reqModel && modelText.includes(reqModel)) score += 100;
+    if (reqBrand && norm(v.brand).includes(reqBrand)) score += 20;
+    if (targetType && matchTipo(bodyText, targetType)) score += 50;
+    return { v, score };
+  });
+
+  // Se há candidatos parecidos (mesmo modelo/segmento), mostra SÓ eles — nunca carro sem relação.
+  const strong = scored.filter((s) => s.score > 0);
+  const pool = strong.length ? strong : scored;
+  const alt = pool
+    .sort((a, b) => (b.score - a.score) || (hasBudget ? b.v.price - a.v.price : a.v.price - b.v.price))
+    .slice(0, 5)
+    .map((s) => s.v);
+
   recordShown(sessionId, alt.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
-  return `SEM MATCH EXATO para o pedido do cliente. NÃO diga apenas "não tenho". Ofereça estas ALTERNATIVAS dentro do orçamento/tipo, deixando claro que não achou exatamente o pedido, mas tem essas opções — destaque o que faz sentido (espaço/família, economia, câmbio, opcionais). Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
+  return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), ofereça deixando claro a diferença. Só ofereça carros com relação com o pedido. Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
 }
 
 async function execApresentar(sessionId: string, args: any, images: AgentImage[]): Promise<string> {
