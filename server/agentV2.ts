@@ -75,14 +75,15 @@ export const DEFAULT_RULES = `COMPORTAMENTO:
 - CONDUZA SEMPRE: toda resposta termina com uma pergunta ou um próximo passo (mostrar outro carro, falar de troca/pagamento, agendar visita). Nunca deixe a conversa parada.
 - Faça UMA pergunta por vez. Seja curto e natural.`;
 
-export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; faq: string; temperature: number }> {
+export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; faq: string; temperature: number; search: SearchCfg }> {
   const model = (await getSetting("agentv2_model")) || "openai/gpt-4o-mini";
   const persona = (await getSetting("agentv2_persona")) || DEFAULT_PERSONA;
   const rules = (await getSetting("agentv2_rules")) || DEFAULT_RULES;
   const faq = (await getSetting("agentv2_faq")) || DEFAULT_FAQ;
   const tRaw = await getSetting("agentv2_temperature");
   const temperature = tRaw ? Number(tRaw) : 0.5;
-  return { model, persona, rules, faq, temperature };
+  const search = await getSearchConfig();
+  return { model, persona, rules, faq, temperature, search };
 }
 
 async function getBusinessInfo(): Promise<string> {
@@ -108,6 +109,36 @@ CONTORNO DE OBJEÇÕES (nunca desista — reconheça, contorne e conduza pra vis
 async function getFaq(): Promise<string> {
   const saved = await getSetting("agentv2_faq");
   return (saved && saved.trim()) ? saved : DEFAULT_FAQ;
+}
+
+// Config da busca (quantos carros e critério de ordenação) — editável na tela.
+export type SearchCfg = { limit: number; ordem: "barato" | "caro" | "novo" | "km"; fotoPrimeiro: boolean };
+export const DEFAULT_SEARCH: SearchCfg = { limit: 6, ordem: "barato", fotoPrimeiro: true };
+export async function getSearchConfig(): Promise<SearchCfg> {
+  try {
+    const raw = await getSetting("agentv2_search");
+    if (raw) {
+      const p = JSON.parse(raw);
+      return {
+        limit: Math.min(Math.max(Number(p.limit) || 6, 1), 12),
+        ordem: ["barato", "caro", "novo", "km"].includes(p.ordem) ? p.ordem : "barato",
+        fotoPrimeiro: p.fotoPrimeiro !== false,
+      };
+    }
+  } catch { /* padrão */ }
+  return { ...DEFAULT_SEARCH };
+}
+function temFoto(v: any): number {
+  return (v.imageUrl || (Array.isArray(v.images) && v.images.length)) ? 1 : 0;
+}
+function ordenarVeiculos(list: any[], cfg: SearchCfg): any[] {
+  return [...list].sort((a, b) => {
+    if (cfg.fotoPrimeiro) { const d = temFoto(b) - temFoto(a); if (d) return d; }
+    if (cfg.ordem === "caro") return (b.price || 0) - (a.price || 0);
+    if (cfg.ordem === "novo") return (b.year || 0) - (a.year || 0);
+    if (cfg.ordem === "km") return (a.mileage || 1e9) - (b.mileage || 1e9);
+    return (a.price || 0) - (b.price || 0); // barato
+  }).slice(0, cfg.limit);
 }
 
 // ── Cliente LLM (OpenRouter; cai pro OpenAI se não houver chave OpenRouter) ───
@@ -334,10 +365,11 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     return "SEM CRITÉRIO: o cliente não disse qual carro quer (ex: mandou só um link sem o nome/modelo). Pergunte, de forma simpática, qual veículo, tipo ou faixa de preço ele procura. NÃO liste carros aleatórios.";
   }
 
+  const searchCfg = await getSearchConfig();
   const cambioAuto = args.cambio ? norm(args.cambio).includes("auto") : null;
   const reqWords = args.requisitos ? norm(args.requisitos).split(/\s+/).filter((w: string) => w.length >= 3) : [];
 
-  const filtered = all.filter((v: any) => {
+  const filtered = ordenarVeiculos(all.filter((v: any) => {
     if (args.preco_max && v.price > args.preco_max) return false;
     if (args.preco_min && v.price < args.preco_min) return false;
     if (args.ano_min && v.year < args.ano_min) return false;
@@ -360,7 +392,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
       if (!reqWords.every((w: string) => feat.includes(w))) return false;
     }
     return true;
-  }).sort((a: any, b: any) => a.price - b.price).slice(0, 8);
+  }), searchCfg);
 
   const fmtLine = (v: any, i: number) => {
     const cambio = norm(v.transmission).includes("auto") ? "automático" : "manual";
@@ -423,7 +455,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   const pool = strong.length ? strong : scored;
   const alt = pool
     .sort((a, b) => (b.score - a.score) || (hasBudget ? b.v.price - a.v.price : a.v.price - b.v.price))
-    .slice(0, 5)
+    .slice(0, searchCfg.limit)
     .map((s) => s.v);
 
   sess(sessionId).lastList = alt.map(toListItem);

@@ -27,8 +27,15 @@ export default function AgentSandbox() {
   const [rules, setRules] = useState("");
   const [faq, setFaq] = useState("");
   const [temperature, setTemperature] = useState(0.5);
+  const [searchLimit, setSearchLimit] = useState(6);
+  const [searchOrdem, setSearchOrdem] = useState<"barato" | "caro" | "novo" | "km">("barato");
+  const [fotoPrimeiro, setFotoPrimeiro] = useState(true);
   useEffect(() => {
-    if (cfgQuery.data) { setModel(cfgQuery.data.model); setPersona(cfgQuery.data.persona); setRules((cfgQuery.data as any).rules || ""); setFaq((cfgQuery.data as any).faq || ""); setTemperature(cfgQuery.data.temperature); }
+    if (cfgQuery.data) {
+      setModel(cfgQuery.data.model); setPersona(cfgQuery.data.persona); setRules((cfgQuery.data as any).rules || ""); setFaq((cfgQuery.data as any).faq || ""); setTemperature(cfgQuery.data.temperature);
+      const sc = (cfgQuery.data as any).search;
+      if (sc) { setSearchLimit(sc.limit); setSearchOrdem(sc.ordem); setFotoPrimeiro(sc.fotoPrimeiro); }
+    }
   }, [cfgQuery.data]);
 
   const saveCfg = trpc.agentV2.setConfig.useMutation({
@@ -116,8 +123,27 @@ export default function AgentSandbox() {
               <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">FAQ e contorno de objeções (dúvidas comuns + como responder quando o cliente objeta)</label>
               <Textarea value={faq} onChange={(e) => setFaq(e.target.value)} rows={7} className="text-xs" />
             </div>
+            <div className="grid grid-cols-3 gap-3 items-end">
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Qtos carros mostra</label>
+                <Input type="number" min={1} max={12} value={searchLimit} onChange={(e) => setSearchLimit(Math.min(12, Math.max(1, Number(e.target.value) || 6)))} className="h-8 text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground uppercase tracking-wider mb-1 block">Ordenar por</label>
+                <select value={searchOrdem} onChange={(e) => setSearchOrdem(e.target.value as any)} className="h-8 w-full px-2 text-sm rounded-md border border-border bg-background">
+                  <option value="barato">Mais barato</option>
+                  <option value="caro">Mais caro</option>
+                  <option value="novo">Mais novo (ano)</option>
+                  <option value="km">Menor km</option>
+                </select>
+              </div>
+              <label className="flex items-center gap-1.5 text-sm h-8">
+                <input type="checkbox" checked={fotoPrimeiro} onChange={(e) => setFotoPrimeiro(e.target.checked)} className="accent-primary" />
+                Com foto primeiro
+              </label>
+            </div>
             <div>
-              <Button size="sm" disabled={saveCfg.isPending} onClick={() => saveCfg.mutate({ model: model.trim(), persona: persona.trim(), rules: rules.trim(), faq: faq.trim(), temperature })}>
+              <Button size="sm" disabled={saveCfg.isPending} onClick={() => saveCfg.mutate({ model: model.trim(), persona: persona.trim(), rules: rules.trim(), faq: faq.trim(), temperature, search: { limit: searchLimit, ordem: searchOrdem, fotoPrimeiro } })}>
                 <Save className="h-3.5 w-3.5 mr-1" /> Salvar config
               </Button>
               <span className="ml-2 text-[11px] text-muted-foreground">Salvou → a próxima mensagem já usa. Sem deploy.</span>
