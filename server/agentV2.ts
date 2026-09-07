@@ -61,33 +61,36 @@ async function getBusinessInfo(): Promise<string> {
 interface LLMMsg { role: string; content: string | null; tool_calls?: any[]; tool_call_id?: string }
 async function chatCompletion(params: { model: string; messages: LLMMsg[]; tools?: any[]; temperature?: number }) {
   const orKey = process.env.OPENROUTER_API_KEY;
-  const oaKey = process.env.OPENAI_API_KEY;
-  let url = "https://openrouter.ai/api/v1/chat/completions";
-  let key = orKey;
-  let model = params.model;
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (!orKey && oaKey) {
-    // fallback: OpenAI direto (mesmo formato). Tira o prefixo "openai/" do modelo.
-    url = "https://api.openai.com/v1/chat/completions";
-    key = oaKey;
-    model = model.replace(/^openai\//, "");
-  } else {
-    headers["HTTP-Referer"] = "https://autoinovacrm.com.br";
-    headers["X-Title"] = "Auto Inova AgentV2";
-  }
-  if (!key) throw new Error("Sem OPENROUTER_API_KEY nem OPENAI_API_KEY no .env");
-  headers["Authorization"] = `Bearer ${key}`;
 
-  const body: any = { model, messages: params.messages, temperature: params.temperature ?? 0.5, max_tokens: 900 };
-  if (params.tools?.length) { body.tools = params.tools; body.tool_choice = "auto"; }
-
-  const resp = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!resp.ok) {
-    const t = await resp.text();
-    throw new Error(`LLM ${resp.status}: ${t.slice(0, 300)}`);
+  // 1) Se houver chave OpenRouter → usa OpenRouter (Claude/Gemini/GPT via um endpoint).
+  if (orKey) {
+    const body: any = { model: params.model, messages: params.messages, temperature: params.temperature ?? 0.5, max_tokens: 900 };
+    if (params.tools?.length) { body.tools = params.tools; body.tool_choice = "auto"; }
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${orKey}`,
+        "HTTP-Referer": "https://autoinovacrm.com.br",
+        "X-Title": "Auto Inova AgentV2",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error(`OpenRouter ${resp.status}: ${(await resp.text()).slice(0, 300)}`);
+    const json: any = await resp.json();
+    return json.choices?.[0]?.message ?? { role: "assistant", content: "" };
   }
-  const json: any = await resp.json();
-  return json.choices?.[0]?.message ?? { role: "assistant", content: "" };
+
+  // 2) Sem OpenRouter → usa o MESMO caminho do CRM (OpenAI se houver chave,
+  //    senão o LLM nativo/Forge embutido). Assim o simulador já funciona hoje.
+  const { invokeAgentLLM } = await import("./openaiLLM");
+  const result: any = await invokeAgentLLM({
+    messages: params.messages as any,
+    tools: params.tools,
+    tool_choice: params.tools?.length ? "auto" : undefined,
+    maxTokens: 900,
+  } as any);
+  return result?.choices?.[0]?.message ?? { role: "assistant", content: "" };
 }
 
 // ── Ferramentas ──────────────────────────────────────────────────────────────
