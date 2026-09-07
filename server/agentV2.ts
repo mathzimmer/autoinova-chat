@@ -47,12 +47,13 @@ Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`
 // Regras de comportamento EDITÁVEIS (mude no simulador e veja na hora).
 // As regras de segurança (anti-invenção, id) ficam fixas no código.
 export const DEFAULT_RULES = `COMPORTAMENTO:
-- Mande a foto (apresentar_veiculo) ao mostrar um carro específico pela PRIMEIRA vez, ou quando pedirem. NÃO reenvie a foto de um carro que já está na lista "VEÍCULOS JÁ MOSTRADOS": se o cliente confirmar/escolher um já apresentado, apenas confirme a escolha e AVANCE (troca/pagamento/visita), sem mandar a foto de novo.
+- Foto: mande apresentar_veiculo ao mostrar um carro pela PRIMEIRA vez ou quando pedirem foto/"mais fotos". Ao pedir mais fotos, use o MESMO [ID:X] daquele carro (da lista "VEÍCULOS JÁ MOSTRADOS") — a ferramenta já envia várias fotos. NUNCA invente um id nem chame outro carro. Em simples confirmação de um já mostrado ("gostei", "esse"), NÃO reenvie a foto: só confirme e AVANCE (troca/pagamento/visita).
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
 - Handoff: transfira UMA única vez, quando tiver o veículo de interesse + a situação de troca/pagamento, ou quando o cliente pedir humano/visita. Depois de transferir, NÃO repita "vou transferir"; apenas confirme que o vendedor assume.
 - Visita: confirme a loja, o dia e o horário e, DEPOIS de confirmar os três, CHAME transferir_para_vendedor (motivo: agendamento) com o resumo incluindo a visita (carro, dia, hora, loja, troca/pagamento). É a ferramenta que registra e avisa o vendedor — NUNCA confirme um agendamento sem chamá-la.
 - FLEXIBILIDADE: se não houver o veículo exato pedido, NUNCA responda só "não temos". Ofereça alternativas próximas (mesma faixa de preço, perfil parecido) que a busca trouxe, explicando por que servem (espaço pra família, economia, custo-benefício). Sempre dê um caminho.
 - INFORMAÇÃO QUE NÃO TEM (pneus, revisão, estado detalhado, garantia específica): NUNCA prometa "vou verificar e te aviso depois" — você não faz follow-up sozinho. Seja honesto e diga que esse detalhe é conferido na VISITA/test-drive ou direto com o vendedor, e já ofereça agendar a visita ou falar com um vendedor. Nunca deixe o cliente esperando um retorno que não vai acontecer.
+- ENVIE NA HORA: se for mandar foto, CHAME apresentar_veiculo na MESMA resposta. NUNCA escreva "um momento", "vou enviar" ou "aguarde" sem já chamar a ferramenta — você não tem um segundo turno automático.
 - CONDUZA SEMPRE: toda resposta termina com uma pergunta ou um próximo passo (mostrar outro carro, falar de troca/pagamento, agendar visita). Nunca deixe a conversa parada.
 - Faça UMA pergunta por vez. Seja curto e natural.`;
 
@@ -261,19 +262,26 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     return `RESULTADOS (${filtered.length}). Use SOMENTE o número dentro de [ID:X] como id de ferramenta (não o número da opção). Apresente com os dados EXATOS abaixo, sem inventar. Se o cliente citou um opcional (ex: teto solar) e ele aparece em "opcionais", destaque isso:\n${filtered.map(fmtLine).join("\n")}`;
   }
 
-  // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles" (tipo/cor/opcionais/
-  // câmbio/marca/modelo), mantém ORÇAMENTO e ano, e oferece como ALTERNATIVAS.
-  const alt = all.filter((v: any) => {
+  // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles", mantém ORÇAMENTO e ano.
+  const hasBudget = !!(args.preco_max || args.preco_min);
+  const altAll = all.filter((v: any) => {
     if (args.preco_max && v.price > args.preco_max) return false;
     if (args.preco_min && v.price < args.preco_min) return false;
     if (args.ano_min && v.year < args.ano_min) return false;
     return true;
-  }).sort((a: any, b: any) => b.price - a.price).slice(0, 5); // mais próximos do teto primeiro
+  });
 
-  if (alt.length === 0) return "Não há veículos nessa faixa de preço/ano. Sugira ampliar o orçamento. NÃO invente veículos.";
+  if (altAll.length === 0) return "Não há veículos nessa faixa de preço/ano. Sugira ampliar o orçamento. NÃO invente veículos.";
 
+  // Sem orçamento E sem tipo → NÃO despeje carros caros aleatórios. Pergunte a faixa.
+  if (!hasBudget && !args.tipo) {
+    return "SEM MATCH EXATO para o modelo pedido, e o cliente NÃO informou faixa de preço nem tipo. Faça UMA pergunta curta: qual o orçamento (faixa de preço) dele? Só sugira alternativas depois de ter o preço ou o tipo. NÃO liste carros caros aleatórios agora.";
+  }
+
+  // Com orçamento: mais próximos do teto primeiro. Sem orçamento (mas com tipo): mais baratos primeiro.
+  const alt = altAll.sort((a: any, b: any) => hasBudget ? (b.price - a.price) : (a.price - b.price)).slice(0, 5);
   recordShown(sessionId, alt.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
-  return `SEM MATCH EXATO para o pedido do cliente. NÃO diga apenas "não tenho". Ofereça estas ALTERNATIVAS na mesma faixa de preço, deixando claro que não achou exatamente o que ele pediu, mas tem essas opções — e destaque o que faz sentido pra ele (espaço/família, economia, câmbio, opcionais). Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
+  return `SEM MATCH EXATO para o pedido do cliente. NÃO diga apenas "não tenho". Ofereça estas ALTERNATIVAS dentro do orçamento/tipo, deixando claro que não achou exatamente o pedido, mas tem essas opções — destaque o que faz sentido (espaço/família, economia, câmbio, opcionais). Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
 }
 
 async function execApresentar(sessionId: string, args: any, images: AgentImage[]): Promise<string> {
@@ -286,8 +294,9 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   // Fotos: até 5
   const raw: any[] = Array.isArray(v.images) ? v.images : (v.imageUrl ? [v.imageUrl] : []);
   const urls = raw.map((x: any) => (typeof x === "string" ? x : x?.IMAGE_URL || x?.url)).filter((u: any) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 5);
-  const feats = Array.isArray(v.features) && v.features.length ? `\nOpcionais: ${v.features.slice(0, 6).join(", ")}` : "";
-  const caption = `${title}\nAno: ${v.year} · ${v.mileage ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} · ${norm(v.transmission).includes("auto") ? "automático" : "manual"} · ${v.color || ""}\nPreço: ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)}${feats}${v.url ? `\n${v.url}` : ""}`;
+  // Legenda enxuta: modelo, ano, km, preço.
+  const kmStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "km não informado";
+  const caption = `${title}\n${v.year} · ${kmStr}\nPreço: ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)}`;
   if (urls.length === 0) return `Veículo ${title} encontrado, mas sem foto no cadastro. Dados: ${caption}`;
   images.push({ url: urls[0], caption });
   for (const u of urls.slice(1)) images.push({ url: u, caption: "" });
