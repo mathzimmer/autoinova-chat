@@ -25,7 +25,7 @@ export interface AgentResult {
 }
 
 // ── Memória por sessão (só na RAM; é simulador) ──────────────────────────────
-const SESSIONS = new Map<string, { shown: { id: number; title: string }[] }>();
+const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number> }>();
 function sess(id: string) {
   if (!SESSIONS.has(id)) SESSIONS.set(id, { shown: [] });
   return SESSIONS.get(id)!;
@@ -49,7 +49,8 @@ Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`
 export const DEFAULT_RULES = `COMPORTAMENTO:
 - Foto: mande apresentar_veiculo ao mostrar um carro pela PRIMEIRA vez ou quando pedirem foto/"mais fotos". Ao pedir mais fotos, use o MESMO [ID:X] daquele carro (da lista "VEÍCULOS JÁ MOSTRADOS") — a ferramenta já envia várias fotos. NUNCA invente um id nem chame outro carro. Em simples confirmação de um já mostrado ("gostei", "esse"), NÃO reenvie a foto: só confirme e AVANCE (troca/pagamento/visita).
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
-- Handoff: transfira UMA única vez, quando tiver o veículo de interesse + a situação de troca/pagamento, ou quando o cliente pedir humano/visita. Depois de transferir, NÃO repita "vou transferir"; apenas confirme que o vendedor assume.
+- Handoff: transfira UMA única vez, e só no momento REAL de conversão: agendou visita, pediu falar com humano, ou entrou em negociação de preço/condições. NÃO transfira só porque pediu "mais informações/detalhes" — responda o que puder (opcionais, dados do carro) e siga. Depois de transferir, apenas dê uma mensagem curta de encerramento; NUNCA transfira de novo nem continue fazendo perguntas de qualificação.
+- SEJA HUMANA: fale de forma natural e calorosa, variando as frases — não robótica. Use o nome do cliente se souber. NÃO repita a mesma pergunta padrão ("tem troca? como vai pagar?") a cada mensagem; pergunte no momento certo e uma coisa por vez.
 - Visita: confirme a loja, o dia e o horário e, DEPOIS de confirmar os três, CHAME transferir_para_vendedor (motivo: agendamento) com o resumo incluindo a visita (carro, dia, hora, loja, troca/pagamento). É a ferramenta que registra e avisa o vendedor — NUNCA confirme um agendamento sem chamá-la.
 - FLEXIBILIDADE: se não houver o veículo exato pedido, NUNCA responda só "não temos". Ofereça alternativas próximas (mesma faixa de preço, perfil parecido) que a busca trouxe, explicando por que servem (espaço pra família, economia, custo-benefício). Sempre dê um caminho.
 - INFORMAÇÃO QUE NÃO TEM (pneus, revisão, estado detalhado, garantia específica): NUNCA prometa "vou verificar e te aviso depois" — você não faz follow-up sozinho. Seja honesto e diga que esse detalhe é conferido na VISITA/test-drive ou direto com o vendedor, e já ofereça agendar a visita ou falar com um vendedor. Nunca deixe o cliente esperando um retorno que não vai acontecer.
@@ -291,16 +292,27 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   if (v.available === false) return `O veículo ${v.brand} ${v.model} ${v.year} não está mais disponível (pode ter sido vendido).`;
   const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
   recordShown(sessionId, [{ id, title }]);
-  // Fotos: até 5
+
+  // Fotos disponíveis (até 10). Legenda enxuta: modelo, ano, km, preço.
   const raw: any[] = Array.isArray(v.images) ? v.images : (v.imageUrl ? [v.imageUrl] : []);
-  const urls = raw.map((x: any) => (typeof x === "string" ? x : x?.IMAGE_URL || x?.url)).filter((u: any) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 5);
-  // Legenda enxuta: modelo, ano, km, preço.
+  const urls = raw.map((x: any) => (typeof x === "string" ? x : x?.IMAGE_URL || x?.url)).filter((u: any) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10);
   const kmStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "km não informado";
   const caption = `${title}\n${v.year} · ${kmStr}\nPreço: ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)}`;
-  if (urls.length === 0) return `Veículo ${title} encontrado, mas sem foto no cadastro. Dados: ${caption}`;
-  images.push({ url: urls[0], caption });
-  for (const u of urls.slice(1)) images.push({ url: u, caption: "" });
-  return `Foto de ${title} enviada (${urls.length}). NÃO repita os dados no texto — já estão na legenda. Avance: pergunte troca/pagamento ou ofereça visita.`;
+  if (urls.length === 0) return `Veículo ${title} encontrado, mas sem foto no cadastro. Dados: ${caption}. Ofereça ver no anúncio (${v.url || "link"}) ou na visita.`;
+
+  // Envia em LOTE: não reenvia fotos já mandadas nesta sessão.
+  const st = sess(sessionId);
+  st.photosSent = st.photosSent || {};
+  const already = st.photosSent[id] || 0;
+  if (already >= urls.length) {
+    return `Todas as ${urls.length} fotos que temos desse carro já foram enviadas. NÃO reenvie as mesmas. Diga que essas são as fotos disponíveis aqui e que o restante ele vê no anúncio (${v.url || "link"}) ou pessoalmente na visita. Puxe pra visita/vendedor.`;
+  }
+  const batch = urls.slice(already, already + 5);
+  st.photosSent[id] = already + batch.length;
+  images.push({ url: batch[0], caption: already === 0 ? caption : "" });
+  for (const u of batch.slice(1)) images.push({ url: u, caption: "" });
+  const restam = urls.length - st.photosSent[id];
+  return `Enviadas ${batch.length} foto(s) de ${title}${restam > 0 ? ` (há mais ${restam} se pedir)` : " (essas são todas as fotos que temos aqui)"}. NÃO repita os dados no texto — já estão na legenda. Avance: pergunte troca/pagamento ou ofereça visita.`;
 }
 
 // ── Runtime: um turno de conversa ────────────────────────────────────────────
@@ -350,7 +362,15 @@ export async function runAgentV2Turn(input: {
       try {
         if (tc.function.name === "buscar_veiculos") result = await execBuscar(input.sessionId, args);
         else if (tc.function.name === "apresentar_veiculo") result = await execApresentar(input.sessionId, args, images);
-        else if (tc.function.name === "transferir_para_vendedor") result = `Handoff registrado (simulação): ${args.motivo}. Dê UMA mensagem curta de encerramento; um vendedor assume.`;
+        else if (tc.function.name === "transferir_para_vendedor") {
+          const st = sess(input.sessionId);
+          if (st.handedOff) {
+            result = "JÁ TRANSFERIDO nesta conversa — NÃO transfira de novo. O vendedor já foi acionado. Se surgiu um detalhe novo (ex: agendou visita), apenas registre na conversa e dê uma mensagem curta; sem chamar a ferramenta outra vez.";
+          } else {
+            st.handedOff = true;
+            result = `Handoff registrado (simulação): ${args.motivo}. Um vendedor assume. Dê UMA mensagem curta de encerramento e NÃO transfira novamente nesta conversa.`;
+          }
+        }
         else result = "Ferramenta desconhecida.";
       } catch (e) {
         result = `Erro na ferramenta: ${e instanceof Error ? e.message : "desconhecido"}`;
