@@ -9,7 +9,7 @@
  * identifica interesse, NUNCA inventa dado (loja/veículo) e conduz pro vendedor.
  */
 import { getSetting, getVehicleById } from "./db";
-import { searchVehiclesStructured } from "./stockSync";
+import { getAllCuratedVehicles } from "./stockSync";
 import { DEFAULT_BUSINESS_INFO } from "./ai";
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
@@ -51,6 +51,7 @@ export const DEFAULT_RULES = `COMPORTAMENTO:
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
 - Handoff: transfira UMA única vez, quando tiver o veículo de interesse + a situação de troca/pagamento, ou quando o cliente pedir humano/visita. Depois de transferir, NÃO repita "vou transferir"; apenas confirme que o vendedor assume.
 - Visita: confirme a loja, o dia e o horário antes de encaminhar ao vendedor.
+- FLEXIBILIDADE: se não houver o veículo exato pedido, NUNCA responda só "não temos". Ofereça alternativas próximas (mesma faixa de preço, perfil parecido) que a busca trouxe, explicando por que servem (espaço pra família, economia, custo-benefício). Sempre dê um caminho.
 - Faça UMA pergunta por vez. Seja curto e natural.`;
 
 export async function getAgentV2Config(): Promise<{ model: string; persona: string; rules: string; temperature: number }> {
@@ -109,14 +110,18 @@ const TOOLS = [
     type: "function",
     function: {
       name: "buscar_veiculos",
-      description: "Busca veículos no estoque REAL. Use quando o cliente quer ver opções ou um modelo/tipo/faixa de preço. Cada resultado traz [ID:X] para você usar depois.",
+      description: "Busca veículos no estoque REAL, com filtros ricos. Use quando o cliente quer opções ou descreve o que procura. Traduza o pedido do cliente para os filtros: 'SUV pra família até 100 mil' → tipo:'suv', preco_max:100000. 'carro com teto solar' → requisitos:'teto solar'. 'automático' → cambio:'automatico'. Cada resultado traz [ID:X], categoria, cor, câmbio e opcionais.",
       parameters: {
         type: "object",
         properties: {
-          marca: { type: "string" }, modelo: { type: "string" },
-          tipo: { type: "string", description: "picape, hatch, sedan, suv, etc." },
-          preco_max: { type: "number" }, preco_min: { type: "number" },
-          ano_min: { type: "number" }, combustivel: { type: "string" }, cambio: { type: "string" },
+          marca: { type: "string", description: "Ex: Toyota, VW, Fiat" },
+          modelo: { type: "string", description: "Ex: Corolla, Onix" },
+          tipo: { type: "string", description: "Carroceria/categoria: suv, sedan, hatch, picape/caminhonete, 4x4/offroad, moto, van." },
+          cor: { type: "string" },
+          cambio: { type: "string", description: "automatico ou manual" },
+          combustivel: { type: "string", description: "flex, gasolina, diesel, híbrido, elétrico" },
+          requisitos: { type: "string", description: "Opcionais/características em texto livre: 'teto solar', 'couro', 'multimídia', 'automático completo'. Busca nos opcionais e na descrição." },
+          preco_max: { type: "number" }, preco_min: { type: "number" }, ano_min: { type: "number" },
         },
         required: [], additionalProperties: false,
       },
@@ -186,23 +191,85 @@ function buildEffectiveTools(cfg: Record<string, ToolOverride>) {
 
 function fmtBRL(n: any) { return `R$ ${Number(n || 0).toLocaleString("pt-BR")}`; }
 
-async function execBuscar(sessionId: string, args: any): Promise<string> {
-  const qParts = [args.marca, args.modelo, args.tipo].filter(Boolean).join(" ");
-  let list = await searchVehiclesStructured({
-    q: qParts,
-    maxPrice: args.preco_max, minPrice: args.preco_min,
-    yearMin: args.ano_min, fuel: args.combustivel, limit: 8,
-  });
-  if (args.cambio) {
-    const c = String(args.cambio).toLowerCase();
-    list = list.filter(v => String(v.cambio || "").toLowerCase().includes(c.includes("auto") ? "auto" : "manual"));
+function norm(s: any): string {
+  return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+// Sinônimos de tipo/carroceria → o que procurar em category+vehicleType+descrição.
+const TYPE_SYNONYMS: Record<string, string[]> = {
+  suv: ["suv", "utilitario esportivo"],
+  sedan: ["sedan", "seda"],
+  hatch: ["hatch", "hatchback"],
+  picape: ["picape", "pickup", "caminhonete", "camionete"],
+  offroad: ["4x4", "4 x 4", "quatro por quatro", "offroad", "off road", "awd", "4wd", "jipe", "jeep"],
+  moto: ["moto", "motocicleta", "scooter", "naked", "trail"],
+  van: ["van", "furgao", "utilitario", "minivan"],
+};
+function matchTipo(vehText: string, tipoRaw: string): boolean {
+  const t = norm(tipoRaw);
+  let syns: string[] = [];
+  for (const [key, arr] of Object.entries(TYPE_SYNONYMS)) {
+    if (key === t || arr.some(a => t.includes(a) || a.includes(t))) { syns = [key, ...arr]; break; }
   }
-  if (list.length === 0) return "Nenhum veículo encontrado com esses critérios. Sugira ampliar a busca (ex: tirar um filtro).";
-  recordShown(sessionId, list.map(v => ({ id: v.id, title: v.titulo })));
-  const lines = list.map((v, i) =>
-    `${i + 1}) [ID:${v.id}] ${v.titulo} — ${fmtBRL(v.preco)} · ${v.ano} · ${v.km ? v.km.toLocaleString("pt-BR") + " km" : "km n/i"} · ${v.cambio || ""}`.trim(),
-  );
-  return `RESULTADOS (${list.length}). Use SOMENTE o número dentro de [ID:X] como id de ferramenta (não o número da opção). Apresente com os dados EXATOS abaixo, sem inventar:\n${lines.join("\n")}`;
+  if (syns.length === 0) syns = [t]; // tipo desconhecido → usa o texto cru
+  return syns.some(s => vehText.includes(s));
+}
+
+async function execBuscar(sessionId: string, args: any): Promise<string> {
+  let all = await getAllCuratedVehicles();
+
+  const cambioAuto = args.cambio ? norm(args.cambio).includes("auto") : null;
+  const reqWords = args.requisitos ? norm(args.requisitos).split(/\s+/).filter((w: string) => w.length >= 3) : [];
+
+  const filtered = all.filter((v: any) => {
+    if (args.preco_max && v.price > args.preco_max) return false;
+    if (args.preco_min && v.price < args.preco_min) return false;
+    if (args.ano_min && v.year < args.ano_min) return false;
+    if (args.marca && !norm(v.brand).includes(norm(args.marca))) return false;
+    if (args.modelo) {
+      const mtxt = norm(`${v.model} ${v.version || ""} ${v.title || ""}`);
+      if (!mtxt.includes(norm(args.modelo))) return false;
+    }
+    if (args.cor && !norm(v.color).includes(norm(args.cor))) return false;
+    if (args.combustivel && !norm(v.fuel).includes(norm(args.combustivel))) return false;
+    if (cambioAuto !== null) {
+      const isAuto = norm(v.transmission).includes("auto");
+      if (cambioAuto !== isAuto) return false;
+    }
+    const bodyText = norm(`${v.category || ""} ${v.vehicleType || ""} ${v.model || ""} ${v.title || ""}`);
+    if (args.tipo && !matchTipo(bodyText, args.tipo)) return false;
+    if (reqWords.length) {
+      const feat = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""}`);
+      if (!reqWords.every((w: string) => feat.includes(w))) return false;
+    }
+    return true;
+  }).sort((a: any, b: any) => a.price - b.price).slice(0, 8);
+
+  const fmtLine = (v: any, i: number) => {
+    const cambio = norm(v.transmission).includes("auto") ? "automático" : "manual";
+    const tipo = v.vehicleType || v.category || "";
+    const feats = Array.isArray(v.features) && v.features.length ? ` · opcionais: ${v.features.slice(0, 5).join(", ")}` : "";
+    const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
+    return `${i + 1}) [ID:${v.id}] ${title} — ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)} · ${v.year} · ${v.mileage ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} · ${cambio} · ${v.color || "cor n/i"}${tipo ? " · " + tipo : ""}${feats}`;
+  };
+
+  if (filtered.length > 0) {
+    recordShown(sessionId, filtered.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
+    return `RESULTADOS (${filtered.length}). Use SOMENTE o número dentro de [ID:X] como id de ferramenta (não o número da opção). Apresente com os dados EXATOS abaixo, sem inventar. Se o cliente citou um opcional (ex: teto solar) e ele aparece em "opcionais", destaque isso:\n${filtered.map(fmtLine).join("\n")}`;
+  }
+
+  // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles" (tipo/cor/opcionais/
+  // câmbio/marca/modelo), mantém ORÇAMENTO e ano, e oferece como ALTERNATIVAS.
+  const alt = all.filter((v: any) => {
+    if (args.preco_max && v.price > args.preco_max) return false;
+    if (args.preco_min && v.price < args.preco_min) return false;
+    if (args.ano_min && v.year < args.ano_min) return false;
+    return true;
+  }).sort((a: any, b: any) => b.price - a.price).slice(0, 5); // mais próximos do teto primeiro
+
+  if (alt.length === 0) return "Não há veículos nessa faixa de preço/ano. Sugira ampliar o orçamento. NÃO invente veículos.";
+
+  recordShown(sessionId, alt.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
+  return `SEM MATCH EXATO para o pedido do cliente. NÃO diga apenas "não tenho". Ofereça estas ALTERNATIVAS na mesma faixa de preço, deixando claro que não achou exatamente o que ele pediu, mas tem essas opções — e destaque o que faz sentido pra ele (espaço/família, economia, câmbio, opcionais). Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
 }
 
 async function execApresentar(sessionId: string, args: any, images: AgentImage[]): Promise<string> {
@@ -215,7 +282,8 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   // Fotos: até 5
   const raw: any[] = Array.isArray(v.images) ? v.images : (v.imageUrl ? [v.imageUrl] : []);
   const urls = raw.map((x: any) => (typeof x === "string" ? x : x?.IMAGE_URL || x?.url)).filter((u: any) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 5);
-  const caption = `${title}\nAno: ${v.year} · ${v.mileage ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} · ${v.transmission || ""}\nPreço: ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)}${v.url ? `\n${v.url}` : ""}`;
+  const feats = Array.isArray(v.features) && v.features.length ? `\nOpcionais: ${v.features.slice(0, 6).join(", ")}` : "";
+  const caption = `${title}\nAno: ${v.year} · ${v.mileage ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} · ${norm(v.transmission).includes("auto") ? "automático" : "manual"} · ${v.color || ""}\nPreço: ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)}${feats}${v.url ? `\n${v.url}` : ""}`;
   if (urls.length === 0) return `Veículo ${title} encontrado, mas sem foto no cadastro. Dados: ${caption}`;
   images.push({ url: urls[0], caption });
   for (const u of urls.slice(1)) images.push({ url: u, caption: "" });
