@@ -10,11 +10,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser, Smartphone, Inbox, TrendingUp, Trophy, Building2, GraduationCap } from "lucide-react";
+import { MessageSquare, LayoutDashboard, Car, Users, LogOut, Bot, Loader2, Settings, UsersRound, Brain, Megaphone, Send, Key, Sun, Moon, GitBranch, Power, BotOff, Cpu, UserCheck, LifeBuoy, BookUser, Smartphone, Inbox, TrendingUp, Trophy, Building2, GraduationCap, ShieldCheck } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 type NavItem = {
@@ -32,6 +32,7 @@ const navItems: NavItem[] = [
   { icon: TrendingUp, label: "Funil", path: "/funnel" },
   { icon: Users, label: "Leads", path: "/leads" },
   { icon: UsersRound, label: "Equipe", path: "/team", allowedCargos: ["admin", "gerente"] },
+  { icon: ShieldCheck, label: "Acessos", path: "/acessos", allowedCargos: ["admin", "gerente"] },
   { icon: Megaphone, label: "Meta Ads", path: "/meta-ads", allowedCargos: ["admin", "gerente"] },
   { icon: Send, label: "Campanhas", path: "/campaigns", allowedCargos: ["admin", "gerente"] },
   { icon: LifeBuoy, label: "Resgate", path: "/rescue", allowedCargos: ["admin", "gerente"] },
@@ -108,6 +109,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     staleTime: 60000,
   });
   const isAdmin = !isTeamMember || teamMember?.cargo === "admin";
+
+  // Heartbeat de presença: mantém a sessão "online" na auditoria de acesso.
+  const heartbeat = trpc.accessAudit.heartbeat.useMutation();
+  useEffect(() => {
+    if (!isTeamMember) return;
+    const ping = () => { if (document.visibilityState === "visible") heartbeat.mutate(); };
+    ping();
+    const id = setInterval(ping, 60_000); // a cada 1 min
+    document.addEventListener("visibilitychange", ping);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", ping); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTeamMember]);
 
   if (loading) {
     return (

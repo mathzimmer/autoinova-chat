@@ -12,6 +12,7 @@ import Leads from "./pages/Leads";
 import Funnel from "./pages/Funnel";
 import Settings from "./pages/Settings";
 import Team from "./pages/Team";
+import Acessos from "./pages/Acessos";
 import TeamLogin from "./pages/TeamLogin";
 import AppLayout from "./components/AppLayout";
 import AiAudit from "./pages/AiAudit";
@@ -75,6 +76,11 @@ function Router() {
       <Route path={"/team"}>
         <AppLayout>
           <Team />
+        </AppLayout>
+      </Route>
+      <Route path={"/acessos"}>
+        <AppLayout>
+          <Acessos />
         </AppLayout>
       </Route>
       <Route path={"/settings"}>

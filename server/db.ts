@@ -36,6 +36,7 @@ import {
   evolutionInstances, InsertEvolutionInstance,
   evolutionConversations, InsertEvolutionConversation,
   evolutionMessages, InsertEvolutionMessage,
+  loginSessions, InsertLoginSession,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -3209,4 +3210,86 @@ export async function createEvolutionMessage(data: Omit<InsertEvolutionMessage, 
   }
   const result = await db.insert(evolutionMessages).values(data).returning({ id: evolutionMessages.id });
   return result[0].id;
+}
+
+// ─── Login Sessions (auditoria de acesso) ─────────────────────────
+
+/** Minutos sem heartbeat para considerar a pessoa offline. */
+export const ONLINE_WINDOW_MIN = 3;
+
+/** Abre uma sessão de login e retorna o id. Fecha sessões antigas abertas do membro. */
+export async function createLoginSession(data: {
+  teamMemberId: number;
+  memberName?: string | null;
+  memberEmail?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+}): Promise<number | null> {
+  const db = await getDb();
+  if (!db) return null;
+  // Fecha qualquer sessão anterior ainda aberta do mesmo membro (novo login).
+  await db.update(loginSessions)
+    .set({ logoutAt: new Date(), endReason: "novo_login" })
+    .where(and(eq(loginSessions.teamMemberId, data.teamMemberId), isNull(loginSessions.logoutAt)))
+    .execute();
+  const now = new Date();
+  const result = await db.insert(loginSessions).values({
+    teamMemberId: data.teamMemberId,
+    memberName: data.memberName ?? null,
+    memberEmail: data.memberEmail ?? null,
+    ip: (data.ip ?? null)?.slice(0, 64) ?? null,
+    userAgent: (data.userAgent ?? null)?.slice(0, 400) ?? null,
+    loginAt: now,
+    lastSeenAt: now,
+  } as InsertLoginSession).returning({ id: loginSessions.id });
+  return result[0]?.id ?? null;
+}
+
+/** Heartbeat: marca atividade. Usa o id da sessão se informado, senão a sessão aberta mais recente do membro. */
+export async function touchLoginSession(teamMemberId: number, sessionId?: number | null): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  if (sessionId) {
+    await db.update(loginSessions).set({ lastSeenAt: new Date() })
+      .where(and(eq(loginSessions.id, sessionId), isNull(loginSessions.logoutAt))).execute();
+    return;
+  }
+  const open = await db.select({ id: loginSessions.id }).from(loginSessions)
+    .where(and(eq(loginSessions.teamMemberId, teamMemberId), isNull(loginSessions.logoutAt)))
+    .orderBy(desc(loginSessions.loginAt)).limit(1);
+  if (open[0]) {
+    await db.update(loginSessions).set({ lastSeenAt: new Date() }).where(eq(loginSessions.id, open[0].id)).execute();
+  }
+}
+
+/** Fecha a sessão (logout). Por id, ou a sessão aberta mais recente do membro. */
+export async function closeLoginSession(teamMemberId: number, sessionId?: number | null, reason = "logout"): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const now = new Date();
+  if (sessionId) {
+    await db.update(loginSessions).set({ logoutAt: now, endReason: reason })
+      .where(and(eq(loginSessions.id, sessionId), isNull(loginSessions.logoutAt))).execute();
+    return;
+  }
+  await db.update(loginSessions).set({ logoutAt: now, endReason: reason })
+    .where(and(eq(loginSessions.teamMemberId, teamMemberId), isNull(loginSessions.logoutAt))).execute();
+}
+
+/** Sessões abertas com heartbeat recente = pessoas online agora. */
+export async function listOnlineSessions() {
+  const db = await getDb();
+  if (!db) return [];
+  const cutoff = new Date(Date.now() - ONLINE_WINDOW_MIN * 60 * 1000);
+  return db.select().from(loginSessions)
+    .where(and(isNull(loginSessions.logoutAt), gte(loginSessions.lastSeenAt, cutoff)))
+    .orderBy(desc(loginSessions.lastSeenAt));
+}
+
+/** Histórico de sessões (mais recentes primeiro). */
+export async function listRecentLoginSessions(limit = 100) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(loginSessions)
+    .orderBy(desc(loginSessions.loginAt)).limit(limit);
 }

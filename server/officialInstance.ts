@@ -100,6 +100,87 @@ export async function handleOfficialMessage(body: any, phoneNumberId: string): P
   return true;
 }
 
+/**
+ * COEXISTÊNCIA (cadastro incorporado): mensagens que o DONO envia pelo app
+ * WhatsApp Business chegam no webhook num campo separado — `smb_message_echoes`
+ * (value.message_echoes[]), NÃO em value.messages. Aqui espelhamos esses "ecos"
+ * como mensagens de SAÍDA (senderType agent) na conversa com o cliente, para
+ * aparecerem no inbox. NÃO dispara IA (é humano falando) e faz dedupe pelo wamid.
+ */
+export async function handleOfficialEcho(body: any, phoneNumberId: string): Promise<boolean> {
+  const value = body?.entry?.[0]?.changes?.[0]?.value;
+  const echoes: any[] = value?.message_echoes || [];
+  if (!Array.isArray(echoes) || echoes.length === 0) return false;
+
+  // Token do próprio número (coexistência costuma ser app separado) p/ baixar mídia.
+  let numToken: string | undefined;
+  try {
+    const { getWhatsappNumberByPhoneNumberId } = await import("./whatsappMultiNumber");
+    const rec = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
+    numToken = (rec as any)?.accessToken || undefined;
+  } catch { /* usa token padrão */ }
+
+  for (const echo of echoes) {
+    try {
+      // `to` = cliente (a conversa é com ele). Ignora edições/revogações por ora.
+      const customer = echo?.to;
+      if (!customer) continue;
+      const whatsappMessageId = echo?.id;
+
+      let content = "";
+      let messageType: "text" | "audio" | "image" | "document" | "video" = "text";
+      let mediaUrl: string | undefined;
+
+      if (echo.type === "text") {
+        content = echo.text?.body || "";
+      } else if (echo.type === "image") {
+        messageType = "image";
+        const mediaId = echo.image?.id;
+        if (mediaId) { const s3 = await processWhatsAppMedia(mediaId, "image", echo.image?.mime_type, numToken); mediaUrl = s3?.url; }
+        content = echo.image?.caption || "[Imagem enviada pelo app]";
+      } else if (echo.type === "video") {
+        messageType = "video";
+        const mediaId = echo.video?.id;
+        if (mediaId) { const s3 = await processWhatsAppMedia(mediaId, "video" as any, echo.video?.mime_type, numToken); mediaUrl = s3?.url; }
+        content = echo.video?.caption || "[Vídeo enviado pelo app]";
+      } else if (echo.type === "audio") {
+        messageType = "audio";
+        const mediaId = echo.audio?.id;
+        if (mediaId) { const s3 = await processWhatsAppMedia(mediaId, "audio", echo.audio?.mime_type, numToken); mediaUrl = s3?.url || (await getMediaUrl(mediaId, numToken)) || undefined; }
+        content = "[Áudio enviado pelo app]";
+      } else if (echo.type === "document") {
+        messageType = "document";
+        const mediaId = echo.document?.id;
+        if (mediaId) { const s3 = await processWhatsAppMedia(mediaId, "document", echo.document?.mime_type, numToken); mediaUrl = s3?.url; }
+        content = `[Documento: ${echo.document?.filename || "arquivo"}]`;
+      } else if (echo.type === "sticker") {
+        messageType = "image";
+        const mediaId = echo.sticker?.id;
+        if (mediaId) { const s3 = await processWhatsAppMedia(mediaId, "image", echo.sticker?.mime_type, numToken); mediaUrl = s3?.url; }
+        content = "[Figurinha]";
+      } else {
+        content = `[${echo.type || "mensagem"} enviado pelo app]`;
+      }
+
+      const ts = echo?.timestamp ? Number(echo.timestamp) * 1000 : Date.now();
+      const result = await mirrorOfficialMessage({
+        phoneNumberId, phone: customer, contactName: undefined,
+        content, messageType, direction: "outbound",
+        senderName: "Você (WhatsApp Business)",
+        mediaUrl, externalId: whatsappMessageId, timestamp: ts,
+      } as any);
+
+      if (result) {
+        emitNewMessage(result.conversationId, result.message);
+        emitConversationUpdate(result.conversationId, {});
+      }
+    } catch (err) {
+      console.error("[Official] erro ao espelhar echo de coexistência:", err);
+    }
+  }
+  return true;
+}
+
 /** IA + fluxos para uma conversa de número oficial, respondendo pelo token do número. */
 export async function runOfficialAI(conversationId: number, customerMessage: string, phoneNumberId: string): Promise<void> {
   const conv = await getConversationById(conversationId);

@@ -233,6 +233,13 @@ async function startServer() {
                 return res.sendStatus(200);
               }
             }
+            // COEXISTÊNCIA: mensagens enviadas pelo app WhatsApp Business chegam
+            // como "echoes" (campo smb_message_echoes) — espelha como saída no inbox.
+            if (Array.isArray(body?.entry?.[0]?.changes?.[0]?.value?.message_echoes)) {
+              const { handleOfficialEcho } = await import("../officialInstance");
+              await handleOfficialEcho(body, phoneNumberId);
+              return res.sendStatus(200);
+            }
             const { handleOfficialMessage } = await import("../officialInstance");
             // status updates ainda seguem o fluxo padrão abaixo; mensagens vão para o handler oficial
             if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
@@ -243,6 +250,15 @@ async function startServer() {
         } catch (e) {
           console.error("[Official] roteamento falhou:", e);
         }
+      }
+
+      // COEXISTÊNCIA (número não registrado / Matriz): echoes do app WhatsApp Business.
+      if (Array.isArray(body?.entry?.[0]?.changes?.[0]?.value?.message_echoes) && phoneNumberId) {
+        try {
+          const { handleOfficialEcho } = await import("../officialInstance");
+          await handleOfficialEcho(body, phoneNumberId);
+        } catch (e) { console.error("[Webhook] echo coexistência (fallback) falhou:", e); }
+        return res.sendStatus(200);
       }
 
       // Process incoming messages from WhatsApp Cloud API

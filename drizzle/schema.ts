@@ -340,6 +340,28 @@ export type TeamMember = typeof teamMembers.$inferSelect;
 export type InsertTeamMember = typeof teamMembers.$inferInsert;
 
 /**
+ * Login Sessions - auditoria de acesso.
+ * Uma linha por sessão de login de um membro da equipe. "Online agora" =
+ * logoutAt nulo e lastSeenAt recente (heartbeat do client).
+ */
+export const loginSessions = pgTable("loginSessions", {
+  id:           serial("id").primaryKey(),
+  teamMemberId: integer("teamMemberId").notNull(),
+  memberName:   varchar("memberName", { length: 255 }),
+  memberEmail:  varchar("memberEmail", { length: 320 }),
+  loginAt:      timestamp("loginAt").defaultNow().notNull(),
+  lastSeenAt:   timestamp("lastSeenAt").defaultNow().notNull(),
+  logoutAt:     timestamp("logoutAt"),
+  endReason:    varchar("endReason", { length: 30 }),
+  ip:           varchar("ip", { length: 64 }),
+  userAgent:    varchar("userAgent", { length: 400 }),
+  createdAt:    timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LoginSession = typeof loginSessions.$inferSelect;
+export type InsertLoginSession = typeof loginSessions.$inferInsert;
+
+/**
  * Conversation Assignments - tracks who is assigned to each conversation.
  */
 export const conversationAssignments = pgTable("conversationAssignments", {

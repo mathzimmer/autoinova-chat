@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, AUDIT_COOKIE_NAME } from "@shared/const";
 import { normalizePhone, phoneVariations } from "./phoneNormalize";
 import { resolveAgentForConversation } from "./agentResolver";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -28,6 +28,7 @@ import {
   listSellers, listActiveSellers, getSellerById, createSeller, updateSeller, deleteSeller,
   getNextSellerInQueue, createSellerAssignment, listSellerAssignments, updateSellerAssignment,
   getStoreLocationByVehicleId, getDistinctStoreLocations,
+  closeLoginSession,
 } from "./db";
 import { processAIMessage, DEFAULT_SYSTEM_PROMPT, DEFAULT_PERSONALITY_PROMPT, CORE_PROMPT, COMMERCIAL_PROMPT, getPersonalityPrompt, getCorePrompt, getCommercialPrompt } from "./ai";
 import { emitNewMessage, emitConversationUpdate, emitTypingIndicator } from "./socket";
@@ -148,6 +149,7 @@ import { scheduledMessageRouter } from "./routers/scheduledMessage";
 import { capiRouter } from "./routers/capi";
 import { teamRouter } from "./routers/team";
 import { teamAuthRouter } from "./routers/teamAuth";
+import { accessAuditRouter } from "./routers/accessAudit";
 import { notificationRouter } from "./routers/notification";
 import { activityRouter } from "./routers/activity";
 import { aiDecisionRouter } from "./routers/aiDecision";
@@ -751,9 +753,23 @@ export const appRouter = router({
   automationAi: automationAiRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
+      // Auditoria: fecha a sessão de login antes de limpar os cookies.
+      try {
+        const { parse: parseCookie } = await import("cookie");
+        const cookies = parseCookie(ctx.req?.headers?.cookie || "");
+        const auditSid = Number(cookies[AUDIT_COOKIE_NAME]);
+        const openId = ctx.user?.openId || "";
+        const memberId = openId.startsWith("team_member_") ? parseInt(openId.replace("team_member_", "")) : NaN;
+        if (Number.isFinite(memberId) || Number.isFinite(auditSid)) {
+          await closeLoginSession(Number.isFinite(memberId) ? memberId : 0, Number.isFinite(auditSid) ? auditSid : undefined, "logout");
+        }
+      } catch (e) {
+        console.error("[auth.logout] falha ao fechar sessão de auditoria:", e);
+      }
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      ctx.res.clearCookie(AUDIT_COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
   }),
@@ -766,6 +782,7 @@ export const appRouter = router({
   settings: settingsRouter,
   team: teamRouter,
   teamAuth: teamAuthRouter,
+  accessAudit: accessAuditRouter,
   notification: notificationRouter,
   activity: activityRouter,
   aiDecision: aiDecisionRouter,
