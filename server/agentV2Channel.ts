@@ -7,7 +7,7 @@
  *
  * Use só num NÚMERO DE TESTE — não afeta os outros números nem conversas existentes.
  */
-import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId, upsertLead, assignSellerRoundRobin } from "./db";
+import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId, upsertLead, assignSellerRoundRobin, updateConversation } from "./db";
 import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber } from "./whatsappMultiNumber";
 import { sendSellerNotification, getMediaUrl } from "./whatsapp";
 import { processWhatsAppMedia } from "./media";
@@ -179,6 +179,22 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
           storeLocation: assigned.storeLocation,
         });
         console.log(`[AgentV2Channel] Lead atribuído a ${assigned.seller.name} (${assigned.storeLocation}) e notificado.`);
+
+        // Marca visível na conversa: quando e para quem foi transferido.
+        try {
+          const when = new Date();
+          const hora = when.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          const nota = `🔁 Lead transferido para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`;
+          const sysMsg = await createMessage({
+            conversationId, content: nota,
+            senderType: "internal", senderName: "Sistema", messageType: "system",
+          } as any);
+          emitNewMessage(conversationId, sysMsg);
+          const meta = ((conv as any).metadata as Record<string, unknown>) || {};
+          await updateConversation(conversationId, {
+            metadata: { ...meta, handedOffAt: when.toISOString(), assignedSellerId: assigned.seller.id, assignedSellerName: assigned.seller.name, assignedStore: assigned.storeLocation },
+          } as any);
+        } catch (e) { console.error("[AgentV2Channel] marca de transferência falhou:", e); }
       } else {
         console.warn("[AgentV2Channel] Sem vendedor ativo pra loja do veículo — lead marcado, sem notificação.");
       }

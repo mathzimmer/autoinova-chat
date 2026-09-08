@@ -109,6 +109,11 @@ export default function Sellers() {
     onError: (err) => toast.error("Erro ao enviar foto: " + err.message),
   });
 
+  const updateAssignmentMutation = trpc.seller.updateAssignment.useMutation({
+    onSuccess: () => { assignmentsQuery.refetch(); toast.success("Status atualizado"); },
+    onError: (err) => toast.error("Erro: " + err.message),
+  });
+
   // Stats
   const sellers = sellersQuery.data || [];
   const stores = storesQuery.data || [];
@@ -421,6 +426,79 @@ export default function Sellers() {
                 </TableBody>
               </Table>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Leads transferidos */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">Leads transferidos</CardTitle>
+            <p className="text-sm text-muted-foreground">Quem foi transferido, para qual vendedor, quando — e o retorno.</p>
+          </CardHeader>
+          <CardContent>
+            {(() => {
+              const nameById = new Map(sellers.map((s) => [s.id, s.name] as const));
+              const rows = assignments
+                .filter((a: any) => filterStore === "all" || a.storeLocation === filterStore)
+                .slice()
+                .sort((a: any, b: any) => new Date(b.assignedAt).getTime() - new Date(a.assignedAt).getTime());
+              const fmt = (d: any) => d ? new Date(d).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—";
+              const statusLabel: Record<string, string> = { pending: "Pendente", contacted: "Contatado", completed: "Concluído", expired: "Expirado" };
+              const statusClass: Record<string, string> = { pending: "bg-amber-500", contacted: "bg-blue-500", completed: "bg-emerald-500", expired: "bg-muted-foreground" };
+              if (rows.length === 0) {
+                return <div className="text-center py-10 text-muted-foreground text-sm">Nenhum lead transferido ainda.</div>;
+              }
+              return (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Cliente</TableHead>
+                        <TableHead>Vendedor</TableHead>
+                        <TableHead>Loja</TableHead>
+                        <TableHead>Transferido em</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Ação</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((a: any) => (
+                        <TableRow key={a.id}>
+                          <TableCell>
+                            <div className="font-medium">{a.customerName || "Cliente"}</div>
+                            <div className="text-xs text-muted-foreground">{a.customerPhone || "—"}</div>
+                          </TableCell>
+                          <TableCell>{nameById.get(a.sellerId) || `#${a.sellerId}`}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-xs"><Store className="h-3 w-3 mr-1" />{a.storeLocation}</Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-sm">{fmt(a.assignedAt)}</TableCell>
+                          <TableCell>
+                            <Badge className={`${statusClass[a.status] || "bg-muted"} hover:${statusClass[a.status] || "bg-muted"} text-white`}>
+                              {statusLabel[a.status] || a.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Select
+                              value={a.status}
+                              onValueChange={(v) => updateAssignmentMutation.mutate({ id: a.id, status: v as any })}
+                            >
+                              <SelectTrigger className="w-[140px] h-8 ml-auto"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="pending">Pendente</SelectItem>
+                                <SelectItem value="contacted">Contatado</SelectItem>
+                                <SelectItem value="completed">Concluído</SelectItem>
+                                <SelectItem value="expired">Expirado</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
 
