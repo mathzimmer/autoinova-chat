@@ -8,7 +8,7 @@
  * Use só num NÚMERO DE TESTE — não afeta os outros números nem conversas existentes.
  */
 import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId, upsertLead, assignSellerRoundRobin, updateConversation } from "./db";
-import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber } from "./whatsappMultiNumber";
+import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber, sendTypingIndicatorFromNumber } from "./whatsappMultiNumber";
 import { sendSellerNotification, getMediaUrl } from "./whatsapp";
 import { processWhatsAppMedia } from "./media";
 import { transcribeAudio } from "./_core/voiceTranscription";
@@ -110,6 +110,11 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
   }
   const batch = ordered.slice(lastBotIdx + 1).filter((m: any) => m.senderType === "customer");
   if (batch.length === 0) return; // nada novo a responder
+
+  // "Digitando…" pro cliente enquanto o agente pensa (some ao enviar a 1ª msg
+  // ou após 25s). Usa o id da última mensagem recebida do cliente.
+  const lastExternalId = [...batch].reverse().find((m: any) => m.externalId)?.externalId;
+  if (lastExternalId) sendTypingIndicatorFromNumber(phoneNumberId, lastExternalId).catch(() => {});
 
   // Junta o batch numa "mensagem atual" (várias fotos viram uma coisa só).
   const imgs = batch.filter((m: any) => m.messageType === "image").length;

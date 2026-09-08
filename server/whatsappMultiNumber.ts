@@ -297,6 +297,29 @@ export async function markAsReadFromNumber(
   }
 }
 
+/**
+ * Mostra os "três pontinhos" (digitando…) pro cliente na API oficial.
+ * Precisa do id da mensagem RECEBIDA. Dura até 25s ou até você responder — o que
+ * vier primeiro. Também marca a mensagem como lida. Não-crítico: ignora erros
+ * (ex.: números que ainda não têm o recurso liberado).
+ */
+export async function sendTypingIndicatorFromNumber(
+  phoneNumberId: string,
+  messageId: string
+): Promise<void> {
+  const numRecord = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
+  const token = numRecord ? getTokenForNumber(numRecord) : getGlobalToken();
+  try {
+    await axios.post(
+      `${WHATSAPP_API_URL}/${phoneNumberId}/messages`,
+      { messaging_product: "whatsapp", status: "read", message_id: messageId, typing_indicator: { type: "text" } },
+      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } }
+    );
+  } catch {
+    // Não-crítico — ignora se o número não suportar o indicador de digitação.
+  }
+}
+
 /** Envia um objeto interactive (Meta Cloud API) pelo token de um número. */
 async function sendInteractiveFromNumber(
   phoneNumberId: string,

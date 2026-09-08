@@ -684,14 +684,23 @@ export async function runAgentV2Turn(input: {
 
   // Seleção determinística sobre a última lista ("1", "o azul", "a 2012", "automático"...).
   const selectedId = resolveSelection(input.message, s.lastList);
+  // GUARDA ANTI-SEQUESTRO: se o cliente JÁ escolheu um carro e a mensagem fala da
+  // TROCA (ex: "um gol 2014 56000km"), um ano solto NÃO deve trocar o veículo de
+  // interesse. Só tratamos como (re)seleção se ainda não há interesse, OU se a
+  // mensagem é curta e sem contexto de troca.
+  const jaTemInteresse = !!(s.lead && s.lead.veiculoId);
+  const contextoTroca = /\btroca|dou\s+de\s+entrada|meu\s+carro|tenho\s+um|\bkm\b|\bmil\b|rodad|entrada/i.test(input.message);
+  const msgTokens = input.message.trim().split(/\s+/).filter(Boolean).length;
+  const tratarComoSelecao = selectedId != null && (!jaTemInteresse || (msgTokens <= 3 && !contextoTroca));
+
   let selBlock = "";
-  if (selectedId != null) {
+  if (tratarComoSelecao) {
     const it = (s.lastList || []).find((x) => x.id === selectedId);
     selBlock = `\n\n⚠️ SELEÇÃO DETECTADA: o cliente se refere ao veículo [ID:${selectedId}]${it ? ` (${it.title} ${it.year || ""} ${it.color || ""})`.trim() : ""} da última lista. Para apresentar/confirmar/mandar foto, use veiculo_id: ${selectedId}. NUNCA use outro id.`;
   }
 
-  // Auto-captura: seleção de carro já vira interesse no funil.
-  if (selectedId != null) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId; }
+  // Auto-captura: seleção de carro já vira interesse no funil (respeitando a guarda).
+  if (tratarComoSelecao) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId!; }
 
   // Funil guiado: estado + próximo passo obrigatório (a "trilha" que garante a ordem).
   const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead, s.shown) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
@@ -776,7 +785,12 @@ export async function runAgentV2Turn(input: {
   // REDE DE SEGURANÇA: se prometeu transferir/chamar o vendedor mas NÃO chamou a
   // ferramenta neste turno, força a transferência agora (senão o lead se perde).
   const prometeuTransferir = /(vou|irei|já vou|vou já)\s+(transferir|chamar|encaminhar|passar)|chamar (o|um) vendedor|passar (pro|para o) vendedor|encaminhar (seu|sua|suas|para)/i.test(reply);
-  if (!sess(input.sessionId).handedOff && prometeuTransferir) {
+  // Também pega ENCERRAMENTOS que afirmam ter agendado/encaminhado sem chamar a
+  // ferramenta (ex: "já agendei a visita, o vendedor vai lhe atender"). Só força
+  // se o checklist estiver completo, pra não transferir cedo demais.
+  const sinalEncerramento = /agend(ei|ada|ado|amos|arei)|(vendedor|atendente).{0,20}(vai|irá|entrará|entra|te|lhe).{0,15}(atender|contato|falar|chamar)|registrei seu interesse|encaminh(ei|ado|arei)|em breve/i.test(reply);
+  const deveForcar = prometeuTransferir || (sinalEncerramento && leadCompleto(sess(input.sessionId).lead));
+  if (!sess(input.sessionId).handedOff && deveForcar) {
     messages.push({ role: "assistant", content: reply });
     messages.push({ role: "user", content: "[SISTEMA: você indicou que vai transferir/chamar o vendedor mas NÃO chamou a ferramenta. Chame transferir_para_vendedor AGORA com um resumo completo (interesse, troca, pagamento/financiamento com CPF/nascimento/parcela se houver, pendências). Não escreva 'um momento'.]" });
     try {
@@ -802,6 +816,17 @@ export async function runAgentV2Turn(input: {
         reply = (fecho?.content || reply).trim();
       }
     } catch { /* mantém a resposta original */ }
+
+    // ÚLTIMO RECURSO: o modelo ainda não chamou a ferramenta, mas prometeu/agendou
+    // e o lead está completo — registra o handoff mesmo assim pra não perder o lead.
+    const st = sess(input.sessionId);
+    if (!st.handedOff && leadCompleto(st.lead)) {
+      st.handedOff = true;
+      const base = resumoLead(st.lead, st.shown) || "(sem dados)";
+      const visitaTag = /\b(agend|visita|test[\s-]?drive)\b/i.test(reply) ? " | 📅 VISITA AGENDADA" : "";
+      handoffInfo = { motivo: /agend|visita/i.test(reply) ? "agendamento" : "dados_completos", resumo: `${base}${visitaTag}` };
+      toolTrace.push({ name: "transferir_para_vendedor", args: {}, resultSummary: "handoff forçado (último recurso — modelo não chamou a ferramenta)" });
+    }
   }
 
   return { reply, messages: splitMessages(reply), images, toolTrace, shownVehicles: sess(input.sessionId).shown, handoff: handoffInfo, lead: sess(input.sessionId).lead };
