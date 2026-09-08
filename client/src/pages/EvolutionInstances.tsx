@@ -592,6 +592,9 @@ export default function EvolutionInstances() {
                       {inst.mode === "meta_agent" && (
                         <Badge variant="outline" className="text-[10px] border-purple-500/40 text-purple-500">Meta Agent</Badge>
                       )}
+                      {inst.mode === "agent_v2" && (
+                        <Badge variant="outline" className="text-[10px] border-blue-500/40 text-blue-500">Agente v2 (teste)</Badge>
+                      )}
                     </div>
                   </div>
                 </CardHeader>
@@ -620,6 +623,15 @@ export default function EvolutionInstances() {
                       onClick={() => oModeMutation.mutate({ id: inst.id, mode: inst.mode === "meta_agent" ? "normal" : "meta_agent" })}
                     >
                       {inst.mode === "meta_agent" ? "Modo normal" : "Meta Agent"}
+                    </Button>
+                    <Button
+                      size="sm" variant="outline"
+                      className={inst.mode === "agent_v2" ? "border-blue-500/50 text-blue-500" : ""}
+                      disabled={oModeMutation.isPending}
+                      title={inst.mode === "agent_v2" ? "Voltar ao modo normal" : "Marcar como Agente v2 (o agente novo responde este número — use só p/ TESTE)"}
+                      onClick={() => oModeMutation.mutate({ id: inst.id, mode: inst.mode === "agent_v2" ? "normal" : "agent_v2" })}
+                    >
+                      {inst.mode === "agent_v2" ? "Desligar v2" : "Agente v2 (teste)"}
                     </Button>
                     <Button
                       size="sm" variant="outline" className="text-red-500 hover:text-red-600"

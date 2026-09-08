@@ -28,7 +28,7 @@ export const whatsappNumberRouter = router({
   // Marca/desmarca o número como gerido pelo Meta Business Agent
   // (mode = meta_agent → o CRM só observa + trata handoff, não responde pela IA).
   setMode: protectedProcedure
-    .input(z.object({ id: z.number(), mode: z.enum(["normal", "meta_agent"]) }))
+    .input(z.object({ id: z.number(), mode: z.enum(["normal", "meta_agent", "agent_v2"]) }))
     .mutation(async ({ ctx, input }) => {
       const member = await currentTeamMember(ctx);
       if (member && member.cargo === "vendedor") throw new Error("Apenas administradores");
@@ -66,7 +66,7 @@ export const whatsappNumberRouter = router({
       phoneDisplay: z.string().optional(),
       accessToken: z.string().optional(),
       wabaId: z.string().optional(),
-      mode: z.enum(["normal", "meta_agent"]).optional(),
+      mode: z.enum(["normal", "meta_agent", "agent_v2"]).optional(),
     }))
     .mutation(async ({ input }) => {
       const { createWhatsappNumber } = await import("../whatsappMultiNumber");

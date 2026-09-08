@@ -225,6 +225,14 @@ async function startServer() {
               await handleMetaAgentWebhook(body, phoneNumberId);
               return res.sendStatus(200);
             }
+            // Número de TESTE do agente novo (agentV2): responde pelo runtime isolado.
+            if ((registered as any).mode === "agent_v2") {
+              if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {
+                const { handleAgentV2Message } = await import("../agentV2Channel");
+                await handleAgentV2Message(body, phoneNumberId);
+                return res.sendStatus(200);
+              }
+            }
             const { handleOfficialMessage } = await import("../officialInstance");
             // status updates ainda seguem o fluxo padrão abaixo; mensagens vão para o handler oficial
             if (body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0]) {

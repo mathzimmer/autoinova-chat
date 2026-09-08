@@ -31,7 +31,7 @@ type LeadData = {
   veiculoId?: number; veiculoInteresse?: string;
   temTroca?: boolean; trocaModelo?: string; trocaAno?: string; trocaKm?: string;
   pagamento?: "avista" | "financiado";
-  finCpf?: string; finNascimento?: string; finParcela?: string; finEntrada?: string;
+  finCpf?: string; finNascimento?: string; finParcela?: string; finEntrada?: string; finCpfRecusado?: boolean;
 };
 const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[]; lead?: LeadData }>();
 function sess(id: string) {
@@ -59,12 +59,14 @@ export const DEFAULT_RULES = `COMPORTAMENTO:
 - LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo — sem perguntar "o que você busca". Se der exatamente 1 resultado, mande a foto (apresentar_veiculo) de cara. Não consegue abrir links, então extraia o modelo do TEXTO da mensagem. Se o link NÃO tiver o nome/modelo do carro (ex: só um número), NÃO chute nem busque aleatório — pergunte simpaticamente qual carro ele viu/procura.
 - Foto: mande apresentar_veiculo ao mostrar um carro pela PRIMEIRA vez ou quando pedirem foto/"mais fotos". Ao pedir mais fotos, use o MESMO [ID:X] daquele carro (da lista "VEÍCULOS JÁ MOSTRADOS") — a ferramenta já envia várias fotos. NUNCA invente um id nem chame outro carro. Em simples confirmação de um já mostrado ("gostei", "esse"), NÃO reenvie a foto: só confirme e AVANCE (troca/pagamento/visita).
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
-- FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: (1) CPF, (2) data de nascimento, (3) valor de parcela que consegue pagar por mês (e entrada, se tiver). VALIDE: CPF tem exatamente 11 dígitos; data no formato dd/mm/aaaa. Se vier algo que claramente não é CPF/data válida, peça de novo com gentileza — NÃO transfira com dado inválido. Só transfira depois dos 3 dados válidos, e inclua todos no resumo.
+- FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: CPF, data de nascimento e valor de parcela que consegue pagar por mês (e entrada, se tiver). VALIDE: CPF tem 11 dígitos; data dd/mm/aaaa. Se o cliente NÃO quiser passar o CPF, NÃO insista nem bloqueie: registre com coletar_dado(recusou_cpf: true), diga que tudo bem (dá pra simular com CPF de um familiar, ou o vendedor resolve depois) e SIGA em frente. Nascimento e parcela ainda são necessários.
 - PARCELA ≠ PREÇO: valor "por mês"/parcela (ex: "R$1.300 por mês") é dado de FINANCIAMENTO, nunca o preço do carro. NUNCA use isso como preço na busca. Registre como parcela e siga.
+- NÃO DEDUZA PAGAMENTO: só registre a forma de pagamento (à vista ou financiado) quando o cliente DISSER claramente. Orçamento/faixa de preço ("até 100 mil") NÃO é forma de pagamento — não marque financiado por causa disso.
 - NUNCA DEAD-END: se o cliente demonstra intenção de compra/financiamento (ex: tem crédito aprovado) e você não tem o modelo exato ou na condição pedida, NÃO responda só "não temos". Mostre o carro/parecido que tem e conduza: colete os dados (troca, e no financiamento CPF/nascimento/parcela) e encaminhe pro vendedor. Sempre dê um próximo passo.
 - DADOS DO CLIENTE: ao longo da conversa, colete com naturalidade o NOME e a CIDADE do cliente (uma coisa por vez, sem interrogatório). Inclua no resumo do handoff.
 - MORA LONGE / OUTRA CIDADE: se o cliente disser que mora longe ou é de outra cidade, ofereça ATENDIMENTO ONLINE — vídeos e fotos detalhadas do veículo e simulação de financiamento à distância — e encaminhe pro vendedor dar sequência. Nunca perca o lead por causa da distância.
 - NÃO AFIRME O QUE NÃO FEZ: só diga "agendei" depois de ter loja + dia + horário E chamar transferir_para_vendedor. Nunca diga "fiz o agendamento" se ainda vai perguntar loja/dia. Descreva só ações que realmente aconteceram.
+- RECUSA DE DADOS: se o cliente recusar QUALQUER informação pedida (CPF, cidade, nome, etc.), NÃO insista nem repita o pedido. Diga que tudo bem e pergunte se ele prefere já falar direto com um vendedor. Se ele aceitar (ou pedir humano), transfira na hora com transferir_para_vendedor (motivo: pediu_humano), com o que já tem e marcando o que ficou pendente. Se for só o CPF, use também coletar_dado(recusou_cpf: true) e siga o funil.
 - Handoff: transfira UMA única vez, e só no momento REAL de conversão: agendou visita, pediu falar com humano, ou entrou em negociação de preço/condições. NÃO transfira só porque pediu "mais informações/detalhes" — responda o que puder (opcionais, dados do carro) e siga. Depois de transferir, apenas dê uma mensagem curta de encerramento; NUNCA transfira de novo nem continue fazendo perguntas de qualificação.
 - SEJA HUMANA: fale de forma natural e calorosa, variando as frases — não robótica. Use o nome do cliente se souber. NÃO repita a mesma pergunta padrão ("tem troca? como vai pagar?") a cada mensagem; pergunte no momento certo e uma coisa por vez.
 - Visita: confirme a loja, o dia e o horário e, DEPOIS de confirmar os três, CHAME transferir_para_vendedor (motivo: agendamento) com o resumo incluindo a visita (carro, dia, hora, loja, troca/pagamento). É a ferramenta que registra e avisa o vendedor — NUNCA confirme um agendamento sem chamá-la.
@@ -230,6 +232,7 @@ const TOOLS = [
           troca_modelo: { type: "string" }, troca_ano: { type: "string" }, troca_km: { type: "string" },
           pagamento: { type: "string", enum: ["avista", "financiado"] },
           cpf: { type: "string" }, data_nascimento: { type: "string" }, parcela: { type: "string" }, entrada: { type: "string" },
+          recusou_cpf: { type: "boolean", description: "true se o cliente NÃO quer passar o CPF. Registre e siga em frente — não insista nem bloqueie." },
         },
         required: [], additionalProperties: false,
       },
@@ -509,8 +512,9 @@ function execColetar(sessionId: string, args: any): string {
   if (args.data_nascimento) lead.finNascimento = String(args.data_nascimento);
   if (args.parcela) lead.finParcela = String(args.parcela);
   if (args.entrada) lead.finEntrada = String(args.entrada);
+  if (args.recusou_cpf === true) lead.finCpfRecusado = true;
   // Dedução: se veio qualquer dado de financiamento, a forma de pagamento É financiado.
-  if ((lead.finCpf || lead.finNascimento || lead.finParcela || lead.finEntrada) && lead.pagamento !== "avista") {
+  if ((lead.finCpf || lead.finNascimento || lead.finParcela || lead.finEntrada || lead.finCpfRecusado) && lead.pagamento !== "avista") {
     lead.pagamento = "financiado";
   }
   return `Dados registrados. ${nextStep(lead)}`;
@@ -524,7 +528,8 @@ function nextStep(lead: LeadData): string {
   if (lead.temTroca === undefined) return "PRÓXIMO PASSO: pergunte se o cliente tem carro na TROCA.";
   if (lead.temTroca && !lead.trocaModelo) return "PRÓXIMO PASSO: pegue os dados da TROCA (modelo, ano, km).";
   if (!lead.pagamento) return "PRÓXIMO PASSO: pergunte a forma de PAGAMENTO (à vista ou financiado).";
-  if (lead.pagamento === "financiado" && (!lead.finCpf || !lead.finNascimento || !lead.finParcela)) return "PRÓXIMO PASSO: colete os dados do FINANCIAMENTO (CPF, data de nascimento, valor de parcela).";
+  if (lead.pagamento === "financiado" && (!lead.finNascimento || !lead.finParcela)) return "PRÓXIMO PASSO: colete os dados do FINANCIAMENTO (data de nascimento e valor de parcela). Peça o CPF também, mas se o cliente NÃO quiser passar, registre recusou_cpf: true e SIGA — não insista.";
+  if (lead.pagamento === "financiado" && !lead.finCpf && !lead.finCpfRecusado) return "PRÓXIMO PASSO: peça o CPF pra simulação. Se o cliente não quiser passar, registre recusou_cpf: true e siga — não insista nem bloqueie.";
   return "CHECKLIST COMPLETO: pode agendar visita ou transferir pro vendedor com transferir_para_vendedor.";
 }
 
@@ -536,7 +541,7 @@ function leadCompleto(lead?: LeadData): boolean {
   if (lead.temTroca === undefined) return false;
   if (lead.temTroca && !lead.trocaModelo) return false;
   if (!lead.pagamento) return false;
-  if (lead.pagamento === "financiado" && (!lead.finCpf || !lead.finNascimento || !lead.finParcela)) return false;
+  if (lead.pagamento === "financiado" && (!lead.finNascimento || !lead.finParcela || (!lead.finCpf && !lead.finCpfRecusado))) return false;
   return true;
 }
 
@@ -548,7 +553,7 @@ function faltamNoLead(lead?: LeadData): string[] {
   if (lead?.temTroca === undefined) f.push("se tem troca");
   else if (lead?.temTroca && !lead?.trocaModelo) f.push("dados da troca");
   if (!lead?.pagamento) f.push("forma de pagamento");
-  else if (lead?.pagamento === "financiado" && (!lead?.finCpf || !lead?.finNascimento || !lead?.finParcela)) f.push("dados do financiamento (CPF/nascimento/parcela)");
+  else if (lead?.pagamento === "financiado" && (!lead?.finNascimento || !lead?.finParcela || (!lead?.finCpf && !lead?.finCpfRecusado))) f.push("dados do financiamento (nascimento, parcela e CPF — CPF só se o cliente aceitar)");
   return f;
 }
 
@@ -562,7 +567,7 @@ function resumoLead(lead?: LeadData): string {
   if (lead.temTroca === false) p.push("Troca: não");
   else if (lead.temTroca) p.push(`Troca: ${lead.trocaModelo || "?"} ${lead.trocaAno || ""} ${lead.trocaKm || ""}`.trim());
   if (lead.pagamento) p.push(`Pagamento: ${lead.pagamento}`);
-  if (lead.pagamento === "financiado") p.push(`Financiamento: CPF ${lead.finCpf || "?"}, nasc ${lead.finNascimento || "?"}, parcela ${lead.finParcela || "?"}${lead.finEntrada ? `, entrada ${lead.finEntrada}` : ""}`);
+  if (lead.pagamento === "financiado") p.push(`Financiamento: CPF ${lead.finCpf || (lead.finCpfRecusado ? "não informado (cliente preferiu não passar)" : "?")}, nasc ${lead.finNascimento || "?"}, parcela ${lead.finParcela || "?"}${lead.finEntrada ? `, entrada ${lead.finEntrada}` : ""}`);
   return p.join(" | ");
 }
 
