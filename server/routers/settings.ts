@@ -321,12 +321,16 @@ export const settingsRouter = router({
 
   // ── Número que envia as notificações/propostas aos vendedores ──
   getSellerNotifyNumber: protectedProcedure.query(async () => {
-    return { phoneNumberId: (await getSetting("seller_notify_phone_number_id")) || "" };
+    return {
+      phoneNumberId: (await getSetting("seller_notify_phone_number_id")) || "",
+      evolutionInstance: (await getSetting("seller_notify_evolution_instance")) || "",
+    };
   }),
   saveSellerNotifyNumber: adminProcedure
-    .input(z.object({ phoneNumberId: z.string().max(64) }))
+    .input(z.object({ phoneNumberId: z.string().max(64).optional(), evolutionInstance: z.string().max(120).optional() }))
     .mutation(async ({ input, ctx }) => {
-      await upsertSetting("seller_notify_phone_number_id", input.phoneNumberId, ctx.user.id);
+      if (input.phoneNumberId !== undefined) await upsertSetting("seller_notify_phone_number_id", input.phoneNumberId, ctx.user.id);
+      if (input.evolutionInstance !== undefined) await upsertSetting("seller_notify_evolution_instance", input.evolutionInstance, ctx.user.id);
       return { success: true };
     }),
 
