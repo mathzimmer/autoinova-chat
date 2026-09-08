@@ -108,8 +108,8 @@ async function markAsRead(messageId: string): Promise<boolean> {
  * Download media file from WhatsApp (audio, image, document)
  * Returns the media URL that can be used with transcription services
  */
-async function getMediaUrl(mediaId: string): Promise<string | null> {
-  const { accessToken } = getConfig();
+async function getMediaUrl(mediaId: string, token?: string): Promise<string | null> {
+  const accessToken = token || getConfig().accessToken;
 
   if (!accessToken) return null;
 
@@ -133,8 +133,8 @@ async function getMediaUrl(mediaId: string): Promise<string | null> {
  * Download media bytes from WhatsApp (needed for transcription)
  * WhatsApp media URLs require the access token to download
  */
-async function downloadMedia(mediaUrl: string): Promise<Buffer | null> {
-  const { accessToken } = getConfig();
+async function downloadMedia(mediaUrl: string, token?: string): Promise<Buffer | null> {
+  const accessToken = token || getConfig().accessToken;
 
   if (!accessToken) return null;
 

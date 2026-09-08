@@ -46,8 +46,11 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
     try {
       const mediaId = msg.audio?.id; const mime = msg.audio?.mime_type;
       if (mediaId) {
-        const s3 = await processWhatsAppMedia(mediaId, "audio", mime);
-        const url = s3?.url || (await getMediaUrl(mediaId)) || undefined;
+        // Baixa o áudio com o TOKEN DO PRÓPRIO NÚMERO (o env não baixa mídia de outro app).
+        const rec = await (await import("./whatsappMultiNumber")).getWhatsappNumberByPhoneNumberId(phoneNumberId);
+        const numToken = (rec as any)?.accessToken || undefined;
+        const s3 = await processWhatsAppMedia(mediaId, "audio", mime, numToken);
+        const url = s3?.url || (await getMediaUrl(mediaId, numToken)) || undefined;
         if (url) {
           const t = await transcribeAudio({ audioUrl: url, language: "pt", prompt: "Mensagem de voz de cliente sobre compra/troca/financiamento de veículos." });
           if (t && "text" in t && (t as any).text) content = (t as any).text; // usa a transcrição como texto

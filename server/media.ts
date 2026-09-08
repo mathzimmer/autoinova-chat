@@ -16,18 +16,19 @@ import { nanoid } from "nanoid";
 export async function processWhatsAppMedia(
   mediaId: string,
   type: "image" | "audio" | "document",
-  mimeType?: string
+  mimeType?: string,
+  token?: string
 ): Promise<{ url: string; key: string } | null> {
   try {
-    // Step 1: Get the download URL from WhatsApp
-    const whatsappUrl = await getMediaUrl(mediaId);
+    // Step 1: Get the download URL from WhatsApp (usa token do número, se informado)
+    const whatsappUrl = await getMediaUrl(mediaId, token);
     if (!whatsappUrl) {
       console.error(`[Media] Failed to get WhatsApp URL for media ${mediaId}`);
       return null;
     }
 
     // Step 2: Download the media bytes
-    const mediaBuffer = await downloadMedia(whatsappUrl);
+    const mediaBuffer = await downloadMedia(whatsappUrl, token);
     if (!mediaBuffer) {
       console.error(`[Media] Failed to download media from WhatsApp`);
       return null;
