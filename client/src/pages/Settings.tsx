@@ -562,6 +562,39 @@ function PresentToolCard() {
   );
 }
 
+function SellerNotifyCard() {
+  const numbers = trpc.whatsappNumber.listInstances.useQuery();
+  const cfg = trpc.settings.getSellerNotifyNumber.useQuery();
+  const [pnid, setPnid] = useState("");
+  useEffect(() => { if (cfg.data) setPnid(cfg.data.phoneNumberId || ""); }, [cfg.data]);
+  const save = trpc.settings.saveSellerNotifyNumber.useMutation({
+    onSuccess: () => { cfg.refetch(); toast.success("Número de notificação dos vendedores salvo!"); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+  const list = (numbers.data || []) as any[];
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2"><Smartphone className="h-4 w-4 text-primary" /> Número que avisa os vendedores</CardTitle>
+        <CardDescription className="mt-0.5">Qual número/instância envia o resumo do lead pro WhatsApp do vendedor no handoff. Se vazio, usa o número padrão do sistema.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex items-center gap-2">
+        <select value={pnid} onChange={(e) => setPnid(e.target.value)} className="h-9 px-2 text-sm rounded-md border border-border bg-background flex-1">
+          <option value="">Padrão do sistema</option>
+          {list.map((n) => (
+            <option key={n.phoneNumberId || n.id} value={n.phoneNumberId || ""}>
+              {n.displayName || n.phoneDisplay || n.phoneNumberId}
+            </option>
+          ))}
+        </select>
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ phoneNumberId: pnid })}>
+          <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function Settings() {
   const { data: promptData, refetch, isLoading } = trpc.settings.getPrompt.useQuery();
 
@@ -666,6 +699,9 @@ export default function Settings() {
 
         {/* Como a IA apresenta o veículo (formato da foto) */}
         <PresentToolCard />
+
+        {/* Número que envia as notificações aos vendedores */}
+        <SellerNotifyCard />
 
         {/* Copiloto do Vendedor (sugestões em tempo real) */}
         <CopilotConfigCard />

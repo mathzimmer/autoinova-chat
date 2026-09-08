@@ -7,8 +7,9 @@
  *
  * Use só num NÚMERO DE TESTE — não afeta os outros números nem conversas existentes.
  */
-import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId } from "./db";
+import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId, upsertLead, assignSellerRoundRobin } from "./db";
 import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber } from "./whatsappMultiNumber";
+import { sendSellerNotification } from "./whatsapp";
 import { runAgentV2Turn, type ChatTurn } from "./agentV2";
 import { emitNewMessage } from "./socket";
 
@@ -128,6 +129,42 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
     try { await sendTextFromNumber(phoneNumberId, phone, part); } catch (e) { console.error("[AgentV2Channel] envio texto falhou:", e); }
     const bm = await createMessage({ conversationId, content: part, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
     emitNewMessage(conversationId, bm);
-    if (i < parts.length - 1) await new Promise((r) => setTimeout(r, 600));
+    if (i < parts.length - 1) await new Promise((r) => setTimeout(r, 250));
+  }
+
+  // HANDOFF real: grava o lead, roteia pro vendedor da LOJA do carro e notifica.
+  if (out.handoff) {
+    try {
+      const L: any = out.lead || {};
+      const vehTitle = out.shownVehicles?.find((x) => x.id === L.veiculoId)?.title;
+      await upsertLead({
+        conversationId, phone,
+        name: L.nome, city: L.cidade,
+        vehicleId: L.veiculoId,
+        vehicleInterest: vehTitle || L.veiculoInteresse,
+        hasTrade: L.temTroca,
+        tradeVehicle: L.trocaModelo, tradeYear: L.trocaAno, tradeKm: L.trocaKm,
+        paymentMethod: L.pagamento, downPayment: L.finEntrada,
+        notes: out.handoff.resumo,
+        funnelStatus: "encaminhado_vendedor",
+      } as any);
+
+      const assigned = await assignSellerRoundRobin(conversationId, { phone, contactName: conv.contactName || undefined });
+      if (assigned?.seller?.phone) {
+        await sendSellerNotification(assigned.seller.phone, {
+          sellerName: assigned.seller.name,
+          customerName: conv.contactName || L.nome || "Cliente",
+          customerPhone: phone,
+          vehicleInterest: vehTitle || L.veiculoInteresse || "",
+          conversationSummary: out.handoff.resumo,
+          storeLocation: assigned.storeLocation,
+        });
+        console.log(`[AgentV2Channel] Lead atribuído a ${assigned.seller.name} (${assigned.storeLocation}) e notificado.`);
+      } else {
+        console.warn("[AgentV2Channel] Sem vendedor ativo pra loja do veículo — lead marcado, sem notificação.");
+      }
+    } catch (e) {
+      console.error("[AgentV2Channel] handoff/atribuição falhou:", e);
+    }
   }
 }

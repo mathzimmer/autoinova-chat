@@ -747,8 +747,18 @@ async function sendSellerNotification(
           .replace(/\{loja\}/gi, data.storeLocation)
       : defaultMessage;
 
-    // 1) TEXTO LIVRE primeiro (funciona dentro da janela de 24h, sem template)
-    const textResult = await sendTextMessage(sellerPhone, message);
+    // 1) TEXTO LIVRE primeiro (funciona dentro da janela de 24h, sem template).
+    //    Se houver um número escolhido pra avisar vendedores, envia por ele;
+    //    senão, usa o número padrão do sistema.
+    let textResult: { success: boolean; messageId?: string; error?: string };
+    let notifyPnid: string | null = null;
+    try { const { getSetting } = await import("./db"); notifyPnid = (await getSetting("seller_notify_phone_number_id")) || null; } catch { /* usa padrão */ }
+    if (notifyPnid) {
+      const { sendTextFromNumber } = await import("./whatsappMultiNumber");
+      textResult = await sendTextFromNumber(notifyPnid, sellerPhone, message);
+    } else {
+      textResult = await sendTextMessage(sellerPhone, message);
+    }
     if (textResult.success) {
       console.log(`[WhatsApp] Seller notification enviada por TEXTO a ${sellerPhone}, ID: ${textResult.messageId}`);
       return textResult;

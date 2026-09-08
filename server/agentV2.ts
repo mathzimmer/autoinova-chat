@@ -23,6 +23,8 @@ export interface AgentResult {
   images: AgentImage[];
   toolTrace: ToolTraceItem[];
   shownVehicles: { id: number; title: string }[];
+  handoff?: { motivo: string; resumo: string }; // preenchido quando transferir_para_vendedor rodou neste turno
+  lead?: LeadData;                                // dados coletados (pro canal gravar no CRM/atribuir vendedor)
 }
 
 /**
@@ -453,7 +455,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   if (filtered.length > 0) {
     sess(sessionId).lastList = filtered.map(toListItem);
     recordShown(sessionId, filtered.map(toShown));
-    return `RESULTADOS (${filtered.length}). Apresente cada carro em NEGRITO, um por mensagem, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho tipo "Modelo | Ano | valor", NÃO mostre opcionais nem o [ID:X] (o [ID:X] é só pra você usar nas ferramentas). Não invente dados.\n${filtered.map(fmtLine).join("\n")}`;
+    return `RESULTADOS (${filtered.length}). Liste TODOS os ${filtered.length} carros abaixo DE UMA VEZ (não mande um e espere o cliente pedir "outras"), cada um em uma mensagem, em NEGRITO, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho tipo "Modelo | Ano | valor", NÃO mostre opcionais nem o [ID:X] (o [ID:X] é só pra você usar nas ferramentas). Não invente dados. Depois pergunte qual interessou.\n${filtered.map(fmtLine).join("\n")}`;
   }
 
   // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles", mantém ORÇAMENTO e ano.
@@ -624,7 +626,7 @@ export async function runAgentV2Turn(input: {
   // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
   const coreRules = `REGRAS FIXAS:
 - Escreva como WhatsApp: curto, 1-2 emojis no máximo. Sem markdown, EXCETO *negrito* do WhatsApp (um asterisco de cada lado) — use pra destacar o carro.
-- LISTA DE CARROS: ao mostrar resultados, cada carro em NEGRITO no estilo do exemplo *Toyota Corolla | 2020 | R$ 90.000* (dados reais, SEM opcionais, SEM [ID:X], SEM cabeçalho), um por mensagem.
+- LISTA DE CARROS: mostre TODOS os resultados da busca DE UMA VEZ (não um por vez esperando "outras"), cada carro em NEGRITO no estilo *Toyota Corolla | 2020 | R$ 90.000* (dados reais, SEM opcionais, SEM [ID:X], SEM cabeçalho), um por mensagem.
 - APRESENTAR: ao identificar interesse num carro, chame apresentar_veiculo (fotos sem legenda); depois das fotos, mande um ELOGIO variado + pergunte se GOSTOU. Só depois do "gostou" siga: troca → financiamento → (se não) vendedor/visita.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
@@ -663,6 +665,7 @@ export async function runAgentV2Turn(input: {
 
   const images: AgentImage[] = [];
   const toolTrace: ToolTraceItem[] = [];
+  let handoffInfo: { motivo: string; resumo: string } | undefined;
   let assistant = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
 
   let rounds = 5;
@@ -698,7 +701,8 @@ export async function runAgentV2Turn(input: {
               st.handedOff = true;
               const resumo = resumoLead(st.lead);
               const pend = falta.length ? ` | PENDÊNCIAS (cliente pediu humano): ${falta.join(", ")}` : "";
-              result = `Handoff registrado (simulação): ${args.motivo}. RESUMO PRO VENDEDOR → ${resumo || args.resumo || "(sem dados)"}${pend}. Dê UMA mensagem curta de encerramento e NÃO transfira de novo.`;
+              handoffInfo = { motivo: args.motivo || "dados_completos", resumo: `${resumo || args.resumo || "(sem dados)"}${pend}` };
+              result = `Handoff registrado: ${args.motivo}. RESUMO PRO VENDEDOR → ${resumo || args.resumo || "(sem dados)"}${pend}. Dê UMA mensagem curta de encerramento e NÃO transfira de novo.`;
             }
           }
         }
@@ -728,7 +732,11 @@ export async function runAgentV2Turn(input: {
           if (tc.function?.name === "transferir_para_vendedor") {
             const st = sess(input.sessionId);
             let a: any = {}; try { a = JSON.parse(tc.function.arguments || "{}"); } catch { /* noop */ }
-            if (!st.handedOff) { st.handedOff = true; toolTrace.push({ name: "transferir_para_vendedor", args: a, resultSummary: "handoff forçado (rede de segurança)" }); }
+            if (!st.handedOff) {
+              st.handedOff = true;
+              handoffInfo = { motivo: a.motivo || "pediu_humano", resumo: resumoLead(st.lead) || a.resumo || "(sem dados)" };
+              toolTrace.push({ name: "transferir_para_vendedor", args: a, resultSummary: "handoff forçado (rede de segurança)" });
+            }
           }
           messages.push({ role: "tool", tool_call_id: tc.id, content: "Handoff registrado. Dê UMA mensagem curta de encerramento; um vendedor assume." } as any);
         }
@@ -738,5 +746,5 @@ export async function runAgentV2Turn(input: {
     } catch { /* mantém a resposta original */ }
   }
 
-  return { reply, messages: splitMessages(reply), images, toolTrace, shownVehicles: sess(input.sessionId).shown };
+  return { reply, messages: splitMessages(reply), images, toolTrace, shownVehicles: sess(input.sessionId).shown, handoff: handoffInfo, lead: sess(input.sessionId).lead };
 }

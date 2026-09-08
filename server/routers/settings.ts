@@ -319,6 +319,17 @@ export const settingsRouter = router({
       return { success: true };
     }),
 
+  // ── Número que envia as notificações/propostas aos vendedores ──
+  getSellerNotifyNumber: protectedProcedure.query(async () => {
+    return { phoneNumberId: (await getSetting("seller_notify_phone_number_id")) || "" };
+  }),
+  saveSellerNotifyNumber: adminProcedure
+    .input(z.object({ phoneNumberId: z.string().max(64) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("seller_notify_phone_number_id", input.phoneNumberId, ctx.user.id);
+      return { success: true };
+    }),
+
   getAll: protectedProcedure.query(async () => {
     return getAllSettings();
   }),
