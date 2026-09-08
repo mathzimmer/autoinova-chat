@@ -627,7 +627,7 @@ export async function runAgentV2Turn(input: {
   const coreRules = `REGRAS FIXAS:
 - Escreva como WhatsApp: curto, 1-2 emojis no máximo. Sem markdown, EXCETO *negrito* do WhatsApp (um asterisco de cada lado) — use pra destacar o carro.
 - LISTA DE CARROS: mostre TODOS os resultados da busca DE UMA VEZ (não um por vez esperando "outras"), cada carro em NEGRITO no estilo *Toyota Corolla | 2020 | R$ 90.000* (dados reais, SEM opcionais, SEM [ID:X], SEM cabeçalho), um por mensagem.
-- APRESENTAR: ao identificar interesse num carro, chame apresentar_veiculo (fotos sem legenda); depois das fotos, mande um ELOGIO variado + pergunte se GOSTOU. Só depois do "gostou" siga: troca → financiamento → (se não) vendedor/visita.
+- APRESENTAR: chame apresentar_veiculo SOMENTE quando o cliente ESCOLHE um carro NOVO (que ainda não foi mostrado) ou PEDE fotos. Depois das fotos, elogie (variado) + pergunte se gostou. Se o carro de interesse JÁ foi apresentado e você está no meio da coleta (nome, cidade, troca, pagamento), NÃO reapresente as fotos nem repita "gostou?" — apenas siga o PRÓXIMO PASSO do funil.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
@@ -680,9 +680,16 @@ export async function runAgentV2Turn(input: {
         else if (tc.function.name === "apresentar_veiculo") {
           // Rede de segurança: se houve seleção determinística e o modelo mandou outro id, corrige.
           if (selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
-          result = await execApresentar(input.sessionId, args, images);
-          // Auto-captura: carro apresentado vira interesse no funil.
-          if (args.veiculo_id) { const st = sess(input.sessionId); (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id); }
+          const st = sess(input.sessionId);
+          const jaEnviou = (st.photosSent || {})[Number(args.veiculo_id)] || 0;
+          const pediuFoto = /\bfotos?\b|\bimagens?\b|\bver\b|\bmostra/i.test(input.message);
+          if (jaEnviou > 0 && !pediuFoto) {
+            // Não reapresenta fotos já enviadas sem o cliente pedir (evita "se perder").
+            result = "Esse carro JÁ foi apresentado (fotos enviadas). NÃO reenvie fotos. Apenas siga o PRÓXIMO PASSO do funil (troca/pagamento/nome/cidade/visita).";
+          } else {
+            result = await execApresentar(input.sessionId, args, images);
+            if (args.veiculo_id) (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id);
+          }
         }
         else if (tc.function.name === "coletar_dado") {
           result = execColetar(input.sessionId, args);
