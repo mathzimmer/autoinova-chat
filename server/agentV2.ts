@@ -440,7 +440,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   if (filtered.length > 0) {
     sess(sessionId).lastList = filtered.map(toListItem);
     recordShown(sessionId, filtered.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
-    return `RESULTADOS (${filtered.length}). Apresente cada carro EXATAMENTE neste formato NEGRITO, SEM opcionais e SEM o [ID:X], um por mensagem (separe com "|||"): *Modelo | Ano | R$ valor*. O [ID:X] é só pra você usar nas ferramentas — NUNCA mostre ao cliente. Não invente dados.\n${filtered.map(fmtLine).join("\n")}`;
+    return `RESULTADOS (${filtered.length}). Apresente cada carro em NEGRITO, um por mensagem, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho tipo "Modelo | Ano | valor", NÃO mostre opcionais nem o [ID:X] (o [ID:X] é só pra você usar nas ferramentas). Não invente dados.\n${filtered.map(fmtLine).join("\n")}`;
   }
 
   // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles", mantém ORÇAMENTO e ano.
@@ -611,7 +611,7 @@ export async function runAgentV2Turn(input: {
   // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
   const coreRules = `REGRAS FIXAS:
 - Escreva como WhatsApp: curto, 1-2 emojis no máximo. Sem markdown, EXCETO *negrito* do WhatsApp (um asterisco de cada lado) — use pra destacar o carro.
-- LISTA DE CARROS: ao mostrar resultados, use o formato NEGRITO "*Modelo | Ano | R$ valor*" (SEM opcionais, SEM o [ID:X]), um carro por mensagem.
+- LISTA DE CARROS: ao mostrar resultados, cada carro em NEGRITO no estilo do exemplo *Toyota Corolla | 2020 | R$ 90.000* (dados reais, SEM opcionais, SEM [ID:X], SEM cabeçalho), um por mensagem.
 - APRESENTAR: ao identificar interesse num carro, chame apresentar_veiculo (fotos sem legenda); depois das fotos, mande um ELOGIO variado + pergunte se GOSTOU. Só depois do "gostou" siga: troca → financiamento → (se não) vendedor/visita.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.

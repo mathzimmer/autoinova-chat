@@ -1,18 +1,22 @@
 /**
- * Canal do AGENTE v2 no WhatsApp (número marcado como mode = "agent_v2").
+ * Canal do AGENTE v2 no WhatsApp (número com mode = "agent_v2").
  *
- * Isolado do ai.ts/flowEngine: quem responde é o runtime novo (agentV2). Recebe a
- * mensagem, monta o histórico da conversa, roda o agente e envia a resposta
- * (texto + fotos) pelo TOKEN do próprio número. Espelha tudo no inbox do CRM.
+ * Isolado do ai.ts/flowEngine. Recebe as mensagens, ESPERA um instante (debounce)
+ * pra agrupar mensagens que chegam juntas (ex: várias fotos) e responde UMA vez.
+ * Envia fotos sem legenda primeiro, depois o texto em bolhas. Espelha no inbox.
  *
  * Use só num NÚMERO DE TESTE — não afeta os outros números nem conversas existentes.
  */
-import { mirrorOfficialMessage, listMessages, createMessage, getConversationById } from "./db";
+import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId } from "./db";
 import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber } from "./whatsappMultiNumber";
 import { runAgentV2Turn, type ChatTurn } from "./agentV2";
 import { emitNewMessage } from "./socket";
 
 const BOT_NAME = "IA (v2)";
+const DEBOUNCE_MS = 6000; // agrupa mensagens que chegam nesse intervalo
+
+const timers = new Map<number, ReturnType<typeof setTimeout>>();
+const pending = new Map<number, { phoneNumberId: string; phone: string }>();
 
 export async function handleAgentV2Message(body: any, phoneNumberId: string): Promise<boolean> {
   const value = body?.entry?.[0]?.changes?.[0]?.value;
@@ -24,7 +28,6 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
   const name = contact?.profile?.name || "Cliente";
   const whatsappMessageId = msg.id;
 
-  // Parse enxuto: texto, interativo, legenda de imagem; áudio/outros viram placeholder.
   let content = "";
   let messageType: "text" | "image" | "audio" = "text";
   if (msg.type === "text") content = msg.text?.body || "";
@@ -37,9 +40,17 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
   else if (msg.type === "audio") { messageType = "audio"; content = "[mensagem de áudio]"; }
   else content = `[${msg.type}]`;
 
+  // Reply/quote do WhatsApp: o cliente respondeu a uma mensagem específica.
+  // Busca o texto citado e injeta como contexto (ex: respondeu ao carro de 2016).
+  if (msg.context?.id) {
+    try {
+      const quoted = await getMessageByExternalId(msg.context.id);
+      if (quoted?.content) content = `[Respondendo à mensagem: "${String(quoted.content).replace(/\*/g, "").slice(0, 180)}"] ${content}`.trim();
+    } catch { /* noop */ }
+  }
+
   if (whatsappMessageId) markAsReadFromNumber(phoneNumberId, whatsappMessageId).catch(() => {});
 
-  // Espelha a mensagem do cliente no inbox (cria/atualiza a conversa).
   const mirror = await mirrorOfficialMessage({
     phoneNumberId, phone, contactName: name, content,
     messageType: messageType as any, direction: "inbound",
@@ -49,45 +60,74 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
   const conversationId = mirror.conversationId;
   emitNewMessage(conversationId, mirror.message);
 
-  const conv = await getConversationById(conversationId);
-  if (!conv || !conv.phone) return true;
+  // Debounce: (re)agenda a resposta. Se chegar outra mensagem antes de disparar,
+  // o timer reinicia e tudo é respondido de uma vez só.
+  pending.set(conversationId, { phoneNumberId, phone });
+  const existing = timers.get(conversationId);
+  if (existing) clearTimeout(existing);
+  timers.set(conversationId, setTimeout(() => {
+    timers.delete(conversationId);
+    const info = pending.get(conversationId);
+    pending.delete(conversationId);
+    if (info) respondAgentV2(conversationId, info.phoneNumberId, info.phone).catch((e) => console.error("[AgentV2Channel] resposta falhou:", e));
+  }, DEBOUNCE_MS));
 
-  // Monta histórico (exclui a mensagem atual, que vai como `message`).
-  const recent = await listMessages(conversationId, 24);
+  return true;
+}
+
+/** Roda o agente UMA vez, juntando as mensagens não respondidas do cliente. */
+async function respondAgentV2(conversationId: number, phoneNumberId: string, phone: string): Promise<void> {
+  const conv = await getConversationById(conversationId);
+  if (!conv || !conv.phone) return;
+
+  const recent = await listMessages(conversationId, 40);
   const ordered = [...recent].sort((a: any, b: any) => (a.id || 0) - (b.id || 0));
+
+  // Batch = mensagens do cliente depois da última resposta do bot.
+  let lastBotIdx = -1;
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    if (ordered[i].senderType === "bot" || ordered[i].senderType === "agent") { lastBotIdx = i; break; }
+  }
+  const batch = ordered.slice(lastBotIdx + 1).filter((m: any) => m.senderType === "customer");
+  if (batch.length === 0) return; // nada novo a responder
+
+  // Junta o batch numa "mensagem atual" (várias fotos viram uma coisa só).
+  const imgs = batch.filter((m: any) => m.messageType === "image").length;
+  const textos = batch.filter((m: any) => m.messageType !== "image").map((m: any) => m.content).filter(Boolean);
+  let messageText = textos.join("\n").trim();
+  if (imgs > 0) messageText = `${messageText ? messageText + "\n" : ""}[o cliente enviou ${imgs} ${imgs === 1 ? "foto" : "fotos"}]`.trim();
+  if (!messageText) messageText = batch[batch.length - 1].content || "";
+
+  // Histórico = tudo antes do batch.
   const history: ChatTurn[] = ordered
+    .slice(0, lastBotIdx + 1)
     .filter((m: any) => m.senderType === "customer" || m.senderType === "bot")
     .map((m: any) => ({ role: m.senderType === "customer" ? "user" : "assistant", content: m.content || "" }));
-  if (history.length && history[history.length - 1].role === "user" && history[history.length - 1].content === content) {
-    history.pop();
-  }
 
   let out;
   try {
-    out = await runAgentV2Turn({ sessionId: String(conversationId), history: history.slice(-20), message: content });
+    out = await runAgentV2Turn({ sessionId: String(conversationId), history: history.slice(-20), message: messageText });
   } catch (e) {
     console.error("[AgentV2Channel] runAgentV2Turn falhou:", e);
-    return true;
+    return;
   }
 
-  // FOTOS PRIMEIRO (sem legenda), depois o TEXTO (elogio + "gostou?").
+  // FOTOS primeiro (sem legenda), depois o TEXTO em bolhas.
   for (const img of out.images || []) {
-    try { await sendMediaFromNumber(phoneNumberId, conv.phone, img.url, "image", img.caption || undefined); } catch (e) { console.error("[AgentV2Channel] envio foto falhou:", e); }
+    try { await sendMediaFromNumber(phoneNumberId, phone, img.url, "image", img.caption || undefined); } catch (e) { console.error("[AgentV2Channel] envio foto falhou:", e); }
     const im = await createMessage({ conversationId, content: "[Imagem do veículo]", senderType: "bot", senderName: BOT_NAME, messageType: "image", metadata: { mediaUrl: img.url } });
     emitNewMessage(conversationId, im);
+    await new Promise((r) => setTimeout(r, 300)); // pequeno intervalo entre fotos
   }
-  if ((out.images || []).length) await new Promise((r) => setTimeout(r, 400));
+  if ((out.images || []).length) await new Promise((r) => setTimeout(r, 1500)); // deixa as fotos assentarem antes do texto
 
-  // Cada mensagem de texto vira uma bolha separada.
   const parts = (out.messages && out.messages.length ? out.messages : (out.reply ? [out.reply] : []));
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
     if (!part) continue;
-    try { await sendTextFromNumber(phoneNumberId, conv.phone, part); } catch (e) { console.error("[AgentV2Channel] envio texto falhou:", e); }
+    try { await sendTextFromNumber(phoneNumberId, phone, part); } catch (e) { console.error("[AgentV2Channel] envio texto falhou:", e); }
     const bm = await createMessage({ conversationId, content: part, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
     emitNewMessage(conversationId, bm);
-    if (i < parts.length - 1) await new Promise((r) => setTimeout(r, 600)); // ritmo natural
+    if (i < parts.length - 1) await new Promise((r) => setTimeout(r, 600));
   }
-
-  return true;
 }
