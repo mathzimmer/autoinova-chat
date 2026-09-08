@@ -19,9 +19,16 @@ export interface AgentImage { url: string; caption: string }
 export interface ToolTraceItem { name: string; args: any; resultSummary: string }
 export interface AgentResult {
   reply: string;
+  messages: string[]; // reply dividido em várias mensagens (bolhas) separadas por "|||"
   images: AgentImage[];
   toolTrace: ToolTraceItem[];
   shownVehicles: { id: number; title: string }[];
+}
+
+/** Divide a resposta em mensagens separadas (o modelo usa "|||" entre elas). */
+function splitMessages(reply: string): string[] {
+  const parts = reply.split(/\s*\|\|\|\s*|\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts : [reply.trim()].filter(Boolean);
 }
 
 // ── Memória por sessão (só na RAM; é simulador) ──────────────────────────────
@@ -55,9 +62,11 @@ Tom: consultivo, simpático e direto — como um bom vendedor. Sem enrolação.`
 // Regras de comportamento EDITÁVEIS (mude no simulador e veja na hora).
 // As regras de segurança (anti-invenção, id) ficam fixas no código.
 export const DEFAULT_RULES = `COMPORTAMENTO:
+- VÁRIAS MENSAGENS: responda como um vendedor no WhatsApp — em 2 a 4 mensagens CURTAS, separadas por "|||" (cada trecho vira uma bolha). Uma ideia por mensagem. NUNCA mande um bloco gigante. Ex: "Excelente escolha, Matheus!|||Tenho 2 T-Cross disponíveis:|||T-Cross 2020 1.0 TSI Aut. — R$ 89.900|||Quer ver as fotos ou já simular?".
+- PERSUASÃO: seja caloroso e vendedor — use o nome do cliente, destaque diferenciais/benefícios (segurança, economia, procedência, +12 financeiras) e sempre convide pro próximo passo. Ao listar carros, padrão limpo: "Modelo Ano — R$ preço" (uma por mensagem).
 - BUSCAR JÁ: se o cliente cita um modelo, marca ou tipo (ex: "interesse na Compass", "quero um SUV"), chame buscar_veiculos IMEDIATAMENTE e mostre as opções — NÃO peça faixa de preço nem modelo antes. Só pergunte preço/uso se NÃO houver em estoque, ou depois de mostrar, pra refinar se vierem muitos resultados.
-- LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo — sem perguntar "o que você busca". Se der exatamente 1 resultado, mande a foto (apresentar_veiculo) de cara. Não consegue abrir links, então extraia o modelo do TEXTO da mensagem. Se o link NÃO tiver o nome/modelo do carro (ex: só um número), NÃO chute nem busque aleatório — pergunte simpaticamente qual carro ele viu/procura.
-- Foto: mande apresentar_veiculo ao mostrar um carro pela PRIMEIRA vez ou quando pedirem foto/"mais fotos". Ao pedir mais fotos, use o MESMO [ID:X] daquele carro (da lista "VEÍCULOS JÁ MOSTRADOS") — a ferramenta já envia várias fotos. NUNCA invente um id nem chame outro carro. Em simples confirmação de um já mostrado ("gostei", "esse"), NÃO reenvie a foto: só confirme e AVANCE (troca/pagamento/visita).
+- LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo em TEXTO — sem perguntar "o que você busca" e sem mandar foto ainda (ofereça enviar as fotos). Não consegue abrir links, então extraia o modelo do TEXTO da mensagem. Se o link NÃO tiver o nome/modelo do carro (ex: só um número), NÃO chute nem busque aleatório — pergunte simpaticamente qual carro ele viu/procura.
+- FOTO SÓ A PEDIDO: NÃO mande foto automaticamente. Apresente os carros em TEXTO e OFEREÇA enviar fotos ("quer ver as fotos?"). Só chame apresentar_veiculo quando o cliente PEDIR (foto, "ver", "mostra", "manda foto"). Ao pedir mais fotos, use o MESMO [ID:X] (da lista "VEÍCULOS JÁ MOSTRADOS") — nunca invente id nem chame outro carro. Em confirmação ("gostei", "esse"), não reenvie.
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
 - FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: CPF, data de nascimento e valor de parcela que consegue pagar por mês (e entrada, se tiver). VALIDE: CPF tem 11 dígitos; data dd/mm/aaaa. Se o cliente NÃO quiser passar o CPF, NÃO insista nem bloqueie: registre com coletar_dado(recusou_cpf: true), diga que tudo bem (dá pra simular com CPF de um familiar, ou o vendedor resolve depois) e SIGA em frente. Nascimento e parcela ainda são necessários.
 - PARCELA ≠ PREÇO: valor "por mês"/parcela (ex: "R$1.300 por mês") é dado de FINANCIAMENTO, nunca o preço do carro. NUNCA use isso como preço na busca. Registre como parcela e siga.
@@ -696,5 +705,5 @@ export async function runAgentV2Turn(input: {
     } catch { /* mantém a resposta original */ }
   }
 
-  return { reply, images, toolTrace, shownVehicles: sess(input.sessionId).shown };
+  return { reply, messages: splitMessages(reply), images, toolTrace, shownVehicles: sess(input.sessionId).shown };
 }

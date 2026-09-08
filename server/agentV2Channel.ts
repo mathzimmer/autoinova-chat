@@ -70,11 +70,15 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
     return true;
   }
 
-  // Envia a resposta pelo token do número + espelha no inbox.
-  if (out.reply) {
-    try { await sendTextFromNumber(phoneNumberId, conv.phone, out.reply); } catch (e) { console.error("[AgentV2Channel] envio texto falhou:", e); }
-    const bm = await createMessage({ conversationId, content: out.reply, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
+  // Envia CADA mensagem separada (bolhas) pelo token do número + espelha no inbox.
+  const parts = (out.messages && out.messages.length ? out.messages : (out.reply ? [out.reply] : []));
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) continue;
+    try { await sendTextFromNumber(phoneNumberId, conv.phone, part); } catch (e) { console.error("[AgentV2Channel] envio texto falhou:", e); }
+    const bm = await createMessage({ conversationId, content: part, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
     emitNewMessage(conversationId, bm);
+    if (i < parts.length - 1) await new Promise((r) => setTimeout(r, 600)); // ritmo natural
   }
   for (const img of out.images || []) {
     try { await sendMediaFromNumber(phoneNumberId, conv.phone, img.url, "image", img.caption); } catch (e) { console.error("[AgentV2Channel] envio foto falhou:", e); }

@@ -65,7 +65,14 @@ export default function AgentSandbox() {
     setMessages((prev) => [...prev, { role: "user", content: text }]);
     try {
       const res = await chat.mutateAsync({ sessionId, message: text, history });
-      setMessages((prev) => [...prev, { role: "assistant", content: res.reply, images: res.images, tools: res.toolTrace }]);
+      const parts: string[] = (res as any).messages?.length ? (res as any).messages : [res.reply];
+      const bubbles: Msg[] = parts.map((p: string, i: number) => ({
+        role: "assistant",
+        content: p,
+        images: i === parts.length - 1 ? res.images : undefined,
+        tools: i === parts.length - 1 ? res.toolTrace : undefined,
+      }));
+      setMessages((prev) => [...prev, ...bubbles]);
     } catch (e: any) {
       setMessages((prev) => [...prev, { role: "assistant", content: "⚠️ " + (e?.message || "erro"), tools: [] }]);
     }
