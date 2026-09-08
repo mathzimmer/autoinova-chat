@@ -70,7 +70,15 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
     return true;
   }
 
-  // Envia CADA mensagem separada (bolhas) pelo token do número + espelha no inbox.
+  // FOTOS PRIMEIRO (sem legenda), depois o TEXTO (elogio + "gostou?").
+  for (const img of out.images || []) {
+    try { await sendMediaFromNumber(phoneNumberId, conv.phone, img.url, "image", img.caption || undefined); } catch (e) { console.error("[AgentV2Channel] envio foto falhou:", e); }
+    const im = await createMessage({ conversationId, content: "[Imagem do veículo]", senderType: "bot", senderName: BOT_NAME, messageType: "image", metadata: { mediaUrl: img.url } });
+    emitNewMessage(conversationId, im);
+  }
+  if ((out.images || []).length) await new Promise((r) => setTimeout(r, 400));
+
+  // Cada mensagem de texto vira uma bolha separada.
   const parts = (out.messages && out.messages.length ? out.messages : (out.reply ? [out.reply] : []));
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -79,11 +87,6 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
     const bm = await createMessage({ conversationId, content: part, senderType: "bot", senderName: BOT_NAME, messageType: "text" });
     emitNewMessage(conversationId, bm);
     if (i < parts.length - 1) await new Promise((r) => setTimeout(r, 600)); // ritmo natural
-  }
-  for (const img of out.images || []) {
-    try { await sendMediaFromNumber(phoneNumberId, conv.phone, img.url, "image", img.caption); } catch (e) { console.error("[AgentV2Channel] envio foto falhou:", e); }
-    const im = await createMessage({ conversationId, content: img.caption || "[Imagem do veículo]", senderType: "bot", senderName: BOT_NAME, messageType: "image", metadata: { mediaUrl: img.url, caption: img.caption } });
-    emitNewMessage(conversationId, im);
   }
 
   return true;

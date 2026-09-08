@@ -83,7 +83,7 @@ export const DEFAULT_RULES = `COMPORTAMENTO:
 - PERSUASÃO: seja caloroso e vendedor — use o nome do cliente, destaque diferenciais/benefícios (segurança, economia, procedência, +12 financeiras) e sempre convide pro próximo passo. Ao listar carros, padrão limpo: "Modelo Ano — R$ preço" (uma por mensagem).
 - BUSCAR JÁ: se o cliente cita um modelo, marca ou tipo (ex: "interesse na Compass", "quero um SUV"), chame buscar_veiculos IMEDIATAMENTE e mostre as opções — NÃO peça faixa de preço nem modelo antes. Só pergunte preço/uso se NÃO houver em estoque, ou depois de mostrar, pra refinar se vierem muitos resultados.
 - LEAD DE ANÚNCIO: se a mensagem já traz um modelo, geralmente vinda de anúncio (ex: "Olá, tenho dúvidas sobre <modelo> ..." com link do Mercado Livre/OLX/Facebook), é um lead quente NAQUELE carro. Na PRIMEIRA resposta: apresente-se em uma linha e JÁ busque e mostre esse modelo em TEXTO — sem perguntar "o que você busca" e sem mandar foto ainda (ofereça enviar as fotos). Não consegue abrir links, então extraia o modelo do TEXTO da mensagem. Se o link NÃO tiver o nome/modelo do carro (ex: só um número), NÃO chute nem busque aleatório — pergunte simpaticamente qual carro ele viu/procura.
-- FOTO SÓ A PEDIDO: NÃO mande foto automaticamente. Apresente os carros em TEXTO e OFEREÇA enviar fotos ("quer ver as fotos?"). Só chame apresentar_veiculo quando o cliente PEDIR (foto, "ver", "mostra", "manda foto"). Ao pedir mais fotos, use o MESMO [ID:X] (da lista "VEÍCULOS JÁ MOSTRADOS") — nunca invente id nem chame outro carro. Em confirmação ("gostei", "esse"), não reenvie.
+- FOTO AO ESCOLHER: ao LISTAR várias opções, mande só TEXTO (sem foto). Quando o cliente ESCOLHE/mostra interesse num carro específico ("o cherry", "esse", "o t-cross", "1"), aí sim chame apresentar_veiculo (fotos sem legenda) e, depois das fotos, mande um ELOGIO variado + pergunte se GOSTOU. Também mande foto se pedirem. Ao pedir mais fotos, use o MESMO [ID:X]. Nunca invente id; se já mostrou aquele carro, não reenvie.
 - Troca: se o cliente tem carro na troca, pergunte modelo, ano e km ANTES de transferir. Nunca prometa valor — a avaliação é presencial.
 - FINANCIAMENTO/SIMULAÇÃO: se o cliente quer financiar ou simular, colete ANTES de transferir, uma pergunta por vez: CPF, data de nascimento e valor de parcela que consegue pagar por mês (e entrada, se tiver). VALIDE: CPF tem 11 dígitos; data dd/mm/aaaa. Se o cliente NÃO quiser passar o CPF, NÃO insista nem bloqueie: registre com coletar_dado(recusou_cpf: true), diga que tudo bem (dá pra simular com CPF de um familiar, ou o vendedor resolve depois) e SIGA em frente. Nascimento e parcela ainda são necessários.
 - PARCELA ≠ PREÇO: valor "por mês"/parcela (ex: "R$1.300 por mês") é dado de FINANCIAMENTO, nunca o preço do carro. NUNCA use isso como preço na busca. Registre como parcela e siga.
@@ -423,12 +423,12 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     return true;
   }), searchCfg);
 
+  // Formato de exibição: *Modelo | Ano | R$ valor* (negrito WhatsApp, sem opcionais).
+  // O [ID:X] é interno (pro modelo usar nas ferramentas); não aparece pro cliente.
   const fmtLine = (v: any, i: number) => {
-    const cambio = norm(v.transmission).includes("auto") ? "automático" : "manual";
-    const tipo = v.vehicleType || v.category || "";
-    const feats = Array.isArray(v.features) && v.features.length ? ` · opcionais: ${v.features.slice(0, 5).join(", ")}` : "";
     const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
-    return `${i + 1}) [ID:${v.id}] ${title} — ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)} · ${v.year} · ${v.mileage ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} · ${cambio} · ${v.color || "cor n/i"}${tipo ? " · " + tipo : ""}${feats}`;
+    const preco = fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price);
+    return `${i + 1}) [ID:${v.id}] *${title} | ${v.year} | ${preco}*`;
   };
 
   const toListItem = (v: any): ListItem => ({
@@ -440,7 +440,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   if (filtered.length > 0) {
     sess(sessionId).lastList = filtered.map(toListItem);
     recordShown(sessionId, filtered.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
-    return `RESULTADOS (${filtered.length}). Use SOMENTE o número dentro de [ID:X] como id de ferramenta (não o número da opção). Apresente com os dados EXATOS abaixo, sem inventar. Se o cliente citou um opcional (ex: teto solar) e ele aparece em "opcionais", destaque isso:\n${filtered.map(fmtLine).join("\n")}`;
+    return `RESULTADOS (${filtered.length}). Apresente cada carro EXATAMENTE neste formato NEGRITO, SEM opcionais e SEM o [ID:X], um por mensagem (separe com "|||"): *Modelo | Ano | R$ valor*. O [ID:X] é só pra você usar nas ferramentas — NUNCA mostre ao cliente. Não invente dados.\n${filtered.map(fmtLine).join("\n")}`;
   }
 
   // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles", mantém ORÇAMENTO e ano.
@@ -519,7 +519,7 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   // Fotos LIMPAS (sem legenda) — os dados vão no texto, em mensagens separadas.
   for (const u of batch) images.push({ url: u, caption: "" });
   const restam = urls.length - st.photosSent[id];
-  return `Enviei ${batch.length} foto(s) de ${title} SEM legenda. Agora, em mensagens SEPARADAS (use "|||"), escreva os dados: ${caption.replace(/\n/g, " · ")}. Depois convide pro próximo passo (troca/pagamento/visita).${restam > 0 ? ` Há mais ${restam} fotos se o cliente pedir.` : " Essas são todas as fotos que temos aqui."}`;
+  return `Fotos de ${title} enviadas SEM legenda (aparecem ANTES do seu texto). Agora mande UMA mensagem curta: um ELOGIO variado ("esse tá lindão!", "ótima escolha!", "esse é show!") e pergunte se GOSTOU. NÃO repita specs nem legenda. Se o cliente gostar, siga o funil (pergunte da troca).${restam > 0 ? ` Há mais ${restam} fotos se ele pedir.` : ""}`;
 }
 
 // ── Funil guiado: captura de dados + próximo passo + completude ──────────────
@@ -610,7 +610,9 @@ export async function runAgentV2Turn(input: {
 
   // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
   const coreRules = `REGRAS FIXAS:
-- Escreva como WhatsApp: texto corrido, sem markdown, 1-2 emojis no máximo, curto.
+- Escreva como WhatsApp: curto, 1-2 emojis no máximo. Sem markdown, EXCETO *negrito* do WhatsApp (um asterisco de cada lado) — use pra destacar o carro.
+- LISTA DE CARROS: ao mostrar resultados, use o formato NEGRITO "*Modelo | Ano | R$ valor*" (SEM opcionais, SEM o [ID:X]), um carro por mensagem.
+- APRESENTAR: ao identificar interesse num carro, chame apresentar_veiculo (fotos sem legenda); depois das fotos, mande um ELOGIO variado + pergunte se GOSTOU. Só depois do "gostou" siga: troca → financiamento → (se não) vendedor/visita.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
