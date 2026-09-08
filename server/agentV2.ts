@@ -57,18 +57,31 @@ type LeadData = {
   pagamento?: "avista" | "financiado";
   finCpf?: string; finNascimento?: string; finParcela?: string; finEntrada?: string; finCpfRecusado?: boolean;
 };
-const SESSIONS = new Map<string, { shown: { id: number; title: string }[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[]; lead?: LeadData }>();
+type ShownVehicle = { id: number; title: string; year?: number; km?: number; price?: number; cambio?: string; cor?: string };
+const SESSIONS = new Map<string, { shown: ShownVehicle[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[]; lead?: LeadData }>();
 function sess(id: string) {
   if (!SESSIONS.has(id)) SESSIONS.set(id, { shown: [] });
   return SESSIONS.get(id)!;
 }
 export function resetSession(id: string) { SESSIONS.delete(id); }
 
-function recordShown(id: string, items: { id: number; title: string }[]) {
+function recordShown(id: string, items: ShownVehicle[]) {
   const s = sess(id);
-  const byId = new Map<number, { id: number; title: string }>();
-  for (const it of [...s.shown, ...items]) if (Number.isFinite(it.id)) byId.set(it.id, it);
+  const byId = new Map<number, ShownVehicle>();
+  for (const it of [...s.shown, ...items]) if (Number.isFinite(it.id)) byId.set(it.id, { ...byId.get(it.id), ...it });
   s.shown = Array.from(byId.values()).slice(-12);
+}
+/** Extrai os dados de um veículo do banco para a memória (pro modelo responder km/câmbio/cor sem inventar). */
+function toShown(v: any): ShownVehicle {
+  return {
+    id: v.id,
+    title: v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim(),
+    year: v.year,
+    km: v.mileage ?? undefined,
+    price: (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price,
+    cambio: String(v.transmission || "").toLowerCase().includes("auto") ? "automático" : "manual",
+    cor: v.color ?? undefined,
+  };
 }
 
 // ── Config (editável na tela) ────────────────────────────────────────────────
@@ -439,7 +452,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
 
   if (filtered.length > 0) {
     sess(sessionId).lastList = filtered.map(toListItem);
-    recordShown(sessionId, filtered.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
+    recordShown(sessionId, filtered.map(toShown));
     return `RESULTADOS (${filtered.length}). Apresente cada carro em NEGRITO, um por mensagem, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho tipo "Modelo | Ano | valor", NÃO mostre opcionais nem o [ID:X] (o [ID:X] é só pra você usar nas ferramentas). Não invente dados.\n${filtered.map(fmtLine).join("\n")}`;
   }
 
@@ -488,7 +501,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     .map((s) => s.v);
 
   sess(sessionId).lastList = alt.map(toListItem);
-  recordShown(sessionId, alt.map((v: any) => ({ id: v.id, title: v.title || `${v.brand} ${v.model}` })));
+  recordShown(sessionId, alt.map(toShown));
   return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), ofereça deixando claro a diferença. Só ofereça carros com relação com o pedido. Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
 }
 
@@ -498,7 +511,7 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   if (!v) return `[INTERNO] ID ${id} não existe. Use um [ID:X] real da lista mostrada; NÃO diga ao cliente que vendeu.`;
   if (v.available === false) return `O veículo ${v.brand} ${v.model} ${v.year} não está mais disponível (pode ter sido vendido).`;
   const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
-  recordShown(sessionId, [{ id, title }]);
+  recordShown(sessionId, [toShown(v)]);
 
   // Fotos disponíveis (até 10). Legenda enxuta: modelo, ano, km, preço.
   const raw: any[] = Array.isArray(v.images) ? v.images : (v.imageUrl ? [v.imageUrl] : []);
@@ -617,10 +630,11 @@ export async function runAgentV2Turn(input: {
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
 - NUNCA escreva links ou imagens no texto (nada de markdown ![]() nem URLs de foto). A foto é enviada SOMENTE pela ferramenta apresentar_veiculo. Só use links que vierem da ferramenta.
+- NUNCA invente km, câmbio, cor, ano ou preço: use APENAS os dados de "VEÍCULOS JÁ MOSTRADOS" ou do resultado da busca. Se o cliente perguntar algo que não está ali, diga que confirma o detalhe com o vendedor — NÃO chute número.
 - NUNCA invente endereço/telefone/horário: use só "INFORMAÇÕES DA LOJA". Se faltar, diga que confirma com o vendedor.`;
 
   const shownBlock = s.shown.length
-    ? `\n\nVEÍCULOS JÁ MOSTRADOS (use estes IDs):\n${s.shown.map((x, i) => `${i + 1}) ${x.title} [ID:${x.id}]`).join("\n")}`
+    ? `\n\nVEÍCULOS JÁ MOSTRADOS (dados REAIS — use pra responder km/câmbio/cor SEM inventar; se o dado não estiver aqui, diga que confirma com o vendedor):\n${s.shown.map((x, i) => `${i + 1}) ${x.title} [ID:${x.id}] — ${x.year || "?"} · ${x.km != null ? x.km.toLocaleString("pt-BR") + " km" : "km n/i"} · ${x.cambio || "?"} · ${x.cor || "cor n/i"} · ${x.price != null ? fmtBRL(x.price) : "?"}`).join("\n")}`
     : "";
 
   // Seleção determinística sobre a última lista ("1", "o azul", "a 2012", "automático"...).
