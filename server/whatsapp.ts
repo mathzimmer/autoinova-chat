@@ -726,12 +726,16 @@ async function sendSellerNotification(
   }
 
   try {
+    // Telefone pro vendedor: sem o 55 e com o 9º dígito (ex: 51997566259).
+    const { formatPhoneBRDisplay } = await import("@shared/phone");
+    const telefoneFmt = formatPhoneBRDisplay(data.customerPhone);
+
     // Build the notification message
     const defaultMessage = `🔔 *Novo Lead Atribuído*\n\n` +
       `Olá ${data.sellerName}!\n\n` +
       `Um novo cliente foi direcionado para você:\n\n` +
       `👤 *Cliente:* ${data.customerName}\n` +
-      `📱 *Telefone:* ${data.customerPhone}\n` +
+      `📱 *Telefone:* ${telefoneFmt}\n` +
       `🚗 *Veículo de interesse:* ${data.vehicleInterest}\n` +
       `🏪 *Loja:* ${data.storeLocation}\n\n` +
       `📋 *Resumo da conversa:*\n${data.conversationSummary}\n\n` +
@@ -741,7 +745,7 @@ async function sendSellerNotification(
       ? data.customMessage
           .replace(/\{vendedor\}/gi, data.sellerName)
           .replace(/\{cliente\}/gi, data.customerName)
-          .replace(/\{telefone\}/gi, data.customerPhone)
+          .replace(/\{telefone\}/gi, telefoneFmt)
           .replace(/\{veiculo\}/gi, data.vehicleInterest)
           .replace(/\{resumo\}/gi, data.conversationSummary)
           .replace(/\{loja\}/gi, data.storeLocation)

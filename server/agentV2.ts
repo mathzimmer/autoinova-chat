@@ -22,7 +22,7 @@ export interface AgentResult {
   messages: string[]; // reply dividido em várias mensagens (bolhas) separadas por "|||"
   images: AgentImage[];
   toolTrace: ToolTraceItem[];
-  shownVehicles: { id: number; title: string }[];
+  shownVehicles: ShownVehicle[];
   handoff?: { motivo: string; resumo: string }; // preenchido quando transferir_para_vendedor rodou neste turno
   lead?: LeadData;                                // dados coletados (pro canal gravar no CRM/atribuir vendedor)
 }
@@ -626,13 +626,28 @@ function faltamNoLead(lead?: LeadData): string[] {
   return f;
 }
 
-function resumoLead(lead?: LeadData): string {
+function resumoLead(lead?: LeadData, shown?: ShownVehicle[]): string {
   if (!lead) return "";
   const p: string[] = [];
   if (lead.nome) p.push(`Nome: ${lead.nome}`);
   if (lead.cidade) p.push(`Cidade: ${lead.cidade}`);
-  if (lead.veiculoId) p.push(`Veículo: [ID:${lead.veiculoId}]`);
+  // Veículo de interesse pelo MODELO (não pelo ID): resolve na memória da sessão.
+  const veiculoLabel = (id?: number): string | null => {
+    if (!id) return null;
+    const v = shown?.find((x) => x.id === id);
+    if (v) return `${v.title}${v.year ? ` ${v.year}` : ""}`;
+    return `[ID:${id}]`;
+  };
+  const interesse = veiculoLabel(lead.veiculoId);
+  if (interesse) p.push(`Veículo: ${interesse}`);
   else if (lead.veiculoInteresse) p.push(`Veículo: ${lead.veiculoInteresse}`);
+  // Se o cliente navegou por vários carros, informa quais (fora o de interesse).
+  if (shown && shown.length > 1) {
+    const outros = shown
+      .filter((v) => v.id !== lead.veiculoId)
+      .map((v) => `${v.title}${v.year ? ` ${v.year}` : ""}`);
+    if (outros.length) p.push(`Também viu: ${outros.slice(0, 6).join("; ")}`);
+  }
   if (lead.temTroca === false) p.push("Troca: não");
   else if (lead.temTroca) p.push(`Troca: ${lead.trocaModelo || "?"} ${lead.trocaAno || ""} ${lead.trocaKm || ""}`.trim());
   if (lead.pagamento) p.push(`Pagamento: ${lead.pagamento}`);
@@ -679,7 +694,7 @@ export async function runAgentV2Turn(input: {
   if (selectedId != null) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId; }
 
   // Funil guiado: estado + próximo passo obrigatório (a "trilha" que garante a ordem).
-  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
+  const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead, s.shown) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
 
   // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória → funil.
   const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}`;
@@ -734,10 +749,15 @@ export async function runAgentV2Turn(input: {
               result = `AINDA NÃO PODE TRANSFERIR. Faltam: ${falta.join(", ")}. Colete esses dados (siga o PRÓXIMO PASSO do funil) antes de transferir. Não transfira agora.`;
             } else {
               st.handedOff = true;
-              const resumo = resumoLead(st.lead);
+              const base = resumoLead(st.lead, st.shown) || "(sem dados)";
               const pend = falta.length ? ` | PENDÊNCIAS (cliente pediu humano): ${falta.join(", ")}` : "";
-              handoffInfo = { motivo: args.motivo || "dados_completos", resumo: `${resumo || args.resumo || "(sem dados)"}${pend}` };
-              result = `Handoff registrado: ${args.motivo}. RESUMO PRO VENDEDOR → ${resumo || args.resumo || "(sem dados)"}${pend}. Dê UMA mensagem curta de encerramento e NÃO transfira de novo.`;
+              // Observação do agente (dia/hora/loja da visita, negociação) — não perder.
+              const obs = (args.resumo && args.resumo.trim() && args.resumo.trim() !== base) ? ` | Obs: ${args.resumo.trim()}` : "";
+              // Marca de VISITA quando o motivo é agendamento (ou a obs menciona visita).
+              const visitaTag = (args.motivo === "agendamento" || /\b(agend|visita|test[\s-]?drive)\b/i.test(args.resumo || "")) ? " | 📅 VISITA AGENDADA" : "";
+              const resumoFinal = `${base}${visitaTag}${pend}${obs}`;
+              handoffInfo = { motivo: args.motivo || "dados_completos", resumo: resumoFinal };
+              result = `Handoff registrado: ${args.motivo}. RESUMO PRO VENDEDOR → ${resumoFinal}. Dê UMA mensagem curta de encerramento e NÃO transfira de novo.`;
             }
           }
         }
@@ -769,7 +789,10 @@ export async function runAgentV2Turn(input: {
             let a: any = {}; try { a = JSON.parse(tc.function.arguments || "{}"); } catch { /* noop */ }
             if (!st.handedOff) {
               st.handedOff = true;
-              handoffInfo = { motivo: a.motivo || "pediu_humano", resumo: resumoLead(st.lead) || a.resumo || "(sem dados)" };
+              const base = resumoLead(st.lead, st.shown) || "(sem dados)";
+              const obs = (a.resumo && a.resumo.trim() && a.resumo.trim() !== base) ? ` | Obs: ${a.resumo.trim()}` : "";
+              const visitaTag = (a.motivo === "agendamento" || /\b(agend|visita|test[\s-]?drive)\b/i.test(a.resumo || "")) ? " | 📅 VISITA AGENDADA" : "";
+              handoffInfo = { motivo: a.motivo || "pediu_humano", resumo: `${base}${visitaTag}${obs}` };
               toolTrace.push({ name: "transferir_para_vendedor", args: a, resultSummary: "handoff forçado (rede de segurança)" });
             }
           }

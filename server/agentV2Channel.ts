@@ -155,7 +155,11 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
   if (out.handoff) {
     try {
       const L: any = out.lead || {};
-      const vehTitle = out.shownVehicles?.find((x) => x.id === L.veiculoId)?.title;
+      const vehShown = out.shownVehicles?.find((x) => x.id === L.veiculoId);
+      // Título + ano (pro vendedor saber o ano do carro de interesse).
+      const vehTitle = vehShown
+        ? `${vehShown.title}${vehShown.year ? ` ${vehShown.year}` : ""}`
+        : undefined;
       await upsertLead({
         conversationId, phone,
         name: L.nome, city: L.cidade,

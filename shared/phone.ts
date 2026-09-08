@@ -53,6 +53,17 @@ export function normalizePhone(phone: string): string {
 }
 
 /**
+ * Formata para EXIBIÇÃO ao vendedor: sem o código do país (55) e COM o 9º dígito.
+ *   555197566259  →  51997566259
+ *   +55 51 99228-1203 → 5199228 1203 → 51999228... (DDD + 9 + número)
+ */
+export function formatPhoneBRDisplay(phone: string): string {
+  const n = normalizePhone(phone);
+  if (!n) return stripPhone(phone);
+  return n.startsWith("55") ? n.slice(2) : n;
+}
+
+/**
  * Gera todas as variações plausíveis de um número (com/sem 9º dígito,
  * com/sem código do país) para procurar contatos/conversas em formatos diferentes.
  */
