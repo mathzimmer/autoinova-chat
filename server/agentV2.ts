@@ -25,10 +25,27 @@ export interface AgentResult {
   shownVehicles: { id: number; title: string }[];
 }
 
-/** Divide a resposta em mensagens separadas (o modelo usa "|||" entre elas). */
+/**
+ * Divide a resposta em várias mensagens (bolhas). Usa "|||" quando o modelo separa,
+ * senão quebra por linha em branco e por itens numerados ("1) ..."), pra ficar no
+ * estilo WhatsApp mesmo quando o modelo manda um bloco.
+ */
 function splitMessages(reply: string): string[] {
-  const parts = reply.split(/\s*\|\|\|\s*|\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
-  return parts.length ? parts : [reply.trim()].filter(Boolean);
+  let parts = reply.split(/\s*\|\|\|\s*|\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
+  if (parts.length <= 1) parts = reply.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+  const out: string[] = [];
+  for (const p of parts) {
+    let buf: string[] = [];
+    for (const line of p.split("\n")) {
+      if (/^\s*\d{1,2}[\)\.\-]\s+/.test(line)) {
+        if (buf.length) { out.push(buf.join("\n").trim()); buf = []; }
+        out.push(line.trim());
+      } else buf.push(line);
+    }
+    if (buf.length) out.push(buf.join("\n").trim());
+  }
+  const final = out.map((s) => s.trim()).filter(Boolean);
+  return final.length ? final : [reply.trim()].filter(Boolean);
 }
 
 // ── Memória por sessão (só na RAM; é simulador) ──────────────────────────────
@@ -499,10 +516,10 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   }
   const batch = urls.slice(already, already + 5);
   st.photosSent[id] = already + batch.length;
-  images.push({ url: batch[0], caption: already === 0 ? caption : "" });
-  for (const u of batch.slice(1)) images.push({ url: u, caption: "" });
+  // Fotos LIMPAS (sem legenda) — os dados vão no texto, em mensagens separadas.
+  for (const u of batch) images.push({ url: u, caption: "" });
   const restam = urls.length - st.photosSent[id];
-  return `Enviadas ${batch.length} foto(s) de ${title}${restam > 0 ? ` (há mais ${restam} se pedir)` : " (essas são todas as fotos que temos aqui)"}. NÃO repita os dados no texto — já estão na legenda. Avance: pergunte troca/pagamento ou ofereça visita.`;
+  return `Enviei ${batch.length} foto(s) de ${title} SEM legenda. Agora, em mensagens SEPARADAS (use "|||"), escreva os dados: ${caption.replace(/\n/g, " · ")}. Depois convide pro próximo passo (troca/pagamento/visita).${restam > 0 ? ` Há mais ${restam} fotos se o cliente pedir.` : " Essas são todas as fotos que temos aqui."}`;
 }
 
 // ── Funil guiado: captura de dados + próximo passo + completude ──────────────
