@@ -9,7 +9,9 @@
  */
 import { mirrorOfficialMessage, listMessages, createMessage, getConversationById, getMessageByExternalId, upsertLead, assignSellerRoundRobin } from "./db";
 import { sendTextFromNumber, sendMediaFromNumber, markAsReadFromNumber } from "./whatsappMultiNumber";
-import { sendSellerNotification } from "./whatsapp";
+import { sendSellerNotification, getMediaUrl } from "./whatsapp";
+import { processWhatsAppMedia } from "./media";
+import { transcribeAudio } from "./_core/voiceTranscription";
 import { runAgentV2Turn, type ChatTurn } from "./agentV2";
 import { emitNewMessage } from "./socket";
 
@@ -38,7 +40,21 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
       : it === "list_reply" ? (msg.interactive?.list_reply?.title || "")
       : "[resposta interativa]";
   } else if (msg.type === "image") { messageType = "image"; content = msg.image?.caption || "[imagem enviada pelo cliente]"; }
-  else if (msg.type === "audio") { messageType = "audio"; content = "[mensagem de áudio]"; }
+  else if (msg.type === "audio") {
+    messageType = "audio";
+    content = "[mensagem de áudio]";
+    try {
+      const mediaId = msg.audio?.id; const mime = msg.audio?.mime_type;
+      if (mediaId) {
+        const s3 = await processWhatsAppMedia(mediaId, "audio", mime);
+        const url = s3?.url || (await getMediaUrl(mediaId)) || undefined;
+        if (url) {
+          const t = await transcribeAudio({ audioUrl: url, language: "pt", prompt: "Mensagem de voz de cliente sobre compra/troca/financiamento de veículos." });
+          if (t && "text" in t && (t as any).text) content = (t as any).text; // usa a transcrição como texto
+        }
+      }
+    } catch (e) { console.error("[AgentV2Channel] transcrição de áudio falhou:", e); }
+  }
   else content = `[${msg.type}]`;
 
   // Reply/quote do WhatsApp: o cliente respondeu a uma mensagem específica.
