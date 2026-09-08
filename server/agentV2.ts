@@ -334,6 +334,34 @@ function fmtBRL(n: any) { return `R$ ${Number(n || 0).toLocaleString("pt-BR")}`;
 function norm(s: any): string {
   return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 }
+/** Remove tudo que não é letra/número — "Ix 35" = "ix-35" = "ix35". */
+function squash(s: any): string {
+  return norm(s).replace(/[^a-z0-9]/g, "");
+}
+/** Distância de edição (Levenshtein) — pra tolerar 1 erro de digitação. */
+function lev(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 2) return 9;
+  const d = Array.from({ length: m + 1 }, (_, i) => [i, ...Array(n).fill(0)]);
+  for (let j = 0; j <= n; j++) d[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[m][n];
+}
+function closeWord(searchable: string, token: string): boolean {
+  if (token.length < 4) return false;
+  return searchable.split(/\s+/).some((w) => w.length >= 4 && lev(w, token) <= 1);
+}
+/** Match tolerante a grafia: sem espaço/hífen/acento, por tokens, e 1 erro de digitação. */
+function matchTermo(searchable: string, termo: string): boolean {
+  const sq = squash(searchable);
+  const q = norm(termo).trim();
+  if (!q) return true;
+  if (sq.includes(squash(q))) return true; // "ix 35" -> "ix35"
+  const tokens = q.split(/\s+/).filter((t) => t.length >= 1);
+  return tokens.every((t) => searchable.includes(t) || sq.includes(squash(t)) || closeWord(searchable, t));
+}
 // Sinônimos de tipo/carroceria → o que procurar em category+vehicleType+descrição.
 const TYPE_SYNONYMS: Record<string, string[]> = {
   suv: ["suv", "utilitario esportivo"],
@@ -418,10 +446,10 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     if (args.preco_min && v.price < args.preco_min) return false;
     if (args.ano_min && v.year < args.ano_min) return false;
     if (args.km_max && v.mileage && v.mileage > args.km_max) return false;
-    if (args.marca && !norm(v.brand).includes(norm(args.marca))) return false;
+    if (args.marca && !matchTermo(norm(`${v.brand}`), args.marca)) return false;
     if (args.modelo) {
-      const mtxt = norm(`${v.model} ${v.version || ""} ${v.title || ""}`);
-      if (!mtxt.includes(norm(args.modelo))) return false;
+      const mtxt = norm(`${v.brand} ${v.model} ${v.version || ""} ${v.title || ""}`);
+      if (!matchTermo(mtxt, args.modelo)) return false;
     }
     if (args.cor && !norm(v.color).includes(norm(args.cor))) return false;
     if (args.combustivel && !norm(v.fuel).includes(norm(args.combustivel))) return false;
