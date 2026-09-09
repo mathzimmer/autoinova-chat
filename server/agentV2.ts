@@ -757,8 +757,11 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
 function execColetar(sessionId: string, args: any): string {
   const st = sess(sessionId);
   const lead: LeadData = st.lead || (st.lead = {});
-  if (args.nome) lead.nome = String(args.nome).trim();
-  if (args.cidade) lead.cidade = String(args.cidade).trim();
+  // Ignora PLACEHOLDERS que o modelo às vezes inventa ("Cliente", "Cidade", "não
+  // informado") — senão o lead fica com nome/cidade falsos e transfere errado.
+  const ehPlaceholder = (v: any) => /^(cliente|nome|cidade|n[ãa]o informad[oa]|sem nome|desconhecid[oa]|x+)$/i.test(String(v || "").trim());
+  if (args.nome && !ehPlaceholder(args.nome)) lead.nome = String(args.nome).trim();
+  if (args.cidade && !ehPlaceholder(args.cidade)) lead.cidade = String(args.cidade).trim();
   if (args.veiculo_id != null) lead.veiculoId = Number(args.veiculo_id);
   if (typeof args.tem_troca === "boolean") lead.temTroca = args.tem_troca;
   if (args.troca_modelo) lead.trocaModelo = String(args.troca_modelo);
@@ -879,9 +882,14 @@ export async function runAgentV2Turn(input: {
   // interesse. Só tratamos como (re)seleção se ainda não há interesse, OU se a
   // mensagem é curta e sem contexto de troca.
   const jaTemInteresse = !!(s.lead && s.lead.veiculoId);
-  const contextoTroca = /\btroca|dou\s+de\s+entrada|meu\s+carro|tenho\s+um|\bkm\b|\bmil\b|rodad|entrada/i.test(input.message);
+  // Estamos esperando os DADOS DA TROCA? (cliente disse que tem troca, mas ainda
+  // não informou o modelo). Nesse caso, "corolla 2022 aut 45000km" é o carro DELE.
+  const esperandoTroca = !!(s.lead && s.lead.temTroca === true && !s.lead.trocaModelo);
+  // Contexto de troca: palavras-chave OU km/mil grudado em número ("45000km", "45 mil").
+  const contextoTroca = esperandoTroca
+    || /\btroca|dou\s+de\s+entrada|meu\s+carro|tenho\s+um|\bkm\b|\d\s*mil\b|\d\s*km\b|rodad|entrada/i.test(input.message);
   const msgTokens = input.message.trim().split(/\s+/).filter(Boolean).length;
-  const tratarComoSelecao = selectedId != null && (!jaTemInteresse || (msgTokens <= 3 && !contextoTroca));
+  const tratarComoSelecao = selectedId != null && !contextoTroca && (!jaTemInteresse || msgTokens <= 3);
 
   let selBlock = "";
   if (tratarComoSelecao) {
@@ -920,17 +928,25 @@ export async function runAgentV2Turn(input: {
       try {
         if (tc.function.name === "buscar_veiculos") result = await execBuscar(input.sessionId, args);
         else if (tc.function.name === "apresentar_veiculo") {
-          // Rede de segurança: se houve seleção determinística e o modelo mandou outro id, corrige.
-          if (selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
+          // Rede de segurança: só corrige o id pela seleção determinística se de fato
+          // tratamos a mensagem como seleção (não quando é descrição da TROCA).
+          if (tratarComoSelecao && selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
           const st = sess(input.sessionId);
-          const jaEnviou = (st.photosSent || {})[Number(args.veiculo_id)] || 0;
           const pediuFoto = /\bfotos?\b|\bimagens?\b|\bver\b|\bmostra/i.test(input.message);
+          // Se estamos coletando a TROCA (ou a mensagem é sobre o carro do cliente) e
+          // ele NÃO pediu foto, NÃO apresente um carro do estoque — o "corolla 2022"
+          // dito aqui é o veículo de troca dele, não uma nova escolha.
+          if (contextoTroca && !pediuFoto) {
+            result = "A mensagem descreve o carro de TROCA do cliente (não é escolha de veículo). NÃO apresente fotos. Registre a troca com coletar_dado e siga o PRÓXIMO PASSO do funil.";
+          } else {
+          const jaEnviou = (st.photosSent || {})[Number(args.veiculo_id)] || 0;
           if (jaEnviou > 0 && !pediuFoto) {
             // Não reapresenta fotos já enviadas sem o cliente pedir (evita "se perder").
             result = "Esse carro JÁ foi apresentado (fotos enviadas). NÃO reenvie fotos. Apenas siga o PRÓXIMO PASSO do funil (troca/pagamento/nome/cidade/visita).";
           } else {
             result = await execApresentar(input.sessionId, args, images);
             if (args.veiculo_id) (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id);
+          }
           }
         }
         else if (tc.function.name === "buscar_por_caracteristica") {
