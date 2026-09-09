@@ -8,6 +8,14 @@ import axios from "axios";
 import { eq, notInArray } from "drizzle-orm";
 import { vehicles, InsertVehicle } from "../drizzle/schema";
 import { getDb, getSetting } from "./db";
+import { canonicalizeFeatures } from "./vehicleFeatures";
+
+/** Status internos que NÃO podem ser ofertados ao cliente. */
+export const OFERTAVEL_STATUS = new Set(["disponivel", "", null as any, undefined as any]);
+export function podeOfertar(v: any): boolean {
+  const s = (v?.internalStatus ?? "disponivel");
+  return OFERTAVEL_STATUS.has(s);
+}
 
 const STOCK_URL = "https://autoconf-prod.s3.sa-east-1.amazonaws.com/carros-na-serra/642av2OVG5XVCHO5GK8IvGGM5Pqo1JwOYe8swwXv.json";
 
@@ -93,6 +101,9 @@ function mapExternalToDb(ext: ExternalVehicle): Omit<InsertVehicle, "id" | "crea
   // Map images to URL array
   const images = ext.IMAGES?.map(img => img.IMAGE_URL) || [];
 
+  // Tags canônicas de opcionais (Fase 2) — a partir do texto cru + descrição/título.
+  const featuresCanon = canonicalizeFeatures(features, `${ext.TITLE || ""} ${ext.DESCRIPTION || ""}`);
+
   return {
     externalId: ext.ID,
     brand: ext.MAKE || "Desconhecida",
@@ -112,11 +123,14 @@ function mapExternalToDb(ext: ExternalVehicle): Omit<InsertVehicle, "id" | "crea
     vehicleType: ext.BODY || null,
     condition: ext.CONDITION || null,
     doors: ext.DOORS || null,
+    motor: (ext.MOTOR ? String(ext.MOTOR) : null),
+    potencia: (ext.HP ? String(ext.HP) : null),
     description: ext.DESCRIPTION || null,
     url: ext.URL || null,
     imageUrl: firstImage,
     images: images as any,
     features: features as any,
+    featuresCanon: featuresCanon as any,
     negotiation: ext.NEGOTIATION || null,
     plate: ext.PLATE || null,
     seller: ext.SELLER || null,
@@ -316,6 +330,8 @@ export function renderVehicleCaptionTemplate(template: string, v: any): string {
 
 /** True se o veículo PODE ser ofertado pela IA (curadoria — tira lixo do feed). */
 export function passesStockCuration(v: any, cfg: StockAiConfig): boolean {
+  // Status interno (reservado/vendido/bloqueado/preparação) nunca é ofertado.
+  if (!podeOfertar(v)) return false;
   const cat = (v.category || "").toLowerCase().trim();
   if (cfg.onlyKnownVehicles && cat && !["carros", "motos"].includes(cat)) return false;
   if (cfg.hideCategories.some(c => cat === String(c).toLowerCase().trim())) return false;

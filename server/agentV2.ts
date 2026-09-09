@@ -9,7 +9,8 @@
  * identifica interesse, NUNCA inventa dado (loja/veículo) e conduz pro vendedor.
  */
 import { getSetting, getVehicleById } from "./db";
-import { getAllCuratedVehicles } from "./stockSync";
+import { getAllCuratedVehicles, podeOfertar } from "./stockSync";
+import { tagsFromRequest, labelsForTags } from "./vehicleFeatures";
 import { DEFAULT_BUSINESS_INFO } from "./ai";
 
 // ── Tipos ───────────────────────────────────────────────────────────────────
@@ -282,6 +283,56 @@ const TOOLS = [
   {
     type: "function",
     function: {
+      name: "buscar_por_caracteristica",
+      description: "Busca veículos por OPCIONAIS/características específicas. Use quando o cliente pede um item: 'tem carro com teto solar?', 'algum com câmera de ré e couro?', '4x4', '7 lugares'. Passe as características em `caracteristicas`.",
+      parameters: {
+        type: "object",
+        properties: {
+          caracteristicas: { type: "array", items: { type: "string" }, description: "Ex: ['teto solar','couro','câmera de ré','4x4','multimídia','7 lugares']." },
+        },
+        required: ["caracteristicas"], additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "veiculos_parecidos",
+      description: "Encontra veículos SEMELHANTES a um já mostrado (mesmo estilo/segmento e faixa de preço). Use quando o cliente diz 'tem algum parecido?', 'algo do mesmo estilo', ou quando o carro que ele queria não está disponível.",
+      parameters: {
+        type: "object",
+        properties: { veiculo_id: { type: "number" }, limite: { type: "number" } },
+        required: ["veiculo_id"], additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "verificar_disponibilidade",
+      description: "Confirma se um veículo AINDA está disponível ANTES de oferecer/agendar. Use quando o cliente pergunta 'ainda tem?', 'está disponível?', ou antes de confirmar uma visita.",
+      parameters: {
+        type: "object",
+        properties: { veiculo_id: { type: "number" } },
+        required: ["veiculo_id"], additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "comparar_veiculos",
+      description: "Compara 2 a 4 veículos lado a lado (preço, ano, km, câmbio, combustível, opcionais). Use quando o cliente pede 'qual é melhor?', 'compara esses dois', ou está em dúvida entre carros já mostrados.",
+      parameters: {
+        type: "object",
+        properties: { ids: { type: "array", items: { type: "number" }, description: "IDs [ID:X] dos veículos já mostrados." } },
+        required: ["ids"], additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "transferir_para_vendedor",
       description: "Encaminha para um vendedor humano (handoff). Use quando: cliente pediu humano; escolheu carro E definiu pagamento; quer negociar/agendar visita.",
       parameters: {
@@ -439,9 +490,12 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
 
   const searchCfg = await getSearchConfig();
   const cambioAuto = args.cambio ? norm(args.cambio).includes("auto") : null;
+  // Requisitos: tags canônicas reconhecidas + palavras soltas (fallback).
+  const reqTags: string[] = args.requisitos ? tagsFromRequest(args.requisitos) : [];
   const reqWords = args.requisitos ? norm(args.requisitos).split(/\s+/).filter((w: string) => w.length >= 3) : [];
 
-  const filtered = ordenarVeiculos(all.filter((v: any) => {
+  // Filtro DURO (elimina quem não atende os critérios objetivos).
+  const survivors = all.filter((v: any) => {
     if (args.preco_max && v.price > args.preco_max) return false;
     if (args.preco_min && v.price < args.preco_min) return false;
     if (args.ano_min && v.year < args.ano_min) return false;
@@ -459,19 +513,62 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     }
     const bodyText = norm(`${v.category || ""} ${v.vehicleType || ""} ${v.model || ""} ${v.title || ""}`);
     if (args.tipo && !matchTipo(bodyText, args.tipo)) return false;
-    if (reqWords.length) {
+    // Requisitos: se reconhecemos tags E o veículo tem featuresCanon → exige as tags.
+    // Senão, cai no comportamento antigo (substring nos opcionais/descrição).
+    const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
+    if (reqTags.length && canon.length) {
+      if (!reqTags.every((t) => canon.includes(t))) return false;
+    } else if (reqWords.length) {
       const feat = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""}`);
       if (!reqWords.every((w: string) => feat.includes(w))) return false;
     }
     return true;
-  }), searchCfg);
+  });
+
+  // RANKING (Fase 1): pontua relevância e guarda os MOTIVOS do match.
+  // Fórmula (documentada): orçamento folgado +25 / no limite +15; tipo +20;
+  // câmbio pedido +15; cada opcional pedido presente +12; ano recente +10 (2020+);
+  // km baixo +8 (<60k); tem foto +5. Empate → foto, depois a ordem configurada.
+  const scoreOf = (v: any): { score: number; reasons: string[] } => {
+    let score = 0; const reasons: string[] = [];
+    const preco = (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price;
+    if (args.preco_max) {
+      if (preco <= args.preco_max * 0.9) { score += 25; reasons.push("dentro do orçamento"); }
+      else if (preco <= args.preco_max) { score += 15; reasons.push("no limite do orçamento"); }
+    }
+    if (args.tipo) { score += 20; reasons.push(String(args.tipo).toUpperCase()); }
+    if (cambioAuto !== null) { score += 15; reasons.push(cambioAuto ? "câmbio automático" : "câmbio manual"); }
+    const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
+    for (const t of reqTags) { if (canon.includes(t)) { score += 12; reasons.push(labelsForTags([t])[0]); } }
+    if ((v.year || 0) >= 2020) { score += 10; }
+    if (v.mileage != null && v.mileage < 60000) { score += 8; reasons.push("baixa quilometragem"); }
+    if (temFoto(v)) score += 5;
+    return { score, reasons };
+  };
+
+  const tieBreak = (a: any, b: any): number => {
+    if (searchCfg.fotoPrimeiro) { const d = temFoto(b) - temFoto(a); if (d) return d; }
+    if (searchCfg.ordem === "caro") return (b.price || 0) - (a.price || 0);
+    if (searchCfg.ordem === "novo") return (b.year || 0) - (a.year || 0);
+    if (searchCfg.ordem === "km") return (a.mileage || 1e9) - (b.mileage || 1e9);
+    return (a.price || 0) - (b.price || 0);
+  };
+
+  const ranked = survivors
+    .map((v: any) => ({ v, ...scoreOf(v) }))
+    .sort((a, b) => (b.score - a.score) || tieBreak(a.v, b.v))
+    .slice(0, searchCfg.limit);
+  const filtered = ranked.map((s) => s.v);
+  const reasonsById = new Map<number, string[]>(ranked.map((s) => [s.v.id, s.reasons]));
 
   // Formato de exibição: *Modelo | Ano | R$ valor* (negrito WhatsApp, sem opcionais).
-  // O [ID:X] é interno (pro modelo usar nas ferramentas); não aparece pro cliente.
+  // O [ID:X] e o (match: ...) são INTERNOS — pro modelo usar/explicar, não pro cliente ver cru.
   const fmtLine = (v: any, i: number) => {
     const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
     const preco = fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price);
-    return `${i + 1}) [ID:${v.id}] *${title} | ${v.year} | ${preco}*`;
+    const rs = reasonsById.get(v.id) || [];
+    const matchHint = rs.length ? ` — (match: ${rs.join(", ")})` : "";
+    return `${i + 1}) [ID:${v.id}] *${title} | ${v.year} | ${preco}*${matchHint}`;
   };
 
   const toListItem = (v: any): ListItem => ({
@@ -492,7 +589,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   if (filtered.length > 0) {
     sess(sessionId).lastList = filtered.map(toListItem);
     recordShown(sessionId, filtered.map(toShown));
-    return `RESULTADOS (${filtered.length}). Liste TODOS os ${filtered.length} carros abaixo DE UMA VEZ (não mande um e espere o cliente pedir "outras"), cada um em uma mensagem, em NEGRITO, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho tipo "Modelo | Ano | valor", NÃO mostre opcionais nem o [ID:X] (o [ID:X] é só pra você usar nas ferramentas). Não invente dados. Depois pergunte qual interessou.\n${filtered.map(fmtLine).join("\n")}`;
+    return `RESULTADOS (${filtered.length}), já ORDENADOS do mais relevante pro menos. Liste TODOS os ${filtered.length} carros abaixo DE UMA VEZ (não mande um e espere o cliente pedir "outras"), cada um em uma mensagem, em NEGRITO, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho, NÃO mostre opcionais, NÃO mostre o [ID:X] nem o "(match: ...)" — isso é interno. Use os motivos do "(match: ...)" só pra EXPLICAR ao cliente por que recomenda um carro (ex: "esse tá dentro do seu orçamento e é automático"). Não invente dados. Depois pergunte qual interessou.\n${filtered.map(fmtLine).join("\n")}`;
   }
 
   // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles", mantém ORÇAMENTO e ano.
@@ -542,6 +639,73 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   sess(sessionId).lastList = alt.map(toListItem);
   recordShown(sessionId, alt.map(toShown));
   return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), ofereça deixando claro a diferença. Só ofereça carros com relação com o pedido. Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
+}
+
+// ── Fase 2: ferramentas dedicadas ────────────────────────────────────────────
+
+const precoDe = (v: any) => (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price;
+const tituloDe = (v: any) => v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
+
+/** Busca por OPCIONAIS (tags canônicas). Ex: ["teto_solar","couro"] ou texto livre. */
+async function execBuscarPorCaracteristica(sessionId: string, args: any): Promise<string> {
+  const raw: string[] = Array.isArray(args.caracteristicas) ? args.caracteristicas : (args.caracteristicas ? [String(args.caracteristicas)] : []);
+  const tags = Array.from(new Set(raw.flatMap((t) => tagsFromRequest(String(t)))));
+  if (tags.length === 0) return "Não reconheci a característica pedida. Ex.: teto solar, couro, câmera de ré, 4x4, multimídia, 7 lugares.";
+  let all = (await getAllCuratedVehicles()).filter((v: any) => Array.isArray(v.featuresCanon));
+  const cfg = await getSearchConfig();
+  const hits = all.filter((v: any) => tags.every((t) => (v.featuresCanon as string[]).includes(t)))
+    .sort((a: any, b: any) => precoDe(a) - precoDe(b)).slice(0, cfg.limit);
+  const nomes = labelsForTags(tags).join(", ");
+  if (hits.length === 0) return `Nenhum veículo disponível com: ${nomes}. Diga isso com sinceridade e ofereça alternativas próximas — NÃO invente opcional.`;
+  sess(sessionId).lastList = hits.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") }));
+  recordShown(sessionId, hits.map(toShown));
+  const linhas = hits.map((v: any, i: number) => `${i + 1}) [ID:${v.id}] *${tituloDe(v)} | ${v.year} | ${fmtBRL(precoDe(v))}*`).join("\n");
+  return `CARROS COM ${nomes.toUpperCase()} (${hits.length}). Liste em NEGRITO, um por mensagem, sem [ID:X] nem opcionais crus. Você pode dizer que eles têm ${nomes}. Não invente. Depois pergunte qual interessou.\n${linhas}`;
+}
+
+/** Veículos PARECIDOS com um id (mesmo segmento/marca, faixa de preço ±25%). */
+async function execVeiculosParecidos(sessionId: string, args: any): Promise<string> {
+  const base: any = await getVehicleById(Number(args.veiculo_id));
+  if (!base) return `[INTERNO] ID ${args.veiculo_id} não existe. Use um [ID:X] real.`;
+  const cfg = await getSearchConfig();
+  const limite = Math.min(Math.max(Number(args.limite) || 3, 1), cfg.limit);
+  const baseBody = norm(`${base.category || ""} ${base.vehicleType || ""}`);
+  const basePreco = precoDe(base);
+  let all = (await getAllCuratedVehicles()).filter((v: any) => v.id !== base.id);
+  const scored = all.map((v: any) => {
+    let s = 0;
+    if (norm(`${v.category || ""} ${v.vehicleType || ""}`) === baseBody && baseBody) s += 50;
+    if (norm(v.brand) === norm(base.brand)) s += 20;
+    const p = precoDe(v);
+    if (basePreco && p >= basePreco * 0.75 && p <= basePreco * 1.25) s += 30;
+    if (norm(v.transmission).includes("auto") === norm(base.transmission).includes("auto")) s += 10;
+    return { v, s };
+  }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || Math.abs(precoDe(a.v) - basePreco) - Math.abs(precoDe(b.v) - basePreco)).slice(0, limite);
+  if (scored.length === 0) return `Não achei outro parecido com ${tituloDe(base)} no estoque agora. Seja honesto e ofereça ajuda pra refinar.`;
+  const sims = scored.map((x) => x.v);
+  sess(sessionId).lastList = sims.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") }));
+  recordShown(sessionId, sims.map(toShown));
+  const linhas = sims.map((v: any, i: number) => `${i + 1}) [ID:${v.id}] *${tituloDe(v)} | ${v.year} | ${fmtBRL(precoDe(v))}*`).join("\n");
+  return `PARECIDOS com ${tituloDe(base)} (${sims.length}). Liste em NEGRITO, um por mensagem, sem [ID:X]. Explique que são do mesmo estilo/faixa. Depois pergunte qual interessou.\n${linhas}`;
+}
+
+/** Confirma disponibilidade REAL antes de oferecer (available + status interno). */
+async function execVerificarDisponibilidade(args: any): Promise<string> {
+  const v: any = await getVehicleById(Number(args.veiculo_id));
+  if (!v) return `[INTERNO] ID ${args.veiculo_id} não existe. NÃO diga ao cliente que vendeu; peça pra confirmar qual carro.`;
+  const ok = v.available !== false && podeOfertar(v);
+  if (ok) return `DISPONÍVEL: ${tituloDe(v)} ${v.year} está disponível. Pode seguir (agendar visita/transferir).`;
+  return `INDISPONÍVEL: ${tituloDe(v)} ${v.year} NÃO está disponível agora (${v.internalStatus || "reservado/vendido"}). Avise com cuidado e ofereça um PARECIDO (use veiculos_parecidos).`;
+}
+
+/** Compara 2+ veículos lado a lado (dados reais). */
+async function execCompararVeiculos(args: any): Promise<string> {
+  const ids: number[] = Array.isArray(args.ids) ? args.ids.map((n: any) => Number(n)).filter(Boolean) : [];
+  if (ids.length < 2) return "Para comparar preciso de pelo menos 2 IDs de veículos já mostrados.";
+  const vs = (await Promise.all(ids.slice(0, 4).map((id) => getVehicleById(id)))).filter(Boolean) as any[];
+  if (vs.length < 2) return "Não encontrei veículos suficientes para comparar. Confirme os carros com o cliente.";
+  const linha = (v: any) => `• ${tituloDe(v)} | ${v.year} | ${fmtBRL(precoDe(v))} | ${v.mileage != null ? v.mileage.toLocaleString("pt-BR") + " km" : "km n/i"} | ${norm(v.transmission).includes("auto") ? "Automático" : "Manual"} | ${v.fuel || "?"}${Array.isArray(v.featuresCanon) && v.featuresCanon.length ? " | " + labelsForTags(v.featuresCanon.slice(0, 4)).join(", ") : ""}`;
+  return `COMPARATIVO (dados reais — apresente de forma clara e ajude o cliente a decidir pelo perfil dele; não invente):\n${vs.map(linha).join("\n")}`;
 }
 
 async function execApresentar(sessionId: string, args: any, images: AgentImage[]): Promise<string> {
@@ -753,6 +917,18 @@ export async function runAgentV2Turn(input: {
             result = await execApresentar(input.sessionId, args, images);
             if (args.veiculo_id) (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id);
           }
+        }
+        else if (tc.function.name === "buscar_por_caracteristica") {
+          result = await execBuscarPorCaracteristica(input.sessionId, args);
+        }
+        else if (tc.function.name === "veiculos_parecidos") {
+          result = await execVeiculosParecidos(input.sessionId, args);
+        }
+        else if (tc.function.name === "verificar_disponibilidade") {
+          result = await execVerificarDisponibilidade(args);
+        }
+        else if (tc.function.name === "comparar_veiculos") {
+          result = await execCompararVeiculos(args);
         }
         else if (tc.function.name === "coletar_dado") {
           result = execColetar(input.sessionId, args);
