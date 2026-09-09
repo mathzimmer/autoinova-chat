@@ -233,9 +233,9 @@ const TOOLS = [
         properties: {
           marca: { type: "string", description: "Ex: Toyota, VW, Fiat" },
           modelo: { type: "string", description: "Ex: Corolla, Onix" },
-          tipo: { type: "string", description: "Carroceria/categoria: suv, sedan, hatch, picape/caminhonete, 4x4/offroad, moto, van." },
+          tipo: { type: "string", description: "Carroceria/categoria: suv, sedan, hatch, picape/caminhonete, 4x4/offroad, moto, van. '4x4' vai AQUI (ou em requisitos), NUNCA em cambio." },
           cor: { type: "string" },
-          cambio: { type: "string", description: "automatico ou manual" },
+          cambio: { type: "string", description: "APENAS 'automatico' ou 'manual'. NUNCA coloque 4x4, diesel, flex aqui." },
           combustivel: { type: "string", description: "flex, gasolina, diesel, híbrido, elétrico" },
           requisitos: { type: "string", description: "Opcionais/características em texto livre: 'teto solar', 'couro', 'multimídia', 'automático completo'. Busca nos opcionais e na descrição." },
           preco_max: { type: "number", description: "Preço TOTAL do veículo em reais (ex: 80000). NUNCA coloque aqui valor de parcela mensal — 'R$1.300 por mês' é parcela de financiamento, não o preço do carro." },
@@ -489,7 +489,19 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   }
 
   const searchCfg = await getSearchConfig();
-  const cambioAuto = args.cambio ? norm(args.cambio).includes("auto") : null;
+  // Câmbio SÓ vale se for automático/manual. Se o modelo mandou "4x4", "diesel",
+  // "flex" etc no campo cambio (erro comum), realoca para tipo/combustível/requisito
+  // em vez de filtrar por câmbio (senão zera a busca à toa).
+  const cambioVal = args.cambio ? norm(args.cambio) : "";
+  const cambioAuto = /auto/.test(cambioVal) ? true : /manual/.test(cambioVal) ? false : null;
+  if (args.cambio && cambioAuto === null) {
+    if (/(4x4|4wd|awd|off ?road|diesel)/.test(cambioVal)) {
+      if (/(4x4|4wd|awd|off ?road)/.test(cambioVal)) args.tipo = args.tipo || "4x4";
+      if (/diesel/.test(cambioVal)) args.combustivel = args.combustivel || "diesel";
+    } else {
+      args.requisitos = `${args.requisitos || ""} ${args.cambio}`.trim();
+    }
+  }
   // Requisitos: tags canônicas reconhecidas + palavras soltas (fallback).
   const reqTags: string[] = args.requisitos ? tagsFromRequest(args.requisitos) : [];
   const reqWords = args.requisitos ? norm(args.requisitos).split(/\s+/).filter((w: string) => w.length >= 3) : [];
@@ -513,14 +525,17 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     }
     const bodyText = norm(`${v.category || ""} ${v.vehicleType || ""} ${v.model || ""} ${v.title || ""}`);
     if (args.tipo && !matchTipo(bodyText, args.tipo)) return false;
-    // Requisitos: se reconhecemos tags E o veículo tem featuresCanon → exige as tags.
-    // Senão, cai no comportamento antigo (substring nos opcionais/descrição).
-    const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
-    if (reqTags.length && canon.length) {
-      if (!reqTags.every((t) => canon.includes(t))) return false;
-    } else if (reqWords.length) {
-      const feat = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""}`);
-      if (!reqWords.every((w: string) => feat.includes(w))) return false;
+    // Requisitos (TOLERANTE): texto completo do veículo (opcionais + descrição +
+    // título + versão + combustível). Uma tag é atendida se estiver no featuresCanon
+    // OU se aparecer no texto (ex: "4x4" no título "S10 LT 4x4"). Palavras soltas
+    // (ex: "diesel", "completo") são exigidas no texto. Isso evita descartar carros
+    // só porque o feed não cadastrou o opcional como tag.
+    if (reqTags.length || reqWords.length) {
+      const rawText = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""} ${v.version || ""} ${v.fuel || ""}`);
+      const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
+      const canonSet = new Set<string>([...canon, ...tagsFromRequest(rawText)]);
+      if (reqTags.length && !reqTags.every((t) => canonSet.has(t))) return false;
+      if (reqWords.length && !reqWords.every((w: string) => rawText.includes(w))) return false;
     }
     return true;
   });
