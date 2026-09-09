@@ -2549,8 +2549,17 @@ export async function assignSellerRoundRobin(
 export async function getVehicleById(vehicleId: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
-  return rows[0] || null;
+  try {
+    const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+    return rows[0] || null;
+  } catch (e: any) {
+    // Fallback resiliente: se as colunas novas (Vehicle Knowledge Layer) ainda não
+    // existem no banco (migração pendente), seleciona só as colunas legadas.
+    console.warn("[getVehicleById] select-all falhou (rode a migração de vehicles). Fallback legado:", e?.message);
+    const { selectVehiclesSafe } = await import("./stockSync");
+    const rows = await selectVehiclesSafe(db, eq(vehicles.id, vehicleId));
+    return rows[0] || null;
+  }
 }
 
 // ─── Rescue Attempts Queries ─────────────────────────────────

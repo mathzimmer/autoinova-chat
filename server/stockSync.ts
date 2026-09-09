@@ -17,6 +17,39 @@ export function podeOfertar(v: any): boolean {
   return OFERTAVEL_STATUS.has(s);
 }
 
+// Colunas ANTERIORES à Vehicle Knowledge Layer (existem em qualquer banco).
+// Usadas como fallback caso a migração das colunas novas ainda não tenha rodado —
+// assim o agente NUNCA quebra por descompasso entre código e banco.
+const LEGACY_VEHICLE_COLS = {
+  id: vehicles.id, externalId: vehicles.externalId, brand: vehicles.brand, model: vehicles.model,
+  version: vehicles.version, title: vehicles.title, year: vehicles.year, fabricYear: vehicles.fabricYear,
+  price: vehicles.price, regularPrice: vehicles.regularPrice, promotionPrice: vehicles.promotionPrice,
+  mileage: vehicles.mileage, color: vehicles.color, transmission: vehicles.transmission, fuel: vehicles.fuel,
+  category: vehicles.category, vehicleType: vehicles.vehicleType, condition: vehicles.condition, doors: vehicles.doors,
+  description: vehicles.description, url: vehicles.url, imageUrl: vehicles.imageUrl, images: vehicles.images,
+  features: vehicles.features, negotiation: vehicles.negotiation, plate: vehicles.plate, seller: vehicles.seller,
+  locationCity: vehicles.locationCity, phone: vehicles.phone, available: vehicles.available,
+  lastSyncedAt: vehicles.lastSyncedAt, createdAt: vehicles.createdAt, updatedAt: vehicles.updatedAt,
+} as const;
+
+let _legacyVehicleFallback = false; // uma vez detectado, evita tentar select-all de novo
+
+/** SELECT em vehicles resiliente: tenta todas as colunas; se falhar (colunas novas
+ *  ausentes), cai para as colunas legadas. `where` é opcional. */
+export async function selectVehiclesSafe(db: any, whereClause?: any): Promise<any[]> {
+  if (!_legacyVehicleFallback) {
+    try {
+      const base = db.select().from(vehicles);
+      return await (whereClause ? base.where(whereClause) : base);
+    } catch (e: any) {
+      _legacyVehicleFallback = true;
+      console.warn("[Vehicles] colunas novas ausentes no banco — rode a migração 2026-09-09_vehicles_knowledge_layer.sql. Usando fallback legado.", e?.message);
+    }
+  }
+  const base = db.select(LEGACY_VEHICLE_COLS).from(vehicles);
+  return await (whereClause ? base.where(whereClause) : base);
+}
+
 const STOCK_URL = "https://autoconf-prod.s3.sa-east-1.amazonaws.com/carros-na-serra/642av2OVG5XVCHO5GK8IvGGM5Pqo1JwOYe8swwXv.json";
 
 interface ExternalVehicle {
@@ -390,7 +423,7 @@ async function getVehicleByIdForAI(vehicleId: number): Promise<{ found: boolean;
   const db = await getDb();
   if (!db) return { found: false, text: "Estoque indisponível no momento.", vehicle: null };
 
-  const rows = await db.select().from(vehicles).where(eq(vehicles.id, vehicleId)).limit(1);
+  const rows = await selectVehiclesSafe(db, eq(vehicles.id, vehicleId));
   if (rows.length === 0) {
     // ID não existe = provável id errado/inventado pelo modelo. NÃO dizer ao cliente
     // que vendeu — instruir a usar um id real da lista já mostrada.
@@ -423,7 +456,7 @@ export async function searchVehiclesStructured(opts: {
   const db = await getDb();
   if (!db) return [];
   const cfg = await getStockAiConfig();
-  let all = await db.select().from(vehicles).where(eq(vehicles.available, true));
+  let all = await selectVehiclesSafe(db, eq(vehicles.available, true));
   all = all.filter((v: any) => passesStockCuration(v, cfg));
 
   const stop = new Set(["carro", "carros", "quero", "um", "uma", "de", "do", "da", "com", "ate", "até", "por", "o", "a", "veiculo", "veículo"]);
@@ -460,7 +493,7 @@ export async function getAllCuratedVehicles(): Promise<any[]> {
   const db = await getDb();
   if (!db) return [];
   const cfg = await getStockAiConfig();
-  let all = await db.select().from(vehicles).where(eq(vehicles.available, true));
+  let all = await selectVehiclesSafe(db, eq(vehicles.available, true));
   all = all.filter((v: any) => passesStockCuration(v, cfg));
   return all;
 }
