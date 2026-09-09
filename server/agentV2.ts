@@ -237,7 +237,8 @@ const TOOLS = [
           cor: { type: "string" },
           cambio: { type: "string", description: "APENAS 'automatico' ou 'manual'. NUNCA coloque 4x4, diesel, flex aqui." },
           combustivel: { type: "string", description: "flex, gasolina, diesel, híbrido, elétrico" },
-          requisitos: { type: "string", description: "Opcionais/características em texto livre: 'teto solar', 'couro', 'multimídia', 'automático completo'. Busca nos opcionais e na descrição." },
+          requisitos: { type: "string", description: "Opcionais/características em texto livre: 'teto solar', 'couro', 'multimídia', 'automático completo'. Busca nos opcionais e na descrição. Combina com marca/modelo/preço." },
+          caracteristicas: { type: "array", items: { type: "string" }, description: "Alternativa a requisitos: lista de opcionais ['teto solar','couro']. Combina com todos os outros filtros." },
           preco_max: { type: "number", description: "Preço TOTAL do veículo em reais (ex: 80000). NUNCA coloque aqui valor de parcela mensal — 'R$1.300 por mês' é parcela de financiamento, não o preço do carro." },
           preco_min: { type: "number", description: "Preço TOTAL mínimo em reais." },
           ano_min: { type: "number" },
@@ -284,11 +285,14 @@ const TOOLS = [
     type: "function",
     function: {
       name: "buscar_por_caracteristica",
-      description: "Busca veículos por OPCIONAIS/características específicas. Use quando o cliente pede um item: 'tem carro com teto solar?', 'algum com câmera de ré e couro?', '4x4', '7 lugares'. Passe as características em `caracteristicas`.",
+      description: "Busca veículos por OPCIONAIS quando o cliente NÃO cita um modelo específico ('tem carro com teto solar?', 'algum com câmera de ré e couro?'). SE o cliente citar marca/modelo junto ('Corolla com teto', 'Compass com couro'), preencha também marca/modelo — NUNCA retorne carros de outro modelo.",
       parameters: {
         type: "object",
         properties: {
           caracteristicas: { type: "array", items: { type: "string" }, description: "Ex: ['teto solar','couro','câmera de ré','4x4','multimídia','7 lugares']." },
+          marca: { type: "string", description: "Se o cliente citou a marca." },
+          modelo: { type: "string", description: "Se o cliente citou o modelo (ex: 'Corolla')." },
+          preco_max: { type: "number", description: "Se o cliente citou teto de preço." },
         },
         required: ["caracteristicas"], additionalProperties: false,
       },
@@ -469,6 +473,13 @@ function resolveSelection(msg: string, list?: ListItem[]): number | null {
 }
 
 async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: boolean }): Promise<string> {
+  // MOTOR ÚNICO: características entram junto com os filtros. Se vier `caracteristicas`
+  // (array, da tool de característica), dobra em `requisitos` — assim marca/modelo/
+  // preço e opcionais SEMPRE combinam na mesma busca.
+  if (args.caracteristicas) {
+    const carArr = Array.isArray(args.caracteristicas) ? args.caracteristicas : [String(args.caracteristicas)];
+    args.requisitos = [args.requisitos, ...carArr].filter(Boolean).join(" ");
+  }
   let all = await getAllCuratedVehicles();
   // Barra não-carros que às vezes vêm no feed (barco, lancha, jet ski).
   all = all.filter((v: any) => {
@@ -672,38 +683,21 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
 const precoDe = (v: any) => (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price;
 const tituloDe = (v: any) => v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
 
-/** Busca por OPCIONAIS (tags canônicas). Ex: ["teto_solar","couro"] ou texto livre. */
+/**
+ * Busca por OPCIONAIS — MESMO MOTOR da buscar_veiculos. Só um atalho: converte
+ * `caracteristicas` em `requisitos` e delega pra execBuscar, mantendo marca/modelo/
+ * preço junto. Assim as duas ferramentas trabalham em CONJUNTO (mesma filtragem,
+ * ranking, tolerância e exclusão de já mostrados) e nunca perdem o modelo.
+ */
 async function execBuscarPorCaracteristica(sessionId: string, args: any, opts?: { excludeShown?: boolean }): Promise<string> {
   const raw: string[] = Array.isArray(args.caracteristicas) ? args.caracteristicas : (args.caracteristicas ? [String(args.caracteristicas)] : []);
-  const tags = Array.from(new Set(raw.flatMap((t) => tagsFromRequest(String(t)))));
-  if (tags.length === 0) return "Não reconheci a característica pedida. Ex.: teto solar, couro, câmera de ré, 4x4, multimídia, 7 lugares.";
-  const all = await getAllCuratedVehicles();
-  const cfg = await getSearchConfig();
-  // TOLERANTE: a tag conta se estiver no featuresCanon OU aparecer no texto do
-  // veículo (ex: "4x4" no título "Ranger XL 4x4"), pois o feed nem sempre cadastra.
-  const matches = all.filter((v: any) => {
-    const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
-    const rawText = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""} ${v.version || ""} ${v.fuel || ""}`);
-    const canonSet = new Set<string>([...canon, ...tagsFromRequest(rawText)]);
-    return tags.every((t) => canonSet.has(t));
-  }).sort((a: any, b: any) => precoDe(a) - precoDe(b));
-  const nomes = labelsForTags(tags).join(", ");
-  // "Tem outros?" → exclui os já mostrados e traz novos.
-  const shownIds = new Set(sess(sessionId).shown.map((x) => x.id));
-  let pool = matches;
-  if (opts?.excludeShown) {
-    const novos = matches.filter((v: any) => !shownIds.has(v.id));
-    if (novos.length === 0 && matches.length > 0) {
-      return `JÁ MOSTREI todos os carros com ${nomes} que temos — não há OUTROS. Diga com sinceridade e ofereça ajustar o critério ou falar com o vendedor. NÃO repita a mesma lista.`;
-    }
-    pool = novos.length ? novos : matches;
+  if (raw.length === 0 && !args.modelo && !args.marca) {
+    return "Não reconheci a característica pedida. Ex.: teto solar, couro, câmera de ré, 4x4, multimídia, 7 lugares.";
   }
-  const hits = pool.slice(0, cfg.limit);
-  if (hits.length === 0) return `Nenhum veículo disponível com: ${nomes}. Diga isso com sinceridade e ofereça alternativas próximas — NÃO invente opcional.`;
-  sess(sessionId).lastList = hits.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") }));
-  recordShown(sessionId, hits.map(toShown));
-  const linhas = hits.map((v: any, i: number) => `${i + 1}) [ID:${v.id}] *${tituloDe(v)} | ${v.year} | ${fmtBRL(precoDe(v))}*`).join("\n");
-  return `CARROS COM ${nomes.toUpperCase()} (${hits.length}). Liste em NEGRITO, um por mensagem, sem [ID:X] nem opcionais crus. Você pode dizer que eles têm ${nomes}. Não invente. Depois pergunte qual interessou.\n${linhas}`;
+  return execBuscar(sessionId, {
+    marca: args.marca, modelo: args.modelo, preco_max: args.preco_max,
+    requisitos: raw.join(" "),
+  }, opts);
 }
 
 /** Veículos PARECIDOS com um id (mesmo segmento/marca, faixa de preço ±25%). */
@@ -892,6 +886,8 @@ export async function runAgentV2Turn(input: {
 - APRESENTAR: chame apresentar_veiculo SOMENTE quando o cliente ESCOLHE um carro NOVO (que ainda não foi mostrado) ou PEDE fotos. Depois das fotos, elogie (variado) + pergunte se gostou. Se o carro de interesse JÁ foi apresentado e você está no meio da coleta (nome, cidade, troca, pagamento), NÃO reapresente as fotos nem repita "gostou?" — apenas siga o PRÓXIMO PASSO do funil.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
+- PERGUNTA DE PRODUTO VEM PRIMEIRO: se o cliente já pede um carro (cita modelo, tipo, opcional ou preço — ex: "tem corolla com teto?"), BUSQUE e mostre ANTES de pedir nome/cidade. Colete nome/cidade DEPOIS, de forma natural. NUNCA abra a conversa pedindo nome quando o cliente já perguntou por um veículo.
+- MODELO + OPCIONAL: se o cliente pede um modelo COM um opcional ("Corolla com teto", "Compass com couro"), mantenha o MODELO na busca — nunca mostre outro modelo como se fosse o pedido. Se não houver aquele modelo com o opcional, diga a verdade e ofereça alternativas.
 - RESULTADO ÚNICO: se a busca traz só 1 carro, ele JÁ é o carro de interesse — apresente e siga o funil. NUNCA pergunte "qual desses" nem repita a busca/lista do mesmo carro.
 - SINAL DE INTERESSE = CONFIRMAÇÃO: perguntas como "aceita troca?", "posso financiar?", "qual a km?", "tem garantia?", "qual o preço?" sobre um carro já mostrado JÁ confirmam o interesse nele. Registre o interesse e siga o PRÓXIMO PASSO do funil — não volte a perguntar qual carro é.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
