@@ -468,7 +468,7 @@ function resolveSelection(msg: string, list?: ListItem[]): number | null {
   return null;
 }
 
-async function execBuscar(sessionId: string, args: any): Promise<string> {
+async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: boolean }): Promise<string> {
   let all = await getAllCuratedVehicles();
   // Barra não-carros que às vezes vêm no feed (barco, lancha, jet ski).
   all = all.filter((v: any) => {
@@ -507,7 +507,7 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
   const reqWords = args.requisitos ? norm(args.requisitos).split(/\s+/).filter((w: string) => w.length >= 3) : [];
 
   // Filtro DURO (elimina quem não atende os critérios objetivos).
-  const survivors = all.filter((v: any) => {
+  const survivorsAll = all.filter((v: any) => {
     if (args.preco_max && v.price > args.preco_max) return false;
     if (args.preco_min && v.price < args.preco_min) return false;
     if (args.ano_min && v.year < args.ano_min) return false;
@@ -539,6 +539,17 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     }
     return true;
   });
+
+  // "Tem outros?" → exclui os que JÁ foram mostrados nesta conversa e traz novos.
+  const shownIds = new Set(sess(sessionId).shown.map((x) => x.id));
+  let survivors = survivorsAll;
+  if (opts?.excludeShown) {
+    const novos = survivorsAll.filter((v: any) => !shownIds.has(v.id));
+    if (novos.length === 0 && survivorsAll.length > 0) {
+      return "JÁ MOSTREI todos os carros que temos com esse perfil — não há OUTROS no momento. Diga isso com sinceridade e ofereça: ajustar o filtro (preço/tipo/ano), ver de novo os que já mostrou, ou falar com um vendedor. NÃO repita a mesma lista.";
+    }
+    survivors = novos.length ? novos : survivorsAll;
+  }
 
   // RANKING (Fase 1): pontua relevância e guarda os MOTIVOS do match.
   // Fórmula (documentada): orçamento folgado +25 / no limite +15; tipo +20;
@@ -662,7 +673,7 @@ const precoDe = (v: any) => (v.promotionPrice && v.promotionPrice < v.price) ? v
 const tituloDe = (v: any) => v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
 
 /** Busca por OPCIONAIS (tags canônicas). Ex: ["teto_solar","couro"] ou texto livre. */
-async function execBuscarPorCaracteristica(sessionId: string, args: any): Promise<string> {
+async function execBuscarPorCaracteristica(sessionId: string, args: any, opts?: { excludeShown?: boolean }): Promise<string> {
   const raw: string[] = Array.isArray(args.caracteristicas) ? args.caracteristicas : (args.caracteristicas ? [String(args.caracteristicas)] : []);
   const tags = Array.from(new Set(raw.flatMap((t) => tagsFromRequest(String(t)))));
   if (tags.length === 0) return "Não reconheci a característica pedida. Ex.: teto solar, couro, câmera de ré, 4x4, multimídia, 7 lugares.";
@@ -670,13 +681,24 @@ async function execBuscarPorCaracteristica(sessionId: string, args: any): Promis
   const cfg = await getSearchConfig();
   // TOLERANTE: a tag conta se estiver no featuresCanon OU aparecer no texto do
   // veículo (ex: "4x4" no título "Ranger XL 4x4"), pois o feed nem sempre cadastra.
-  const hits = all.filter((v: any) => {
+  const matches = all.filter((v: any) => {
     const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
     const rawText = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""} ${v.version || ""} ${v.fuel || ""}`);
     const canonSet = new Set<string>([...canon, ...tagsFromRequest(rawText)]);
     return tags.every((t) => canonSet.has(t));
-  }).sort((a: any, b: any) => precoDe(a) - precoDe(b)).slice(0, cfg.limit);
+  }).sort((a: any, b: any) => precoDe(a) - precoDe(b));
   const nomes = labelsForTags(tags).join(", ");
+  // "Tem outros?" → exclui os já mostrados e traz novos.
+  const shownIds = new Set(sess(sessionId).shown.map((x) => x.id));
+  let pool = matches;
+  if (opts?.excludeShown) {
+    const novos = matches.filter((v: any) => !shownIds.has(v.id));
+    if (novos.length === 0 && matches.length > 0) {
+      return `JÁ MOSTREI todos os carros com ${nomes} que temos — não há OUTROS. Diga com sinceridade e ofereça ajustar o critério ou falar com o vendedor. NÃO repita a mesma lista.`;
+    }
+    pool = novos.length ? novos : matches;
+  }
+  const hits = pool.slice(0, cfg.limit);
   if (hits.length === 0) return `Nenhum veículo disponível com: ${nomes}. Diga isso com sinceridade e ofereça alternativas próximas — NÃO invente opcional.`;
   sess(sessionId).lastList = hits.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") }));
   recordShown(sessionId, hits.map(toShown));
@@ -906,6 +928,8 @@ export async function runAgentV2Turn(input: {
   const tratarComoSelecao = selectedId != null && !blockAsTroca && (nomeouModelo || !jaTemInteresse || msgTokens <= 3);
   // `contextoTroca` (usado no bloqueio de apresentar) = descrição de usado.
   const contextoTroca = blockAsTroca;
+  // Cliente pediu OUTRAS opções → a busca deve excluir o que já foi mostrado.
+  const pedidoOutros = /\b(outro|outros|outra|outras|mais op|mais carro|mais alguma|tem mais|al[eé]m d|diferente|novas op)/i.test(norm(input.message));
 
   let selBlock = "";
   if (tratarComoSelecao) {
@@ -942,7 +966,7 @@ export async function runAgentV2Turn(input: {
       try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* noop */ }
       let result = "";
       try {
-        if (tc.function.name === "buscar_veiculos") result = await execBuscar(input.sessionId, args);
+        if (tc.function.name === "buscar_veiculos") result = await execBuscar(input.sessionId, args, { excludeShown: pedidoOutros });
         else if (tc.function.name === "apresentar_veiculo") {
           // Rede de segurança: só corrige o id pela seleção determinística se de fato
           // tratamos a mensagem como seleção (não quando é descrição da TROCA).
@@ -966,7 +990,7 @@ export async function runAgentV2Turn(input: {
           }
         }
         else if (tc.function.name === "buscar_por_caracteristica") {
-          result = await execBuscarPorCaracteristica(input.sessionId, args);
+          result = await execBuscarPorCaracteristica(input.sessionId, args, { excludeShown: pedidoOutros });
         }
         else if (tc.function.name === "veiculos_parecidos") {
           result = await execVeiculosParecidos(input.sessionId, args);
