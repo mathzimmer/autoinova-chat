@@ -804,15 +804,17 @@ function execColetar(sessionId: string, args: any): string {
 
 /** Próximo passo obrigatório do funil, na ordem. "" = checklist completo. */
 function nextStep(lead: LeadData): string {
-  if (!lead.nome) return "PRÓXIMO PASSO: descubra e registre o NOME do cliente.";
-  if (!lead.cidade) return "PRÓXIMO PASSO: descubra a CIDADE do cliente (e se mora longe, ofereça atendimento online).";
   if (!lead.veiculoId && !lead.veiculoInteresse) return "PRÓXIMO PASSO: descubra o VEÍCULO de interesse (busque e mostre).";
+  // NOME e CIDADE juntos, na MESMA mensagem.
+  if (!lead.nome && !lead.cidade) return "PRÓXIMO PASSO: peça o NOME e a CIDADE do cliente na MESMA mensagem (uma frase só, ex: 'Pra adiantar seu atendimento, me diz seu nome e de qual cidade você é?').";
+  if (!lead.nome) return "PRÓXIMO PASSO: pegue o NOME do cliente.";
+  if (!lead.cidade) return "PRÓXIMO PASSO: pegue a CIDADE do cliente (se morar longe, ofereça atendimento online).";
   if (lead.temTroca === undefined) return "PRÓXIMO PASSO: pergunte se o cliente tem carro na TROCA.";
   if (lead.temTroca && !lead.trocaModelo) return "PRÓXIMO PASSO: pegue os dados da TROCA (modelo, ano, km).";
   if (!lead.pagamento) return "PRÓXIMO PASSO: pergunte a forma de PAGAMENTO (à vista ou financiado).";
   if (lead.pagamento === "financiado" && (!lead.finNascimento || !lead.finParcela)) return "PRÓXIMO PASSO: colete os dados do FINANCIAMENTO (data de nascimento e valor de parcela). Peça o CPF também, mas se o cliente NÃO quiser passar, registre recusou_cpf: true e SIGA — não insista.";
   if (lead.pagamento === "financiado" && !lead.finCpf && !lead.finCpfRecusado) return "PRÓXIMO PASSO: peça o CPF pra simulação. Se o cliente não quiser passar, registre recusou_cpf: true e siga — não insista nem bloqueie.";
-  return "CHECKLIST COMPLETO: pode agendar visita ou transferir pro vendedor com transferir_para_vendedor.";
+  return "CHECKLIST COMPLETO: agora OFEREÇA AGENDAR UMA VISITA — pergunte o DIA e o HORÁRIO que ele pretende ir e em qual loja. Deixe claro que a CONFIRMAÇÃO é feita pelo VENDEDOR. Assim que tiver dia e horário (ou se ele preferir só falar com o vendedor), CHAME transferir_para_vendedor (motivo: agendamento) com tudo no resumo.";
 }
 
 /** true se todos os obrigatórios do caminho estão preenchidos. */
@@ -886,7 +888,10 @@ export async function runAgentV2Turn(input: {
 - APRESENTAR: chame apresentar_veiculo SOMENTE quando o cliente ESCOLHE um carro NOVO (que ainda não foi mostrado) ou PEDE fotos. Depois das fotos, elogie (variado) + pergunte se gostou. Se o carro de interesse JÁ foi apresentado e você está no meio da coleta (nome, cidade, troca, pagamento), NÃO reapresente as fotos nem repita "gostou?" — apenas siga o PRÓXIMO PASSO do funil.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
+- PRIMEIRA MENSAGEM: mande a SAUDAÇÃO numa mensagem e a resposta/ação na mensagem SEGUINTE (duas bolhas) — separe com "|||". Ex: "Oii! Seja bem-vindo à Auto Inova 👋 ||| Deixa eu verificar aqui pra você...".
 - PERGUNTA DE PRODUTO VEM PRIMEIRO: se o cliente já pede um carro (cita modelo, tipo, opcional ou preço — ex: "tem corolla com teto?"), BUSQUE e mostre ANTES de pedir nome/cidade. Colete nome/cidade DEPOIS, de forma natural. NUNCA abra a conversa pedindo nome quando o cliente já perguntou por um veículo.
+- NOME E CIDADE JUNTOS: quando for coletar cadastro, peça o NOME e a CIDADE na MESMA mensagem (uma pergunta só), não em duas etapas.
+- VISITA: depois de coletar troca e pagamento, ofereça AGENDAR a visita perguntando o DIA e o HORÁRIO que o cliente pretende ir. Você NÃO confirma a visita — deixe claro que quem confirma é o VENDEDOR. Ao ter dia/horário, transfira.
 - MODELO + OPCIONAL: se o cliente pede um modelo COM um opcional ("Corolla com teto", "Compass com couro"), mantenha o MODELO na busca — nunca mostre outro modelo como se fosse o pedido. Se não houver aquele modelo com o opcional, diga a verdade e ofereça alternativas.
 - RESULTADO ÚNICO: se a busca traz só 1 carro, ele JÁ é o carro de interesse — apresente e siga o funil. NUNCA pergunte "qual desses" nem repita a busca/lista do mesmo carro.
 - SINAL DE INTERESSE = CONFIRMAÇÃO: perguntas como "aceita troca?", "posso financiar?", "qual a km?", "tem garantia?", "qual o preço?" sobre um carro já mostrado JÁ confirmam o interesse nele. Registre o interesse e siga o PRÓXIMO PASSO do funil — não volte a perguntar qual carro é.
@@ -940,7 +945,12 @@ export async function runAgentV2Turn(input: {
   const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead, s.shown) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
 
   // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória → funil.
-  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}`;
+  // Primeira interação? (nenhuma resposta do bot ainda) → reforça saudação + resposta separadas.
+  const isFirstTurn = !input.history.some((h) => h.role === "assistant");
+  const firstTurnBlock = isFirstTurn
+    ? `\n\n⚠️ É A PRIMEIRA MENSAGEM DA CONVERSA: comece com uma SAUDAÇÃO curta numa mensagem e, na mensagem SEGUINTE (separada por "|||"), responda/aja sobre o que o cliente pediu.`
+    : "";
+  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}${firstTurnBlock}`;
 
   const messages: LLMMsg[] = [{ role: "system", content: system }];
   for (const h of input.history.slice(-20)) messages.push({ role: h.role, content: h.content });
