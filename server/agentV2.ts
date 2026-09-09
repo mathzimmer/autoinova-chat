@@ -480,6 +480,15 @@ async function execBuscar(sessionId: string, args: any): Promise<string> {
     auto: norm(v.transmission).includes("auto"),
   });
 
+  if (filtered.length === 1) {
+    // Resultado ÚNICO: já é o carro de interesse. Não pergunte "qual desses".
+    const only = filtered[0];
+    sess(sessionId).lastList = filtered.map(toListItem);
+    recordShown(sessionId, filtered.map(toShown));
+    const lead = sess(sessionId).lead || (sess(sessionId).lead = {});
+    lead.veiculoId = only.id; // fixa o interesse (era o único resultado)
+    return `RESULTADO ÚNICO [ID:${only.id}]. É o ÚNICO carro que bate com o pedido, então JÁ é o carro de interesse do cliente — NÃO pergunte "qual desses". Mostre-o em uma mensagem em NEGRITO com os dados reais (ex: *Mitsubishi L200 Triton | 2013 | R$ 119.990*, sem cabeçalho, sem opcionais, sem [ID:X]) e, na MESMA resposta, ofereça as fotos ou avance o funil (${nextStep(lead)}). Se o cliente já deu um sinal de interesse (perguntou de troca, financiamento, km, preço, visita), trate como CONFIRMADO e siga direto o próximo passo.\n${filtered.map(fmtLine).join("\n")}`;
+  }
   if (filtered.length > 0) {
     sess(sessionId).lastList = filtered.map(toListItem);
     recordShown(sessionId, filtered.map(toShown));
@@ -673,6 +682,8 @@ export async function runAgentV2Turn(input: {
 - APRESENTAR: chame apresentar_veiculo SOMENTE quando o cliente ESCOLHE um carro NOVO (que ainda não foi mostrado) ou PEDE fotos. Depois das fotos, elogie (variado) + pergunte se gostou. Se o carro de interesse JÁ foi apresentado e você está no meio da coleta (nome, cidade, troca, pagamento), NÃO reapresente as fotos nem repita "gostou?" — apenas siga o PRÓXIMO PASSO do funil.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
+- RESULTADO ÚNICO: se a busca traz só 1 carro, ele JÁ é o carro de interesse — apresente e siga o funil. NUNCA pergunte "qual desses" nem repita a busca/lista do mesmo carro.
+- SINAL DE INTERESSE = CONFIRMAÇÃO: perguntas como "aceita troca?", "posso financiar?", "qual a km?", "tem garantia?", "qual o preço?" sobre um carro já mostrado JÁ confirmam o interesse nele. Registre o interesse e siga o PRÓXIMO PASSO do funil — não volte a perguntar qual carro é.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
 - NUNCA escreva links ou imagens no texto (nada de markdown ![]() nem URLs de foto). A foto é enviada SOMENTE pela ferramenta apresentar_veiculo. Só use links que vierem da ferramenta.
 - NUNCA invente km, câmbio, cor, ano ou preço: use APENAS os dados de "VEÍCULOS JÁ MOSTRADOS" ou do resultado da busca. Se o cliente perguntar algo que não está ali, diga que confirma o detalhe com o vendedor — NÃO chute número.
