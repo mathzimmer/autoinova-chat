@@ -666,10 +666,16 @@ async function execBuscarPorCaracteristica(sessionId: string, args: any): Promis
   const raw: string[] = Array.isArray(args.caracteristicas) ? args.caracteristicas : (args.caracteristicas ? [String(args.caracteristicas)] : []);
   const tags = Array.from(new Set(raw.flatMap((t) => tagsFromRequest(String(t)))));
   if (tags.length === 0) return "Não reconheci a característica pedida. Ex.: teto solar, couro, câmera de ré, 4x4, multimídia, 7 lugares.";
-  let all = (await getAllCuratedVehicles()).filter((v: any) => Array.isArray(v.featuresCanon));
+  const all = await getAllCuratedVehicles();
   const cfg = await getSearchConfig();
-  const hits = all.filter((v: any) => tags.every((t) => (v.featuresCanon as string[]).includes(t)))
-    .sort((a: any, b: any) => precoDe(a) - precoDe(b)).slice(0, cfg.limit);
+  // TOLERANTE: a tag conta se estiver no featuresCanon OU aparecer no texto do
+  // veículo (ex: "4x4" no título "Ranger XL 4x4"), pois o feed nem sempre cadastra.
+  const hits = all.filter((v: any) => {
+    const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
+    const rawText = norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""} ${v.version || ""} ${v.fuel || ""}`);
+    const canonSet = new Set<string>([...canon, ...tagsFromRequest(rawText)]);
+    return tags.every((t) => canonSet.has(t));
+  }).sort((a: any, b: any) => precoDe(a) - precoDe(b)).slice(0, cfg.limit);
   const nomes = labelsForTags(tags).join(", ");
   if (hits.length === 0) return `Nenhum veículo disponível com: ${nomes}. Diga isso com sinceridade e ofereça alternativas próximas — NÃO invente opcional.`;
   sess(sessionId).lastList = hits.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") }));
@@ -883,13 +889,23 @@ export async function runAgentV2Turn(input: {
   // mensagem é curta e sem contexto de troca.
   const jaTemInteresse = !!(s.lead && s.lead.veiculoId);
   // Estamos esperando os DADOS DA TROCA? (cliente disse que tem troca, mas ainda
-  // não informou o modelo). Nesse caso, "corolla 2022 aut 45000km" é o carro DELE.
+  // não informou o modelo). Nesse caso, "compass 2021" / "corolla 2022 45000km" é o carro DELE.
   const esperandoTroca = !!(s.lead && s.lead.temTroca === true && !s.lead.trocaModelo);
-  // Contexto de troca: palavras-chave OU km/mil grudado em número ("45000km", "45 mil").
-  const contextoTroca = esperandoTroca
-    || /\btroca|dou\s+de\s+entrada|meu\s+carro|tenho\s+um|\bkm\b|\d\s*mil\b|\d\s*km\b|rodad|entrada/i.test(input.message);
+  // Descrição de carro DE TROCA = tem km/mil/rodado (especificação do usado), OU
+  // estamos justamente esperando os dados da troca. Isso BLOQUEIA virar seleção.
+  const temKmSpecs = /\bkm\b|\d\s*mil\b|\d\s*km\b|rodad/i.test(input.message);
+  const blockAsTroca = esperandoTroca || temKmSpecs;
+  // O cliente NOMEOU um modelo da última lista? (ex: "aceita troca na CHEROKEE").
+  // Nesse caso é seleção de interesse, mesmo com a palavra "troca" — desde que não
+  // seja descrição de usado (sem km specs).
+  const MODEL_STOP = new Set(["flex","auto","aut","turbo","diesel","dies","die","mec","manual","automatico","branco","preto","cinza","prata","branca","pick","luxe","sport","limited","laramie","katana","longitude","premium","prem","cabine","dupla","intercooler"]);
+  const selItem = selectedId != null ? (s.lastList || []).find((x) => x.id === selectedId) : null;
+  const nomeouModelo = !!(selItem && !temKmSpecs && norm(selItem.title).split(/\s+/)
+    .some((w) => w.length >= 4 && !/^\d+$/.test(w) && !MODEL_STOP.has(w) && norm(input.message).includes(w)));
   const msgTokens = input.message.trim().split(/\s+/).filter(Boolean).length;
-  const tratarComoSelecao = selectedId != null && !contextoTroca && (!jaTemInteresse || msgTokens <= 3);
+  const tratarComoSelecao = selectedId != null && !blockAsTroca && (nomeouModelo || !jaTemInteresse || msgTokens <= 3);
+  // `contextoTroca` (usado no bloqueio de apresentar) = descrição de usado.
+  const contextoTroca = blockAsTroca;
 
   let selBlock = "";
   if (tratarComoSelecao) {
