@@ -486,44 +486,54 @@ const ORD_WORDS: Record<string, number> = {
 };
 // Tokens de título que NÃO identificam modelo (versão, câmbio, cor, etc.).
 const MODEL_TOKEN_STOP = new Set(["flex", "aut", "auto", "automatico", "manual", "mec", "plus", "sel", "se", "tb", "turbo", "cd", "cs", "v6", "v8", "16v", "12v", "8v", "novo", "nova", "total", "mi", "i", "hse", "sport", "premier", "comfort", "comf", "style", "unique", "trendline", "titanium", "exclusive", "ivct", "tivct", "tsi", "gli", "limited", "longitude", "prem", "ecobo", "touring", "branco", "preto", "prata", "cinza", "flex/m", "motion", "katana", "laramie", "pick", "up", "luxe"]);
-function resolveSelection(msg: string, list?: ListItem[]): number | null {
-  if (!list || list.length === 0) return null;
+type SelResult = { id: number | null; options?: ListItem[] };
+/**
+ * Resolve a seleção do cliente. Se o critério (ano, modelo, cor) casar com VÁRIOS
+ * carros, retorna `options` (a lista ambígua) e id=null — o agente deve ENUMERAR
+ * essas opções e perguntar qual, em vez de escolher um no chute.
+ */
+function resolveSelectionEx(msg: string, list?: ListItem[]): SelResult {
+  if (!list || list.length === 0) return { id: null };
   const m = norm(msg).trim();
-  // Negação/troca de opção → NÃO force seleção (ex: "não quero a 2012", "quero outra").
-  if (/\bnao\b|\bnunca\b|sem interesse|nao quero|nao gostei|esquece|\boutro\b|\boutra\b/.test(m)) return null;
-  // MODELO (+ ano): "esse ka 2017", "o hb20 2019" — funciona mesmo em frase mais longa.
+  if (/\bnao\b|\bnunca\b|sem interesse|nao quero|nao gostei|esquece|\boutro\b|\boutra\b/.test(m)) return { id: null };
+  const oneOrMany = (hits: ListItem[]): SelResult | null => {
+    if (hits.length === 1) return { id: hits[0].id };
+    if (hits.length > 1) return { id: null, options: hits };
+    return null;
+  };
+  // MODELO (+ ano): "esse ka 2017", "os celta 2012"...
   const yrM = m.match(/\b(19|20)\d{2}\b/);
   const anoDito = yrM ? Number(yrM[0]) : null;
   const modelHits = list.filter((v) => norm(v.title).split(/\s+/)
     .some((w) => w.length >= 2 && !/^\d/.test(w) && !MODEL_TOKEN_STOP.has(w) && new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "")}\\b`).test(m)));
   if (modelHits.length) {
     const porAno = anoDito ? modelHits.filter((v) => v.year === anoDito) : modelHits;
-    const pick = porAno.length ? porAno : modelHits;
-    if (pick.length === 1) return pick[0].id;
+    const r = oneOrMany(porAno.length ? porAno : modelHits);
+    if (r) return r;
   }
-  // Daqui pra baixo (número/ordinal/cor solta), evita falso positivo em frase longa.
-  if (m.length > 30) return null;
-  // número puro ("1", "o 2", "opção 3")
+  if (m.length > 30) return { id: null };
+  // número puro / ordinal — SEMPRE inequívoco (índice explícito).
   const num = m.match(/^(?:o|a|no|na|op(?:c|ç)ao|numero|quero o|quero a|quero)?\s*(\d{1,2})\s*$/);
-  if (num) { const i = Number(num[1]) - 1; if (list[i]) return list[i].id; }
-  // ordinal por extenso
+  if (num) { const i = Number(num[1]) - 1; if (list[i]) return { id: list[i].id }; }
   for (const [w, idx] of Object.entries(ORD_WORDS)) {
-    if (m.includes(w)) { const i = idx < 0 ? list.length - 1 : idx; if (list[i]) return list[i].id; }
+    if (m.includes(w)) { const i = idx < 0 ? list.length - 1 : idx; if (list[i]) return { id: list[i].id }; }
   }
-  // ano (4 dígitos)
-  const yr = m.match(/\b(19|20)\d{2}\b/);
-  if (yr) { const hit = list.find(v => v.year === Number(yr[0])); if (hit) return hit.id; }
+  // ano solto
+  if (yrM) { const r = oneOrMany(list.filter((v) => v.year === Number(yrM[0]))); if (r) return r; }
   // cor
   for (const c of ["branco", "preto", "prata", "cinza", "vermelho", "azul", "verde", "amarelo", "dourado", "marrom", "bege", "vinho", "laranja"]) {
-    if (m.includes(c)) { const hit = list.find(v => norm(v.color).includes(c)); if (hit) return hit.id; }
+    if (m.includes(c)) { const r = oneOrMany(list.filter((v) => norm(v.color).includes(c))); if (r) return r; }
   }
   // câmbio
-  if (m.includes("automat")) { const hit = list.find(v => v.auto); if (hit) return hit.id; }
-  if (/\bmanual\b/.test(m)) { const hit = list.find(v => !v.auto); if (hit) return hit.id; }
-  // mais barato / mais caro
-  if (m.includes("barat")) return [...list].sort((a, b) => (a.price || 0) - (b.price || 0))[0].id;
-  if (m.includes("caro")) return [...list].sort((a, b) => (b.price || 0) - (a.price || 0))[0].id;
-  return null;
+  if (m.includes("automat")) { const r = oneOrMany(list.filter((v) => !!v.auto)); if (r) return r; }
+  if (/\bmanual\b/.test(m)) { const r = oneOrMany(list.filter((v) => !v.auto)); if (r) return r; }
+  // mais barato / mais caro (inequívoco: ordena e pega o extremo)
+  if (m.includes("barat")) return { id: [...list].sort((a, b) => (a.price || 0) - (b.price || 0))[0].id };
+  if (m.includes("caro")) return { id: [...list].sort((a, b) => (b.price || 0) - (a.price || 0))[0].id };
+  return { id: null };
+}
+function resolveSelection(msg: string, list?: ListItem[]): number | null {
+  return resolveSelectionEx(msg, list).id;
 }
 
 async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: boolean }): Promise<string> {
@@ -961,6 +971,7 @@ export async function runAgentV2Turn(input: {
 - DESCONTO/PIX/NEGOCIAÇÃO: NUNCA invente desconto, valor de PIX, "quanto faz à vista" ou condição especial. O preço é o anunciado; qualquer abatimento é NEGOCIADO com o VENDEDOR. Se perguntarem, diga que consegue as melhores condições na visita/com o vendedor e siga o funil.
 - AÇÃO NA HORA (nunca "um momento"): NUNCA diga "vou pegar as fotos", "vou registrar", "um momento", "aguarde" e pare. Se vai mostrar fotos, CHAME apresentar_veiculo AGORA; se o cliente informou dados, CHAME coletar_dado AGORA — tudo na MESMA resposta. Só fale depois de fazer.
 - NÃO escreva o separador "|||" no fim sem um segundo trecho depois: só use "|||" ENTRE duas mensagens reais.
+- VÁRIOS IGUAIS: se o pedido do cliente casa com MAIS DE UM carro (ex: "o 2012" com 3 Celta 2012), NÃO escolha um no chute — ENUMERE as opções que casaram (numeradas, com versão e preço) e pergunte QUAL. Só apresente foto depois que ele escolher um.
 - RESULTADO ÚNICO: se a busca traz só 1 carro, ele JÁ é o carro de interesse — apresente e siga o funil. NUNCA pergunte "qual desses" nem repita a busca/lista do mesmo carro.
 - SINAL DE INTERESSE = CONFIRMAÇÃO: perguntas como "aceita troca?", "posso financiar?", "qual a km?", "tem garantia?", "qual o preço?" sobre um carro já mostrado JÁ confirmam o interesse nele. Registre o interesse e siga o PRÓXIMO PASSO do funil — não volte a perguntar qual carro é.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
@@ -973,7 +984,10 @@ export async function runAgentV2Turn(input: {
     : "";
 
   // Seleção determinística sobre a última lista ("1", "o azul", "a 2012", "automático"...).
-  const selectedId = resolveSelection(input.message, s.lastList);
+  const selEx = resolveSelectionEx(input.message, s.lastList);
+  const selectedId = selEx.id;
+  // AMBÍGUO: o critério bateu em vários carros → o agente deve ENUMERAR e perguntar.
+  const ambiguas = (selEx.options && selEx.options.length > 1) ? selEx.options : null;
   // GUARDA ANTI-SEQUESTRO: se o cliente JÁ escolheu um carro e a mensagem fala da
   // TROCA (ex: "um gol 2014 56000km"), um ano solto NÃO deve trocar o veículo de
   // interesse. Só tratamos como (re)seleção se ainda não há interesse, OU se a
@@ -1001,13 +1015,18 @@ export async function runAgentV2Turn(input: {
   const pedidoOutros = /\b(outro|outros|outra|outras|mais op|mais carro|mais alguma|tem mais|al[eé]m d|diferente|novas op)/i.test(norm(input.message));
 
   let selBlock = "";
-  if (tratarComoSelecao) {
+  if (ambiguas && !blockAsTroca) {
+    // Estreita a lista pras opções que casaram (assim "1/2/3" na sequência funciona).
+    setLastList(input.sessionId, ambiguas);
+    const linhas = ambiguas.map((o, i) => `${i + 1}) [ID:${o.id}] *${o.title} | ${o.year || "?"}${o.price != null ? ` | ${fmtBRL(o.price)}` : ""}*`).join("\n");
+    selBlock = `\n\n⚠️ PEDIDO AMBÍGUO: ${ambiguas.length} veículos batem com o que o cliente disse. NÃO escolha um sozinho nem apresente foto ainda. ENUMERE estas opções (em NEGRITO, uma por mensagem, sem [ID:X]) e pergunte QUAL delas:\n${linhas}`;
+  } else if (tratarComoSelecao) {
     const it = (s.lastList || []).find((x) => x.id === selectedId);
     selBlock = `\n\n⚠️ SELEÇÃO DETECTADA: o cliente se refere ao veículo [ID:${selectedId}]${it ? ` (${it.title} ${it.year || ""} ${it.color || ""})`.trim() : ""} da última lista. Para apresentar/confirmar/mandar foto, use veiculo_id: ${selectedId}. NUNCA use outro id.`;
   }
 
   // Auto-captura: seleção de carro já vira interesse no funil (respeitando a guarda).
-  if (tratarComoSelecao) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId!; }
+  if (tratarComoSelecao && !ambiguas) { const lead = s.lead || (s.lead = {}); lead.veiculoId = selectedId!; }
 
   // Funil guiado: estado + próximo passo obrigatório (a "trilha" que garante a ordem).
   const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead, s.shown) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
@@ -1129,7 +1148,7 @@ export async function runAgentV2Turn(input: {
   // forçando a ação de verdade nesta mesma resposta — nada de "aguarde" e parar.
   const ehFillerSemAcao = images.length === 0 && !sess(input.sessionId).handedOff
     && limpaParte(reply).length < 170
-    && /\b(um momento|s[oó] um (instante|minuto|segundo)|aguarde|ja ja|já já|vou (pegar|buscar|mandar|enviar|registrar|verificar|providenciar|te enviar|preparar)|deixa eu (pegar|ver|buscar|verificar)|ja (vou|te) (envio|mando|passo))\b/i.test(norm(reply));
+    && /\b(um momento|s[oó] um (instante|minuto|segundo)|aguarde|ja ja|já já|vou (pegar|buscar|mandar|enviar|apresentar|mostrar|trazer|registrar|verificar|providenciar|te enviar|te mostrar|preparar)|deixa eu (pegar|ver|buscar|verificar|apresentar)|ja (vou|te) (envio|mando|passo|mostro|apresento))\b/i.test(norm(reply));
   if (ehFillerSemAcao) {
     messages.push({ role: "assistant", content: reply });
     messages.push({ role: "user", content: "[SISTEMA: NÃO diga 'um momento' e pare. EXECUTE AGORA, nesta MESMA resposta: se prometeu fotos, chame apresentar_veiculo; se o cliente informou dados (nome, cidade, troca, pagamento, CPF, nascimento, parcela), chame coletar_dado; então escreva a próxima resposta útil. Nada de 'aguarde'/'vou pegar'.]" });
