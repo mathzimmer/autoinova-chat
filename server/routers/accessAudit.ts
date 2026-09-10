@@ -8,12 +8,18 @@ import { AUDIT_COOKIE_NAME } from "@shared/const";
 import { protectedProcedure, router } from "../_core/trpc";
 import { TRPCError } from "@trpc/server";
 import {
-  touchLoginSession,
+  touchOrOpenLoginSession,
   listOnlineSessions,
   listRecentLoginSessions,
   ONLINE_WINDOW_MIN,
   getTeamMemberById,
 } from "../db";
+
+function clientIp(req: any): string | undefined {
+  const fwd = req?.headers?.["x-forwarded-for"];
+  const raw = Array.isArray(fwd) ? fwd[0] : (typeof fwd === "string" ? fwd.split(",")[0] : undefined);
+  return (raw || req?.ip || req?.socket?.remoteAddress || undefined)?.toString().trim();
+}
 
 /** Extrai o id do membro da equipe a partir do openId virtual. */
 function teamMemberIdFromCtx(ctx: any): number | null {
@@ -44,7 +50,17 @@ export const accessAuditRouter = router({
       const n = Number(cookies[AUDIT_COOKIE_NAME]);
       if (Number.isFinite(n)) auditSid = n;
     } catch { /* noop */ }
-    await touchLoginSession(memberId, auditSid);
+    // Se não houver sessão aberta (ex.: já estava logado antes, cookie de 1 ano),
+    // abre uma agora — assim TODA pessoa ativa aparece na auditoria.
+    const m = await getTeamMemberById(memberId);
+    await touchOrOpenLoginSession({
+      teamMemberId: memberId,
+      sessionId: auditSid,
+      memberName: m?.name,
+      memberEmail: m?.email,
+      ip: clientIp(ctx.req),
+      userAgent: (ctx.req as any)?.headers?.["user-agent"]?.toString(),
+    });
     return { ok: true } as const;
   }),
 

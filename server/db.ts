@@ -3278,6 +3278,41 @@ export async function touchLoginSession(teamMemberId: number, sessionId?: number
   }
 }
 
+/**
+ * Heartbeat que TAMBÉM abre a sessão se não houver uma aberta. Necessário porque
+ * o cookie dura ~1 ano: quem já está logado não passa mais pela tela de login,
+ * então o registro só no login perderia essa pessoa. Aqui, ao detectar atividade
+ * sem sessão aberta, criamos uma (loginAt = agora).
+ */
+export async function touchOrOpenLoginSession(data: {
+  teamMemberId: number;
+  sessionId?: number | null;
+  memberName?: string | null;
+  memberEmail?: string | null;
+  ip?: string | null;
+  userAgent?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const open = await db.select({ id: loginSessions.id }).from(loginSessions)
+    .where(and(eq(loginSessions.teamMemberId, data.teamMemberId), isNull(loginSessions.logoutAt)))
+    .orderBy(desc(loginSessions.loginAt)).limit(1);
+  if (open[0]) {
+    await db.update(loginSessions).set({ lastSeenAt: new Date() }).where(eq(loginSessions.id, open[0].id)).execute();
+    return;
+  }
+  const now = new Date();
+  await db.insert(loginSessions).values({
+    teamMemberId: data.teamMemberId,
+    memberName: data.memberName ?? null,
+    memberEmail: data.memberEmail ?? null,
+    ip: (data.ip ?? null)?.slice(0, 64) ?? null,
+    userAgent: (data.userAgent ?? null)?.slice(0, 400) ?? null,
+    loginAt: now,
+    lastSeenAt: now,
+  } as InsertLoginSession).execute();
+}
+
 /** Fecha a sessão (logout). Por id, ou a sessão aberta mais recente do membro. */
 export async function closeLoginSession(teamMemberId: number, sessionId?: number | null, reason = "logout"): Promise<void> {
   const db = await getDb();
