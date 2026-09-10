@@ -69,12 +69,28 @@ type LeadData = {
   finCpf?: string; finNascimento?: string; finParcela?: string; finEntrada?: string; finCpfRecusado?: boolean;
 };
 type ShownVehicle = { id: number; title: string; year?: number; km?: number; price?: number; cambio?: string; cor?: string };
-const SESSIONS = new Map<string, { shown: ShownVehicle[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[]; lead?: LeadData }>();
+const SESSIONS = new Map<string, { shown: ShownVehicle[]; handedOff?: boolean; photosSent?: Record<number, number>; lastList?: ListItem[]; lead?: LeadData; currentTurn?: number; lastListTurn?: number }>();
 function sess(id: string) {
   if (!SESSIONS.has(id)) SESSIONS.set(id, { shown: [] });
   return SESSIONS.get(id)!;
 }
 export function resetSession(id: string) { SESSIONS.delete(id); }
+
+/**
+ * Define a lista atual (pra seleção "esse Ka 2017"). Se VÁRIAS buscas rodam no
+ * MESMO turno (ex: cliente pediu "Ka, HB20, Gol"), ACUMULA em vez de sobrescrever,
+ * senão só a última busca fica na memória e a seleção pega o carro errado.
+ */
+function setLastList(sessionId: string, items: ListItem[]) {
+  const st = sess(sessionId);
+  if (st.lastListTurn === st.currentTurn && Array.isArray(st.lastList) && st.lastList.length) {
+    const seen = new Set(st.lastList.map((x) => x.id));
+    st.lastList = [...st.lastList, ...items.filter((i) => !seen.has(i.id))];
+  } else {
+    st.lastList = items;
+    st.lastListTurn = st.currentTurn;
+  }
+}
 
 function recordShown(id: string, items: ShownVehicle[]) {
   const s = sess(id);
@@ -451,12 +467,25 @@ const ORD_WORDS: Record<string, number> = {
   primeiro: 0, primeira: 0, segundo: 1, segunda: 1, terceiro: 2, terceira: 2,
   quarto: 3, quarta: 3, quinto: 4, quinta: 4, ultimo: -1, ultima: -1,
 };
+// Tokens de título que NÃO identificam modelo (versão, câmbio, cor, etc.).
+const MODEL_TOKEN_STOP = new Set(["flex", "aut", "auto", "automatico", "manual", "mec", "plus", "sel", "se", "tb", "turbo", "cd", "cs", "v6", "v8", "16v", "12v", "8v", "novo", "nova", "total", "mi", "i", "hse", "sport", "premier", "comfort", "comf", "style", "unique", "trendline", "titanium", "exclusive", "ivct", "tivct", "tsi", "gli", "limited", "longitude", "prem", "ecobo", "touring", "branco", "preto", "prata", "cinza", "flex/m", "motion", "katana", "laramie", "pick", "up", "luxe"]);
 function resolveSelection(msg: string, list?: ListItem[]): number | null {
   if (!list || list.length === 0) return null;
   const m = norm(msg).trim();
-  if (m.length > 30) return null;
   // Negação/troca de opção → NÃO force seleção (ex: "não quero a 2012", "quero outra").
   if (/\bnao\b|\bnunca\b|sem interesse|nao quero|nao gostei|esquece|\boutro\b|\boutra\b/.test(m)) return null;
+  // MODELO (+ ano): "esse ka 2017", "o hb20 2019" — funciona mesmo em frase mais longa.
+  const yrM = m.match(/\b(19|20)\d{2}\b/);
+  const anoDito = yrM ? Number(yrM[0]) : null;
+  const modelHits = list.filter((v) => norm(v.title).split(/\s+/)
+    .some((w) => w.length >= 2 && !/^\d/.test(w) && !MODEL_TOKEN_STOP.has(w) && new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "")}\\b`).test(m)));
+  if (modelHits.length) {
+    const porAno = anoDito ? modelHits.filter((v) => v.year === anoDito) : modelHits;
+    const pick = porAno.length ? porAno : modelHits;
+    if (pick.length === 1) return pick[0].id;
+  }
+  // Daqui pra baixo (número/ordinal/cor solta), evita falso positivo em frase longa.
+  if (m.length > 30) return null;
   // número puro ("1", "o 2", "opção 3")
   const num = m.match(/^(?:o|a|no|na|op(?:c|ç)ao|numero|quero o|quero a|quero)?\s*(\d{1,2})\s*$/);
   if (num) { const i = Number(num[1]) - 1; if (list[i]) return list[i].id; }
@@ -625,14 +654,14 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
   if (filtered.length === 1) {
     // Resultado ÚNICO: já é o carro de interesse. Não pergunte "qual desses".
     const only = filtered[0];
-    sess(sessionId).lastList = filtered.map(toListItem);
+    setLastList(sessionId, filtered.map(toListItem));
     recordShown(sessionId, filtered.map(toShown));
     const lead = sess(sessionId).lead || (sess(sessionId).lead = {});
     lead.veiculoId = only.id; // fixa o interesse (era o único resultado)
     return `RESULTADO ÚNICO [ID:${only.id}]. É o ÚNICO carro que bate com o pedido, então JÁ é o carro de interesse do cliente — NÃO pergunte "qual desses". Mostre-o em uma mensagem em NEGRITO com os dados reais (ex: *Mitsubishi L200 Triton | 2013 | R$ 119.990*, sem cabeçalho, sem opcionais, sem [ID:X]) e, na MESMA resposta, ofereça as fotos ou avance o funil (${nextStep(lead)}). Se o cliente já deu um sinal de interesse (perguntou de troca, financiamento, km, preço, visita), trate como CONFIRMADO e siga direto o próximo passo.\n${filtered.map(fmtLine).join("\n")}`;
   }
   if (filtered.length > 0) {
-    sess(sessionId).lastList = filtered.map(toListItem);
+    setLastList(sessionId, filtered.map(toListItem));
     recordShown(sessionId, filtered.map(toShown));
     return `RESULTADOS (${filtered.length}), já ORDENADOS do mais relevante pro menos. Liste TODOS os ${filtered.length} carros abaixo DE UMA VEZ (não mande um e espere o cliente pedir "outras"), cada um em uma mensagem, em NEGRITO, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho, NÃO mostre opcionais, NÃO mostre o [ID:X] nem o "(match: ...)" — isso é interno. Use os motivos do "(match: ...)" só pra EXPLICAR ao cliente por que recomenda um carro (ex: "esse tá dentro do seu orçamento e é automático"). Não invente dados. Depois pergunte qual interessou.\n${filtered.map(fmtLine).join("\n")}`;
   }
@@ -681,7 +710,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
     .slice(0, searchCfg.limit)
     .map((s) => s.v);
 
-  sess(sessionId).lastList = alt.map(toListItem);
+  setLastList(sessionId, alt.map(toListItem));
   recordShown(sessionId, alt.map(toShown));
   return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), ofereça deixando claro a diferença. Só ofereça carros com relação com o pedido. Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
 }
@@ -728,7 +757,7 @@ async function execVeiculosParecidos(sessionId: string, args: any): Promise<stri
   }).filter((x) => x.s > 0).sort((a, b) => b.s - a.s || Math.abs(precoDe(a.v) - basePreco) - Math.abs(precoDe(b.v) - basePreco)).slice(0, limite);
   if (scored.length === 0) return `Não achei outro parecido com ${tituloDe(base)} no estoque agora. Seja honesto e ofereça ajuda pra refinar.`;
   const sims = scored.map((x) => x.v);
-  sess(sessionId).lastList = sims.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") }));
+  setLastList(sessionId, sims.map((v: any) => ({ id: v.id, title: tituloDe(v), year: v.year, color: v.color, price: precoDe(v), auto: norm(v.transmission).includes("auto") })));
   recordShown(sessionId, sims.map(toShown));
   const linhas = sims.map((v: any, i: number) => `${i + 1}) [ID:${v.id}] *${tituloDe(v)} | ${v.year} | ${fmtBRL(precoDe(v))}*`).join("\n");
   return `PARECIDOS com ${tituloDe(base)} (${sims.length}). Liste em NEGRITO, um por mensagem, sem [ID:X]. Explique que são do mesmo estilo/faixa. Depois pergunte qual interessou.\n${linhas}`;
@@ -888,6 +917,7 @@ export async function runAgentV2Turn(input: {
   const businessInfo = await getBusinessInfo();
   const faq = await getFaq();
   const s = sess(input.sessionId);
+  s.currentTurn = (s.currentTurn || 0) + 1; // marca o turno (pra acumular lastList nas buscas deste turno)
 
   // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
   const coreRules = `REGRAS FIXAS:
@@ -1012,6 +1042,8 @@ export async function runAgentV2Turn(input: {
           result = await execVeiculosParecidos(input.sessionId, args);
         }
         else if (tc.function.name === "verificar_disponibilidade") {
+          // Corrige o id pela seleção determinística (ex: cliente falou "esse Ka 2017").
+          if (tratarComoSelecao && selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
           result = await execVerificarDisponibilidade(args);
         }
         else if (tc.function.name === "comparar_veiculos") {
