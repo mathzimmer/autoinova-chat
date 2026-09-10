@@ -150,8 +150,12 @@ export async function listConversations(filters?: {
     conditions.push(notInArray(conversations.channel, ["evolution", "zernio", "instagram"] as any));
     conditions.push(isNull(conversations.instanceName));
   } else if (src === "instagram") {
-    // Aba dedicada do Instagram Direct.
+    // Aba geral do Instagram Direct (todas as contas).
     conditions.push(eq(conversations.channel, "instagram" as any));
+  } else if (src.startsWith("ig:")) {
+    // Aba de UMA conta Instagram específica (multi-conta).
+    conditions.push(eq(conversations.channel, "instagram" as any));
+    conditions.push(eq(conversations.instanceName, src.slice("ig:".length)));
   } else if (src.startsWith("zernio:")) {
     conditions.push(eq(conversations.channel, "zernio" as any));
     conditions.push(eq(conversations.instanceName, src.slice("zernio:".length)));

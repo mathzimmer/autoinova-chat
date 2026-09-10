@@ -971,10 +971,16 @@ async function startServer() {
 
           if (!senderId || !messageId) continue;
 
-          // Skip messages from our own page/account
+          // Conta que RECEBEU (multi-conta IG): o recipient é a conta da loja.
+          const igAccountId = channel === "instagram" ? String(recipientId || "") : "";
+          // Skip messages from our own page/account (env + todas as contas IG configuradas)
           const pageId = process.env.META_ADS_PAGE_ID;
           const instagramId = process.env.META_ADS_INSTAGRAM_ID;
-          if (senderId === pageId || senderId === instagramId) continue;
+          let ownIgIds: string[] = [];
+          if (channel === "instagram") {
+            try { const { getInstagramAccountIds } = await import("../instagramFacebook"); ownIgIds = await getInstagramAccountIds(); } catch { /* noop */ }
+          }
+          if (senderId === pageId || senderId === instagramId || ownIgIds.includes(senderId)) continue;
 
           // Deduplicate: skip if this message was already processed
           const existing = await getMessageByExternalId(messageId);
@@ -1028,7 +1034,10 @@ async function startServer() {
           let contactName = "Cliente";
           let contactPhoto: string | undefined;
           try {
-            const profile = await getPlatformUserProfile(senderId, channel);
+            // Instagram multi-conta: perfil com o token da conta que recebeu.
+            const profile = (channel === "instagram" && igAccountId)
+              ? await (await import("../instagramFacebook")).getInstagramProfileFor(senderId, igAccountId)
+              : await getPlatformUserProfile(senderId, channel);
             if (profile?.name) contactName = profile.name;
             if (profile?.profilePic) contactPhoto = profile.profilePic;
             console.log(`[${channel}] Profile fetched for ${senderId}: name=${contactName}, hasPhoto=${!!contactPhoto}`);
@@ -1044,6 +1053,7 @@ async function startServer() {
               contactName,
               contactPhoto,
               channel,
+              instanceName: igAccountId || undefined, // qual conta IG recebeu (multi-conta)
               platformUserId: senderId,
               status: "open",
               aiActive: await getConnectionAiAuto(`meta:${channel}`), // IA automática só se o canal estiver marcado

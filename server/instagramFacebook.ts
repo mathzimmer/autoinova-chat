@@ -33,6 +33,86 @@ export function isInstagramConfigured(): boolean {
   return !!(accessToken && instagramId);
 }
 
+// ─── Multi-conta Instagram (fluxo "Instagram API with Instagram login") ──────
+// Cada conta tem seu próprio token e é acessada via graph.instagram.com/{IG_ID}.
+const IG_GRAPH_URL = "https://graph.instagram.com/v21.0";
+
+export type InstagramAccount = { igId: string; token: string; name?: string };
+
+/** Lê as contas do setting JSON; se vazio, cai pro par único do .env (compat). */
+export async function getInstagramAccounts(): Promise<InstagramAccount[]> {
+  try {
+    const { getSetting } = await import("./db");
+    const raw = await getSetting("instagram_accounts");
+    if (raw) {
+      const arr = JSON.parse(raw);
+      if (Array.isArray(arr) && arr.length) {
+        return arr.filter((a: any) => a && a.igId && a.token)
+          .map((a: any) => ({ igId: String(a.igId), token: String(a.token), name: a.name ? String(a.name) : undefined }));
+      }
+    }
+  } catch { /* usa fallback do env */ }
+  const { accessToken, instagramId } = getConfig();
+  if (accessToken && instagramId) return [{ igId: instagramId, token: accessToken, name: "Instagram" }];
+  return [];
+}
+
+export async function getInstagramAccountById(igId: string): Promise<InstagramAccount | null> {
+  const list = await getInstagramAccounts();
+  return list.find((a) => a.igId === String(igId)) || null;
+}
+
+/** IDs de todas as contas conectadas (pra ignorar echo das próprias mensagens). */
+export async function getInstagramAccountIds(): Promise<string[]> {
+  return (await getInstagramAccounts()).map((a) => a.igId);
+}
+
+/**
+ * Envia DM do Instagram pela CONTA certa (token próprio), via graph.instagram.com.
+ * `igId` = conta remetente (a que recebeu a conversa). `recipient` = IGSID do cliente.
+ */
+export async function sendInstagramDM(
+  igId: string,
+  recipient: string,
+  text: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const acc = await getInstagramAccountById(igId);
+  if (!acc) return { success: false, error: `Conta Instagram ${igId} não configurada` };
+  try {
+    const response = await axios.post(
+      `${IG_GRAPH_URL}/${acc.igId}/messages`,
+      { recipient: { id: recipient }, message: { text } },
+      { params: { access_token: acc.token }, headers: { "Content-Type": "application/json" } }
+    );
+    const messageId = response.data?.message_id;
+    console.log(`[Instagram] DM enviada pela conta ${acc.name || igId} para ${recipient}, ID: ${messageId}`);
+    return { success: true, messageId };
+  } catch (error: any) {
+    const errData = error?.response?.data?.error;
+    const errMsg = errData?.message || error.message;
+    console.error(`[Instagram] Falha ao enviar DM (conta ${igId}) para ${recipient}: [${errData?.code}] ${errMsg}`);
+    return { success: false, error: errMsg };
+  }
+}
+
+/** Perfil do usuário do IG usando o token da CONTA que recebeu a mensagem. */
+export async function getInstagramProfileFor(
+  igsid: string,
+  igId: string
+): Promise<{ name?: string; profilePic?: string } | null> {
+  const acc = await getInstagramAccountById(igId);
+  if (!acc) return null;
+  try {
+    const response = await axios.get(`${IG_GRAPH_URL}/${igsid}`, {
+      params: { fields: "name,username,profile_pic", access_token: acc.token },
+    });
+    const d = response.data || {};
+    return { name: d.name || d.username, profilePic: d.profile_pic };
+  } catch {
+    return null;
+  }
+}
+
 export function isFacebookConfigured(): boolean {
   const { accessToken, pageId } = getConfig();
   return !!(accessToken && pageId);

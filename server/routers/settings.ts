@@ -346,6 +346,37 @@ export const settingsRouter = router({
       return { success: true };
     }),
 
+  // ── Contas de Instagram (multi-conta) ──
+  getInstagramAccounts: protectedProcedure.query(async () => {
+    const raw = await getSetting("instagram_accounts");
+    let list: any[] = [];
+    try { if (raw) list = JSON.parse(raw); } catch { /* vazio */ }
+    // Não devolve o token inteiro pro front (segurança) — só um preview.
+    return (Array.isArray(list) ? list : []).map((a: any) => ({
+      igId: String(a.igId || ""), name: a.name ? String(a.name) : "",
+      tokenSet: !!a.token, tokenPreview: a.token ? `…${String(a.token).slice(-6)}` : "",
+    }));
+  }),
+  saveInstagramAccounts: adminProcedure
+    .input(z.object({ accounts: z.array(z.object({
+      igId: z.string().min(1).max(64),
+      name: z.string().max(120).optional(),
+      token: z.string().max(500).optional(), // vazio = manter o token atual
+    })) }))
+    .mutation(async ({ input, ctx }) => {
+      // Mantém o token antigo quando o campo vier vazio (pra não apagar sem querer).
+      const raw = await getSetting("instagram_accounts");
+      let atuais: any[] = [];
+      try { if (raw) atuais = JSON.parse(raw); } catch { /* vazio */ }
+      const byId = new Map(atuais.map((a: any) => [String(a.igId), a]));
+      const merged = input.accounts.map((a) => ({
+        igId: a.igId, name: a.name || "",
+        token: (a.token && a.token.trim()) ? a.token.trim() : (byId.get(a.igId)?.token || ""),
+      })).filter((a) => a.token); // só guarda contas com token
+      await upsertSetting("instagram_accounts", JSON.stringify(merged), ctx.user.id);
+      return { success: true, count: merged.length };
+    }),
+
   getAll: protectedProcedure.query(async () => {
     return getAllSettings();
   }),

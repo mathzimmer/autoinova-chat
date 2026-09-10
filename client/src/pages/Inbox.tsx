@@ -29,6 +29,10 @@ export default function Inbox() {
   const { data: officialInstances } = trpc.whatsappNumber.listInstances.useQuery(undefined, {
     refetchInterval: 60000,
   });
+  // Contas de Instagram (multi-conta) — cada uma vira uma aba própria
+  const { data: igAccounts } = trpc.settings.getInstagramAccounts.useQuery(undefined, {
+    refetchInterval: 60000,
+  });
   // Aba Matriz pode ser escondida (quem migrou 100% para instâncias/números próprios)
   const { data: globalStatus } = trpc.settings.getGlobalStatus.useQuery(undefined, {
     refetchInterval: 60000,
@@ -95,18 +99,25 @@ export default function Inbox() {
           Matriz (oficial)
         </button>
         )}
-        {/* Aba dedicada do Instagram Direct */}
-        <button
-          onClick={() => { setSource("instagram"); setSelectedConversationId(null); }}
-          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
-            source === "instagram"
-              ? "bg-pink-600 text-white"
-              : "bg-secondary text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Instagram className="h-3 w-3" />
-          Instagram
-        </button>
+        {/* Abas do Instagram Direct — uma por conta (multi-conta). Sem contas
+            configuradas, mostra uma aba geral "Instagram". */}
+        {(igAccounts && igAccounts.length > 0
+          ? igAccounts.map((a: any) => ({ src: `ig:${a.igId}`, label: a.name || a.igId }))
+          : [{ src: "instagram", label: "Instagram" }]
+        ).map((tab) => (
+          <button
+            key={tab.src}
+            onClick={() => { setSource(tab.src); setSelectedConversationId(null); }}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+              source === tab.src
+                ? "bg-pink-600 text-white"
+                : "bg-secondary text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Instagram className="h-3 w-3" />
+            {tab.label}
+          </button>
+        ))}
         {(instances || []).map((inst: any) => (
           <button
             key={inst.id}

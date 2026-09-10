@@ -246,8 +246,15 @@ export const messageRouter = router({
             sendResult = await sendTextFromNumber((conv as any).instanceName, conv.phone, input.content);
           } else if (conv.channel === "whatsapp" && isWhatsAppConfigured() && conv.phone) {
             sendResult = await sendTextMessage(conv.phone, input.content);
-          } else if (conv.channel === "instagram" && isInstagramConfigured() && conv.platformUserId) {
-            sendResult = await sendPlatformMessage("instagram", conv.platformUserId, input.content);
+          } else if (conv.channel === "instagram" && conv.platformUserId) {
+            // Multi-conta: envia pela conta IG que recebeu (instanceName), token próprio.
+            const { sendInstagramDM } = await import("../instagramFacebook");
+            const igId = (conv as any).instanceName as string | undefined;
+            if (igId) {
+              sendResult = await sendInstagramDM(igId, conv.platformUserId, input.content);
+            } else if (isInstagramConfigured()) {
+              sendResult = await sendPlatformMessage("instagram", conv.platformUserId, input.content);
+            }
           } else if (conv.channel === "facebook" && isFacebookConfigured() && conv.platformUserId) {
             sendResult = await sendPlatformMessage("facebook", conv.platformUserId, input.content);
           }
