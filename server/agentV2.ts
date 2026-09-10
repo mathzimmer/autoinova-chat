@@ -33,9 +33,17 @@ export interface AgentResult {
  * senão quebra por linha em branco e por itens numerados ("1) ..."), pra ficar no
  * estilo WhatsApp mesmo quando o modelo manda um bloco.
  */
+/** Limpa pipes/traços residuais e descarta pedaços vazios ou só de pontuação. */
+function limpaParte(s: string): string {
+  return s.replace(/\|{2,}/g, " ").replace(/(^[\s|]+)|([\s|]+$)/g, "").trim();
+}
+function ehVazioOuPontuacao(s: string): boolean {
+  return !s || /^[\s|.\-–—…]*$/.test(s);
+}
 function splitMessages(reply: string): string[] {
-  let parts = reply.split(/\s*\|\|\|\s*|\n\s*---\s*\n/).map((s) => s.trim()).filter(Boolean);
-  if (parts.length <= 1) parts = reply.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+  // Aceita 2+ pipes como separador (o modelo às vezes manda ||, ||||, "| | |").
+  let parts = reply.split(/\s*\|{2,}\s*|\n\s*---\s*\n/).map(limpaParte).filter((s) => !ehVazioOuPontuacao(s));
+  if (parts.length <= 1) parts = reply.split(/\n\s*\n/).map(limpaParte).filter((s) => !ehVazioOuPontuacao(s));
   const out: string[] = [];
   for (const p of parts) {
     let buf: string[] = [];
@@ -47,8 +55,8 @@ function splitMessages(reply: string): string[] {
     }
     if (buf.length) out.push(buf.join("\n").trim());
   }
-  const final = out.map((s) => s.trim()).filter(Boolean);
-  return final.length ? final : [reply.trim()].filter(Boolean);
+  const final = out.map(limpaParte).filter((s) => !ehVazioOuPontuacao(s));
+  return final.length ? final : [limpaParte(reply)].filter((s) => !ehVazioOuPontuacao(s));
 }
 
 // ── Memória por sessão (só na RAM; é simulador) ──────────────────────────────
@@ -893,6 +901,8 @@ export async function runAgentV2Turn(input: {
 - NOME E CIDADE JUNTOS: quando for coletar cadastro, peça o NOME e a CIDADE na MESMA mensagem (uma pergunta só), não em duas etapas.
 - VISITA: depois de coletar troca e pagamento, ofereça AGENDAR a visita perguntando o DIA e o HORÁRIO que o cliente pretende ir. Você NÃO confirma a visita — deixe claro que quem confirma é o VENDEDOR. Ao ter dia/horário, transfira.
 - MODELO + OPCIONAL: se o cliente pede um modelo COM um opcional ("Corolla com teto", "Compass com couro"), mantenha o MODELO na busca — nunca mostre outro modelo como se fosse o pedido. Se não houver aquele modelo com o opcional, diga a verdade e ofereça alternativas.
+- AÇÃO NA HORA (nunca "um momento"): NUNCA diga "vou pegar as fotos", "vou registrar", "um momento", "aguarde" e pare. Se vai mostrar fotos, CHAME apresentar_veiculo AGORA; se o cliente informou dados, CHAME coletar_dado AGORA — tudo na MESMA resposta. Só fale depois de fazer.
+- NÃO escreva o separador "|||" no fim sem um segundo trecho depois: só use "|||" ENTRE duas mensagens reais.
 - RESULTADO ÚNICO: se a busca traz só 1 carro, ele JÁ é o carro de interesse — apresente e siga o funil. NUNCA pergunte "qual desses" nem repita a busca/lista do mesmo carro.
 - SINAL DE INTERESSE = CONFIRMAÇÃO: perguntas como "aceita troca?", "posso financiar?", "qual a km?", "tem garantia?", "qual o preço?" sobre um carro já mostrado JÁ confirmam o interesse nele. Registre o interesse e siga o PRÓXIMO PASSO do funil — não volte a perguntar qual carro é.
 - Um veículo já mostrado ESTÁ disponível; nunca diga que foi vendido sem a ferramenta confirmar.
@@ -1045,6 +1055,42 @@ export async function runAgentV2Turn(input: {
   }
 
   let reply = (assistant?.content || "").trim() || "…";
+
+  // REDE DE SEGURANÇA "UM MOMENTO": o modelo prometeu uma ação ("vou pegar as fotos",
+  // "vou registrar", "um momento") mas NÃO fez nada (nenhuma foto na fila). Re-executa
+  // forçando a ação de verdade nesta mesma resposta — nada de "aguarde" e parar.
+  const ehFillerSemAcao = images.length === 0 && !sess(input.sessionId).handedOff
+    && limpaParte(reply).length < 170
+    && /\b(um momento|s[oó] um (instante|minuto|segundo)|aguarde|ja ja|já já|vou (pegar|buscar|mandar|enviar|registrar|verificar|providenciar|te enviar|preparar)|deixa eu (pegar|ver|buscar|verificar)|ja (vou|te) (envio|mando|passo))\b/i.test(norm(reply));
+  if (ehFillerSemAcao) {
+    messages.push({ role: "assistant", content: reply });
+    messages.push({ role: "user", content: "[SISTEMA: NÃO diga 'um momento' e pare. EXECUTE AGORA, nesta MESMA resposta: se prometeu fotos, chame apresentar_veiculo; se o cliente informou dados (nome, cidade, troca, pagamento, CPF, nascimento, parcela), chame coletar_dado; então escreva a próxima resposta útil. Nada de 'aguarde'/'vou pegar'.]" });
+    let a2 = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
+    let r2 = 3;
+    while (a2?.tool_calls?.length && r2-- > 0) {
+      messages.push({ role: "assistant", content: a2.content || "", tool_calls: a2.tool_calls });
+      for (const tc of a2.tool_calls) {
+        let args: any = {}; try { args = JSON.parse(tc.function.arguments || "{}"); } catch { /* noop */ }
+        let result = "ok";
+        try {
+          const n = tc.function.name;
+          if (n === "apresentar_veiculo") { result = await execApresentar(input.sessionId, args, images); if (args.veiculo_id) (sess(input.sessionId).lead || (sess(input.sessionId).lead = {})).veiculoId = Number(args.veiculo_id); }
+          else if (n === "coletar_dado") result = execColetar(input.sessionId, args);
+          else if (n === "buscar_veiculos") result = await execBuscar(input.sessionId, args, { excludeShown: pedidoOutros });
+          else if (n === "buscar_por_caracteristica") result = await execBuscarPorCaracteristica(input.sessionId, args, { excludeShown: pedidoOutros });
+          else if (n === "veiculos_parecidos") result = await execVeiculosParecidos(input.sessionId, args);
+          else if (n === "verificar_disponibilidade") result = await execVerificarDisponibilidade(args);
+          else if (n === "comparar_veiculos") result = await execCompararVeiculos(args);
+          else if (n === "transferir_para_vendedor") result = "Siga o fluxo normal do funil antes de transferir.";
+        } catch (e) { result = `Erro: ${e instanceof Error ? e.message : "?"}`; }
+        toolTrace.push({ name: tc.function.name, args, resultSummary: result.slice(0, 200) });
+        messages.push({ role: "tool", tool_call_id: tc.id, content: result } as any);
+      }
+      a2 = await chatCompletion({ model: cfg.model, messages, tools: effectiveTools, temperature: cfg.temperature });
+    }
+    const novo = (a2?.content || "").trim();
+    if (novo) reply = novo;
+  }
 
   // REDE DE SEGURANÇA: se prometeu transferir/chamar o vendedor mas NÃO chamou a
   // ferramenta neste turno, força a transferência agora (senão o lead se perde).
