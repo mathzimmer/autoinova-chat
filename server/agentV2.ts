@@ -690,7 +690,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
   if (filtered.length > 0) {
     setLastList(sessionId, filtered.map(toListItem));
     recordShown(sessionId, filtered.map(toShown));
-    return `RESULTADOS (${filtered.length}), já ORDENADOS do mais relevante pro menos. Liste TODOS os ${filtered.length} carros abaixo DE UMA VEZ (não mande um e espere o cliente pedir "outras"), cada um em uma mensagem, em NEGRITO, trocando pelos dados reais — exemplo: *Toyota Corolla | 2020 | R$ 90.000*. NÃO escreva cabeçalho, NÃO mostre opcionais, NÃO mostre o [ID:X] nem o "(match: ...)" — isso é interno. Use os motivos do "(match: ...)" só pra EXPLICAR ao cliente por que recomenda um carro (ex: "esse tá dentro do seu orçamento e é automático"). Não invente dados. Depois pergunte qual interessou.\n${filtered.map(fmtLine).join("\n")}`;
+    return `RESULTADOS (${filtered.length}), já ORDENADOS do mais relevante pro menos. Liste TODOS os ${filtered.length} carros abaixo DE UMA VEZ (não mande um e espere o cliente pedir "outras"), cada um em uma mensagem, NUMERADO (1, 2, 3...) e em NEGRITO — exemplo: "1) *Toyota Corolla | 2020 | R$ 90.000*". A numeração é pro cliente responder "o 2". NÃO escreva cabeçalho, NÃO mostre opcionais, NÃO mostre o [ID:X] nem o "(match: ...)" — isso é interno. Use os motivos do "(match: ...)" só pra EXPLICAR ao cliente por que recomenda um carro. Não invente dados. Depois pergunte qual interessou.\n${filtered.map(fmtLine).join("\n")}`;
   }
 
   // FLEXIBILIDADE: sem match exato → relaxa os filtros "moles", mantém ORÇAMENTO e ano.
@@ -739,7 +739,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
 
   setLastList(sessionId, alt.map(toListItem));
   recordShown(sessionId, alt.map(toShown));
-  return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), ofereça deixando claro a diferença. Só ofereça carros com relação com o pedido. Use o [ID:X]:\n${alt.map(fmtLine).join("\n")}`;
+  return `SEM MATCH EXATO no pedido, mas achei opções PARECIDAS (mesmo modelo ou mesmo tipo primeiro). NÃO diga só "não tenho". Liste NUMERADO (1, 2, 3...) e em NEGRITO, um por mensagem (ex: "1) *Modelo | Ano | R$ valor*"). Se aparecer o mesmo modelo com outra config (ex: automático em vez de manual), deixe clara a diferença. Só ofereça carros com relação com o pedido. NÃO mostre o [ID:X].\n${alt.map(fmtLine).join("\n")}`;
 }
 
 // ── Fase 2: ferramentas dedicadas ────────────────────────────────────────────
@@ -959,7 +959,7 @@ export async function runAgentV2Turn(input: {
   // Regras de SEGURANÇA (fixas — não editáveis; evitam alucinação/erro de id).
   const coreRules = `REGRAS FIXAS:
 - Escreva como WhatsApp: curto, 1-2 emojis no máximo. Sem markdown, EXCETO *negrito* do WhatsApp (um asterisco de cada lado) — use pra destacar o carro.
-- LISTA DE CARROS: mostre TODOS os resultados da busca DE UMA VEZ (não um por vez esperando "outras"), cada carro em NEGRITO no estilo *Toyota Corolla | 2020 | R$ 90.000* (dados reais, SEM opcionais, SEM [ID:X], SEM cabeçalho), um por mensagem.
+- LISTA DE CARROS: mostre TODOS os resultados da busca DE UMA VEZ (não um por vez esperando "outras"), cada carro NUMERADO e em NEGRITO no estilo "1) *Toyota Corolla | 2020 | R$ 90.000*" (número da opção + dados reais, SEM opcionais, SEM [ID:X], SEM cabeçalho), um por mensagem. A numeração é pra o cliente poder responder "o 2", "quero o 3".
 - APRESENTAR: chame apresentar_veiculo SOMENTE quando o cliente ESCOLHE um carro NOVO (que ainda não foi mostrado) ou PEDE fotos. Depois das fotos, elogie (variado) + pergunte se gostou. Se o carro de interesse JÁ foi apresentado e você está no meio da coleta (nome, cidade, troca, pagamento), NÃO reapresente as fotos nem repita "gostou?" — apenas siga o PRÓXIMO PASSO do funil.
 - SÓ fale de veículos retornados por buscar_veiculos/apresentar_veiculo. COPIE preço e ano EXATOS. PROIBIDO inventar veículo, preço ou link.
 - id de ferramenta = número dentro de [ID:X]. NUNCA use o número da opção (1,2,3) como id.
