@@ -58,5 +58,6 @@ export function conversationSourceValue(conv: { channel?: string | null; instanc
   if (conv.channel === "evolution" && conv.instanceName) return conv.instanceName;
   if (conv.channel === "zernio" && conv.instanceName) return `zernio:${conv.instanceName}`;
   if (conv.channel === "whatsapp" && conv.instanceName) return `official:${conv.instanceName}`;
+  if (conv.channel === "instagram") return "instagram";
   return "matriz";
 }

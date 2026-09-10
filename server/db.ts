@@ -145,10 +145,13 @@ export async function listConversations(filters?: {
   //  • qualquer outro = instância Evolution
   const src = filters?.instance;
   if (!src || src === "matriz") {
-    // Matriz = canais oficiais SEM instância (número da matriz via .env + IG/FB/web).
-    // Números oficiais adicionais e Zernio/Evolution têm abas próprias.
-    conditions.push(notInArray(conversations.channel, ["evolution", "zernio"] as any));
+    // Matriz = canais oficiais SEM instância (número da matriz via .env + FB/web).
+    // Instagram tem aba própria; Números oficiais adicionais e Zernio/Evolution também.
+    conditions.push(notInArray(conversations.channel, ["evolution", "zernio", "instagram"] as any));
     conditions.push(isNull(conversations.instanceName));
+  } else if (src === "instagram") {
+    // Aba dedicada do Instagram Direct.
+    conditions.push(eq(conversations.channel, "instagram" as any));
   } else if (src.startsWith("zernio:")) {
     conditions.push(eq(conversations.channel, "zernio" as any));
     conditions.push(eq(conversations.instanceName, src.slice("zernio:".length)));

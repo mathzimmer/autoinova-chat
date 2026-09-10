@@ -3,7 +3,7 @@ import { trpc } from "@/lib/trpc";
 import ConversationList from "@/components/ConversationList";
 import ChatView from "@/components/ChatView";
 import ConversationPanel from "@/components/ConversationPanel";
-import { MessageSquare, PanelRightOpen, PanelRightClose, Building2, Smartphone } from "lucide-react";
+import { MessageSquare, PanelRightOpen, PanelRightClose, Building2, Smartphone, Instagram } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useSearch } from "wouter";
 
@@ -95,6 +95,18 @@ export default function Inbox() {
           Matriz (oficial)
         </button>
         )}
+        {/* Aba dedicada do Instagram Direct */}
+        <button
+          onClick={() => { setSource("instagram"); setSelectedConversationId(null); }}
+          className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+            source === "instagram"
+              ? "bg-pink-600 text-white"
+              : "bg-secondary text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Instagram className="h-3 w-3" />
+          Instagram
+        </button>
         {(instances || []).map((inst: any) => (
           <button
             key={inst.id}
