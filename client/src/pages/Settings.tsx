@@ -562,6 +562,30 @@ function PresentToolCard() {
   );
 }
 
+function VisitHoursCard() {
+  const cfg = trpc.settings.getVisitHours.useQuery();
+  const [hours, setHours] = useState("");
+  useEffect(() => { if (cfg.data) setHours(cfg.data.hours || ""); }, [cfg.data]);
+  const save = trpc.settings.saveVisitHours.useMutation({
+    onSuccess: () => { cfg.refetch(); toast.success("Horário de visitas salvo!"); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+  return (
+    <Card className="bg-card border-border">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-card-foreground text-base flex items-center gap-2"><Smartphone className="h-4 w-4 text-primary" /> Horário de atendimento (visitas)</CardTitle>
+        <CardDescription className="mt-0.5">O agente informa este horário ao agendar e segura o cliente dentro dele (se insistir fora, passa pro vendedor).</CardDescription>
+      </CardHeader>
+      <CardContent className="flex items-center gap-2">
+        <Input value={hours} onChange={(e) => setHours(e.target.value)} placeholder="Ex: Seg a sex 8h30–18h30, sáb 8h30–12h30" className="flex-1" />
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate({ hours })}>
+          <Save className="h-3.5 w-3.5 mr-1" /> Salvar
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 function SellerNotifyCard() {
   const numbers = trpc.whatsappNumber.listInstances.useQuery();
   const evoInstances = trpc.evolution.listInstances.useQuery();
@@ -723,6 +747,7 @@ export default function Settings() {
 
         {/* Número que envia as notificações aos vendedores */}
         <SellerNotifyCard />
+        <VisitHoursCard />
 
         {/* Copiloto do Vendedor (sugestões em tempo real) */}
         <CopilotConfigCard />

@@ -199,6 +199,23 @@ export async function getSearchConfig(): Promise<SearchCfg> {
 function temFoto(v: any): number {
   return (v.imageUrl || (Array.isArray(v.images) && v.images.length)) ? 1 : 0;
 }
+
+// Horário de atendimento pra visitas (editável na tela; default sensato).
+export const DEFAULT_VISIT_HOURS = "Segunda a sexta das 8h30 às 18h30, e sábado das 8h30 às 12h30 (domingo fechado)";
+export async function getVisitHours(): Promise<string> {
+  const v = await getSetting("agentv2_visit_hours");
+  return (v && v.trim()) ? v.trim() : DEFAULT_VISIT_HOURS;
+}
+
+/** Resolve a LOJA onde o carro está (a partir do `seller` do feed) → nome + endereço. */
+function resolveStore(seller?: string): { nome: string; endereco?: string } {
+  const s = norm(seller || "");
+  if (!s) return { nome: "nossa loja" };
+  if (s.includes("estancia") || s.includes("portao")) return { nome: "Estância Velha", endereco: "Rua Portão, 2405 - Estância Velha/RS" };
+  if (s.includes("loja 2") || s.includes("lucena") || s.includes("bom jardim")) return { nome: "Loja 2 (Ivoti)", endereco: "Av. Presidente Lucena, 501 - Ivoti/RS" };
+  if (s.includes("matriz") || s.includes("castro alves")) return { nome: "Matriz (Ivoti)", endereco: "Av. Castro Alves, 1655 - Ivoti/RS" };
+  return { nome: seller!.trim() };
+}
 function ordenarVeiculos(list: any[], cfg: SearchCfg): any[] {
   return [...list].sort((a, b) => {
     if (cfg.fotoPrimeiro) { const d = temFoto(b) - temFoto(a); if (d) return d; }
@@ -929,7 +946,7 @@ export async function runAgentV2Turn(input: {
 - PRIMEIRA MENSAGEM: mande a SAUDAÇÃO numa mensagem e a resposta/ação na mensagem SEGUINTE (duas bolhas) — separe com "|||". Ex: "Oii! Seja bem-vindo à Auto Inova 👋 ||| Deixa eu verificar aqui pra você...".
 - PERGUNTA DE PRODUTO VEM PRIMEIRO: se o cliente já pede um carro (cita modelo, tipo, opcional ou preço — ex: "tem corolla com teto?"), BUSQUE e mostre ANTES de pedir nome/cidade. Colete nome/cidade DEPOIS, de forma natural. NUNCA abra a conversa pedindo nome quando o cliente já perguntou por um veículo.
 - NOME E CIDADE JUNTOS: quando for coletar cadastro, peça o NOME e a CIDADE na MESMA mensagem (uma pergunta só), não em duas etapas.
-- VISITA: depois de coletar troca e pagamento, ofereça AGENDAR a visita perguntando o DIA e o HORÁRIO que o cliente pretende ir. Você NÃO confirma a visita — deixe claro que quem confirma é o VENDEDOR. Ao ter dia/horário, transfira.
+- VISITA: depois de coletar troca e pagamento, ofereça AGENDAR na LOJA ONDE O CARRO ESTÁ (veja o bloco "VISITA — LOJA ONDE O CARRO ESTÁ"): não ofereça outras lojas. INFORME os horários de atendimento e peça o DIA e o HORÁRIO (dentro do expediente). Você NÃO confirma a visita — quem confirma é o VENDEDOR. Ao ter dia/horário, transfira.
 - MODELO + OPCIONAL: se o cliente pede um modelo COM um opcional ("Corolla com teto", "Compass com couro"), mantenha o MODELO na busca — nunca mostre outro modelo como se fosse o pedido. Se não houver aquele modelo com o opcional, diga a verdade e ofereça alternativas.
 - AÇÃO NA HORA (nunca "um momento"): NUNCA diga "vou pegar as fotos", "vou registrar", "um momento", "aguarde" e pare. Se vai mostrar fotos, CHAME apresentar_veiculo AGORA; se o cliente informou dados, CHAME coletar_dado AGORA — tudo na MESMA resposta. Só fale depois de fazer.
 - NÃO escreva o separador "|||" no fim sem um segundo trecho depois: só use "|||" ENTRE duas mensagens reais.
@@ -985,12 +1002,26 @@ export async function runAgentV2Turn(input: {
   const funnelBlock = `\n\n=== FUNIL DE ATENDIMENTO (dados já coletados) ===\n${resumoLead(s.lead, s.shown) || "(nada ainda)"}\n➡️ ${nextStep(s.lead || {})}\n\nORDEM OBRIGATÓRIA: a SUA próxima pergunta deve ser SOMENTE sobre o PRÓXIMO PASSO acima. É PROIBIDO perguntar sobre etapas seguintes antes de concluir a atual (ex: não peça CPF/pagamento se ainda falta nome ou cidade). Se o cliente trouxer outra informação ou fizer uma pergunta, RESPONDA e registre com coletar_dado, e em seguida volte para o PRÓXIMO PASSO. Uma pergunta por vez, natural, sem parecer formulário. Nunca pule etapas. NUNCA pergunte de novo algo que já aparece em "dados já coletados" acima — se já tem, siga em frente.`;
 
   // Ordem: persona → regras editáveis (comportamento) → regras fixas → info da loja → memória → funil.
+  // VISITA na LOJA DO CARRO: se há veículo de interesse, resolve a loja onde ele
+  // está (pelo seller do feed) e injeta endereço + horários pro agendamento.
+  let visitBlock = "";
+  if (s.lead?.veiculoId) {
+    try {
+      const veh: any = await getVehicleById(s.lead.veiculoId);
+      if (veh) {
+        const loja = resolveStore(veh.seller);
+        const hours = await getVisitHours();
+        visitBlock = `\n\n=== VISITA — LOJA ONDE O CARRO ESTÁ (use SOMENTE esta) ===\nO veículo de interesse está na loja ${loja.nome}${loja.endereco ? ` — ${loja.endereco}` : ""}. TODA visita/test-drive é agendada NESSA loja; NÃO ofereça as outras lojas nem liste os 3 endereços. HORÁRIO DE ATENDIMENTO: ${hours}. Ao combinar a visita, INFORME os horários disponíveis ANTES de o cliente escolher. Se ele sugerir um horário FORA do expediente, ofereça gentilmente o horário mais próximo DENTRO do horário; se ele INSISTIR num horário fora, registre e TRANSFIRA pro vendedor decidir. A confirmação final da visita é sempre feita pelo VENDEDOR.`;
+      }
+    } catch { /* noop */ }
+  }
+
   // Primeira interação? (nenhuma resposta do bot ainda) → reforça saudação + resposta separadas.
   const isFirstTurn = !input.history.some((h) => h.role === "assistant");
   const firstTurnBlock = isFirstTurn
     ? `\n\n⚠️ É A PRIMEIRA MENSAGEM DA CONVERSA: comece com uma SAUDAÇÃO curta numa mensagem e, na mensagem SEGUINTE (separada por "|||"), responda/aja sobre o que o cliente pediu.`
     : "";
-  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}${firstTurnBlock}`;
+  const system = `${cfg.persona}\n\n${cfg.rules}\n\n${coreRules}\n\n=== INFORMAÇÕES DA LOJA (use somente estas) ===\n${businessInfo}\n\n=== FAQ E CONTORNO DE OBJEÇÕES ===\n${faq}${shownBlock}${selBlock}${funnelBlock}${visitBlock}${firstTurnBlock}`;
 
   const messages: LLMMsg[] = [{ role: "system", content: system }];
   for (const h of input.history.slice(-20)) messages.push({ role: h.role, content: h.content });

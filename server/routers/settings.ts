@@ -334,6 +334,18 @@ export const settingsRouter = router({
       return { success: true };
     }),
 
+  // ── Horário de atendimento para visitas (usado pelo agente no agendamento) ──
+  getVisitHours: protectedProcedure.query(async () => {
+    const { DEFAULT_VISIT_HOURS } = await import("../agentV2");
+    return { hours: (await getSetting("agentv2_visit_hours")) || DEFAULT_VISIT_HOURS };
+  }),
+  saveVisitHours: adminProcedure
+    .input(z.object({ hours: z.string().max(300) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("agentv2_visit_hours", input.hours.trim(), ctx.user.id);
+      return { success: true };
+    }),
+
   getAll: protectedProcedure.query(async () => {
     return getAllSettings();
   }),
