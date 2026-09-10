@@ -89,6 +89,15 @@ export const whatsappNumberRouter = router({
       return connectNumberFromSignup(input);
     }),
 
+  // Renomear (apelido de exibição) — não muda credenciais, só o nome na tela.
+  updateInstance: protectedProcedure
+    .input(z.object({ id: z.number(), displayName: z.string().min(1).max(120) }))
+    .mutation(async ({ input }) => {
+      const { updateWhatsappNumber } = await import("../whatsappMultiNumber");
+      await updateWhatsappNumber(input.id, { displayName: input.displayName.trim() });
+      return { success: true };
+    }),
+
   deleteInstance: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {

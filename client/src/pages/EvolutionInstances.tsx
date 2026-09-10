@@ -9,10 +9,11 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import {
   Smartphone, Plus, RefreshCw, Wifi, WifiOff, QrCode,
-  Trash2, LogOut, RotateCcw, MessageSquare, Users, Settings
+  Trash2, LogOut, RotateCcw, MessageSquare, Users, Settings, Pencil
 } from "lucide-react";
 import { Link } from "wouter";
 import AddInstanceWizard from "@/components/AddInstanceWizard";
+import InstagramAccountsCard from "@/components/InstagramAccountsCard";
 
 type Instance = {
   id: number;
@@ -172,6 +173,14 @@ export default function EvolutionInstances() {
     onSuccess: (r) => { officialQuery.refetch(); toast.success(r.mode === "meta_agent" ? "Número marcado como Meta Agent (CRM só observa)" : "Número voltou ao modo normal (IA do CRM responde)"); },
     onError: (e) => toast.error("Erro ao alterar modo: " + e.message),
   });
+  const oRenameMutation = trpc.whatsappNumber.updateInstance.useMutation({
+    onSuccess: () => { officialQuery.refetch(); toast.success("Nome atualizado"); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+  const evoRenameMutation = trpc.evolution.updateInstance.useMutation({
+    onSuccess: () => { instancesQuery.refetch(); toast.success("Nome atualizado"); },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
   const officialInstances = officialQuery.data || [];
 
   const instances = instancesQuery.data || [];
@@ -305,7 +314,16 @@ export default function EvolutionInstances() {
                       </div>
                     )}
                     <div>
-                      <CardTitle className="text-base">{inst.displayName || inst.instanceName}</CardTitle>
+                      <div className="flex items-center gap-1">
+                        <CardTitle className="text-base">{inst.displayName || inst.instanceName}</CardTitle>
+                        <button
+                          title="Renomear"
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => { const n = prompt("Nome de exibição:", inst.displayName || inst.instanceName); if (n && n.trim()) evoRenameMutation.mutate({ id: inst.id, displayName: n.trim() }); }}
+                        >
+                          <Pencil className="w-3 h-3" />
+                        </button>
+                      </div>
                       <p className="text-xs text-muted-foreground">{inst.phone || inst.instanceName}</p>
                     </div>
                   </div>
@@ -581,7 +599,16 @@ export default function EvolutionInstances() {
                         <Wifi className="w-5 h-5 text-primary" />
                       </div>
                       <div>
-                        <CardTitle className="text-base">{inst.displayName}</CardTitle>
+                        <div className="flex items-center gap-1">
+                          <CardTitle className="text-base">{inst.displayName}</CardTitle>
+                          <button
+                            title="Renomear"
+                            className="text-muted-foreground hover:text-foreground"
+                            onClick={() => { const n = prompt("Nome de exibição:", inst.displayName || ""); if (n && n.trim()) oRenameMutation.mutate({ id: inst.id, displayName: n.trim() }); }}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        </div>
                         <p className="text-xs text-muted-foreground">{inst.phone || inst.phoneNumberId}</p>
                       </div>
                     </div>
@@ -645,6 +672,14 @@ export default function EvolutionInstances() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── Seção Instagram (multi-conta) ── */}
+      <div className="mt-8">
+        <div className="flex items-center gap-2 mb-3">
+          <h2 className="text-lg font-semibold">Instagram</h2>
+        </div>
+        <InstagramAccountsCard />
       </div>
 
       {/* Dialog: cadastrar API Oficial */}
