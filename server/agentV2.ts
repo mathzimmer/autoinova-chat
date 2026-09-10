@@ -799,12 +799,22 @@ async function execCompararVeiculos(args: any): Promise<string> {
   return `COMPARATIVO (dados reais — apresente de forma clara e ajude o cliente a decidir pelo perfil dele; não invente):\n${vs.map(linha).join("\n")}`;
 }
 
-async function execApresentar(sessionId: string, args: any, images: AgentImage[]): Promise<string> {
+async function execApresentar(sessionId: string, args: any, images: AgentImage[], opts?: { pediuFoto?: boolean }): Promise<string> {
   const id = Number(args.veiculo_id);
   const v: any = await getVehicleById(id);
   if (!v) return `[INTERNO] ID ${id} não existe. Use um [ID:X] real da lista mostrada; NÃO diga ao cliente que vendeu.`;
   if (v.available === false) return `O veículo ${v.brand} ${v.model} ${v.year} não está mais disponível (pode ter sido vendido).`;
   const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
+  // TRAVA CENTRAL anti-reenvio: se já mandei foto desse carro e o cliente NÃO
+  // pediu de novo, NÃO reapresenta (nem repete "gostou?"). Vale pra todos os
+  // caminhos (dispatch e rede de segurança).
+  {
+    const st0 = sess(sessionId);
+    const jaMandou = (st0.photosSent || {})[id] || 0;
+    if (jaMandou > 0 && !opts?.pediuFoto) {
+      return "Esse carro JÁ foi apresentado (fotos enviadas). NÃO reenvie fotos nem repita 'gostou?'. Apenas siga o PRÓXIMO PASSO do funil (troca/pagamento/nome+cidade/visita).";
+    }
+  }
   recordShown(sessionId, [toShown(v)]);
 
   // Fotos disponíveis (até 10). Legenda enxuta: modelo, ano, km, preço.
@@ -948,6 +958,7 @@ export async function runAgentV2Turn(input: {
 - NOME E CIDADE JUNTOS: quando for coletar cadastro, peça o NOME e a CIDADE na MESMA mensagem (uma pergunta só), não em duas etapas.
 - VISITA: depois de coletar troca e pagamento, ofereça AGENDAR na LOJA ONDE O CARRO ESTÁ (veja o bloco "VISITA — LOJA ONDE O CARRO ESTÁ"): não ofereça outras lojas. INFORME os horários de atendimento e peça o DIA e o HORÁRIO (dentro do expediente). Você NÃO confirma a visita — quem confirma é o VENDEDOR. Ao ter dia/horário, transfira.
 - MODELO + OPCIONAL: se o cliente pede um modelo COM um opcional ("Corolla com teto", "Compass com couro"), mantenha o MODELO na busca — nunca mostre outro modelo como se fosse o pedido. Se não houver aquele modelo com o opcional, diga a verdade e ofereça alternativas.
+- DESCONTO/PIX/NEGOCIAÇÃO: NUNCA invente desconto, valor de PIX, "quanto faz à vista" ou condição especial. O preço é o anunciado; qualquer abatimento é NEGOCIADO com o VENDEDOR. Se perguntarem, diga que consegue as melhores condições na visita/com o vendedor e siga o funil.
 - AÇÃO NA HORA (nunca "um momento"): NUNCA diga "vou pegar as fotos", "vou registrar", "um momento", "aguarde" e pare. Se vai mostrar fotos, CHAME apresentar_veiculo AGORA; se o cliente informou dados, CHAME coletar_dado AGORA — tudo na MESMA resposta. Só fale depois de fazer.
 - NÃO escreva o separador "|||" no fim sem um segundo trecho depois: só use "|||" ENTRE duas mensagens reais.
 - RESULTADO ÚNICO: se a busca traz só 1 carro, ele JÁ é o carro de interesse — apresente e siga o funil. NUNCA pergunte "qual desses" nem repita a busca/lista do mesmo carro.
@@ -1050,20 +1061,14 @@ export async function runAgentV2Turn(input: {
           if (tratarComoSelecao && selectedId != null && Number(args.veiculo_id) !== selectedId) args.veiculo_id = selectedId;
           const st = sess(input.sessionId);
           const pediuFoto = /\bfotos?\b|\bimagens?\b|\bver\b|\bmostra/i.test(input.message);
-          // Se estamos coletando a TROCA (ou a mensagem é sobre o carro do cliente) e
-          // ele NÃO pediu foto, NÃO apresente um carro do estoque — o "corolla 2022"
-          // dito aqui é o veículo de troca dele, não uma nova escolha.
+          // Se a mensagem é sobre o carro de TROCA do cliente e ele NÃO pediu foto,
+          // NÃO apresente um carro do estoque (o "corolla 2022" aqui é o usado dele).
           if (contextoTroca && !pediuFoto) {
             result = "A mensagem descreve o carro de TROCA do cliente (não é escolha de veículo). NÃO apresente fotos. Registre a troca com coletar_dado e siga o PRÓXIMO PASSO do funil.";
           } else {
-          const jaEnviou = (st.photosSent || {})[Number(args.veiculo_id)] || 0;
-          if (jaEnviou > 0 && !pediuFoto) {
-            // Não reapresenta fotos já enviadas sem o cliente pedir (evita "se perder").
-            result = "Esse carro JÁ foi apresentado (fotos enviadas). NÃO reenvie fotos. Apenas siga o PRÓXIMO PASSO do funil (troca/pagamento/nome/cidade/visita).";
-          } else {
-            result = await execApresentar(input.sessionId, args, images);
-            if (args.veiculo_id) (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id);
-          }
+            // A trava anti-reenvio agora vive dentro de execApresentar (respeita pediuFoto).
+            result = await execApresentar(input.sessionId, args, images, { pediuFoto });
+            if (args.veiculo_id && !/JÁ foi apresentado/i.test(result)) (st.lead || (st.lead = {})).veiculoId = Number(args.veiculo_id);
           }
         }
         else if (tc.function.name === "buscar_por_caracteristica") {
@@ -1137,7 +1142,7 @@ export async function runAgentV2Turn(input: {
         let result = "ok";
         try {
           const n = tc.function.name;
-          if (n === "apresentar_veiculo") { result = await execApresentar(input.sessionId, args, images); if (args.veiculo_id) (sess(input.sessionId).lead || (sess(input.sessionId).lead = {})).veiculoId = Number(args.veiculo_id); }
+          if (n === "apresentar_veiculo") { const pf = /\bfotos?\b|\bimagens?\b|\bver\b|\bmostra/i.test(input.message); result = await execApresentar(input.sessionId, args, images, { pediuFoto: pf }); if (args.veiculo_id && !/JÁ foi apresentado/i.test(result)) (sess(input.sessionId).lead || (sess(input.sessionId).lead = {})).veiculoId = Number(args.veiculo_id); }
           else if (n === "coletar_dado") result = execColetar(input.sessionId, args);
           else if (n === "buscar_veiculos") result = await execBuscar(input.sessionId, args, { excludeShown: pedidoOutros });
           else if (n === "buscar_por_caracteristica") result = await execBuscarPorCaracteristica(input.sessionId, args, { excludeShown: pedidoOutros });
