@@ -55,14 +55,21 @@ export async function handleMetaAgentWebhook(body: any, phoneNumberId: string): 
   const value = body?.entry?.[0]?.changes?.[0]?.value;
   if (!value) return false;
 
-  const contact = value.contacts?.[0];
+  // FORMATO REAL (Meta Business Agent): `value.standby` é um OBJETO
+  //   { contacts:[...], messages:[...], message_echoes:[...], statuses:[...] }
+  // — as mensagens NÃO vêm em value.messages, e sim em value.standby.messages.
+  // Se não houver standby-objeto, cai pro próprio value (formato oficial normal).
+  const standbyObj = (value.standby && typeof value.standby === "object" && !Array.isArray(value.standby)) ? value.standby : null;
+  const src: any = standbyObj || value;
+  const contact = src.contacts?.[0] || value.contacts?.[0];
 
-  // Espelha o que houver, sem acionar IA. `messages`/`standby` = entrada;
-  // `message_echoes` = saída (respostas do próprio agente). Campos a confirmar.
+  // Espelha o que houver, sem acionar IA. messages = entrada (cliente);
+  // message_echoes = saída (respostas do próprio agente da Meta).
   const buckets: Array<{ m: any; direction: "inbound" | "outbound" }> = [];
-  if (Array.isArray(value.messages)) value.messages.forEach((m: any) => buckets.push({ m, direction: "inbound" }));
+  if (Array.isArray(src.messages)) src.messages.forEach((m: any) => buckets.push({ m, direction: "inbound" }));
+  if (Array.isArray(src.message_echoes)) src.message_echoes.forEach((m: any) => buckets.push({ m, direction: "outbound" }));
+  // Compat: caso algum dia o standby venha como ARRAY de mensagens.
   if (Array.isArray(value.standby)) value.standby.forEach((m: any) => buckets.push({ m, direction: "inbound" }));
-  if (Array.isArray(value.message_echoes)) value.message_echoes.forEach((m: any) => buckets.push({ m, direction: "outbound" }));
 
   for (const { m, direction } of buckets) {
     const phone = m.from || contact?.wa_id || "";
