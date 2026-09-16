@@ -1446,9 +1446,7 @@ export async function processAIMessage(
                 }
                 
                 // Build caption with vehicle info
-                const priceStr = v.promotionPrice && v.promotionPrice < v.price
-                  ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
-                  : `R$ ${v.price.toLocaleString("pt-BR")}`;
+                const priceStr = `R$ ${Number(v.price || v.promotionPrice || 0).toLocaleString("pt-BR")}`; // preço COM TROCA
                 const mileageStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "N/I";
                 const transStr = v.transmission === "automatic" ? "Automático" : v.transmission === "manual" ? "Manual" : v.transmission || "";
                 

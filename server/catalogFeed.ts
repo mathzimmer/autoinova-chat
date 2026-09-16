@@ -219,11 +219,22 @@ export async function buildFacebookProductsCsv(injectedRows?: any[]): Promise<st
     const store = pickStore(v);
     const title = (v.title || `${v.brand || ""} ${v.model || ""} ${v.version || ""} ${v.year || ""}`)
       .replace(/\s+/g, " ").trim().slice(0, 150);
-    const description = (v.description ||
-      `${v.brand || ""} ${v.model || ""} ${v.version || ""} ${v.year || ""}${v.mileage != null ? " - " + v.mileage + " km" : ""} - ${store.name}, ${store.city}/${store.region}.`)
+
+    // Descrição limpa: specs + opcionais do veículo (sem telefone/endereço cru).
+    const opcionais = (Array.isArray(v.features) ? v.features.filter(Boolean) : []) as string[];
+    const specs = [
+      v.year ? `Ano ${v.year}` : "",
+      v.mileage != null ? `${Number(v.mileage).toLocaleString("pt-BR")} km` : "",
+      mapTransmission(v.transmission) === "AUTOMATIC" ? "Câmbio automático" : "Câmbio manual",
+      v.fuel ? `Combustível ${v.fuel}` : "",
+    ].filter(Boolean).join(". ");
+    const opcTxt = opcionais.length ? ` Opcionais: ${Array.from(new Set(opcionais)).slice(0, 20).join(", ")}.` : "";
+    const description = `${title}. ${specs}.${opcTxt} ${store.name}, ${store.city}/${store.region}.`
       .replace(/\s+/g, " ").trim().slice(0, 5000);
+
     const url = v.url || SITE;
-    const priceNum = Number(v.promotionPrice || v.price || 0);
+    // Preço COM TROCA (valor de tabela / "De") — é o que o atendimento usa.
+    const priceNum = Number(v.price || v.promotionPrice || 0);
     if (!(priceNum > 0)) continue; // produto sem preço não entra
 
     const productType = [v.category, v.vehicleType].filter(Boolean).join(" > ") || "Veículos";

@@ -105,7 +105,7 @@ function toShown(v: any): ShownVehicle {
     title: v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim(),
     year: v.year,
     km: v.mileage ?? undefined,
-    price: (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price,
+    price: (v.price || v.promotionPrice),
     cambio: String(v.transmission || "").toLowerCase().includes("auto") ? "automático" : "manual",
     cor: v.color ?? undefined,
   };
@@ -632,7 +632,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
   // km baixo +8 (<60k); tem foto +5. Empate → foto, depois a ordem configurada.
   const scoreOf = (v: any): { score: number; reasons: string[] } => {
     let score = 0; const reasons: string[] = [];
-    const preco = (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price;
+    const preco = (v.price || v.promotionPrice);
     if (args.preco_max) {
       if (preco <= args.preco_max * 0.9) { score += 25; reasons.push("dentro do orçamento"); }
       else if (preco <= args.preco_max) { score += 15; reasons.push("no limite do orçamento"); }
@@ -666,7 +666,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
   // O [ID:X] e o (match: ...) são INTERNOS — pro modelo usar/explicar, não pro cliente ver cru.
   const fmtLine = (v: any, i: number) => {
     const title = v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
-    const preco = fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price);
+    const preco = fmtBRL(v.price || v.promotionPrice);
     const rs = reasonsById.get(v.id) || [];
     const matchHint = rs.length ? ` — (match: ${rs.join(", ")})` : "";
     return `${i + 1}) [ID:${v.id}] *${title} | ${v.year} | ${preco}*${matchHint}`;
@@ -674,7 +674,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
 
   const toListItem = (v: any): ListItem => ({
     id: v.id, title: v.title || `${v.brand} ${v.model}`, year: v.year, color: v.color,
-    price: (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price,
+    price: (v.price || v.promotionPrice),
     auto: norm(v.transmission).includes("auto"),
   });
 
@@ -744,7 +744,7 @@ async function execBuscar(sessionId: string, args: any, opts?: { excludeShown?: 
 
 // ── Fase 2: ferramentas dedicadas ────────────────────────────────────────────
 
-const precoDe = (v: any) => (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price;
+const precoDe = (v: any) => (v.price || v.promotionPrice);
 const tituloDe = (v: any) => v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim();
 
 /**
@@ -831,7 +831,7 @@ async function execApresentar(sessionId: string, args: any, images: AgentImage[]
   const raw: any[] = Array.isArray(v.images) ? v.images : (v.imageUrl ? [v.imageUrl] : []);
   const urls = raw.map((x: any) => (typeof x === "string" ? x : x?.IMAGE_URL || x?.url)).filter((u: any) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 10);
   const kmStr = v.mileage ? `${v.mileage.toLocaleString("pt-BR")} km` : "km não informado";
-  const caption = `${title}\n${v.year} · ${kmStr}\nPreço: ${fmtBRL(v.promotionPrice && v.promotionPrice < v.price ? v.promotionPrice : v.price)}`;
+  const caption = `${title}\n${v.year} · ${kmStr}\nPreço: ${fmtBRL(v.price || v.promotionPrice)}`;
   if (urls.length === 0) return `Veículo ${title} encontrado, mas sem foto no cadastro. Dados: ${caption}. Ofereça ver no anúncio (${v.url || "link"}) ou na visita.`;
 
   // Envia em LOTE: não reenvia fotos já mandadas nesta sessão.

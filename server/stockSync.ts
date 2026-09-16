@@ -313,9 +313,8 @@ export async function getStockAiConfig(): Promise<StockAiConfig> {
 }
 
 function fmtStockPrice(v: any): string {
-  return v.promotionPrice && v.promotionPrice < v.price
-    ? `R$ ${v.price.toLocaleString("pt-BR")} (promoção: R$ ${v.promotionPrice.toLocaleString("pt-BR")})`
-    : `R$ ${v.price.toLocaleString("pt-BR")}`;
+  // Preço COM TROCA (valor de tabela) — usado em todo atendimento.
+  return `R$ ${Number(v.price || v.promotionPrice || 0).toLocaleString("pt-BR")}`;
 }
 
 function stockFieldValue(v: any, key: string): string | null {
@@ -500,7 +499,7 @@ export async function getAllCuratedVehicles(): Promise<any[]> {
 
 // ─── API do Meta Business Agent (connector) ──────────────────────────────────
 const _norm = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-function precoAgent(v: any) { return (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price; }
+function precoAgent(v: any) { return Number(v.price || v.promotionPrice || 0); } // preço COM TROCA (valor de tabela)
 function compactVehicle(v: any) {
   return {
     id: v.id,
