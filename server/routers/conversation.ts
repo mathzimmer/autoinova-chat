@@ -128,7 +128,7 @@ export const conversationRouter = router({
         // Meta continua mudo. Best-effort: não quebra o toggle se a Meta falhar.
         try {
           const { reactivateMetaAgentForConversation } = await import("../metaAgent");
-          await reactivateMetaAgentForConversation(conv || before);
+          await reactivateMetaAgentForConversation({ ...before, ...(conv || {}) });
         } catch { /* best-effort */ }
         emitConversationUpdate(input.conversationId, conv);
         return conv;

@@ -64,10 +64,18 @@ export async function reactivateMetaAgentForConversation(conv: any): Promise<{ r
   try {
     const phoneNumberId = conv?.phoneNumberId;
     const phone = conv?.phone;
-    if (!phoneNumberId || !phone) return { released: false, skipped: true };
+    console.log(`[MetaAgent] reactivate: conv=${conv?.id} phoneNumberId=${phoneNumberId || "-"} phone=${phone || "-"}`);
+    if (!phoneNumberId || !phone) {
+      console.log(`[MetaAgent] reactivate SKIP: conversa sem phoneNumberId/phone`);
+      return { released: false, skipped: true };
+    }
     const { getWhatsappNumberByPhoneNumberId } = await import("./whatsappMultiNumber");
     const rec: any = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
-    if (!rec || rec.mode !== "meta_agent") return { released: false, skipped: true }; // não é Meta Agent
+    console.log(`[MetaAgent] reactivate: número encontrado? ${!!rec} mode=${rec?.mode || "-"}`);
+    if (!rec || rec.mode !== "meta_agent") {
+      console.log(`[MetaAgent] reactivate SKIP: número não está em modo meta_agent (mode=${rec?.mode || "-"})`);
+      return { released: false, skipped: true }; // não é Meta Agent
+    }
     const r = await metaThreadControl(phoneNumberId, "release", { to: phone });
     // Limpa a flag de handoff pra permitir um novo ciclo de atendimento.
     const meta = ((conv.metadata as Record<string, unknown>) || {});
