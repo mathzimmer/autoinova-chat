@@ -114,3 +114,5 @@ temp/
 
 # artefatos de edição (FUSE)
 .fuse_hidden*
+.env.save
+.env.*

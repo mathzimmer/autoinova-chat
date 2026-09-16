@@ -8,7 +8,7 @@ import axios from "axios";
 import { eq, notInArray } from "drizzle-orm";
 import { vehicles, InsertVehicle } from "../drizzle/schema";
 import { getDb, getSetting } from "./db";
-import { canonicalizeFeatures } from "./vehicleFeatures";
+import { canonicalizeFeatures, tagsFromRequest, labelsForTags } from "./vehicleFeatures";
 
 /** Status internos que NÃO podem ser ofertados ao cliente. */
 export const OFERTAVEL_STATUS = new Set(["disponivel", "", null as any, undefined as any]);
@@ -496,6 +496,71 @@ export async function getAllCuratedVehicles(): Promise<any[]> {
   let all = await selectVehiclesSafe(db, eq(vehicles.available, true));
   all = all.filter((v: any) => passesStockCuration(v, cfg));
   return all;
+}
+
+// ─── API do Meta Business Agent (connector) ──────────────────────────────────
+const _norm = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+function precoAgent(v: any) { return (v.promotionPrice && v.promotionPrice < v.price) ? v.promotionPrice : v.price; }
+function compactVehicle(v: any) {
+  return {
+    id: v.id,
+    nome: v.title || `${v.brand} ${v.model} ${v.version || ""}`.trim(),
+    marca: v.brand, modelo: v.model, ano: v.year,
+    km: v.mileage ?? null, preco: precoAgent(v),
+    cambio: _norm(v.transmission).includes("auto") ? "Automático" : "Manual",
+    combustivel: v.fuel || null, cor: v.color || null,
+    loja: v.seller || v.locationCity || null,
+    opcionais: Array.isArray(v.featuresCanon) ? labelsForTags(v.featuresCanon).slice(0, 10) : [],
+    link: v.url || null,
+  };
+}
+
+/** Busca do estoque para o connector do Meta agent (JSON enxuto, curadoria aplicada). */
+export async function searchVehiclesForAgent(f: {
+  marca?: string; modelo?: string; tipo?: string; cor?: string; combustivel?: string;
+  cambio?: string; requisitos?: string; preco_min?: number; preco_max?: number;
+  ano_min?: number; km_max?: number; limite?: number;
+}): Promise<any[]> {
+  const all = await getAllCuratedVehicles();
+  const cambioAuto = f.cambio ? _norm(f.cambio).includes("auto") : null;
+  const reqTags = f.requisitos ? tagsFromRequest(f.requisitos) : [];
+  const reqWords = f.requisitos ? _norm(f.requisitos).split(/\s+/).filter((w) => w.length >= 3) : [];
+  const hit = all.filter((v: any) => {
+    if (f.preco_max && precoAgent(v) > f.preco_max) return false;
+    if (f.preco_min && precoAgent(v) < f.preco_min) return false;
+    if (f.ano_min && v.year < f.ano_min) return false;
+    if (f.km_max && v.mileage && v.mileage > f.km_max) return false;
+    if (f.marca && !_norm(`${v.brand}`).includes(_norm(f.marca))) return false;
+    if (f.modelo && !_norm(`${v.brand} ${v.model} ${v.version || ""} ${v.title || ""}`).includes(_norm(f.modelo))) return false;
+    if (f.cor && !_norm(v.color).includes(_norm(f.cor))) return false;
+    if (f.combustivel && !_norm(v.fuel).includes(_norm(f.combustivel))) return false;
+    if (cambioAuto !== null && (_norm(v.transmission).includes("auto")) !== cambioAuto) return false;
+    if (f.tipo) {
+      const body = _norm(`${v.category || ""} ${v.vehicleType || ""} ${v.model || ""} ${v.title || ""}`);
+      if (!body.includes(_norm(f.tipo))) return false;
+    }
+    if (reqTags.length || reqWords.length) {
+      const rawText = _norm(`${(Array.isArray(v.features) ? v.features.join(" ") : "")} ${v.description || ""} ${v.title || ""} ${v.version || ""} ${v.fuel || ""}`);
+      const canon: string[] = Array.isArray(v.featuresCanon) ? v.featuresCanon : [];
+      const canonSet = new Set<string>([...canon, ...tagsFromRequest(rawText)]);
+      if (reqTags.length && !reqTags.every((t) => canonSet.has(t))) return false;
+      if (reqWords.length && !reqWords.every((w) => rawText.includes(w))) return false;
+    }
+    return true;
+  }).sort((a: any, b: any) => precoAgent(a) - precoAgent(b));
+  const lim = Math.min(Math.max(Number(f.limite) || 6, 1), 12);
+  return hit.slice(0, lim).map(compactVehicle);
+}
+
+/** Ficha completa de um veículo (com fotos) para o connector do Meta agent. */
+export async function getVehicleForAgent(id: number): Promise<any | null> {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await selectVehiclesSafe(db, eq(vehicles.id, id));
+  const v: any = rows[0];
+  if (!v || v.available === false || !podeOfertar(v)) return null;
+  const fotos = Array.isArray(v.images) ? (v.images as any[]).map((x) => (typeof x === "string" ? x : x?.url || x?.IMAGE_URL)).filter(Boolean).slice(0, 10) : (v.imageUrl ? [v.imageUrl] : []);
+  return { ...compactVehicle(v), fabricacao: v.fabricYear || null, motor: v.motor || null, potencia: v.potencia || null, portas: v.doors || null, descricao: v.description || null, fotos, disponivel: true };
 }
 
 async function searchVehiclesForAI(filters: {

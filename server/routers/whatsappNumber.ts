@@ -105,4 +105,19 @@ export const whatsappNumberRouter = router({
       await deleteWhatsappNumber(input.id);
       return { success: true };
     }),
+
+  // Thread Control do Meta agent: assumir / devolver / passar a conversa.
+  metaThreadControl: protectedProcedure
+    .input(z.object({
+      phoneNumberId: z.string().min(4),
+      action: z.enum(["take", "release", "pass"]),
+      to: z.string().optional(),          // telefone do cliente (obrigatório p/ take/release)
+      targetRole: z.literal("ai_agent").optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const { metaThreadControl } = await import("../metaAgent");
+      const r = await metaThreadControl(input.phoneNumberId, input.action, { to: input.to, targetRole: input.targetRole });
+      if (!r.ok) throw new Error(r.error || "Falha no thread control");
+      return { success: true };
+    }),
 });

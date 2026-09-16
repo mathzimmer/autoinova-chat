@@ -14,11 +14,46 @@
  * VPS) e faz parse best-effort do que é conhecido. O ponto do handoff está em
  * `detectHandoff()` marcado com TODO_HANDOFF — fecha com um webhook real.
  */
+import axios from "axios";
 import {
   getConversationByPhone, mirrorOfficialMessage, getOrCreateLeadByPhone,
   updateConversation, assignSellerRoundRobin,
 } from "./db";
 import { emitNewMessage, emitConversationUpdate } from "./socket";
+
+/**
+ * Thread Control do Meta Business Agent — assume/devolve/passa o controle da
+ * conversa. `take` = seu app assume (você responde); `release` = devolve pro
+ * agente da Meta voltar a responder; `pass` (target ai_agent) = passa pro agente.
+ * Usa o token do próprio número.
+ */
+export async function metaThreadControl(
+  phoneNumberId: string,
+  action: "take" | "release" | "pass",
+  opts?: { to?: string; targetRole?: "ai_agent"; metadata?: string }
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { getWhatsappNumberByPhoneNumberId } = await import("./whatsappMultiNumber");
+    const rec: any = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
+    const token = rec?.accessToken || process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
+    if (!token) return { ok: false, error: "Sem token para o número" };
+    const body: any = { messaging_product: "whatsapp", action };
+    if (opts?.to) body.to = opts.to;
+    if (action === "pass" && opts?.targetRole) body.control_pass = { target_role: opts.targetRole };
+    if (opts?.metadata) body.metadata = opts.metadata;
+    await axios.post(
+      `https://api.facebook.com/business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
+      body,
+      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-API-Version": "1.0.0" } }
+    );
+    console.log(`[MetaAgent] thread_control ${action} OK (num ${phoneNumberId}, to ${opts?.to || "-"})`);
+    return { ok: true };
+  } catch (e: any) {
+    const msg = e?.response?.data?.error?.message || e?.message || "erro";
+    console.error(`[MetaAgent] thread_control ${action} falhou:`, msg);
+    return { ok: false, error: msg };
+  }
+}
 
 function extractText(m: any): string {
   if (!m) return "";
@@ -46,6 +81,27 @@ function detectHandoff(value: any): { phone?: string } | null {
   return { phone };
 }
 
+/** Resolve o veículo do estoque a partir do texto de interesse (ex: "Corolla 2019"). */
+async function resolveVehicleIdFromText(text: string): Promise<number | null> {
+  try {
+    const { getAllCuratedVehicles } = await import("./stockSync");
+    const all = await getAllCuratedVehicles();
+    const norm = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const t = norm(text);
+    const ym = t.match(/\b(19|20)\d{2}\b/);
+    const anoDito = ym ? Number(ym[0]) : null;
+    let best: { id: number; score: number } | null = null;
+    for (const v of all as any[]) {
+      const words = norm(`${v.brand} ${v.model} ${v.version || ""}`).split(/\s+/).filter((w: string) => w.length >= 3);
+      let score = 0;
+      for (const w of words) if (t.includes(w)) score += w.length;
+      if (anoDito && Number(v.year) === anoDito) score += 4;
+      if (score > 0 && (!best || score > best.score)) best = { id: v.id, score };
+    }
+    return best ? best.id : null;
+  } catch { return null; }
+}
+
 /** Webhook de um número que roda o Meta Business Agent. */
 export async function handleMetaAgentWebhook(body: any, phoneNumberId: string): Promise<boolean> {
   try {
@@ -71,6 +127,8 @@ export async function handleMetaAgentWebhook(body: any, phoneNumberId: string): 
   // Compat: caso algum dia o standby venha como ARRAY de mensagens.
   if (Array.isArray(value.standby)) value.standby.forEach((m: any) => buckets.push({ m, direction: "inbound" }));
 
+  let custPhone = "";           // telefone do cliente visto neste webhook
+  let agentPediuHandoff = false; // o eco do agente disse que vai transferir?
   for (const { m, direction } of buckets) {
     // Nos ECHOES (resposta do agente), os dados ficam ANINHADOS em `m.message`
     // e o telefone do cliente é `message.to` (não há `from`). Nas mensagens do
@@ -80,13 +138,19 @@ export async function handleMetaAgentWebhook(body: any, phoneNumberId: string): 
       ? (inner.to || m.to || contact?.wa_id || "")
       : (m.from || inner.from || contact?.wa_id || "");
     if (!phone) continue;
+    custPhone = phone;
     const type = inner.type;
+    const texto = extractText(inner);
+    // Sinal de handoff pela FALA do agente ("vamos redirecionar/passar/atendente...").
+    if (direction === "outbound" && /redirecion|membro da equip|falar com|transferir|passar (voce|você|a conversa)|equipe|equipa|atendente|humano/i.test(texto.toLowerCase())) {
+      agentPediuHandoff = true;
+    }
     try {
       const res = await mirrorOfficialMessage({
         phoneNumberId,
         phone,
         contactName: contact?.profile?.name || undefined,
-        content: extractText(inner),
+        content: texto,
         messageType: (type === "image" || type === "audio" || type === "document" ? type : "text"),
         direction,
         senderName: direction === "outbound" ? "Agente Meta" : (contact?.profile?.name || phone),
@@ -100,9 +164,15 @@ export async function handleMetaAgentWebhook(body: any, phoneNumberId: string): 
     }
   }
 
+  // Gatilhos de HANDOFF (qualquer um serve; onMetaAgentHandoff é idempotente):
+  //  1) evento explícito (messaging_handovers/thread_control), quando vier;
+  //  2) o agente disse que vai transferir ("redirecionar/membro da equipa...");
+  //  3) mensagem do cliente chegou FORA do standby (controle passou pro app).
   const handoff = detectHandoff(value);
-  if (handoff?.phone) {
-    await onMetaAgentHandoff(handoff.phone).catch((e) => console.error("[MetaAgent] handoff falhou:", e));
+  const controleComApp = !standbyObj && Array.isArray(value.messages) && value.messages.length > 0;
+  const phoneParaHandoff = handoff?.phone || custPhone || value?.contacts?.[0]?.wa_id || value?.messages?.[0]?.from;
+  if (phoneParaHandoff && (handoff?.phone || agentPediuHandoff || controleComApp)) {
+    await onMetaAgentHandoff(phoneParaHandoff).catch((e) => console.error("[MetaAgent] handoff falhou:", e));
   }
 
   return true;
@@ -117,6 +187,9 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
   if (!conv) { console.warn(`[MetaAgent] handoff sem conversa para ${phone}`); return; }
 
   const meta = ((conv as any).metadata as Record<string, unknown>) || {};
+  // IDEMPOTENTE: só processa o handoff UMA vez por conversa.
+  if (meta.metaAgentHandoff === true) return;
+
   await updateConversation(conv.id, {
     status: "open",
     aiActive: false, // vendedor humano assume; IA do CRM não responde
@@ -130,10 +203,45 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
   try { const { analyzeConversation } = await import("./conversationIntelligence"); await analyzeConversation(conv.id); }
   catch (e) { console.error("[MetaAgent] analyzeConversation:", e); }
 
-  // Atribui um vendedor (round-robin por loja).
-  try { await assignSellerRoundRobin(conv.id, { phone, contactName: (conv as any).contactName || undefined }); }
-  catch (e) { console.error("[MetaAgent] assignSeller:", e); }
+  // AMARRA o interesse (texto) a um carro do ESTOQUE → assim a loja/vendedor certos
+  // são escolhidos. Sem isso, o roteamento cairia na loja padrão.
+  try {
+    const { getLeadByConversationId, upsertLead } = await import("./db");
+    const lead: any = await getLeadByConversationId(conv.id);
+    if (lead && !lead.vehicleId && lead.vehicleInterest && lead.vehicleInterest !== "não definido") {
+      const vid = await resolveVehicleIdFromText(lead.vehicleInterest);
+      if (vid) await upsertLead({ conversationId: conv.id, phone, vehicleId: vid } as any);
+    }
+  } catch (e) { console.error("[MetaAgent] amarrar veículo:", e); }
+
+  // Atribui um vendedor (round-robin por loja) e NOTIFICA o vendedor com o resumo.
+  try {
+    const assigned = await assignSellerRoundRobin(conv.id, { phone, contactName: (conv as any).contactName || undefined });
+    if (assigned?.seller?.phone) {
+      const { getLeadByConversationId } = await import("./db");
+      const { sendSellerNotification } = await import("./whatsapp");
+      const lead: any = await getLeadByConversationId(conv.id).catch(() => null);
+      await sendSellerNotification(assigned.seller.phone, {
+        sellerName: assigned.seller.name,
+        customerName: (conv as any).contactName || lead?.name || "Cliente",
+        customerPhone: phone,
+        vehicleInterest: lead?.vehicleInterest || "(a confirmar)",
+        conversationSummary: lead?.notes || "Atendimento iniciado pelo agente da Meta; cliente pediu atendimento humano.",
+        storeLocation: assigned.storeLocation,
+      });
+      // Marca visível na conversa.
+      try {
+        const { createMessage } = await import("./db");
+        const { emitNewMessage } = await import("./socket");
+        const hora = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const sysMsg = await createMessage({ conversationId: conv.id, content: `🔁 Lead transferido pelo agente da Meta para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+        emitNewMessage(conv.id, sysMsg);
+      } catch { /* noop */ }
+    } else {
+      console.warn(`[MetaAgent] handoff sem vendedor ativo pra loja da conversa ${conv.id}`);
+    }
+  } catch (e) { console.error("[MetaAgent] assignSeller/notify:", e); }
 
   emitConversationUpdate(conv.id, {});
-  console.log(`[MetaAgent] Handoff OK: conversa ${conv.id} (${phone}) → lead + vendedor + automação.`);
+  console.log(`[MetaAgent] Handoff OK: conversa ${conv.id} (${phone}) → lead + vendedor + notificação.`);
 }

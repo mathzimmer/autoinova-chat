@@ -575,6 +575,48 @@ async function startServer() {
     }
   });
 
+  // ─── API do estoque para o Meta Business Agent (connector) ─────────────────
+  // Autenticada por API key (header X-Agent-Key ou Authorization: Bearer). Só
+  // leitura, curadoria aplicada, JSON enxuto — o agente da Meta chama estas rotas.
+  function agentApiAuthOk(req: express.Request): boolean {
+    const expected = process.env.AGENT_API_KEY;
+    if (!expected) return false; // sem chave configurada → bloqueia (não expõe estoque)
+    const h = String(req.headers["x-agent-key"] || "");
+    const auth = String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
+    return h === expected || auth === expected;
+  }
+  app.get("/api/agent/veiculos", async (req, res) => {
+    if (!agentApiAuthOk(req)) return res.status(401).json({ error: "unauthorized" });
+    try {
+      const q = req.query;
+      const num = (v: any) => (v != null && v !== "" ? Number(v) : undefined);
+      const { searchVehiclesForAgent } = await import("../stockSync");
+      const veiculos = await searchVehiclesForAgent({
+        marca: q.marca as string, modelo: q.modelo as string, tipo: q.tipo as string,
+        cor: q.cor as string, combustivel: q.combustivel as string, cambio: q.cambio as string,
+        requisitos: q.requisitos as string,
+        preco_min: num(q.preco_min), preco_max: num(q.preco_max),
+        ano_min: num(q.ano_min), km_max: num(q.km_max), limite: num(q.limite),
+      });
+      res.json({ total: veiculos.length, veiculos });
+    } catch (e) {
+      console.error("[AgentAPI] busca falhou:", e);
+      res.status(500).json({ error: "erro na busca" });
+    }
+  });
+  app.get("/api/agent/veiculos/:id", async (req, res) => {
+    if (!agentApiAuthOk(req)) return res.status(401).json({ error: "unauthorized" });
+    try {
+      const { getVehicleForAgent } = await import("../stockSync");
+      const v = await getVehicleForAgent(Number(req.params.id));
+      if (!v) return res.status(404).json({ error: "veículo não disponível" });
+      res.json(v);
+    } catch (e) {
+      console.error("[AgentAPI] detalhes falhou:", e);
+      res.status(500).json({ error: "erro" });
+    }
+  });
+
   // WhatsApp Cloud API webhook verification (GET)
   app.get("/api/webhook/whatsapp", (req, res) => {
     const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
