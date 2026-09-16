@@ -585,6 +585,12 @@ async function startServer() {
     const auth = String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "");
     return h === expected || auth === expected;
   }
+  // Health/probe da raiz do connector: a Meta sonda o base_url ao criar o
+  // connector, então precisa responder 200 aqui (sem expor estoque nem segredo).
+  const agentRootHealth = (_req: express.Request, res: express.Response) =>
+    res.json({ ok: true, service: "autoinova-agent-api", endpoints: ["/veiculos", "/veiculos/:id"] });
+  app.get("/api/agent", agentRootHealth);
+  app.get("/api/agent/", agentRootHealth);
   app.get("/api/agent/veiculos", async (req, res) => {
     if (!agentApiAuthOk(req)) return res.status(401).json({ error: "unauthorized" });
     try {
