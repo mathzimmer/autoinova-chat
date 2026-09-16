@@ -57,6 +57,17 @@ async function processEvolutionConversation(conversationId: number, customerMess
     return;
   }
 
+  // AgentV2 ligado nesta instância Evolution? → responde pelo agente novo e para.
+  try {
+    const { isAgentV2On, respondAgentV2Generic } = await import("./agentV2Runtime");
+    if (await isAgentV2On("evolution", conv.instanceName)) {
+      emitTypingIndicator(conversationId, true, botName);
+      try { await respondAgentV2Generic(conversationId, { text: sender.text, image: sender.image }); }
+      finally { emitTypingIndicator(conversationId, false, botName); }
+      return;
+    }
+  } catch (e) { console.error("[EvolutionAI] agentV2 check falhou:", e); }
+
   emitTypingIndicator(conversationId, true, botName);
   try {
     // ── 1) Fluxo programado (o fluxo ENVIA via sender; aqui só persistimos+emitimos)

@@ -67,6 +67,15 @@ async function processZernioConversation(conversationId: number, customerMessage
       list: (b: string, buttonText: string, sections: any) => zernioSendList(zConvId, b, buttonText, sections, accountId),
     };
 
+    // AgentV2 ligado nesta conta Zernio (coexistência)? → responde pelo agente novo e para.
+    try {
+      const { isAgentV2On, respondAgentV2Generic } = await import("./agentV2Runtime");
+      if (await isAgentV2On("zernio", accountId)) {
+        await respondAgentV2Generic(conversationId, { text: zSender.text, image: zSender.image });
+        return;
+      }
+    } catch (e) { console.error("[ZernioAI] agentV2 check falhou:", e); }
+
     // ── 1) Fluxo programado ── (o fluxo ENVIA via zSender; aqui só persistimos+emitimos)
     if (flowsEnabled) {
       try {

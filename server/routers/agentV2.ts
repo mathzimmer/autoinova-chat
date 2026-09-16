@@ -28,6 +28,18 @@ export const agentV2Router = router({
       return { success: true };
     }),
 
+  // Canais (Evolution/Zernio) onde o agentV2 está ligado.
+  getChannels: protectedProcedure.query(async () => {
+    const { getAgentV2Channels } = await import("../agentV2Runtime");
+    return getAgentV2Channels();
+  }),
+  setChannel: adminProcedure
+    .input(z.object({ kind: z.enum(["evolution", "zernio"]), id: z.string().min(1), on: z.boolean() }))
+    .mutation(async ({ ctx, input }) => {
+      const { setAgentV2Channel } = await import("../agentV2Runtime");
+      return setAgentV2Channel(input.kind, input.id, input.on, ctx.user.id);
+    }),
+
   getConfig: protectedProcedure.query(async () => {
     return getAgentV2Config();
   }),

@@ -183,6 +183,14 @@ export default function EvolutionInstances() {
   });
   const officialInstances = officialQuery.data || [];
 
+  // AgentV2 ligado por canal (Evolution/Zernio)
+  const agentV2ChannelsQuery = trpc.agentV2.getChannels.useQuery(undefined, { refetchInterval: 60000 });
+  const agentV2Channels = agentV2ChannelsQuery.data || { evolution: [] as string[], zernio: [] as string[] };
+  const setAgentV2ChannelMut = trpc.agentV2.setChannel.useMutation({
+    onSuccess: (c) => { agentV2ChannelsQuery.refetch(); toast.success("Agente v2 atualizado"); void c; },
+    onError: (e) => toast.error("Erro: " + e.message),
+  });
+
   const instances = instancesQuery.data || [];
 
   const statusColor = (status: Instance["status"]) => {
@@ -377,6 +385,14 @@ export default function EvolutionInstances() {
                     <RotateCcw className="w-3 h-3" />
                   </Button>
                   <Button
+                    size="sm" variant="outline"
+                    className={agentV2Channels.evolution?.includes(inst.instanceName) ? "border-blue-500/50 text-blue-500" : ""}
+                    title={agentV2Channels.evolution?.includes(inst.instanceName) ? "Desligar o Agente v2 neste número" : "Fazer o Agente v2 responder este número"}
+                    onClick={() => setAgentV2ChannelMut.mutate({ kind: "evolution", id: inst.instanceName, on: !agentV2Channels.evolution?.includes(inst.instanceName) })}
+                  >
+                    {agentV2Channels.evolution?.includes(inst.instanceName) ? "Desligar v2" : "Agente v2"}
+                  </Button>
+                  <Button
                     size="sm"
                     variant="outline"
                     className="text-red-500 hover:text-red-600"
@@ -498,6 +514,14 @@ export default function EvolutionInstances() {
                         Mensagens
                       </Button>
                     </Link>
+                    <Button
+                      size="sm" variant="outline"
+                      className={agentV2Channels.zernio?.includes(inst.accountId) ? "border-blue-500/50 text-blue-500" : ""}
+                      title={agentV2Channels.zernio?.includes(inst.accountId) ? "Desligar o Agente v2 nesta conta" : "Fazer o Agente v2 responder esta conta"}
+                      onClick={() => setAgentV2ChannelMut.mutate({ kind: "zernio", id: inst.accountId, on: !agentV2Channels.zernio?.includes(inst.accountId) })}
+                    >
+                      {agentV2Channels.zernio?.includes(inst.accountId) ? "Desligar v2" : "Agente v2"}
+                    </Button>
                     <Button
                       size="sm" variant="outline" className="text-red-500 hover:text-red-600"
                       onClick={() => { if (confirm(`Remover instância Zernio "${inst.displayName}"?`)) zDeleteMutation.mutate({ id: inst.id }); }}

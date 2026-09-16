@@ -72,18 +72,25 @@ export async function handleMetaAgentWebhook(body: any, phoneNumberId: string): 
   if (Array.isArray(value.standby)) value.standby.forEach((m: any) => buckets.push({ m, direction: "inbound" }));
 
   for (const { m, direction } of buckets) {
-    const phone = m.from || contact?.wa_id || "";
+    // Nos ECHOES (resposta do agente), os dados ficam ANINHADOS em `m.message`
+    // e o telefone do cliente é `message.to` (não há `from`). Nas mensagens do
+    // cliente (standby.messages) os campos são planos e o telefone é `from`.
+    const inner = (m.message && typeof m.message === "object") ? m.message : m;
+    const phone = direction === "outbound"
+      ? (inner.to || m.to || contact?.wa_id || "")
+      : (m.from || inner.from || contact?.wa_id || "");
     if (!phone) continue;
+    const type = inner.type;
     try {
       const res = await mirrorOfficialMessage({
         phoneNumberId,
         phone,
         contactName: contact?.profile?.name || undefined,
-        content: extractText(m),
-        messageType: (m.type === "image" || m.type === "audio" || m.type === "document" ? m.type : "text"),
+        content: extractText(inner),
+        messageType: (type === "image" || type === "audio" || type === "document" ? type : "text"),
         direction,
         senderName: direction === "outbound" ? "Agente Meta" : (contact?.profile?.name || phone),
-        externalId: m.id,
+        externalId: m.id || inner.id,
         timestamp: Date.now(),
       });
       // IMPORTANTE: NÃO chamar IA/fluxo aqui — quem responde é o agente da Meta.
