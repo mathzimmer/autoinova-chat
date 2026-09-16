@@ -173,3 +173,82 @@ export async function buildFacebookVehiclesCsv(injectedRows?: any[]): Promise<st
 
   return lines.join("\n");
 }
+
+// ─── Feed E-COMMERCE (produto) ────────────────────────────────────────────────
+// O WhatsApp Business só vincula catálogo do tipo "E-commerce" (produtos), não
+// o tipo "Veículos". Este feed gera cada carro como PRODUTO, no formato oficial
+// do catálogo de produtos da Meta, pra ser usado como fonte de conhecimento do
+// Meta Business Agent (e vitrine de produtos na conversa).
+// Ref: https://www.facebook.com/business/help/120325381656392
+const PRODUCT_HEADERS = [
+  "id",
+  "title",
+  "description",
+  "availability",
+  "condition",
+  "price",
+  "link",
+  "image_link",
+  "additional_image_link",
+  "brand",
+  "product_type",
+  "custom_label_0", // ano
+  "custom_label_1", // km
+  "custom_label_2", // câmbio
+  "custom_label_3", // combustível
+  "custom_label_4", // loja
+];
+
+function mapProductCondition(condition?: string): string {
+  return mapState(condition) === "NEW" ? "new" : "used";
+}
+
+/**
+ * Gera o CSV de PRODUTOS (catálogo e-commerce) a partir do estoque do CRM.
+ * `injectedRows` permite injetar linhas em testes; em produção lê do banco.
+ */
+export async function buildFacebookProductsCsv(injectedRows?: any[]): Promise<string> {
+  const rows = injectedRows ?? (await (await import("./stockSync")).getAllCuratedVehicles());
+
+  const lines: string[] = [PRODUCT_HEADERS.join(",")];
+
+  for (const v of rows) {
+    const imgs = imagesOf(v);
+    if (imgs.length === 0) continue; // Meta exige ao menos 1 imagem por produto
+
+    const store = pickStore(v);
+    const title = (v.title || `${v.brand || ""} ${v.model || ""} ${v.version || ""} ${v.year || ""}`)
+      .replace(/\s+/g, " ").trim().slice(0, 150);
+    const description = (v.description ||
+      `${v.brand || ""} ${v.model || ""} ${v.version || ""} ${v.year || ""}${v.mileage != null ? " - " + v.mileage + " km" : ""} - ${store.name}, ${store.city}/${store.region}.`)
+      .replace(/\s+/g, " ").trim().slice(0, 5000);
+    const url = v.url || SITE;
+    const priceNum = Number(v.promotionPrice || v.price || 0);
+    if (!(priceNum > 0)) continue; // produto sem preço não entra
+
+    const productType = [v.category, v.vehicleType].filter(Boolean).join(" > ") || "Veículos";
+
+    const cols = [
+      v.externalId ?? v.id,                                   // id
+      title,                                                  // title
+      description,                                            // description
+      "in stock",                                             // availability
+      mapProductCondition(v.condition),                       // condition
+      `${priceNum.toFixed(2)} BRL`,                           // price ex.: 64990.00 BRL
+      url,                                                    // link
+      imgs[0],                                                // image_link (principal)
+      imgs.slice(1).join(","),                                // additional_image_link
+      v.brand || "",                                          // brand
+      productType,                                            // product_type
+      v.year || "",                                           // custom_label_0 (ano)
+      v.mileage != null ? `${v.mileage} km` : "",             // custom_label_1 (km)
+      mapTransmission(v.transmission) === "AUTOMATIC" ? "Automático" : "Manual", // custom_label_2
+      v.fuel || "",                                           // custom_label_3 (combustível)
+      store.name,                                             // custom_label_4 (loja)
+    ];
+
+    lines.push(cols.map(esc).join(","));
+  }
+
+  return lines.join("\n");
+}

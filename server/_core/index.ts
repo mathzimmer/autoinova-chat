@@ -575,6 +575,22 @@ async function startServer() {
     }
   });
 
+  // Feed E-COMMERCE (produtos) — este é o que o WhatsApp Business aceita vincular
+  // (catálogo tipo "E-commerce"). Cole esta URL no Commerce Manager.
+  app.get(["/api/catalog/products.csv", "/api/catalog/whatsapp.csv"], async (_req, res) => {
+    try {
+      const { buildFacebookProductsCsv } = await import("../catalogFeed");
+      const csv = await buildFacebookProductsCsv();
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", "inline; filename=autoinova_products.csv");
+      res.setHeader("Cache-Control", "public, max-age=1800");
+      res.send("﻿" + csv); // BOM p/ acentos
+    } catch (err) {
+      console.error("[CatalogFeed produtos] erro:", err);
+      res.status(500).send("erro ao gerar feed");
+    }
+  });
+
   // ─── API do estoque para o Meta Business Agent (connector) ─────────────────
   // Autenticada por API key (header X-Agent-Key ou Authorization: Bearer). Só
   // leitura, curadoria aplicada, JSON enxuto — o agente da Meta chama estas rotas.
