@@ -123,6 +123,13 @@ export const conversationRouter = router({
           aiActive: true,
           routingState: "ai_agent",
         });
+        // Se for número do Meta Agent, devolve o controle da conversa pra Meta
+        // (release do thread control) — senão a IA só liga no CRM e o agente da
+        // Meta continua mudo. Best-effort: não quebra o toggle se a Meta falhar.
+        try {
+          const { reactivateMetaAgentForConversation } = await import("../metaAgent");
+          await reactivateMetaAgentForConversation(conv || before);
+        } catch { /* best-effort */ }
         emitConversationUpdate(input.conversationId, conv);
         return conv;
       }

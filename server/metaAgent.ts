@@ -55,6 +55,33 @@ export async function metaThreadControl(
   }
 }
 
+/**
+ * Reativa o Meta Agent numa conversa: devolve o controle da thread pra Meta
+ * (release) e limpa a flag de handoff, pra o agente voltar a responder o cliente.
+ * Só age se o número da conversa estiver em modo meta_agent — nos demais é no-op.
+ */
+export async function reactivateMetaAgentForConversation(conv: any): Promise<{ released: boolean; skipped?: boolean; error?: string }> {
+  try {
+    const phoneNumberId = conv?.phoneNumberId;
+    const phone = conv?.phone;
+    if (!phoneNumberId || !phone) return { released: false, skipped: true };
+    const { getWhatsappNumberByPhoneNumberId } = await import("./whatsappMultiNumber");
+    const rec: any = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
+    if (!rec || rec.mode !== "meta_agent") return { released: false, skipped: true }; // não é Meta Agent
+    const r = await metaThreadControl(phoneNumberId, "release", { to: phone });
+    // Limpa a flag de handoff pra permitir um novo ciclo de atendimento.
+    const meta = ((conv.metadata as Record<string, unknown>) || {});
+    if (meta.metaAgentHandoff) {
+      delete meta.metaAgentHandoff;
+      const { updateConversation } = await import("./db");
+      await updateConversation(conv.id, { metadata: meta as any });
+    }
+    return { released: r.ok, error: r.error };
+  } catch (e: any) {
+    return { released: false, error: e?.message || "erro" };
+  }
+}
+
 function extractText(m: any): string {
   if (!m) return "";
   if (m.type === "text") return m.text?.body || "";
