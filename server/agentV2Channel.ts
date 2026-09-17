@@ -179,7 +179,7 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
 
       const assigned = await assignSellerRoundRobin(conversationId, { phone, contactName: conv.contactName || undefined });
       if (assigned?.seller?.phone) {
-        await sendSellerNotification(assigned.seller.phone, {
+        const notif = await sendSellerNotification(assigned.seller.phone, {
           sellerName: assigned.seller.name,
           customerName: conv.contactName || L.nome || "Cliente",
           customerPhone: phone,
@@ -199,6 +199,16 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
             senderType: "internal", senderName: "Sistema", messageType: "system",
           } as any);
           emitNewMessage(conversationId, sysMsg);
+
+          // Registra no chat a MENSAGEM enviada ao vendedor (o texto exato).
+          if (notif?.message) {
+            const notifMsg = await createMessage({
+              conversationId,
+              content: `📤 Mensagem enviada ao vendedor (${assigned.seller.name}):\n\n${notif.message}`,
+              senderType: "internal", senderName: "Sistema", messageType: "system",
+            } as any);
+            emitNewMessage(conversationId, notifMsg);
+          }
           const meta = ((conv as any).metadata as Record<string, unknown>) || {};
           await updateConversation(conversationId, {
             metadata: { ...meta, handedOffAt: when.toISOString(), assignedSellerId: assigned.seller.id, assignedSellerName: assigned.seller.name, assignedStore: assigned.storeLocation },

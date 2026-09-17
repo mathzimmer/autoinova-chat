@@ -119,7 +119,7 @@ export async function respondAgentV2Generic(conversationId: number, sender: Agen
       } as any);
       const assigned = await assignSellerRoundRobin(conversationId, { phone: conv.phone || undefined, contactName: conv.contactName || undefined });
       if (assigned?.seller?.phone) {
-        await sendSellerNotification(assigned.seller.phone, {
+        const notif = await sendSellerNotification(assigned.seller.phone, {
           sellerName: assigned.seller.name,
           customerName: conv.contactName || L.nome || "Cliente",
           customerPhone: conv.phone || "",
@@ -131,6 +131,11 @@ export async function respondAgentV2Generic(conversationId: number, sender: Agen
         const nota = `🔁 Lead transferido para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`;
         const sysMsg = await createMessage({ conversationId, content: nota, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
         emitNewMessage(conversationId, sysMsg);
+        // Registra no chat a MENSAGEM enviada ao vendedor (texto exato).
+        if (notif?.message) {
+          const notifMsg = await createMessage({ conversationId, content: `📤 Mensagem enviada ao vendedor (${assigned.seller.name}):\n\n${notif.message}`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+          emitNewMessage(conversationId, notifMsg);
+        }
         const meta = ((conv as any).metadata as Record<string, unknown>) || {};
         await updateConversation(conversationId, { metadata: { ...meta, handedOffAt: new Date().toISOString(), assignedSellerId: assigned.seller.id, assignedSellerName: assigned.seller.name, assignedStore: assigned.storeLocation } } as any);
       }

@@ -717,7 +717,7 @@ async function sendSellerNotification(
     storeLocation: string;
     customMessage?: string;
   }
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
+): Promise<{ success: boolean; messageId?: string; error?: string; message?: string }> {
   const { accessToken, phoneNumberId } = getConfig();
 
   if (!accessToken || !phoneNumberId) {
@@ -766,7 +766,7 @@ async function sendSellerNotification(
         const r: any = await evolutionSendText(evoInstance, sellerPhone, message);
         const messageId = r?.key?.id || r?.messageId || undefined;
         console.log(`[WhatsApp] Seller notification enviada por EVOLUTION (${evoInstance}) a ${sellerPhone}, ID: ${messageId}`);
-        return { success: true, messageId };
+        return { success: true, messageId, message };
       } catch (e: any) {
         console.error(`[WhatsApp] Evolution falhou p/ ${sellerPhone} (${e?.message || e}), tentando oficial/template.`);
       }
@@ -784,7 +784,7 @@ async function sendSellerNotification(
     }
     if (textResult.success) {
       console.log(`[WhatsApp] Seller notification enviada por TEXTO a ${sellerPhone}, ID: ${textResult.messageId}`);
-      return textResult;
+      return { ...textResult, message };
     }
 
     // 2) Fallback: TEMPLATE (funciona fora das 24h, requer aprovação na Meta)
@@ -806,7 +806,7 @@ async function sendSellerNotification(
     if (templateResult.success) {
       console.log(`[WhatsApp] Seller notification enviada por TEMPLATE a ${sellerPhone}, ID: ${templateResult.messageId}`);
     }
-    return templateResult;
+    return { ...templateResult, message };
   } catch (error: any) {
     const errMsg = error?.response?.data?.error?.message || error.message;
     console.error(`[WhatsApp] Failed to send seller notification to ${sellerPhone}:`, errMsg);

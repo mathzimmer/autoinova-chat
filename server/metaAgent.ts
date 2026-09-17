@@ -256,7 +256,7 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
       const { getLeadByConversationId } = await import("./db");
       const { sendSellerNotification } = await import("./whatsapp");
       const lead: any = await getLeadByConversationId(conv.id).catch(() => null);
-      await sendSellerNotification(assigned.seller.phone, {
+      const notif = await sendSellerNotification(assigned.seller.phone, {
         sellerName: assigned.seller.name,
         customerName: (conv as any).contactName || lead?.name || "Cliente",
         customerPhone: phone,
@@ -271,6 +271,11 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
         const hora = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         const sysMsg = await createMessage({ conversationId: conv.id, content: `🔁 Lead transferido pelo agente da Meta para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
         emitNewMessage(conv.id, sysMsg);
+        // Registra no chat a MENSAGEM enviada ao vendedor (texto exato).
+        if (notif?.message) {
+          const notifMsg = await createMessage({ conversationId: conv.id, content: `📤 Mensagem enviada ao vendedor (${assigned.seller.name}):\n\n${notif.message}`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+          emitNewMessage(conv.id, notifMsg);
+        }
       } catch { /* noop */ }
     } else {
       console.warn(`[MetaAgent] handoff sem vendedor ativo pra loja da conversa ${conv.id}`);
