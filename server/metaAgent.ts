@@ -51,9 +51,13 @@ export async function metaThreadControl(
     console.log(`[MetaAgent] thread_control ${action} OK (num ${phoneNumberId}, to ${opts?.to || "-"})`);
     return { ok: true };
   } catch (e: any) {
-    const msg = e?.response?.data?.error?.message || e?.message || "erro";
-    console.error(`[MetaAgent] thread_control ${action} falhou:`, msg);
-    return { ok: false, error: msg };
+    const err = e?.response?.data?.error || {};
+    const msg = err.message || e?.message || "erro";
+    // Loga o erro COMPLETO da Meta (code/subcode/fbtrace) pra diagnóstico preciso.
+    console.error(`[MetaAgent] thread_control ${action} falhou:`, msg,
+      `| code=${err.code ?? "-"} subcode=${err.error_subcode ?? "-"} type=${err.type ?? "-"} fbtrace=${err.fbtrace_id ?? "-"} http=${e?.response?.status ?? "-"}`,
+      `| full=${JSON.stringify(e?.response?.data || {}).slice(0, 500)}`);
+    return { ok: false, error: `${msg} (code ${err.code ?? "-"}/${err.error_subcode ?? "-"})` };
   }
 }
 
