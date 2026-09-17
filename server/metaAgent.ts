@@ -46,7 +46,7 @@ export async function metaThreadControl(
     await axios.post(
       `https://graph.facebook.com/v21.0/${phoneNumberId}/thread_control`,
       body,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-API-Version": "2.0.0" } }
+      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-API-Version": "1.0.0" } }
     );
     console.log(`[MetaAgent] thread_control ${action} OK (num ${phoneNumberId}, to ${opts?.to || "-"})`);
     return { ok: true };
