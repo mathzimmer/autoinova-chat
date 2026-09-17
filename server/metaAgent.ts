@@ -37,13 +37,14 @@ export async function metaThreadControl(
     const rec: any = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
     const token = rec?.accessToken || process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
     if (!token) return { ok: false, error: "Sem token para o número" };
-    // Enterprise API do Meta Business Agent: base api.facebook.com/{entity_id}/...
-    // com X-API-Version 2.0.0. Thread Control fica no grupo "Operate".
-    const body: any = { action };
+    // Thread Control (Cloud API) do Meta Business Agent: graph.facebook.com/v21.0/
+    // {phone_number_id}/thread_control, corpo com messaging_product, header 2.0.0.
+    const body: any = { messaging_product: "whatsapp", action };
     if (opts?.to) body.to = opts.to;
+    if (action === "pass" && opts?.targetRole) body.control_pass = { target_role: opts.targetRole };
     if (opts?.metadata) body.metadata = opts.metadata;
     await axios.post(
-      `https://api.facebook.com/${phoneNumberId}/thread_control`,
+      `https://graph.facebook.com/v21.0/${phoneNumberId}/thread_control`,
       body,
       { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-API-Version": "2.0.0" } }
     );
