@@ -37,14 +37,15 @@ export async function metaThreadControl(
     const rec: any = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
     const token = rec?.accessToken || process.env.WHATSAPP_SYSTEM_USER_TOKEN || process.env.WHATSAPP_ACCESS_TOKEN;
     if (!token) return { ok: false, error: "Sem token para o número" };
-    const body: any = { messaging_product: "whatsapp", action };
+    // Enterprise API do Meta Business Agent: base api.facebook.com/{entity_id}/...
+    // com X-API-Version 2.0.0. Thread Control fica no grupo "Operate".
+    const body: any = { action };
     if (opts?.to) body.to = opts.to;
-    if (action === "pass" && opts?.targetRole) body.control_pass = { target_role: opts.targetRole };
     if (opts?.metadata) body.metadata = opts.metadata;
     await axios.post(
-      `https://api.facebook.com/business/whatsapp/phone_numbers/${phoneNumberId}/thread_control`,
+      `https://api.facebook.com/${phoneNumberId}/thread_control`,
       body,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-API-Version": "1.0.0" } }
+      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-API-Version": "2.0.0" } }
     );
     console.log(`[MetaAgent] thread_control ${action} OK (num ${phoneNumberId}, to ${opts?.to || "-"})`);
     return { ok: true };
@@ -91,13 +92,8 @@ export async function reactivateMetaAgentForConversation(conv: any): Promise<{ r
       return { released: false, skipped: true };
     }
 
-    // 1) Tenta devolver o controle pra Meta (release → volta pro receptor primário).
-    let r = await metaThreadControl(phoneNumberId, "release", { to: phone });
-    // 2) Se release não funcionar, tenta PASSAR explicitamente pro agente de IA.
-    if (!r.ok) {
-      console.log(`[MetaAgent] reactivate: release falhou (${r.error}); tentando pass → ai_agent`);
-      r = await metaThreadControl(phoneNumberId, "pass", { to: phone, targetRole: "ai_agent" });
-    }
+    // Devolve o controle pra Meta (release → o agente volta a ser o respondedor).
+    const r = await metaThreadControl(phoneNumberId, "release", { to: phone });
 
     // Limpa a flag de handoff pra permitir um novo ciclo de atendimento.
     const meta = ((conv.metadata as Record<string, unknown>) || {});
