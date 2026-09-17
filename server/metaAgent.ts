@@ -62,21 +62,43 @@ export async function metaThreadControl(
  */
 export async function reactivateMetaAgentForConversation(conv: any): Promise<{ released: boolean; skipped?: boolean; error?: string }> {
   try {
-    const phoneNumberId = conv?.phoneNumberId;
     const phone = conv?.phone;
+    let phoneNumberId = conv?.phoneNumberId;
     console.log(`[MetaAgent] reactivate: conv=${conv?.id} phoneNumberId=${phoneNumberId || "-"} phone=${phone || "-"}`);
-    if (!phoneNumberId || !phone) {
-      console.log(`[MetaAgent] reactivate SKIP: conversa sem phoneNumberId/phone`);
+    if (!phone) {
+      console.log(`[MetaAgent] reactivate SKIP: conversa sem phone`);
       return { released: false, skipped: true };
     }
-    const { getWhatsappNumberByPhoneNumberId } = await import("./whatsappMultiNumber");
-    const rec: any = await getWhatsappNumberByPhoneNumberId(phoneNumberId);
-    console.log(`[MetaAgent] reactivate: número encontrado? ${!!rec} mode=${rec?.mode || "-"}`);
+    const { getWhatsappNumberByPhoneNumberId, listWhatsappNumbers } = await import("./whatsappMultiNumber");
+
+    // Se a conversa não tem o phoneNumberId gravado (conversas antigas), descobre
+    // o número do Meta Agent automaticamente.
+    let rec: any = phoneNumberId ? await getWhatsappNumberByPhoneNumberId(phoneNumberId) : null;
     if (!rec || rec.mode !== "meta_agent") {
-      console.log(`[MetaAgent] reactivate SKIP: número não está em modo meta_agent (mode=${rec?.mode || "-"})`);
-      return { released: false, skipped: true }; // não é Meta Agent
+      const all: any[] = (await listWhatsappNumbers().catch(() => [])) || [];
+      const metaNums = all.filter((n) => n.mode === "meta_agent");
+      if (metaNums.length === 1) {
+        rec = metaNums[0];
+        phoneNumberId = rec.phoneNumberId;
+        console.log(`[MetaAgent] reactivate: phoneNumberId inferido do único número meta_agent = ${phoneNumberId}`);
+      } else if (metaNums.length > 1) {
+        console.log(`[MetaAgent] reactivate SKIP: ${metaNums.length} números meta_agent — não dá pra inferir qual. Grave o phoneNumberId na conversa.`);
+        return { released: false, skipped: true };
+      }
     }
-    const r = await metaThreadControl(phoneNumberId, "release", { to: phone });
+    if (!rec || rec.mode !== "meta_agent") {
+      console.log(`[MetaAgent] reactivate SKIP: nenhum número em modo meta_agent (mode=${rec?.mode || "-"})`);
+      return { released: false, skipped: true };
+    }
+
+    // 1) Tenta devolver o controle pra Meta (release → volta pro receptor primário).
+    let r = await metaThreadControl(phoneNumberId, "release", { to: phone });
+    // 2) Se release não funcionar, tenta PASSAR explicitamente pro agente de IA.
+    if (!r.ok) {
+      console.log(`[MetaAgent] reactivate: release falhou (${r.error}); tentando pass → ai_agent`);
+      r = await metaThreadControl(phoneNumberId, "pass", { to: phone, targetRole: "ai_agent" });
+    }
+
     // Limpa a flag de handoff pra permitir um novo ciclo de atendimento.
     const meta = ((conv.metadata as Record<string, unknown>) || {});
     if (meta.metaAgentHandoff) {
@@ -84,8 +106,10 @@ export async function reactivateMetaAgentForConversation(conv: any): Promise<{ r
       const { updateConversation } = await import("./db");
       await updateConversation(conv.id, { metadata: meta as any });
     }
+    console.log(`[MetaAgent] reactivate: resultado released=${r.ok} error=${r.error || "-"}`);
     return { released: r.ok, error: r.error };
   } catch (e: any) {
+    console.error(`[MetaAgent] reactivate erro:`, e?.message || e);
     return { released: false, error: e?.message || "erro" };
   }
 }

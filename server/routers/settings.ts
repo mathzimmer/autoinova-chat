@@ -133,6 +133,18 @@ export const settingsRouter = router({
       return { success: true };
     }),
 
+  // Blocklist da IA: números que a IA/fluxo NÃO devem responder (1 por linha ou
+  // separados por vírgula). Comparação pelos últimos 8 dígitos.
+  getAiBlocklist: protectedProcedure.query(async () => {
+    return { phones: (await getSetting("ai_blocklist_phones")) || "" };
+  }),
+  saveAiBlocklist: adminProcedure
+    .input(z.object({ phones: z.string().max(10000) }))
+    .mutation(async ({ input, ctx }) => {
+      await upsertSetting("ai_blocklist_phones", input.phones.trim(), ctx.user.id);
+      return { success: true };
+    }),
+
   /** Nomes customizados das etapas do funil (ex.: renomear "Dados pessoais" → "Documentação") */
   getFunnelLabels: protectedProcedure.query(async () => {
     const raw = await getSetting("funnel_stage_labels");

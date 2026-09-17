@@ -44,6 +44,21 @@ async function processEvolutionConversation(conversationId: number, customerMess
   const conv = await getConversationById(conversationId);
   if (!conv || conv.channel !== "evolution" || !conv.instanceName) return;
 
+  // ── Blocklist: contatos que a IA/fluxo NÃO devem responder ──────────────────
+  try {
+    const raw = (await getSetting("ai_blocklist_phones")) || "";
+    if (raw.trim()) {
+      const digits = (s: string) => String(s || "").replace(/\D/g, "");
+      const target = digits(conv.phone);
+      const blocked = raw.split(/[\n,;]+/).map(digits).filter(Boolean);
+      // compara pelos últimos 8 dígitos (ignora DDI 55 e 9º dígito divergentes)
+      if (target && blocked.some((b) => b.slice(-8) === target.slice(-8))) {
+        console.log(`[EvolutionAI] Conversa ${conversationId}: ${target} na blocklist — sem resposta automática.`);
+        return;
+      }
+    }
+  } catch { /* sem blocklist configurada */ }
+
   const storeCfg = await getStoreConfig();
   const botName = storeCfg.iaSenderName;
 

@@ -92,20 +92,44 @@ export async function evolutionSetWebhook(instanceName: string, webhookUrl: stri
 
 // ─── Messaging ────────────────────────────────────────────────────────────────
 
+// ─── Outbox: IDs que NÓS (IA/CRM) enviamos pela Evolution ─────────────────────
+// O dono digitando no celular também chega como fromMe. Pra distinguir, marcamos
+// os IDs que saíram por aqui; no webhook, um fromMe que NÃO está nesta lista =
+// atendimento humano pelo app → pausa a IA. TTL curto pra não crescer sem fim.
+const _ourSentIds = new Map<string, number>();
+const OUR_SENT_TTL_MS = 10 * 60 * 1000;
+export function markEvolutionSentByUs(id?: string | null) {
+  if (!id) return;
+  const now = Date.now();
+  _ourSentIds.set(id, now);
+  if (_ourSentIds.size > 500) {
+    _ourSentIds.forEach((t, k) => { if (now - t > OUR_SENT_TTL_MS) _ourSentIds.delete(k); });
+  }
+}
+export function wasEvolutionSentByUs(id?: string | null): boolean {
+  if (!id) return false;
+  const t = _ourSentIds.get(id);
+  if (!t) return false;
+  if (Date.now() - t > OUR_SENT_TTL_MS) { _ourSentIds.delete(id); return false; }
+  return true;
+}
+
 export async function evolutionSendText(instanceName: string, to: string, text: string) {
   // @lid JIDs must be sent as-is — Baileys routes them internally via linked-device table
   // Normal JIDs (@s.whatsapp.net / @c.us): strip suffix, send only digits
   const number = to.endsWith("@lid") ? to : (to.includes("@") ? to.split("@")[0] : to);
-  return evolutionRequest(`/message/sendText/${instanceName}`, "POST", {
+  const r: any = await evolutionRequest(`/message/sendText/${instanceName}`, "POST", {
     number,
     text,
   });
+  markEvolutionSentByUs(r?.key?.id || r?.messageId);
+  return r;
 }
 
 /** Envia áudio como mensagem de VOZ (ptt) — endpoint dedicado da Evolution v2 */
 export async function evolutionSendAudio(instanceName: string, to: string, audioUrl: string) {
   const number = to.endsWith("@lid") ? to : (to.includes("@") ? to.split("@")[0] : to);
-  return evolutionRequest(`/message/sendWhatsAppAudio/${instanceName}`, "POST", {
+  const rAudio: any = await evolutionRequest(`/message/sendWhatsAppAudio/${instanceName}`, "POST", {
     number,
     audio: audioUrl,
     // encoding: a Evolution transcodifica para o ptt nativo do WhatsApp —
@@ -113,6 +137,8 @@ export async function evolutionSendAudio(instanceName: string, to: string, audio
     // aparelho remetente (quirk conhecido do Baileys com áudio por URL)
     encoding: true,
   });
+  markEvolutionSentByUs(rAudio?.key?.id || rAudio?.messageId);
+  return rAudio;
 }
 
 export async function evolutionSendMedia(
@@ -694,6 +720,20 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
           if (isInbound) {
             const { runEvolutionAI } = await import("./evolutionAI");
             runEvolutionAI(mirrored.conversationId, audioTranscript || parsed.content);
+          } else if (!wasEvolutionSentByUs(parsed.messageId)) {
+            // fromMe que NÃO saiu do sistema = o dono respondeu pelo app do
+            // WhatsApp → assume manualmente e PAUSA a IA nessa conversa.
+            try {
+              const { getConversationById, updateConversation, createMessage } = await import("./db");
+              const c: any = await getConversationById(mirrored.conversationId);
+              if (c?.aiActive || c?.routingState === "ai_agent") {
+                await updateConversation(mirrored.conversationId, { aiActive: false, routingState: "human" } as any);
+                const sys = await createMessage({ conversationId: mirrored.conversationId, content: "🤚 Você respondeu pelo WhatsApp — IA pausada nesta conversa. Reative pela aba IA quando quiser.", senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+                emitNewMessage(mirrored.conversationId, sys);
+                emitConversationUpdate(mirrored.conversationId, {});
+                console.log(`[Evolution] IA pausada (dono assumiu pelo app) conv=${mirrored.conversationId}`);
+              }
+            } catch (e) { console.error("[Evolution] pausar IA no takeover falhou:", e); }
           }
         } else {
           console.log(`[Evolution] Espelhamento pulado (duplicada?) instancia=${instanceName} msgId=${parsed.messageId}`);
