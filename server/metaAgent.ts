@@ -361,11 +361,20 @@ export async function maybeRouteCoexistenceHandoff(conversationId: number, outbo
     try { const { analyzeConversation } = await import("./conversationIntelligence"); await analyzeConversation(conversationId); }
     catch (e) { console.error("[Coex] analyze:", e); }
 
-    // Amarra o interesse a um carro do estoque → escolhe a loja certa.
+    // Amarra o interesse ATUAL a um carro do estoque → escolhe a loja certa.
+    // O carro atual é o nomeado na mensagem de transferência do agente (ex.:
+    // "Kia Sportage 2017"), que é mais confiável que o lead — que pode carregar
+    // um interesse ANTIGO. Por isso SOBRESCREVE o veículo do lead.
     try {
       const { getLeadByConversationId, upsertLead } = await import("./db");
       const lead: any = await getLeadByConversationId(conversationId).catch(() => null);
-      if (lead && !lead.vehicleId && lead.vehicleInterest && lead.vehicleInterest !== "não definido") {
+      const vidAtual = await resolveVehicleIdFromText(outboundText);
+      if (vidAtual) {
+        const { getVehicleForAgent } = await import("./stockSync");
+        const v: any = await getVehicleForAgent(vidAtual).catch(() => null);
+        await upsertLead({ conversationId, phone, vehicleId: vidAtual, vehicleInterest: v?.nome || lead?.vehicleInterest } as any);
+        console.log(`[Coex] veículo atual da conversa = #${vidAtual} (${v?.nome || "?"})`);
+      } else if (lead && !lead.vehicleId && lead.vehicleInterest && lead.vehicleInterest !== "não definido") {
         const vid = await resolveVehicleIdFromText(lead.vehicleInterest);
         if (vid) await upsertLead({ conversationId, phone, vehicleId: vid } as any);
       }
@@ -396,6 +405,21 @@ export async function maybeRouteCoexistenceHandoff(conversationId: number, outbo
           const nm = await createMessage({ conversationId, content: `📤 Mensagem enviada ao vendedor (${assigned.seller.name}):\n\n${notif.message}`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
           emitNewMessage(conversationId, nm);
         }
+        // Encaminha as FOTOS que o cliente mandou (troca/carro) pro vendedor.
+        try {
+          const { listMessages } = await import("./db");
+          const { sendSellerMedia } = await import("./whatsapp");
+          const msgs: any[] = await listMessages(conversationId, 80).catch(() => []);
+          const fotos = msgs
+            .filter((m) => m.senderType === "customer" && m.messageType === "image" && (m.metadata as any)?.mediaUrl)
+            .map((m) => (m.metadata as any).mediaUrl as string);
+          const ultimas = Array.from(new Set(fotos)).slice(-8);
+          if (ultimas.length) {
+            await sendSellerMedia(assigned.seller.phone, ultimas, `📷 Fotos enviadas pelo cliente ${conv.contactName || ""}`.trim());
+            const fm = await createMessage({ conversationId, content: `📷 ${ultimas.length} foto(s) do cliente encaminhada(s) ao vendedor.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+            emitNewMessage(conversationId, fm);
+          }
+        } catch (e) { console.error("[Coex] encaminhar fotos:", e); }
         emitConversationUpdate(conversationId, {});
         console.log(`[Coex] handoff OK conv ${conversationId} → ${assigned.seller.name} (${assigned.storeLocation}).`);
       } else {

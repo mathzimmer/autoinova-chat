@@ -815,6 +815,42 @@ async function sendSellerNotification(
 }
 
 /**
+ * Envia FOTOS pro vendedor pelo mesmo canal da notificação (Evolution primeiro,
+ * senão número oficial). Usado no handoff pra encaminhar fotos que o cliente
+ * mandou (troca, carro, documentos). Envia uma a uma, com legenda só na 1ª.
+ */
+export async function sendSellerMedia(sellerPhone: string, mediaUrls: string[], caption?: string): Promise<void> {
+  const urls = (mediaUrls || []).filter(Boolean);
+  if (urls.length === 0) return;
+  let evoInstance: string | null = null;
+  let notifyPnid: string | null = null;
+  try {
+    const { getSetting } = await import("./db");
+    evoInstance = (await getSetting("seller_notify_evolution_instance")) || null;
+    notifyPnid = (await getSetting("seller_notify_phone_number_id")) || null;
+  } catch { /* usa padrão */ }
+  for (let i = 0; i < urls.length; i++) {
+    const url = urls[i];
+    const cap = i === 0 ? caption : undefined;
+    try {
+      if (evoInstance) {
+        const { evolutionSendMedia } = await import("./evolutionService");
+        await evolutionSendMedia(evoInstance, sellerPhone, url, "image", cap);
+      } else if (notifyPnid) {
+        const { sendMediaFromNumber } = await import("./whatsappMultiNumber");
+        await sendMediaFromNumber(notifyPnid, sellerPhone, url, "image", cap);
+      } else {
+        console.warn("[WhatsApp] sendSellerMedia: sem canal de notificação configurado (Evolution/oficial).");
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 350)); // intervalo entre fotos
+    } catch (e: any) {
+      console.error(`[WhatsApp] sendSellerMedia falhou (${sellerPhone}):`, e?.message || e);
+    }
+  }
+}
+
+/**
  * Send a video message to a WhatsApp number
  */
 async function sendVideoMessage(to: string, videoUrl: string, caption?: string): Promise<{ success: boolean; messageId?: string; error?: string }> {
