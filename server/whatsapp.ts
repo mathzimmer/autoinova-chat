@@ -715,6 +715,9 @@ async function sendSellerNotification(
     vehicleInterest: string;
     conversationSummary: string;
     storeLocation: string;
+    tradeVehicle?: string | null;
+    paymentMethod?: string | null;
+    downPayment?: string | null;
     customMessage?: string;
   }
 ): Promise<{ success: boolean; messageId?: string; error?: string; message?: string }> {
@@ -730,6 +733,14 @@ async function sendSellerNotification(
     const { formatPhoneBRDisplay } = await import("@shared/phone");
     const telefoneFmt = formatPhoneBRDisplay(data.customerPhone);
 
+    // Linhas opcionais: troca e pagamento (só entram se houver dado).
+    const trocaTxt = (data.tradeVehicle && data.tradeVehicle.trim())
+      ? `🔄 *Troca:* ${data.tradeVehicle.trim()}\n` : "";
+    const pgto = [data.paymentMethod && data.paymentMethod.trim(),
+      (data.downPayment && String(data.downPayment).trim()) ? `entrada R$ ${String(data.downPayment).trim()}` : ""]
+      .filter(Boolean).join(" — ");
+    const pgtoTxt = pgto ? `💰 *Pagamento:* ${pgto}\n` : "";
+
     // Build the notification message
     const defaultMessage = `🔔 *Novo Lead Atribuído*\n\n` +
       `Olá ${data.sellerName}!\n\n` +
@@ -737,6 +748,8 @@ async function sendSellerNotification(
       `👤 *Cliente:* ${data.customerName}\n` +
       `📱 *Telefone:* ${telefoneFmt}\n` +
       `🚗 *Veículo de interesse:* ${data.vehicleInterest}\n` +
+      trocaTxt +
+      pgtoTxt +
       `🏪 *Loja:* ${data.storeLocation}\n\n` +
       `📋 *Resumo da conversa:*\n${data.conversationSummary}\n\n` +
       `Entre em contato o mais rápido possível!`;
@@ -747,6 +760,8 @@ async function sendSellerNotification(
           .replace(/\{cliente\}/gi, data.customerName)
           .replace(/\{telefone\}/gi, telefoneFmt)
           .replace(/\{veiculo\}/gi, data.vehicleInterest)
+          .replace(/\{troca\}/gi, data.tradeVehicle || "")
+          .replace(/\{pagamento\}/gi, pgto)
           .replace(/\{resumo\}/gi, data.conversationSummary)
           .replace(/\{loja\}/gi, data.storeLocation)
       : defaultMessage;

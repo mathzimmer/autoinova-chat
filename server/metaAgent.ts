@@ -290,6 +290,9 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
         vehicleInterest: lead?.vehicleInterest || "(a confirmar)",
         conversationSummary: lead?.notes || "Atendimento iniciado pelo agente da Meta; cliente pediu atendimento humano.",
         storeLocation: assigned.storeLocation,
+        tradeVehicle: lead?.hasTrade ? lead?.tradeVehicle : null,
+        paymentMethod: lead?.paymentMethod,
+        downPayment: lead?.downPayment,
       });
       // Marca visível na conversa.
       try {
@@ -401,6 +404,9 @@ export async function maybeRouteCoexistenceHandoff(conversationId: number, outbo
           vehicleInterest: lead?.vehicleInterest || "(a confirmar)",
           conversationSummary: lead?.notes || "Atendimento pelo agente da Meta (WhatsApp Business). Cliente encaminhado.",
           storeLocation: assigned.storeLocation,
+          tradeVehicle: lead?.hasTrade ? lead?.tradeVehicle : null,
+          paymentMethod: lead?.paymentMethod,
+          downPayment: lead?.downPayment,
         });
         const hora = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         const sys = await createMessage({ conversationId, content: `🔁 Lead transferido pela IA para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);

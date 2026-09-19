@@ -186,6 +186,9 @@ async function respondAgentV2(conversationId: number, phoneNumberId: string, pho
           vehicleInterest: vehTitle || L.veiculoInteresse || "",
           conversationSummary: out.handoff.resumo,
           storeLocation: assigned.storeLocation,
+          tradeVehicle: L.temTroca ? [L.trocaModelo, L.trocaAno, L.trocaKm ? `${L.trocaKm} km` : ""].filter(Boolean).join(" ") : null,
+          paymentMethod: L.pagamento,
+          downPayment: L.finEntrada,
         });
         console.log(`[AgentV2Channel] Lead atribuído a ${assigned.seller.name} (${assigned.storeLocation}) e notificado.`);
 

@@ -126,6 +126,9 @@ export async function respondAgentV2Generic(conversationId: number, sender: Agen
           vehicleInterest: vehTitle || L.veiculoInteresse || "",
           conversationSummary: out.handoff.resumo,
           storeLocation: assigned.storeLocation,
+          tradeVehicle: L.temTroca ? [L.trocaModelo, L.trocaAno, L.trocaKm ? `${L.trocaKm} km` : ""].filter(Boolean).join(" ") : null,
+          paymentMethod: L.pagamento,
+          downPayment: L.finEntrada,
         });
         const hora = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
         const nota = `🔁 Lead transferido para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`;
