@@ -358,7 +358,9 @@ export async function maybeRouteCoexistenceHandoff(conversationId: number, outbo
 
     const phone = conv.phone;
     // Analisa a conversa (extrai carro de interesse, pagamento, troca, score).
-    try { const { analyzeConversation } = await import("./conversationIntelligence"); await analyzeConversation(conversationId); }
+    // Captura o resumo pra gravar como notes ATUAL (senão o resumo fica velho).
+    let insight: any = null;
+    try { const { analyzeConversation } = await import("./conversationIntelligence"); insight = await analyzeConversation(conversationId); }
     catch (e) { console.error("[Coex] analyze:", e); }
 
     // Amarra o interesse ATUAL a um carro do estoque → escolhe a loja certa.
@@ -372,7 +374,9 @@ export async function maybeRouteCoexistenceHandoff(conversationId: number, outbo
       if (vidAtual) {
         const { getVehicleForAgent } = await import("./stockSync");
         const v: any = await getVehicleForAgent(vidAtual).catch(() => null);
-        await upsertLead({ conversationId, phone, vehicleId: vidAtual, vehicleInterest: v?.nome || lead?.vehicleInterest } as any);
+        const nome = v?.nome || lead?.vehicleInterest || "";
+        const notes = `Veículo: ${nome}${insight?.summary ? " | " + insight.summary : ""}`.slice(0, 800);
+        await upsertLead({ conversationId, phone, vehicleId: vidAtual, vehicleInterest: nome, notes } as any);
         console.log(`[Coex] veículo atual da conversa = #${vidAtual} (${v?.nome || "?"})`);
       } else if (lead && !lead.vehicleId && lead.vehicleInterest && lead.vehicleInterest !== "não definido") {
         const vid = await resolveVehicleIdFromText(lead.vehicleInterest);

@@ -60,7 +60,7 @@ Sua tarefa é avaliar friamente o potencial de fechamento e retornar um JSON EXA
   "objections": ["<travas/objeções: preço, crédito, indecisão, prazo, troca...>"],
   "creditStatus": "<situação de pagamento/crédito mencionada: entrada, financiamento, à vista, restrição, ou 'não mencionado'>",
   "nextAction": "<a próxima ação mais eficaz para o vendedor fazer AGORA>",
-  "vehicleInterest": "<veículo(s) de interesse ou 'não definido'>",
+  "vehicleInterest": "<veículo de interesse MAIS RECENTE. Se o cliente falou de vários carros ao longo da conversa, use o ÚLTIMO que ele demonstrou interesse (o que está sendo tratado agora), não os antigos. Ou 'não definido'>",
   "hasTrade": true | false | null,
   "tradeVehicle": "<se tem carro na troca, qual (marca/modelo/ano); senão vazio>",
   "visitedStore": true | false | null,
@@ -233,9 +233,11 @@ export async function analyzeConversation(conversationId: number): Promise<Insig
     if (lead) {
       const upd: Record<string, unknown> = { temperature: parsed.temperature as any, score: parsed.score };
       // Preenche o que a IA detectou SEM sobrescrever cadastro manual existente
-      if ((!lead.vehicleInterest || lead.vehicleInterest === "não definido") && parsed.vehicleInterest && parsed.vehicleInterest !== "não definido") upd.vehicleInterest = parsed.vehicleInterest;
-      if (lead.hasTrade == null && parsed.hasTrade != null) upd.hasTrade = parsed.hasTrade;
-      if (!lead.tradeVehicle && parsed.tradeVehicle) upd.tradeVehicle = parsed.tradeVehicle;
+      // Interesse é DINÂMICO: sempre reflete o carro mais recente detectado.
+      // (Diferente dos dados cadastrais abaixo, que não sobrescrevem o manual.)
+      if (parsed.vehicleInterest && parsed.vehicleInterest !== "não definido") upd.vehicleInterest = parsed.vehicleInterest;
+      if (parsed.hasTrade != null) upd.hasTrade = parsed.hasTrade;
+      if (parsed.tradeVehicle) upd.tradeVehicle = parsed.tradeVehicle;
 
       // PR#3 — dados cadastrais estruturados: valida (mesmo validador da tool,
       // PR#1) e preenche SOMENTE colunas vazias (não sobrescreve cadastro manual).
