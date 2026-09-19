@@ -9,10 +9,15 @@ build/
 
 # Environment variables
 .env
+.env.*
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+
+# VPS-only: certificados TLS, scripts de teste (nunca versionar)
+nginx/certbot/
+reset-teste.sh
 
 # IDE and editor files
 .vscode/
