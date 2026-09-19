@@ -2444,7 +2444,10 @@ export async function upsertSellerQueue(storeLocation: string, currentIndex: num
  * Atomically advances the queue index.
  */
 export async function getNextSellerInQueue(storeLocation: string) {
-  const activeSellers = await listActiveSellers(storeLocation);
+  // Só gente do departamento de VENDAS entra na fila por loja (compras/pós-venda
+  // têm fila própria global, via getNextByDepartment).
+  const activeSellers = (await listActiveSellers(storeLocation))
+    .filter((s: any) => (s.department || "vendas") === "vendas");
   if (activeSellers.length === 0) return null;
 
   const queue = await getSellerQueue(storeLocation);
@@ -2546,6 +2549,74 @@ export async function assignSellerRoundRobin(
     status: "pending",
   });
   return { seller, storeLocation };
+}
+
+// ─── Rodízio por DEPARTAMENTO (vendas / compras / posvenda) ───────────────────
+// Vendas usa fila por loja (acima). Compras e Pós-venda usam fila GLOBAL própria.
+export async function listActiveByDepartment(department: string) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(sellers)
+    .where(and(eq(sellers.department, department), eq(sellers.isActive, true)))
+    .orderBy(sellers.sortOrder, sellers.id);
+}
+
+/** Próximo da fila global de um departamento (compras/posvenda) ou vendas-geral. */
+export async function getNextByDepartment(department: string) {
+  const active = await listActiveByDepartment(department);
+  if (active.length === 0) return null;
+  const queueKey = `__dept_${department}__`;
+  const queue = await getSellerQueue(queueKey);
+  const safeIndex = (queue?.currentIndex ?? 0) % active.length;
+  const selected = active[safeIndex];
+  await upsertSellerQueue(queueKey, (safeIndex + 1) % active.length);
+  const db = await getDb();
+  if (db) {
+    await db.update(sellers)
+      .set({ totalAssignments: sql`${sellers.totalAssignments} + 1` })
+      .where(eq(sellers.id, selected.id));
+  }
+  return selected;
+}
+
+/**
+ * Atribui a conversa ao grupo certo pela INTENÇÃO:
+ *  - 'vendas'  → vendedor da loja do carro; se sem carro, rodízio GERAL de vendas.
+ *  - 'compras' → rodízio global de compradores/consignadores.
+ *  - 'posvenda'→ rodízio global de pós-venda.
+ * Rótulo de loja no registro: a loja real (vendas c/ carro) ou o nome do grupo.
+ */
+export async function assignAgentByDepartment(
+  conversationId: number,
+  department: "vendas" | "compras" | "posvenda",
+  opts?: { phone?: string; contactName?: string },
+): Promise<{ seller: typeof sellers.$inferSelect; storeLocation: string; department: string } | null> {
+  const lead = await getLeadByConversationId(conversationId);
+
+  if (department === "vendas") {
+    // Com carro → loja do carro (fila por loja). Sem carro → rodízio geral.
+    if (lead?.vehicleId) {
+      const storeLocation = (await getStoreLocationByVehicleId(lead.vehicleId)) || DEFAULT_STORE_LOCATION;
+      const seller = await getNextSellerInQueue(storeLocation);
+      if (seller) {
+        await createSellerAssignment({ sellerId: seller.id, conversationId, storeLocation, vehicleId: lead.vehicleId, customerPhone: opts?.phone || lead?.phone || "", customerName: opts?.contactName || lead?.name || null, status: "pending" });
+        return { seller, storeLocation, department };
+      }
+    }
+    // Sem carro identificado (ou loja sem vendedor) → rodízio GERAL de vendas.
+    const seller = await getNextByDepartment("vendas");
+    if (!seller) return null;
+    const storeLocation = (seller as any).storeLocation || DEFAULT_STORE_LOCATION;
+    await createSellerAssignment({ sellerId: seller.id, conversationId, storeLocation, vehicleId: lead?.vehicleId || null, customerPhone: opts?.phone || lead?.phone || "", customerName: opts?.contactName || lead?.name || null, status: "pending" });
+    return { seller, storeLocation, department };
+  }
+
+  // Compras/Consignação ou Pós-venda → fila global do departamento.
+  const seller = await getNextByDepartment(department);
+  if (!seller) return null;
+  const label = department === "compras" ? "Compras/Consignação" : "Pós-venda";
+  await createSellerAssignment({ sellerId: seller.id, conversationId, storeLocation: label, vehicleId: lead?.vehicleId || null, customerPhone: opts?.phone || lead?.phone || "", customerName: opts?.contactName || lead?.name || null, status: "pending" });
+  return { seller, storeLocation: label, department };
 }
 
 

@@ -666,6 +666,9 @@ export const sellers = pgTable("sellers", {
   phone:            varchar("phone", { length: 32 }).notNull(),
   photoUrl:         text("photoUrl"),
   storeLocation:    varchar("storeLocation", { length: 200 }).notNull(),
+  // Departamento de atendimento: 'vendas' (padrão), 'compras' (compra/consignação)
+  // ou 'posvenda' (dúvidas/pós-venda). Define pra qual grupo o handoff roteia.
+  department:       varchar("department", { length: 20 }).default("vendas").notNull(),
   isActive:         boolean("isActive").default(true).notNull(),
   sortOrder:        integer("sortOrder").default(0).notNull(),
   totalAssignments: integer("totalAssignments").default(0).notNull(),

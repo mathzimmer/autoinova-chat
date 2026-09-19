@@ -274,11 +274,13 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
     }
   } catch (e) { console.error("[MetaAgent] amarrar veículo:", e); }
 
-  // Atribui um vendedor (round-robin por loja) e NOTIFICA o vendedor com o resumo.
+  // Classifica a intenção e atribui ao grupo certo, depois NOTIFICA com o resumo.
   try {
-    const assigned = await assignSellerRoundRobin(conv.id, { phone, contactName: (conv as any).contactName || undefined });
+    const { assignAgentByDepartment, getLeadByConversationId } = await import("./db");
+    const leadForDept: any = await getLeadByConversationId(conv.id).catch(() => null);
+    const dept = classifyHandoffIntent(`${leadForDept?.vehicleInterest || ""} ${leadForDept?.notes || ""}`);
+    const assigned = await assignAgentByDepartment(conv.id, dept, { phone, contactName: (conv as any).contactName || undefined });
     if (assigned?.seller?.phone) {
-      const { getLeadByConversationId } = await import("./db");
       const { sendSellerNotification } = await import("./whatsapp");
       const lead: any = await getLeadByConversationId(conv.id).catch(() => null);
       const notif = await sendSellerNotification(assigned.seller.phone, {
@@ -309,4 +311,96 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
 
   emitConversationUpdate(conv.id, {});
   console.log(`[MetaAgent] Handoff OK: conversa ${conv.id} (${phone}) → lead + vendedor + notificação.`);
+}
+
+// ─── Handoff em COEXISTÊNCIA (Evolution espelhando o WhatsApp Business) ────────
+// O agente da Meta responde dentro do app; a Evolution espelha tudo. Não há sinal
+// de transferência, então detectamos pela FRASE que o agente fala ao transferir
+// (ex.: "conectei você com nossa equipe"). Ao bater, roteia pro vendedor certo.
+const COEX_HANDOFF_PHRASES_DEFAULT = ["conectei voce", "conectei você", "conectei vc"];
+const _coexNorm = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/**
+ * Classifica a intenção do atendimento pra rotear ao grupo certo:
+ *  - "compras"  → cliente quer VENDER ou CONSIGNAR o carro dele.
+ *  - "posvenda" → dúvida geral ou pós-venda (já é cliente).
+ *  - "vendas"   → quer comprar um carro (padrão).
+ * Usa o texto da transferência do agente + o interesse do lead.
+ */
+export function classifyHandoffIntent(text: string): "vendas" | "compras" | "posvenda" {
+  const t = _coexNorm(text);
+  if (/(venda ou consigna|consigna|quero vender|vender (meu|o meu)|avaliar (meu|o meu|seu|sua)|avalia(c|s)ao do (meu|seu)|comprar (o )?meu carro|vender meu carro)/.test(t)) return "compras";
+  if (/(pos.?venda|ja comprei|comprei com|ja sou cliente|garantia|revis(a|ao)|documenta|transferenc|segunda via|reclama|defeito|problema no (carro|veiculo))/.test(t)) return "posvenda";
+  return "vendas";
+}
+
+export async function maybeRouteCoexistenceHandoff(conversationId: number, outboundText: string): Promise<void> {
+  try {
+    const text = _coexNorm(outboundText);
+    if (!text) return;
+
+    // Frases configuráveis (setting coex_handoff_phrases) + padrão.
+    let phrases = COEX_HANDOFF_PHRASES_DEFAULT.map(_coexNorm);
+    try {
+      const { getSetting } = await import("./db");
+      const raw = await getSetting("coex_handoff_phrases");
+      if (raw && raw.trim()) phrases = raw.split(/[\n;,]+/).map(_coexNorm).filter(Boolean);
+    } catch { /* usa padrão */ }
+    if (!phrases.some((p) => text.includes(p))) return;
+
+    const { getConversationById, updateConversation } = await import("./db");
+    const conv: any = await getConversationById(conversationId);
+    if (!conv) return;
+    const meta = (conv.metadata as Record<string, unknown>) || {};
+    if (meta.coexHandoff === true) return; // idempotente: 1x por conversa
+    await updateConversation(conversationId, { metadata: { ...meta, coexHandoff: true, coexHandoffAt: Date.now() } as any });
+    console.log(`[Coex] handoff detectado por frase na conv ${conversationId} — roteando pro vendedor.`);
+
+    const phone = conv.phone;
+    // Analisa a conversa (extrai carro de interesse, pagamento, troca, score).
+    try { const { analyzeConversation } = await import("./conversationIntelligence"); await analyzeConversation(conversationId); }
+    catch (e) { console.error("[Coex] analyze:", e); }
+
+    // Amarra o interesse a um carro do estoque → escolhe a loja certa.
+    try {
+      const { getLeadByConversationId, upsertLead } = await import("./db");
+      const lead: any = await getLeadByConversationId(conversationId).catch(() => null);
+      if (lead && !lead.vehicleId && lead.vehicleInterest && lead.vehicleInterest !== "não definido") {
+        const vid = await resolveVehicleIdFromText(lead.vehicleInterest);
+        if (vid) await upsertLead({ conversationId, phone, vehicleId: vid } as any);
+      }
+    } catch (e) { console.error("[Coex] amarrar veículo:", e); }
+
+    // Classifica a intenção e atribui ao grupo certo (vendas/compras/posvenda).
+    try {
+      const { assignAgentByDepartment, getLeadByConversationId, createMessage } = await import("./db");
+      const { emitNewMessage } = await import("./socket");
+      const lead: any = await getLeadByConversationId(conversationId).catch(() => null);
+      const dept = classifyHandoffIntent(`${outboundText} ${lead?.vehicleInterest || ""} ${lead?.notes || ""}`);
+      console.log(`[Coex] intenção classificada = ${dept} (conv ${conversationId})`);
+      const assigned = await assignAgentByDepartment(conversationId, dept, { phone, contactName: conv.contactName || undefined });
+      if (assigned?.seller?.phone) {
+        const { sendSellerNotification } = await import("./whatsapp");
+        const notif = await sendSellerNotification(assigned.seller.phone, {
+          sellerName: assigned.seller.name,
+          customerName: conv.contactName || lead?.name || "Cliente",
+          customerPhone: phone,
+          vehicleInterest: lead?.vehicleInterest || "(a confirmar)",
+          conversationSummary: lead?.notes || "Atendimento pelo agente da Meta (WhatsApp Business). Cliente encaminhado.",
+          storeLocation: assigned.storeLocation,
+        });
+        const hora = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+        const sys = await createMessage({ conversationId, content: `🔁 Lead transferido pela IA para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+        emitNewMessage(conversationId, sys);
+        if (notif?.message) {
+          const nm = await createMessage({ conversationId, content: `📤 Mensagem enviada ao vendedor (${assigned.seller.name}):\n\n${notif.message}`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+          emitNewMessage(conversationId, nm);
+        }
+        emitConversationUpdate(conversationId, {});
+        console.log(`[Coex] handoff OK conv ${conversationId} → ${assigned.seller.name} (${assigned.storeLocation}).`);
+      } else {
+        console.warn(`[Coex] handoff sem vendedor ativo pra conv ${conversationId}`);
+      }
+    } catch (e) { console.error("[Coex] assign/notify:", e); }
+  } catch (e) { console.error("[Coex] maybeRouteCoexistenceHandoff erro:", e); }
 }

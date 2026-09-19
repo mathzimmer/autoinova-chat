@@ -28,6 +28,7 @@ export const sellerRouter = router({
       phone: z.string().min(1),
       photoUrl: z.string().optional(),
       storeLocation: z.string().min(1),
+      department: z.enum(["vendas", "compras", "posvenda"]).default("vendas"),
       sortOrder: z.number().default(0),
     }))
     .mutation(async ({ input }) => {
@@ -36,6 +37,7 @@ export const sellerRouter = router({
         phone: input.phone,
         photoUrl: input.photoUrl || null,
         storeLocation: input.storeLocation,
+        department: input.department,
         sortOrder: input.sortOrder,
         isActive: true,
         totalAssignments: 0,
@@ -50,6 +52,7 @@ export const sellerRouter = router({
       phone: z.string().min(1).optional(),
       photoUrl: z.string().nullable().optional(),
       storeLocation: z.string().min(1).optional(),
+      department: z.enum(["vendas", "compras", "posvenda"]).optional(),
       isActive: z.boolean().optional(),
       sortOrder: z.number().optional(),
     }))

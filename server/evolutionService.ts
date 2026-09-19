@@ -721,8 +721,15 @@ export async function handleEvolutionWebhook({ event, instanceName, data, io }: 
             const { runEvolutionAI } = await import("./evolutionAI");
             runEvolutionAI(mirrored.conversationId, audioTranscript || parsed.content);
           } else if (!wasEvolutionSentByUs(parsed.messageId)) {
-            // fromMe que NÃO saiu do sistema = o dono respondeu pelo app do
-            // WhatsApp → assume manualmente e PAUSA a IA nessa conversa.
+            // Coexistência: o agente da Meta responde no app e a Evolution espelha.
+            // Se a mensagem de saída for a FRASE de transferência, roteia o lead
+            // pro vendedor certo (analisa carro → loja → vendedor → notifica).
+            try {
+              const { maybeRouteCoexistenceHandoff } = await import("./metaAgent");
+              maybeRouteCoexistenceHandoff(mirrored.conversationId, audioTranscript || parsed.content).catch(() => {});
+            } catch { /* noop */ }
+            // fromMe que NÃO saiu do sistema = o dono/agente respondeu pelo app →
+            // se a NOSSA IA (agentV2) estava ativa aqui, pausa (takeover manual).
             try {
               const { getConversationById, updateConversation, createMessage } = await import("./db");
               const c: any = await getConversationById(mirrored.conversationId);

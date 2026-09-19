@@ -43,10 +43,18 @@ import {
   X,
 } from "lucide-react";
 
+type Department = "vendas" | "compras" | "posvenda";
+const DEPARTMENT_LABELS: Record<Department, string> = {
+  vendas: "Vendas",
+  compras: "Compras / Consignação",
+  posvenda: "Pós-venda / Dúvidas",
+};
+
 interface SellerForm {
   name: string;
   phone: string;
   storeLocation: string;
+  department: Department;
   sortOrder: number;
 }
 
@@ -58,6 +66,7 @@ export default function Sellers() {
     name: "",
     phone: "",
     storeLocation: "",
+    department: "vendas",
     sortOrder: 0,
   });
   const [deleteConfirm, setDeleteConfirm] = useState<number | null>(null);
@@ -136,6 +145,7 @@ export default function Sellers() {
       name: "",
       phone: "",
       storeLocation: stores[0] || "Auto Inova - Matriz",
+      department: "vendas",
       sortOrder: sellers.length,
     });
     setPhotoPreview(null);
@@ -149,6 +159,7 @@ export default function Sellers() {
       name: seller.name,
       phone: seller.phone,
       storeLocation: seller.storeLocation,
+      department: (seller.department as Department) || "vendas",
       sortOrder: seller.sortOrder,
     });
     setPhotoPreview(seller.photoUrl || null);
@@ -385,10 +396,18 @@ export default function Sellers() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          <Store className="h-3 w-3 mr-1" />
-                          {seller.storeLocation}
-                        </Badge>
+                        <div className="flex flex-col gap-1">
+                          <Badge variant="outline" className="text-xs w-fit">
+                            <Store className="h-3 w-3 mr-1" />
+                            {seller.storeLocation}
+                          </Badge>
+                          <Badge
+                            variant={((seller.department as Department) || "vendas") === "vendas" ? "secondary" : "default"}
+                            className="text-xs w-fit"
+                          >
+                            {DEPARTMENT_LABELS[(seller.department as Department) || "vendas"]}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <span className="text-sm font-medium">
@@ -601,6 +620,25 @@ export default function Sellers() {
                     )}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Departamento *</Label>
+                <Select
+                  value={form.department}
+                  onValueChange={(v) => setForm({ ...form, department: v as Department })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o departamento" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="vendas">Vendas</SelectItem>
+                    <SelectItem value="compras">Compras / Consignação</SelectItem>
+                    <SelectItem value="posvenda">Pós-venda / Dúvidas</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Vendas: quem quer comprar carro (por loja). Compras/Consignação: quem quer vender/consignar. Pós-venda: dúvidas e clientes.
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Posição na fila</Label>
