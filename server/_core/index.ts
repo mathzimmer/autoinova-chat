@@ -151,6 +151,10 @@ async function startServer() {
   // Resgate de leads inativos (a cada 2 min)
   startRescueJob();
 
+  // Reaplica os webhooks Evolution com os eventos atuais (incl. etiquetas), pra
+  // testar a detecção de handoff pela etiqueta "Transferências da IA".
+  import("../evolutionService").then(m => m.reapplyEvolutionWebhooks()).catch(() => {});
+
   // Motor único de reengajamento v2 (PR #6 — ativo só quando reengagement_config.enabled=true)
   startReengagementJob();
 

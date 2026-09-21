@@ -320,7 +320,22 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
 // O agente da Meta responde dentro do app; a Evolution espelha tudo. Não há sinal
 // de transferência, então detectamos pela FRASE que o agente fala ao transferir
 // (ex.: "conectei você com nossa equipe"). Ao bater, roteia pro vendedor certo.
-const COEX_HANDOFF_PHRASES_DEFAULT = ["conectei voce", "conectei você", "conectei vc"];
+// Frases com que o agente da Meta sinaliza transferência (normalizadas: sem
+// acento/maiúscula). Cobre as variações observadas. Editável via setting
+// coex_handoff_phrases.
+const COEX_HANDOFF_PHRASES_DEFAULT = [
+  "conectei voce",
+  "compartilhei seu interesse",
+  "compartilhei com nossa equipe",
+  "compartilhei seu interesse com nossa equipe",
+  "representante falara com voce",
+  "um representante falara",
+  "falara com voce em breve",
+  "encaminhei voce",
+  "direcionei voce",
+  "nossa equipe entrara em contato",
+  "equipe comercial entrara em contato",
+];
 const _coexNorm = (s: any) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 /**

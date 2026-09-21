@@ -49,6 +49,9 @@ export async function evolutionCreateInstance(instanceName: string, webhookUrl: 
         "CONNECTION_UPDATE",
         "QRCODE_UPDATED",
         "CONTACTS_UPSERT",
+        "LABELS_EDIT",
+        "LABELS_ASSOCIATION",
+        "CHATS_UPDATE",
       ],
     },
   });
@@ -74,6 +77,28 @@ export async function evolutionRestartInstance(instanceName: string) {
   return evolutionRequest(`/instance/restart/${instanceName}`, "PUT");
 }
 
+/**
+ * Reaplica o webhook (com a lista de eventos ATUAL do código, incl. etiquetas)
+ * em todas as instâncias Evolution. Chamado no boot pra manter os eventos em dia
+ * sem precisar recriar instância.
+ */
+export async function reapplyEvolutionWebhooks(): Promise<void> {
+  try {
+    const { listEvolutionInstances } = await import("./db");
+    const base = process.env.PUBLIC_APP_URL || "https://autoinovacrm.com.br";
+    const url = `${base}/api/webhook/evolution`;
+    const list: any[] = await listEvolutionInstances().catch(() => []);
+    for (const inst of list) {
+      try {
+        await evolutionSetWebhook(inst.instanceName, url);
+        console.log(`[Evolution] webhook reaplicado c/ eventos de etiqueta (${inst.instanceName})`);
+      } catch (e: any) {
+        console.warn(`[Evolution] falha ao reaplicar webhook ${inst.instanceName}:`, e?.message || e);
+      }
+    }
+  } catch (e: any) { console.error("[Evolution] reapplyEvolutionWebhooks:", e?.message || e); }
+}
+
 export async function evolutionSetWebhook(instanceName: string, webhookUrl: string) {
   return evolutionRequest(`/webhook/set/${instanceName}`, "POST", {
     url: webhookUrl,
@@ -86,6 +111,9 @@ export async function evolutionSetWebhook(instanceName: string, webhookUrl: stri
       "CONNECTION_UPDATE",
       "QRCODE_UPDATED",
       "CONTACTS_UPSERT",
+      "LABELS_EDIT",
+      "LABELS_ASSOCIATION",
+      "CHATS_UPDATE",
     ],
   });
 }
@@ -493,6 +521,13 @@ async function fetchProfilePicIfMissing(instanceName: string, conversationId: nu
 }
 
 export async function handleEvolutionWebhook({ event, instanceName, data, io }: HandleEvolutionWebhookParams) {
+  // ── DIAGNÓSTICO de etiquetas: se a Evolution mandar eventos de label, logamos
+  // pra descobrir se dá pra detectar o handoff da IA pela etiqueta "Transferências
+  // da IA" (sinal determinístico, sem depender de frase).
+  const ev = String(event || "").toLowerCase();
+  if (ev.includes("label") || ev.includes("chats.update")) {
+    try { console.log(`[Evolution][LABEL?] event=${event} inst=${instanceName} data=${JSON.stringify(data).slice(0, 1500)}`); } catch { /* noop */ }
+  }
   // ── Status de entrega (✓ → ✓✓ → azul) para as mensagens do inbox unificado ──
   if (event === "messages.update") {
     const d = data as { keyId?: string; key?: { id?: string }; status?: string };
