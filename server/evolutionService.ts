@@ -39,6 +39,7 @@ export async function evolutionCreateInstance(instanceName: string, webhookUrl: 
     qrcode: true,
     integration: "WHATSAPP-BAILEYS",
     webhook: {
+      enabled: true,
       url: webhookUrl,
       byEvents: false,
       base64: false,
@@ -49,9 +50,6 @@ export async function evolutionCreateInstance(instanceName: string, webhookUrl: 
         "CONNECTION_UPDATE",
         "QRCODE_UPDATED",
         "CONTACTS_UPSERT",
-        "LABELS_EDIT",
-        "LABELS_ASSOCIATION",
-        "CHATS_UPDATE",
       ],
     },
   });
@@ -103,6 +101,7 @@ export async function evolutionSetWebhook(instanceName: string, webhookUrl: stri
   // Esta versão da Evolution exige o corpo embrulhado em { webhook: {...} }.
   return evolutionRequest(`/webhook/set/${instanceName}`, "POST", {
     webhook: {
+      enabled: true,
       url: webhookUrl,
       byEvents: false,
       base64: false,
@@ -113,9 +112,6 @@ export async function evolutionSetWebhook(instanceName: string, webhookUrl: stri
         "CONNECTION_UPDATE",
         "QRCODE_UPDATED",
         "CONTACTS_UPSERT",
-        "LABELS_EDIT",
-        "LABELS_ASSOCIATION",
-        "CHATS_UPDATE",
       ],
     },
   });
@@ -524,13 +520,6 @@ async function fetchProfilePicIfMissing(instanceName: string, conversationId: nu
 }
 
 export async function handleEvolutionWebhook({ event, instanceName, data, io }: HandleEvolutionWebhookParams) {
-  // ── DIAGNÓSTICO de etiquetas: se a Evolution mandar eventos de label, logamos
-  // pra descobrir se dá pra detectar o handoff da IA pela etiqueta "Transferências
-  // da IA" (sinal determinístico, sem depender de frase).
-  const ev = String(event || "").toLowerCase();
-  if (ev.includes("label") || ev.includes("chats.update")) {
-    try { console.log(`[Evolution][LABEL?] event=${event} inst=${instanceName} data=${JSON.stringify(data).slice(0, 1500)}`); } catch { /* noop */ }
-  }
   // ── Status de entrega (✓ → ✓✓ → azul) para as mensagens do inbox unificado ──
   if (event === "messages.update") {
     const d = data as { keyId?: string; key?: { id?: string }; status?: string };

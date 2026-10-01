@@ -240,7 +240,7 @@ export async function buildFacebookProductsCsv(injectedRows?: any[]): Promise<st
     const productType = [v.category, v.vehicleType].filter(Boolean).join(" > ") || "Veículos";
 
     const cols = [
-      v.externalId ?? v.id,                                   // id
+      String(v.id),                                           // id = MESMO id do connector (pra o agente casar catálogo↔connector e mandar o card com foto)
       title,                                                  // title
       description,                                            // description
       "in stock",                                             // availability
