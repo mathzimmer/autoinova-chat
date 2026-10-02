@@ -1,0 +1,61 @@
+{
+  "name": "encaminhar_para_vendedor",
+  "description": "Use SEMPRE que for transferir o cliente para um vendedor humano (ex.: cliente confirmou interesse em um carro, pediu para falar com alguem, quer negociar/visitar, ou quer vender/consignar). NAO escreva so a despedida: CHAME esta ferramenta passando os dados. 'vehicle_id' = o id do carro escolhido (o campo 'id' retornado por buscar_veiculos) — isso define a LOJA e o VENDEDOR certos, entao mande sempre que souber o carro. Passe 'nome' e 'telefone' do cliente, 'intencao' ('vendas' para comprar, 'compras' para vender/consignar, 'posvenda' para duvida/pos-venda), 'tem_troca'/'troca' se houver carro na troca, 'pagamento' (a vista/financiado) e 'resumo' (2-3 frases do que o cliente quer). A resposta traz 'mensagem' confirmando o encaminhamento.",
+  "request_definition": {
+    "method": "POST",
+    "path": "/api/agent/encaminhar",
+    "query_parameters": {
+      "telefone": {
+        "type": "string",
+        "description": "Telefone do cliente com DDD (ex.: 5551999887766). Obrigatorio.",
+        "required": true
+      },
+      "vehicle_id": {
+        "type": "integer",
+        "description": "Id do carro escolhido (campo 'id' de buscar_veiculos). Define loja/vendedor. Opcional mas recomendado.",
+        "required": false
+      },
+      "nome": {
+        "type": "string",
+        "description": "Nome do cliente. Opcional.",
+        "required": false
+      },
+      "cidade": {
+        "type": "string",
+        "description": "Cidade do cliente. Opcional.",
+        "required": false
+      },
+      "intencao": {
+        "type": "string",
+        "description": "'vendas' (cliente quer comprar), 'compras' (quer vender/consignar o carro dele) ou 'posvenda' (duvida/pos-venda). Opcional (padrao: vendas).",
+        "required": false
+      },
+      "tem_troca": {
+        "type": "boolean",
+        "description": "true se o cliente tem carro na troca. Opcional.",
+        "required": false
+      },
+      "troca": {
+        "type": "string",
+        "description": "Carro da troca: modelo, ano e km (ex.: 'Onix 2019 80 mil km'). Opcional.",
+        "required": false
+      },
+      "pagamento": {
+        "type": "string",
+        "description": "Forma de pagamento: 'a vista' ou 'financiado'. Opcional.",
+        "required": false
+      },
+      "entrada": {
+        "type": "string",
+        "description": "Valor de entrada do financiamento, se informado. Opcional.",
+        "required": false
+      },
+      "resumo": {
+        "type": "string",
+        "description": "Resumo curto (2-3 frases) do que o cliente quer e do contexto. Opcional.",
+        "required": false
+      }
+    }
+  },
+  "user_auth_required": false
+}

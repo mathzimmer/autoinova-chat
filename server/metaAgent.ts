@@ -316,6 +316,150 @@ export async function onMetaAgentHandoff(phone: string): Promise<void> {
   console.log(`[MetaAgent] Handoff OK: conversa ${conv.id} (${phone}) → lead + vendedor + notificação.`);
 }
 
+// ─── Handoff ESTRUTURADO (ferramenta de conector encaminhar_para_vendedor) ─────
+// O agente da Meta CHAMA esta via (tool `encaminhar_para_vendedor`) no momento da
+// transferência, passando dado ESTRUTURADO: o id do carro escolhido, nome,
+// telefone, troca, pagamento e resumo. É muito mais confiável que adivinhar pelo
+// texto de despedida — e é como o roteamento pro "vendedor certo pelo carro" fica
+// 100% determinístico: carro → loja → vendedor ativo daquela loja (round-robin).
+export type StructuredHandoffInput = {
+  phone: string;
+  vehicleId?: number | null;
+  vehicleText?: string | null; // fallback quando não vier o id
+  nome?: string | null;
+  cidade?: string | null;
+  temTroca?: boolean | null;
+  troca?: string | null;        // modelo/ano/km do carro de troca
+  pagamento?: string | null;    // "à vista" | "financiado" | ...
+  entrada?: string | null;      // entrada do financiamento
+  resumo?: string | null;
+  intencao?: "vendas" | "compras" | "posvenda" | null;
+};
+export type StructuredHandoffResult = {
+  ok: boolean;
+  already?: boolean;
+  seller?: string;
+  store?: string;
+  vehicle?: string | null;
+  error?: string;
+};
+
+export async function handoffToSellerStructured(input: StructuredHandoffInput): Promise<StructuredHandoffResult> {
+  const phone = String(input.phone || "").trim();
+  if (!phone) return { ok: false, error: "telefone obrigatório" };
+
+  const conv: any = await getConversationByPhone(phone);
+  if (!conv) { console.warn(`[Handoff] sem conversa para ${phone}`); return { ok: false, error: "conversa não encontrada" }; }
+
+  const {
+    getConversationById, updateConversation, getLeadByConversationId, upsertLead,
+    assignAgentByDepartment, createMessage, listMessages,
+  } = await import("./db");
+  const { emitNewMessage } = await import("./socket");
+
+  const fresh: any = await getConversationById(conv.id).catch(() => conv);
+  const meta = (fresh?.metadata as Record<string, unknown>) || {};
+  // IDEMPOTENTE: um handoff por conversa (seja por tool, texto ou webhook).
+  if (meta.coexHandoff === true || meta.metaAgentHandoff === true || meta.structuredHandoff === true) {
+    return { ok: true, already: true };
+  }
+
+  // 1) Resolve o CARRO escolhido: id explícito tem prioridade; senão tenta texto.
+  let vehicleId: number | null = null;
+  if (input.vehicleId != null && !isNaN(Number(input.vehicleId))) vehicleId = Number(input.vehicleId);
+  if (!vehicleId && input.vehicleText) vehicleId = await resolveVehicleIdFromText(input.vehicleText).catch(() => null);
+
+  let vehicleName: string | null = input.vehicleText || null;
+  if (vehicleId) {
+    try {
+      const { getVehicleForAgent } = await import("./stockSync");
+      const v: any = await getVehicleForAgent(vehicleId).catch(() => null);
+      if (v?.nome) vehicleName = v.nome;
+    } catch { /* noop */ }
+  }
+
+  // 2) Grava o lead com os dados estruturados (interesse = carro escolhido).
+  try {
+    const notes = [
+      vehicleName ? `Veículo: ${vehicleName}` : "",
+      input.resumo ? input.resumo : "",
+    ].filter(Boolean).join(" | ").slice(0, 800) || "Encaminhado pelo agente da Meta.";
+    await upsertLead({
+      conversationId: conv.id, phone,
+      name: input.nome || (conv as any).contactName || undefined,
+      city: input.cidade || undefined,
+      vehicleId: vehicleId || undefined,
+      vehicleInterest: vehicleName || undefined,
+      hasTrade: input.temTroca ?? undefined,
+      tradeVehicle: input.troca || undefined,
+      paymentMethod: input.pagamento || undefined,
+      downPayment: input.entrada || undefined,
+      notes,
+      funnelStatus: "encaminhado_vendedor",
+    } as any);
+  } catch (e) { console.error("[Handoff] upsertLead:", e); }
+
+  // 3) Marca a conversa: IA do CRM para de responder; handoff registrado.
+  await updateConversation(conv.id, {
+    status: "open",
+    aiActive: false,
+    metadata: { ...meta, structuredHandoff: true, coexHandoff: true, metaAgentHandoff: true, structuredHandoffAt: Date.now() } as any,
+  }).catch((e) => console.error("[Handoff] updateConversation:", e));
+
+  // 4) Classifica a intenção e atribui ao grupo/loja certos.
+  const lead: any = await getLeadByConversationId(conv.id).catch(() => null);
+  const dept = input.intencao || classifyHandoffIntent(`${vehicleName || ""} ${input.resumo || ""} ${lead?.notes || ""}`);
+  const assigned = await assignAgentByDepartment(conv.id, dept, { phone, contactName: (conv as any).contactName || undefined }).catch((e) => { console.error("[Handoff] assign:", e); return null; });
+
+  if (!assigned?.seller?.phone) {
+    console.warn(`[Handoff] sem vendedor ativo pra conv ${conv.id} (dept ${dept})`);
+    emitConversationUpdate(conv.id, {});
+    return { ok: true, seller: undefined, store: undefined, vehicle: vehicleName, error: "sem vendedor ativo" };
+  }
+
+  // 5) Notifica o vendedor (com troca + pagamento) e registra no chat.
+  try {
+    const { sendSellerNotification } = await import("./whatsapp");
+    const notif = await sendSellerNotification(assigned.seller.phone, {
+      sellerName: assigned.seller.name,
+      customerName: (conv as any).contactName || input.nome || lead?.name || "Cliente",
+      customerPhone: phone,
+      vehicleInterest: vehicleName || lead?.vehicleInterest || "(a confirmar)",
+      conversationSummary: input.resumo || lead?.notes || "Cliente encaminhado pelo agente da Meta.",
+      storeLocation: assigned.storeLocation,
+      tradeVehicle: (input.temTroca ?? lead?.hasTrade) ? (input.troca || lead?.tradeVehicle) : null,
+      paymentMethod: input.pagamento || lead?.paymentMethod,
+      downPayment: input.entrada || lead?.downPayment,
+    });
+    const hora = new Date().toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const sys = await createMessage({ conversationId: conv.id, content: `🔁 Lead transferido pelo agente da Meta para ${assigned.seller.name} (${assigned.storeLocation}) em ${hora}.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+    emitNewMessage(conv.id, sys);
+    if (notif?.message) {
+      const nm = await createMessage({ conversationId: conv.id, content: `📤 Mensagem enviada ao vendedor (${assigned.seller.name}):\n\n${notif.message}`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+      emitNewMessage(conv.id, nm);
+    }
+  } catch (e) { console.error("[Handoff] notify:", e); }
+
+  // 6) Encaminha as FOTOS que o cliente mandou (troca/carro) pro vendedor.
+  try {
+    const { sendSellerMedia } = await import("./whatsapp");
+    const msgs: any[] = await listMessages(conv.id, 80).catch(() => []);
+    const fotos = msgs
+      .filter((m) => m.senderType === "customer" && m.messageType === "image" && (m.metadata as any)?.mediaUrl)
+      .map((m) => (m.metadata as any).mediaUrl as string);
+    const ultimas = Array.from(new Set(fotos)).slice(-8);
+    if (ultimas.length) {
+      await sendSellerMedia(assigned.seller.phone, ultimas, `📷 Fotos enviadas pelo cliente ${(conv as any).contactName || ""}`.trim());
+      const fm = await createMessage({ conversationId: conv.id, content: `📷 ${ultimas.length} foto(s) do cliente encaminhada(s) ao vendedor.`, senderType: "internal", senderName: "Sistema", messageType: "system" } as any);
+      emitNewMessage(conv.id, fm);
+    }
+  } catch (e) { console.error("[Handoff] fotos:", e); }
+
+  emitConversationUpdate(conv.id, {});
+  console.log(`[Handoff] estruturado OK conv ${conv.id} → ${assigned.seller.name} (${assigned.storeLocation}) · carro ${vehicleName || "?"}`);
+  return { ok: true, seller: assigned.seller.name, store: assigned.storeLocation, vehicle: vehicleName };
+}
+
 // ─── Handoff em COEXISTÊNCIA (Evolution espelhando o WhatsApp Business) ────────
 // O agente da Meta responde dentro do app; a Evolution espelha tudo. Não há sinal
 // de transferência, então detectamos pela FRASE que o agente fala ao transferir

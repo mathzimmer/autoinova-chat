@@ -643,6 +643,64 @@ async function startServer() {
     }
   });
 
+  // ── Handoff ESTRUTURADO do agente da Meta (tool encaminhar_para_vendedor) ──
+  // O agente CHAMA esta rota ao transferir, passando o carro escolhido + dados do
+  // cliente. O CRM roteia pro vendedor da LOJA do carro e notifica. Mesma chave
+  // (?key= / x-api-key) do connector de estoque.
+  const encaminharHandler = async (req: express.Request, res: express.Response) => {
+    try {
+      const requiredKey = process.env.AGENT_API_KEY;
+      if (requiredKey && req.query.key !== requiredKey && req.headers["x-api-key"] !== requiredKey
+          && String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "") !== requiredKey) {
+        return res.status(401).json({ ok: false, error: "unauthorized" });
+      }
+      const src: any = { ...(req.query || {}), ...(req.body || {}) }; // body tem prioridade
+      const str = (x: any) => (x == null || x === "" ? undefined : String(x));
+      const intNum = (x: any) => (x != null && x !== "" && !isNaN(Number(x)) ? Number(x) : undefined);
+      const toBool = (x: any) => {
+        if (x == null || x === "") return undefined;
+        const s = String(x).toLowerCase();
+        if (["true", "1", "sim", "yes", "s"].includes(s)) return true;
+        if (["false", "0", "nao", "não", "no", "n"].includes(s)) return false;
+        return undefined;
+      };
+      const telefone = str(src.telefone ?? src.phone ?? src.customer_phone);
+      if (!telefone) return res.status(400).json({ ok: false, error: "telefone obrigatório" });
+
+      const intencaoRaw = str(src.intencao ?? src.departamento ?? src.department);
+      const intencao = intencaoRaw && ["vendas", "compras", "posvenda"].includes(intencaoRaw)
+        ? (intencaoRaw as "vendas" | "compras" | "posvenda") : null;
+
+      const { handoffToSellerStructured } = await import("../metaAgent");
+      const result = await handoffToSellerStructured({
+        phone: telefone,
+        vehicleId: intNum(src.vehicle_id ?? src.veiculo_id ?? src.vehicleId) ?? null,
+        vehicleText: str(src.veiculo ?? src.vehicle ?? src.carro) ?? null,
+        nome: str(src.nome ?? src.name) ?? null,
+        cidade: str(src.cidade ?? src.city) ?? null,
+        temTroca: toBool(src.tem_troca ?? src.temTroca ?? src.has_trade) ?? null,
+        troca: str(src.troca ?? src.trade) ?? null,
+        pagamento: str(src.pagamento ?? src.payment ?? src.forma_pagamento) ?? null,
+        entrada: str(src.entrada ?? src.down_payment) ?? null,
+        resumo: str(src.resumo ?? src.summary) ?? null,
+        intencao,
+      });
+      // Resposta amigável pro agente confirmar ao cliente.
+      if (!result.ok) return res.status(result.error === "conversa não encontrada" ? 404 : 400).json(result);
+      const mensagem = result.already
+        ? "Esse cliente já foi encaminhado a um vendedor."
+        : result.seller
+          ? `Pronto! Encaminhei para ${result.seller} (${result.store}). Um vendedor vai falar com o cliente em instantes.`
+          : "Encaminhado. Em breve um vendedor assume o atendimento.";
+      res.json({ ...result, mensagem });
+    } catch (err) {
+      console.error("[AgentEncaminhar] erro:", err);
+      res.status(500).json({ ok: false, error: "erro ao encaminhar" });
+    }
+  };
+  app.post(["/api/agent/encaminhar", "/api/agent/handoff"], encaminharHandler);
+  app.get(["/api/agent/encaminhar", "/api/agent/handoff"], encaminharHandler); // fallback (teste/connector c/ GET)
+
   // WhatsApp Cloud API webhook verification (GET)
   app.get("/api/webhook/whatsapp", (req, res) => {
     const VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || "autoinova_verify_token";
