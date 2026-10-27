@@ -650,7 +650,11 @@ async function startServer() {
   const encaminharHandler = async (req: express.Request, res: express.Response) => {
     try {
       const requiredKey = process.env.AGENT_API_KEY;
-      if (requiredKey && req.query.key !== requiredKey && req.headers["x-api-key"] !== requiredKey
+      // Aceita a chave por: ?key=, x-api-key, X-Agent-Key (o connector usa ESTE) ou Bearer.
+      if (requiredKey
+          && req.query.key !== requiredKey
+          && req.headers["x-api-key"] !== requiredKey
+          && req.headers["x-agent-key"] !== requiredKey
           && String(req.headers["authorization"] || "").replace(/^Bearer\s+/i, "") !== requiredKey) {
         return res.status(401).json({ ok: false, error: "unauthorized" });
       }

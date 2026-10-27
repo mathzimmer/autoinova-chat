@@ -238,7 +238,16 @@ function CampaignFormDialog({ open, onClose, campaign }: {
   campaign?: Campaign | null;
 }) {
   const utils = trpc.useUtils();
-  const templates = trpc.whatsappTemplate.list.useQuery(undefined, { enabled: open });
+  // Número OFICIAL de envio (phone_number_id). "" = número padrão (.env).
+  const [senderPhoneNumberId, setSenderPhoneNumberId] = useState<string>(
+    (campaign as any)?.senderPhoneNumberId || ""
+  );
+  const senderNumbersQuery = trpc.campaign.senderNumbers.useQuery(undefined, { enabled: open });
+  // Templates vêm da WABA do número escolhido (cada número tem seus aprovados).
+  const templates = trpc.whatsappTemplate.list.useQuery(
+    { phoneNumberId: senderPhoneNumberId || undefined },
+    { enabled: open }
+  );
   const contactsQuery = trpc.contact.list.useQuery({ limit: 1000 }, { enabled: open });
   const tagsQuery = trpc.contact.tags.useQuery(undefined, { enabled: open });
   const flowsQuery = trpc.campaign.availableFlows.useQuery(undefined, { enabled: open });
@@ -303,6 +312,7 @@ function CampaignFormDialog({ open, onClose, campaign }: {
       name: name.trim(),
       description: description.trim() || undefined,
       templateName,
+      senderPhoneNumberId: senderPhoneNumberId || null,
       bodyParams,
       scheduleType,
       scheduledAt,
@@ -361,6 +371,30 @@ function CampaignFormDialog({ open, onClose, campaign }: {
           <div className="space-y-2">
             <Label>Descrição</Label>
             <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Descrição opcional..." rows={2} />
+          </div>
+
+          {/* Sender number (coexistência / API oficial) */}
+          <div className="space-y-2">
+            <Label>Número de envio</Label>
+            <Select
+              value={senderPhoneNumberId || "__default__"}
+              onValueChange={(v) => {
+                setSenderPhoneNumberId(v === "__default__" ? "" : v);
+                setTemplateName(""); // templates mudam por número; limpa a seleção
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Número padrão" />
+              </SelectTrigger>
+              <SelectContent>
+                {(senderNumbersQuery.data || []).map((n: any) => (
+                  <SelectItem key={n.phoneNumberId || "__default__"} value={n.phoneNumberId || "__default__"}>
+                    {n.displayName}{n.phoneDisplay ? ` · ${n.phoneDisplay}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-[10px] text-muted-foreground">O disparo sai deste número oficial. Os templates abaixo são os aprovados dele.</p>
           </div>
 
           {/* Template Selection */}

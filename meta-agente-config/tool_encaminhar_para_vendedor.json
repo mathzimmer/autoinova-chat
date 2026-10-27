@@ -3,7 +3,7 @@
   "description": "Use SEMPRE que for transferir o cliente para um vendedor humano (ex.: cliente confirmou interesse em um carro, pediu para falar com alguem, quer negociar/visitar, ou quer vender/consignar). NAO escreva so a despedida: CHAME esta ferramenta passando os dados. 'vehicle_id' = o id do carro escolhido (o campo 'id' retornado por buscar_veiculos) — isso define a LOJA e o VENDEDOR certos, entao mande sempre que souber o carro. Passe 'nome' e 'telefone' do cliente, 'intencao' ('vendas' para comprar, 'compras' para vender/consignar, 'posvenda' para duvida/pos-venda), 'tem_troca'/'troca' se houver carro na troca, 'pagamento' (a vista/financiado) e 'resumo' (2-3 frases do que o cliente quer). A resposta traz 'mensagem' confirmando o encaminhamento.",
   "request_definition": {
     "method": "POST",
-    "path": "/api/agent/encaminhar",
+    "path": "/encaminhar",
     "query_parameters": {
       "telefone": {
         "type": "string",

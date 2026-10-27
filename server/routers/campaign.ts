@@ -43,6 +43,7 @@ export const campaignRouter = router({
       description: z.string().optional(),
       templateName: z.string().min(1),
       templateLanguage: z.string().default("pt_BR"),
+      senderPhoneNumberId: z.string().nullable().optional(), // número oficial de envio
       bodyParams: z.array(z.string()).optional(),
       contactIds: z.array(z.number()).optional(),
       filterTags: z.array(z.string()).optional(),
@@ -77,6 +78,7 @@ export const campaignRouter = router({
       description: z.string().optional(),
       templateName: z.string().optional(),
       templateLanguage: z.string().optional(),
+      senderPhoneNumberId: z.string().nullable().optional(),
       bodyParams: z.array(z.string()).optional(),
       contactIds: z.array(z.number()).optional(),
       filterTags: z.array(z.string()).optional(),
@@ -153,6 +155,23 @@ export const campaignRouter = router({
     .query(async ({ input }) => {
       return getCampaignDispatchStats(input.campaignId);
     }),
+
+  // List official numbers available as sender (coexistência / API oficial).
+  // Inclui o número padrão do .env como primeira opção.
+  senderNumbers: adminProcedure.query(async () => {
+    const { listWhatsappNumbers } = await import("../whatsappMultiNumber");
+    const rows = await listWhatsappNumbers().catch(() => [] as any[]);
+    const list = rows.map((r: any) => ({
+      phoneNumberId: r.phoneNumberId as string,
+      displayName: (r.displayName || r.phoneDisplay || `WhatsApp ${String(r.phoneNumberId).slice(-4)}`) as string,
+      phoneDisplay: (r.phoneDisplay || "") as string,
+    }));
+    const envId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    // Opção padrão (só se não estiver já na lista de números cadastrados).
+    const hasEnv = envId && list.some((n) => n.phoneNumberId === envId);
+    const defaultOpt = { phoneNumberId: "", displayName: "Número padrão (Matriz)", phoneDisplay: "" };
+    return hasEnv ? list : [defaultOpt, ...list];
+  }),
 
   // List available flows for response trigger
   availableFlows: adminProcedure.query(async () => {

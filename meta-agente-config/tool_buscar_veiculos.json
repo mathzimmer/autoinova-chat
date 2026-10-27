@@ -1,6 +1,6 @@
 {
   "name": "buscar_veiculos",
-  "description": "Busca o estoque ATUAL da Auto Inova. Use sempre que o cliente quiser ver carros ou perguntar por modelo, marca, tipo, faixa de preco ou ano. Passe o termo em 'q' (ex.: 'corolla', 'hilux', 'suv') e/ou 'max_price'. Retorna vehicles[] com: titulo, marca, modelo, ano, km, preco, cor, combustivel, link (anuncio) e fotos (lista de URLs). Use as URLs de 'fotos' para enviar carrossel/imagem dos carros. Nunca invente carros nem fotos: use so o que a ferramenta retornou.",
+  "description": "Busca o estoque ATUAL da Auto Inova. Use sempre que o cliente quiser ver carros ou perguntar por modelo, marca, tipo, faixa de preco ou ano. Passe o termo em 'q' (ex.: 'corolla', 'hilux', 'suv') e/ou 'max_price'. Retorna vehicles[] com: titulo, marca, modelo, ano, km, preco, cor, combustivel, link (anuncio) e fotos (lista de URLs). No WhatsApp, apresente cada carro usando o CARD DE PRODUTO do catalogo (formato nativo) OU, se nao houver card, em texto com o 'link' do anuncio. NUNCA gere carrossel, a2ui, JSON ou qualquer bloco de codigo na resposta ao cliente. Se houver varios carros, mande os cards/itens um a um. Nunca invente carros nem fotos: use so o que a ferramenta retornou.",
   "request_definition": {
     "method": "GET",
     "path": "/api/agent/vehicles",

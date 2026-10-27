@@ -10,9 +10,16 @@ encaminha as fotos que o cliente mandou.
 - `POST /api/agent/encaminhar` (aceita GET também, pra teste).
   - Params: `telefone` (obrigatório), `vehicle_id`, `nome`, `cidade`, `intencao`
     (`vendas`|`compras`|`posvenda`), `tem_troca`, `troca`, `pagamento`, `entrada`, `resumo`.
-  - Autenticação: mesma chave do estoque — `?key=SEU_AGENT_API_KEY` (ou header `x-api-key`).
+  - Autenticação: a mesma `AGENT_API_KEY` — aceita `?key=`, header `x-api-key`,
+    **`X-Agent-Key`** (é o que o connector usa) ou `Authorization: Bearer`.
   - Idempotente: um handoff por conversa.
   - Resposta: `{ ok, seller, store, vehicle, mensagem }`.
+
+> ⚠️ O connector `Auto_Inova_Estoque_CRM` tem `base_url = https://autoinovacrm.com.br/api/agent`,
+> então o **path da tool é `/encaminhar`** (relativo), e a chave vai no header
+> `X-Agent-Key` automaticamente — o JSON da tool não precisa declarar auth.
+> CONNECTOR_ID (estoque, produção):
+> `pfbid05PCgLezaQ7WFG7VEPgKrNyYoLG4weCmrx6374VF3YepV1GaMf2dt5kSKNhwGnadU7kEYfK5kWEEewm5iTGZipzEs1VvngBDtqErkl`
 
 ## Teste rápido (depois do deploy)
 ```

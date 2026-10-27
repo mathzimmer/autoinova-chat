@@ -846,6 +846,8 @@ export const campaigns = pgTable("campaigns", {
   description:      text("description"),
   templateName:     varchar("templateName", { length: 255 }).notNull(),
   templateLanguage: varchar("templateLanguage", { length: 10 }).default("pt_BR").notNull(),
+  // Número OFICIAL de onde o disparo sai (phone_number_id). Null = número padrão (.env).
+  senderPhoneNumberId: varchar("senderPhoneNumberId", { length: 64 }),
   bodyParams:       jsonb("bodyParams").$type<string[]>(),
   contactIds:       jsonb("contactIds").$type<number[]>(),
   filterTags:       jsonb("filterTags").$type<string[]>(),

@@ -26,7 +26,7 @@ import {
 } from "./db";
 import { contacts } from "../drizzle/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { sendWhatsAppTemplate } from "./whatsappTemplates";
+import { sendWhatsAppTemplate, resolveTemplateCreds } from "./whatsappTemplates";
 import { isConfigured as isWhatsAppConfigured } from "./whatsapp";
 
 // ─── Execute a campaign run ─────────────────────────────────────────────────
@@ -89,6 +89,11 @@ export async function executeCampaign(campaignId: number): Promise<{
   let sent = 0;
   let failed = 0;
 
+  // Resolve as credenciais do NÚMERO de envio escolhido (WABA/token/phone_number_id
+  // daquele número oficial). Null → número padrão do .env.
+  const creds = await resolveTemplateCreds((campaign as any).senderPhoneNumberId ?? null);
+  console.log(`[Campaign] Enviando pela origem: ${creds.source} (phone_number_id ${creds.phoneNumberId || "?"})`);
+
   // Send templates one by one with rate limiting
   for (const dispatch of createdDispatches) {
     try {
@@ -97,6 +102,8 @@ export async function executeCampaign(campaignId: number): Promise<{
         campaign.templateName,
         campaign.bodyParams || [],
         campaign.templateLanguage || "pt_BR",
+        undefined,
+        { phoneNumberId: creds.phoneNumberId, token: creds.token },
       );
 
       if (result.success) {
