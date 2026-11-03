@@ -356,10 +356,10 @@ async function startServer() {
           content = `[${msg.type}]`;
         }
 
-        // Mark message as read in WhatsApp
-        if (whatsappMessageId) {
-          markAsRead(whatsappMessageId).catch(() => {});
-        }
+        // Auto-leitura DESLIGADA: em coexistência o "read" via API é compartilhado
+        // com o app do celular (mensagens apareciam já lidas) e enviava tique azul
+        // automático. Deixamos a leitura a cargo do operador/app.
+        // if (whatsappMessageId) markAsRead(whatsappMessageId).catch(() => {});
 
         // Deduplicate: skip if this WhatsApp message was already processed
         if (whatsappMessageId) {

@@ -69,7 +69,8 @@ export async function handleAgentV2Message(body: any, phoneNumberId: string): Pr
     } catch { /* noop */ }
   }
 
-  if (whatsappMessageId) markAsReadFromNumber(phoneNumberId, whatsappMessageId).catch(() => {});
+  // Auto-leitura DESLIGADA (coexistência: aparecia lida no app + tique azul automático).
+  // if (whatsappMessageId) markAsReadFromNumber(phoneNumberId, whatsappMessageId).catch(() => {});
 
   const mirror = await mirrorOfficialMessage({
     phoneNumberId, phone, contactName: name, content,

@@ -255,6 +255,7 @@ function CampaignFormDialog({ open, onClose, campaign }: {
   const [name, setName] = useState(campaign?.name || "");
   const [description, setDescription] = useState(campaign?.description || "");
   const [templateName, setTemplateName] = useState(campaign?.templateName || "");
+  const [templateLanguage, setTemplateLanguage] = useState(campaign?.templateLanguage || "pt_BR");
   const [bodyParamsStr, setBodyParamsStr] = useState(campaign?.bodyParams?.join(", ") || "");
   const [selectionMode, setSelectionMode] = useState<"individual" | "tags">(
     campaign?.filterTags?.length ? "tags" : "individual"
@@ -312,6 +313,7 @@ function CampaignFormDialog({ open, onClose, campaign }: {
       name: name.trim(),
       description: description.trim() || undefined,
       templateName,
+      templateLanguage,
       senderPhoneNumberId: senderPhoneNumberId || null,
       bodyParams,
       scheduleType,
@@ -381,6 +383,7 @@ function CampaignFormDialog({ open, onClose, campaign }: {
               onValueChange={(v) => {
                 setSenderPhoneNumberId(v === "__default__" ? "" : v);
                 setTemplateName(""); // templates mudam por número; limpa a seleção
+                setTemplateLanguage("pt_BR");
               }}
             >
               <SelectTrigger>
@@ -410,7 +413,15 @@ function CampaignFormDialog({ open, onClose, campaign }: {
             ) : approvedTemplates.length === 0 ? (
               <p className="text-sm text-amber-500">Nenhum template aprovado encontrado. Crie templates no Meta Business Suite.</p>
             ) : (
-              <Select value={templateName} onValueChange={setTemplateName}>
+              <Select
+                value={templateName}
+                onValueChange={(v) => {
+                  setTemplateName(v);
+                  // Usa o idioma REAL do template escolhido (evita erro 132001).
+                  const t = approvedTemplates.find((x: any) => x.name === v);
+                  if (t?.language) setTemplateLanguage(t.language);
+                }}
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um template aprovado" />
                 </SelectTrigger>

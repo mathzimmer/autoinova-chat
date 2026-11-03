@@ -687,7 +687,8 @@ export async function handleWNWebhook(payload: any): Promise<boolean> {
         console.error("[WA-Multi] Erro ao espelhar no inbox unificado:", err);
       }
 
-      await markAsReadFromNumber(phoneNumberId, msg.id);
+      // Auto-leitura DESLIGADA (coexistência: aparecia lida no app + tique azul automático).
+      // await markAsReadFromNumber(phoneNumberId, msg.id);
     }
 
     return true;

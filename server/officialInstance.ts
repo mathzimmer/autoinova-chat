@@ -80,7 +80,8 @@ export async function handleOfficialMessage(body: any, phoneNumberId: string): P
     console.error("[Official] erro ao parsear mensagem:", err);
   }
 
-  if (whatsappMessageId) markAsReadFromNumber(phoneNumberId, whatsappMessageId).catch(() => {});
+  // Auto-leitura DESLIGADA (coexistência: aparecia lida no app + tique azul automático).
+  // if (whatsappMessageId) markAsReadFromNumber(phoneNumberId, whatsappMessageId).catch(() => {});
 
   const result = await mirrorOfficialMessage({
     phoneNumberId, phone, contactName: name, content, transcript,
