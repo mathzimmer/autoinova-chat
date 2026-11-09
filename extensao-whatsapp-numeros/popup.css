@@ -1,0 +1,17 @@
+body { font: 13px system-ui, sans-serif; width: 340px; margin: 0; padding: 12px; color: #111b21; }
+h1 { font-size: 16px; margin: 0 0 4px; color: #008069; }
+.muted { color: #667781; margin: 4px 0 8px; }
+fieldset { border: 1px solid #e9edef; border-radius: 6px; padding: 6px 8px; margin: 0 0 8px; }
+fieldset label { display: block; padding: 2px 0; }
+button { padding: 6px 10px; border: 1px solid #d1d7db; border-radius: 6px; background: #fff; cursor: pointer; }
+button:hover { background: #f5f6f6; }
+button.primary { width: 100%; background: #00a884; color: #fff; border-color: #00a884; font-weight: 600; }
+button.primary:disabled { opacity: .6; cursor: wait; }
+button.danger { color: #d62d2d; }
+.row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+select { max-width: 170px; }
+ul { list-style: none; padding: 0; margin: 6px 0; max-height: 220px; overflow-y: auto; border: 1px solid #e9edef; border-radius: 6px; }
+li { padding: 4px 8px; border-bottom: 1px solid #f0f2f5; display: flex; justify-content: space-between; gap: 6px; }
+li small { color: #667781; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 150px; }
+.actions { display: flex; gap: 6px; }
+.actions button { flex: 1; }

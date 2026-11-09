@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Captador de Números - Grupos WhatsApp",
+  "version": "1.0.0",
+  "description": "Capta e salva os números de telefone dos participantes de um grupo no WhatsApp Web.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://web.whatsapp.com/*"],
+  "action": {
+    "default_title": "Captar números do grupo",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://web.whatsapp.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

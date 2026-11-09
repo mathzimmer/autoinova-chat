@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <h1>Captador de Números</h1>
+  <p id="grupo" class="muted">Abra um grupo no WhatsApp Web…</p>
+
+  <fieldset>
+    <label><input type="checkbox" id="optParticipants" checked /> Painel de participantes</label>
+    <label><input type="checkbox" id="optAutoScroll" checked /> Rolar lista automaticamente</label>
+    <label><input type="checkbox" id="optHeader" checked /> Cabeçalho do grupo</label>
+    <label><input type="checkbox" id="optMessages" checked /> Remetentes das mensagens</label>
+  </fieldset>
+
+  <button id="btnCapturar" class="primary">Captar números</button>
+  <p id="status" class="muted"></p>
+
+  <div class="row">
+    <strong>Salvos: <span id="total">0</span></strong>
+    <select id="filtroGrupo"><option value="">Todos os grupos</option></select>
+  </div>
+  <ul id="lista"></ul>
+
+  <div class="actions">
+    <button id="btnCsv">Exportar CSV</button>
+    <button id="btnCopiar">Copiar</button>
+    <button id="btnLimpar" class="danger">Limpar</button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
