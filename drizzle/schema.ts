@@ -336,12 +336,31 @@ export const teamMembers = pgTable("teamMembers", {
   passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
   cargo:        memberCargoEnum("cargo").default("vendedor").notNull(),
   status:       memberStatusEnum("memberStatus").default("ativo").notNull(),
+  // WhatsApp do membro (com DDI/DDD, só dígitos) — destino do código de login 2FA.
+  whatsapp:     varchar("whatsapp", { length: 32 }),
   createdAt:    timestamp("createdAt").defaultNow().notNull(),
   updatedAt:    timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type TeamMember = typeof teamMembers.$inferSelect;
 export type InsertTeamMember = typeof teamMembers.$inferInsert;
+
+/**
+ * Códigos de login 2FA (OTP). Uma linha por desafio: guarda só o HASH do código,
+ * com validade curta e limite de tentativas. Consumido no uso ou na expiração.
+ */
+export const loginOtps = pgTable("loginOtps", {
+  id:           serial("id").primaryKey(),
+  teamMemberId: integer("teamMemberId").notNull(),
+  codeHash:     varchar("codeHash", { length: 128 }).notNull(),
+  expiresAt:    timestamp("expiresAt").notNull(),
+  attempts:     integer("attempts").default(0).notNull(),
+  consumedAt:   timestamp("consumedAt"),
+  createdAt:    timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type LoginOtp = typeof loginOtps.$inferSelect;
+export type InsertLoginOtp = typeof loginOtps.$inferInsert;
 
 /**
  * Login Sessions - auditoria de acesso.

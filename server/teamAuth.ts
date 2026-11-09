@@ -28,7 +28,8 @@ export async function createTeamMember(
   name: string,
   email: string,
   password: string,
-  cargo: "admin" | "gerente" | "vendedor" | "suporte" = "vendedor"
+  cargo: "admin" | "gerente" | "vendedor" | "suporte" = "vendedor",
+  whatsapp?: string | null
 ) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -43,6 +44,7 @@ export async function createTeamMember(
       passwordHash,
       cargo,
       status: "ativo",
+      whatsapp: whatsapp || null,
     })
     .execute();
 
@@ -102,6 +104,7 @@ export async function updateTeamMember(
     email?: string;
     cargo?: "admin" | "gerente" | "vendedor" | "suporte";
     status?: "ativo" | "inativo";
+    whatsapp?: string | null;
   }
 ) {
   const db = await getDb();

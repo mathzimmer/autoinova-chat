@@ -30,9 +30,10 @@ export const teamRouter = router({
       email: z.string().email(),
       password: z.string().min(6),
       cargo: z.enum(["admin", "gerente", "vendedor", "suporte"]).default("vendedor"),
+      whatsapp: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      const result = await createTeamMember(input.name, input.email, input.password, input.cargo);
+      const result = await createTeamMember(input.name, input.email, input.password, input.cargo, input.whatsapp);
       await createActivityLog({
         userId: ctx.user.id,
         action: "create_team_member",
@@ -48,6 +49,7 @@ export const teamRouter = router({
       email: z.string().email().optional(),
       cargo: z.enum(["admin", "gerente", "vendedor", "suporte"]).optional(),
       status: z.enum(["ativo", "inativo"]).optional(),
+      whatsapp: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const { id, ...updates } = input;

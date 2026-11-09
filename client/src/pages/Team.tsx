@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,6 +59,7 @@ export default function Team() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [cargo, setCargo] = useState<"admin" | "gerente" | "vendedor" | "suporte">("vendedor");
+  const [whatsapp, setWhatsapp] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
   // Edit state
@@ -66,6 +67,22 @@ export default function Team() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editCargo, setEditCargo] = useState<"admin" | "gerente" | "vendedor" | "suporte">("vendedor");
+  const [editWhatsapp, setEditWhatsapp] = useState("");
+
+  // 2FA (código de login por WhatsApp) — todos os códigos vão pro número aprovador.
+  const twofa = trpc.teamAuth.get2faEnabled.useQuery();
+  const [approverPhone, setApproverPhone] = useState("");
+  useEffect(() => {
+    if (twofa.data?.approverPhone !== undefined) setApproverPhone(twofa.data.approverPhone || "");
+  }, [twofa.data?.approverPhone]);
+  const set2fa = trpc.teamAuth.set2faEnabled.useMutation({
+    onSuccess: (r) => { utils.teamAuth.get2faEnabled.invalidate(); toast.success(r.enabled ? "2FA ligado" : "2FA desligado"); },
+    onError: (err) => toast.error(err.message),
+  });
+  const setApprover = trpc.teamAuth.set2faApproverPhone.useMutation({
+    onSuccess: () => { utils.teamAuth.get2faEnabled.invalidate(); toast.success("Número aprovador salvo"); },
+    onError: (err) => toast.error(err.message),
+  });
 
   // Reset password state
   const [resetPasswordId, setResetPasswordId] = useState<number | null>(null);
@@ -76,6 +93,7 @@ export default function Team() {
     setEmail("");
     setPassword("");
     setCargo("vendedor");
+    setWhatsapp("");
     setShowPassword(false);
   };
 
@@ -84,7 +102,7 @@ export default function Team() {
       toast.error("Preencha todos os campos");
       return;
     }
-    createMember.mutate({ name, email, password, cargo });
+    createMember.mutate({ name, email, password, cargo, whatsapp: whatsapp.trim() || undefined });
   };
 
   const handleEdit = (member: any) => {
@@ -92,6 +110,7 @@ export default function Team() {
     setEditName(member.name);
     setEditEmail(member.email);
     setEditCargo(member.cargo);
+    setEditWhatsapp(member.whatsapp || "");
   };
 
   const handleSaveEdit = () => {
@@ -101,6 +120,7 @@ export default function Team() {
       name: editName,
       email: editEmail,
       cargo: editCargo,
+      whatsapp: editWhatsapp.trim() || undefined,
     });
   };
 
@@ -116,6 +136,33 @@ export default function Team() {
           <h1 className="text-lg font-semibold text-foreground">Equipe</h1>
           <p className="text-xs text-muted-foreground">Gerencie os membros da equipe e suas permissões</p>
         </div>
+        <div className="flex items-center gap-2">
+          <Input
+            value={approverPhone}
+            onChange={(e) => setApproverPhone(e.target.value)}
+            placeholder="Nº aprovador (ex: 5551999887766)"
+            className="h-9 w-56 text-xs"
+            title="Todos os códigos de login são enviados para este WhatsApp"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setApprover.mutate({ phone: approverPhone })}
+            disabled={setApprover.isPending}
+          >
+            Salvar nº
+          </Button>
+          <Button
+            size="sm"
+            variant={twofa.data?.enabled ? "default" : "outline"}
+            className="gap-2"
+            onClick={() => set2fa.mutate({ enabled: !twofa.data?.enabled })}
+            disabled={set2fa.isPending || twofa.isLoading}
+            title="Exige um código (enviado ao nº aprovador) em todo login"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            {twofa.data?.enabled ? "2FA: Ligado" : "2FA: Desligado"}
+          </Button>
         <Dialog open={showCreate} onOpenChange={setShowCreate}>
           <DialogTrigger asChild>
             <Button size="sm" className="gap-2">
@@ -179,6 +226,7 @@ export default function Team() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Content */}
